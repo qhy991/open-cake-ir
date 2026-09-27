@@ -361,8 +361,57 @@ CUPTI and phase records are retained at
 mirrored locally. Promotion disposition: **no promotion**; successor
 `58aed769` reverted this fusion. The active code again has the `00a2fc14`
 producer-barrier structure, while its source identity is the new commit.
-The next optimization target is the source-dispatch/completion path, whose
-per-event wait is around 350k cycles in these traces.
+This redirected work to the source-dispatch/completion path, whose
+per-event wait was around 350k cycles in those traces.
+
+Successor `db16d3af` vectorized each remote 4 KB BF16 payload copy with
+`ld.global.v4.b32` and `st.global.v4.b32`. The Bin payload slots are
+16-byte aligned; the initial version also required the caller's hidden
+pointer to be aligned. The [PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html)
+requires natural 16-byte alignment for these accesses, and B300 `cuobjdump`
+showed `LDG.E.128` and `STG.E.128` in the compiled main kernel. Its clean
+commit passed 22 related contracts, the 179-case Corpus Gate and B300 NVCC
+at 84 registers with no spills. Its mixed K=4 single-grid job passed the
+oracle and v3 bitwise comparison; the 12-route/K matrix passed with
+0/50,331,648 oracle failures, 960 exact event slots and 12 positive
+overlap controls. On mixed K=4, same-lease `gpuq-7844211fd52b` measured
+9.503/9.508 ms old/new: no complete-layer improvement despite reducing
+the source-completion phase median from about 360k to 318k cycles. The
+communication-heavier fanin K=4 route showed small same-direction ABBA
+differences in two jobs: 8.513/8.409 ms (`gpuq-8cb31ac785e5`) and
+8.462/8.366 ms (`gpuq-054f0086a448`). All compared arms passed the
+external oracle, tile plan and v3 bitwise checks. The retained roots use
+the `cake-weave-vector-payload-db16d3af` and
+`cake-weave-vector-vs-device-*-db16d3af` names and are mirrored locally.
+
+The initial alignment rule narrowed the pointer ABI without a matching
+Workload constraint. Broker job `gpuq-cca52dbe0c94` confirmed it rejected
+a hidden BF16 pointer offset by two bytes. Successor `a6fcc377` removed
+that admission change: aligned input keeps the PTX vector path, while a
+BF16-aligned subview uses the original scalar copy. Its 179-case Corpus
+Gate passed; the 22-test local contract invocation had two environment
+errors because macOS offered no usable temporary directory, so it is not
+recorded as a passing suite. B300 NVCC again used 84 registers and had no
+spills. Separate four-GPU jobs `gpuq-2fcf501c0f27` (aligned) and
+`gpuq-59ad31561265` (hidden pointer offset by two bytes on every rank)
+both passed 0/4,194,304 oracle failures, 80 exact event slots and v3
+bitwise comparison, while retaining positive overlap.
+
+Two same-lease fanin K=4 ABBA jobs measured the final `a6fcc377` against
+`00a2fc14`: 8.524/8.367 ms (`gpuq-fae3d2be75f0`, old/new 1.019x) and
+8.593/8.457 ms (`gpuq-f07edad98695`, 1.016x). These are repeated small
+development differences on a remote-payload-heavy route, not a qualified
+speedup. The final source's four-route × K=4/2/1 matrix
+`gpuq-9797dbb39967` passed with 0/50,331,648 oracle failures, 960 exact
+event slots, zero v3 bit mismatches and positive overlap in all 12
+controls. Spatial/steal job `gpuq-8a3021dc7c33` passed six sealed mixed
+K=4 controls with 0/25,165,824 oracle failures, 480 exact event slots,
+zero v3 bit mismatches and six positive overlap flags; budget zero stole
+zero tasks, and c=74 at budget 5888 hit the cap on every rank. Its c=95
+pass does not close F-2026-09-27-001. These reports and raw ABBA records
+are retained under the matching `/home/qinhaiyan/cake-weave-vector-fallback-a6fcc377*/`
+roots and mirrored locally. Promotion disposition: keep as a B300 native
+CUDA development candidate; no Lab rule or external baseline claim.
 
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
