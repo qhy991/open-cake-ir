@@ -248,6 +248,18 @@ comparison against the equal-reset sequential persistent control remains a
 separate gate; the two code paths' correctness reports cannot answer whether
 full producer/consumer overlap improves layer latency.
 
+Broker job `gpuq-e6b37e5feec8` also checked six sealed spatial/steal plans
+on the frozen mixed K=4 route: c=1 with budgets 0/5888, c=74 with budgets
+0/5888/46920, and c=95 with budget 46920. All six passed the FP64 oracle
+over 25,165,824 output elements, matched 480 CPU tile-event count slots and
+were bitwise equal to v3. Each had a positive next-event production versus
+Cake-task progress flag. Zero budget produced zero stolen tasks; c=74,
+budget=5888 reached the cap on every rank. The c=95 arm passed this one run,
+but does not close F-2026-09-27-001's intermittent route-location mismatch.
+Reports are retained at
+`/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363-sweep6/` and mirrored
+locally. This adds spatial and steal correctness coverage, not a timing rule.
+
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
 four-device timing reset and matched open baseline. This task branch remains
