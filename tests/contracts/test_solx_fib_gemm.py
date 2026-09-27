@@ -44,6 +44,26 @@ class FlashInferGemmTests(unittest.TestCase):
             tensorcore_source(WorkloadContract(gemm.workload_document(
                 'fib_gemm_n128_k2048', rows=8)))
 
+    def test_004_tensorcore_k256_reduces_loop_count_without_changing_outputs(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for rows in (16, 128, 952):
+            with self.subTest(rows=rows):
+                workload = WorkloadContract(gemm.workload_document(
+                    'fib_gemm_n128_k2048', rows=rows))
+                schedule = parse(tensorcore_source(workload, block_k=256)).document
+                self.assertEqual(schedule['outputs'], ['out'])
+                dot = next(op for op in schedule['operations'] if op['kind'] == 'mma')
+                self.assertEqual(dot['parameters']['tile_shape'], [16, 32, 256])
+                assessment = compiler.assess(schedule)
+                self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                                 assessment.findings)
+                lowered = compiler.lower(assessment)
+                self.assertIn('N_K_LOOP=2048', lowered.source)
+                self.assertIn('BLOCK_K_LOOP=256', lowered.source)
+                self.assertIn('rounded = acc.to(tl.float16)', lowered.source)
+        with self.assertRaises(ValueError):
+            tensorcore_source(workload, block_k=128)
+
     def test_004_scalar_warp_rewrite_keeps_small_m_outputs_independent(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         for rows in (1, 2, 8):
