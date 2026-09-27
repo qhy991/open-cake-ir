@@ -47,11 +47,15 @@ state reset, all-rank status checks and isolated-process cleanup.
 
 At `33f28b88`, 21 related contract tests and the 179-case Corpus Gate pass
 in a detached fixed-commit worktree. The emitted source maps each of the 27
-ranked effects and 25 Cake math operations once. No B300-M4 NVCC/PTXAS
-build or device run exists for this successor: direct and jump SSH both timed
-out while preparing the earlier cross-stream candidate. The static checks
-do not measure the new planner's register/static shared footprint, confirm
-cooperative residency, or verify exact GPU tile events and FP64 outputs.
+ranked effects and 25 Cake math operations once. The later clean code commit
+`f7ae17fe` passes 28 related contracts and the same 179-case Corpus Gate.
+Its exact source compiled with B300-M4 CUDA 13.1 NVCC outside a GPU lease at
+`/home/qinhaiyan/cake-weave-single-grid-f7ae17fe/build-mixed-k4-c1-b5888/`:
+the build produced a 502,584-byte ELF with pointer ABI version 4. PTXAS
+reported 80 registers and 9,216 bytes of static shared memory for
+`tile_schedule_probe`. No device run exists for this single-grid successor.
+The CPU checks and NVCC build do not confirm cooperative residency or verify
+exact GPU tile events and FP64 outputs.
 The local integration now carries `RankedTileLaunchManifest` and a
 byte-bearing `RankedTileCandidate` for pointer ABI v4: they refuse a wrong
 Workload case, source, rank plan or library bytes before CUDA state creation.
@@ -59,19 +63,18 @@ Its create-only Lab builder writes the exact lowered source, invokes the
 Target's NVCC route outside a GPU lease, retains failures and seals the
 resulting ELF bytes in the same process. It persists one artifact-role
 record for source, ELF and manifest; the next process checks these bytes
-once before loading. This establishes a CPU build handoff once run on
-B300-M4; no real NVCC build has happened for the single-grid successor yet.
+once before loading. That CPU build handoff has now run on B300-M4.
 It is not yet the common sealed Evaluation Candidate or a qualified
 device/timing result.
 
-A source-declaration audit counts 8,192 B for the per-CTA expert sort,
-84 B for source-dispatch scratch and 20 B for worker claims, in addition to
-49,200 B of emitted dynamic shared memory: 57,496 B before compiler
-padding. Four such CTAs would require 229,984 B, below the B300 Target's
-declared 233,472 B per SM. This rules out an obvious shared-memory-only
-four-CTA refusal; it does **not** establish actual occupancy. The compiled
-register/static-shared report and `cudaOccupancyMaxActiveBlocksPerMultiprocessor`
-gate remain authoritative before the cooperative launch.
+The source-declaration audit counted 57,496 B per CTA before compiler
+padding. PTXAS instead reports 9,216 B static plus 49,200 B dynamic shared
+memory, or 58,416 B per CTA. Four CTAs would require 233,664 B, which is
+192 B above the B300 Target's declared 233,472 B per SM. The cooperative
+grid has 96 CTAs across a declared 148 SMs, so it needs at least one resident
+CTA per SM; the host's `cudaOccupancyMaxActiveBlocksPerMultiprocessor` check
+remains authoritative before launch. The source-only four-CTA estimate must
+not be used as an occupancy result.
 
 The first device validation should compile this clean commit outside a GPU
 lease, then use the broker for at most four GPUs. Start with one mixed-route
