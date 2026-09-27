@@ -1598,8 +1598,13 @@ Workload 取 V 与 BF16 初始状态。\code{gpuq-dc7242edf640} 设备作业
 \Needspace{8\baselineskip}
 后继 \code{4dc1561e} 用 Schedule 的具体 AccessMap 直接读取
 \code{[chunk,head,token]} beta：聚焦合同 5/5、Corpus Gate 179/179，
-旧形状误接由共享访问分析拒绝。该路径尚无 B300 AOT 或设备验收；
-远端 SSH 在传输前超时，未提交新的 broker 作业。已准备的直连实验
+旧形状误接由共享访问分析拒绝。精确 B300 AOT 使用 57,472 字节
+dynamic shared、243 寄存器、0 stack/spill；七项准备/消费 ABI 形状
+在 CPU-only 检查中吻合。第一次完整适用 CPU 套件为 2,689 passed、
+2 failed、3 errors：历史回放测试再克隆多层共享对象库时，Git 报
+\code{alternate object stores, nesting too deep}。这是检出环境错误，
+并非 beta lowering 失败；未改测试或期望，新的浅层检出尚未跑完整套件。
+因此该路径仍无设备验收或 broker 作业。已准备的直连实验
 将在同一 GPU 上运行准备与 native 消费，把七项设备指针直接传递，
 并使初始/最终 BF16 状态共用存储。即使通过，它仍是固定 H64 两 kernel
 候选；与原始 CAKE 的同机完整配对必须把准备值物化写回和重读都计入。
