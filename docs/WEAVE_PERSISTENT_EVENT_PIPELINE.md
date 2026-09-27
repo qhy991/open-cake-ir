@@ -413,8 +413,55 @@ are retained under the matching `/home/qinhaiyan/cake-weave-vector-fallback-a6fc
 roots and mirrored locally. Promotion disposition: keep as a B300 native
 CUDA development candidate; no Lab rule or external baseline claim.
 
-Before promotion, check further c/steal controls including the open c=95
-mismatch Finding, retain profiler evidence, and qualify the target's
-four-device timing reset and matched open baseline. This task branch remains
-a development successor, not a claim of Weave speedup or full temporal
-overlap.
+The next Compiler/lowering/kernel tick grouped four Cake activation rows in
+one CTA. The B300 SwiGLU Schedule now declares a four-row ProgramMap tile,
+four execution groups and `[4,768]` register values; the native CUDA
+emitter maps one warp to each row. Ranked-tile analysis therefore derives
+`24+32+32=88` tasks per tile instead of `24+128+32=184`, reducing the
+255-tile task bound from 46,920 to 22,440. The Evaluation admission and
+pointer ABI follow the new bound; the Workload and oracle are unchanged.
+The fixed code commit `48b811b3` passed 33 related contracts and the
+179-case Corpus Gate. B300 NVCC compiled the complete grid at 84 registers,
+9,216 B static shared memory and no spills. The standalone activation
+emitter also compiled at 25 registers and no spills. The original attempt
+`gpuq-ba4dd7aa6379` was refused before device execution because its frozen
+pointer adapter still expected 46,920 slots. Successor `c3034259` corrected
+that adapter, and the fixed-commit test now calls its CPU-only contract
+preflight. The failed job remains separate from every later result.
+
+Job `gpuq-07acaac5a977` validated `48b811b3` on mixed K=4, c=64,
+budget=22,440: 0/4,194,304 FP64-oracle failures, 80 exact event slots,
+zero v3 bit differences and positive same-rank overlap. Two same-lease
+old/new/new/old CUPTI comparisons used the **same 22,440 budget** for the
+one-row control `a6fcc377` and the four-row successor. Job
+`gpuq-32ba52458409` measured complete-layer development medians of
+9.749/7.067 ms (old/new 1.379x); `gpuq-b442e54ddf05` measured
+9.043/6.990 ms (1.294x) on another physical GPU set. All eight arms
+passed the oracle, tile plan and v3 bitwise comparison. The main
+`tile_schedule_probe` kernel fell from roughly 8.3–8.6 ms to 6.4–6.5 ms
+in those paired records. The reports and raw CUPTI traces are retained at
+`/home/qinhaiyan/cake-weave-activation4-vs-row1-abba-48b811b3/` and its
+`-rep2` successor, and mirrored locally.
+
+Job `gpuq-7a3df15db65e` checked the four frozen routes × K=4/2/1 at
+c=64 and budget 22,440. All 12 sealed controls passed with
+0/50,331,648 oracle failures, 960 exact CPU/GPU event-count slots, zero
+v3 bit differences and positive useful-work overlap. Job
+`gpuq-bf74c63e46ac` then checked six spatial/steal plans on mixed K=4:
+c=1 at budgets 0/5888, c=74 at 0/5888/22,440 and c=95 at 22,440.
+All six passed with 0/25,165,824 oracle failures, 480 exact event slots,
+zero v3 bit differences and positive overlap. Both zero-budget controls
+stole zero tasks. The reduced task population no longer exhausted the
+5888 permit in the c=74 control; a separate sealed c=74, budget=2048 job
+`gpuq-2ebc3ba3c014` passed 0/4,194,304 oracle failures and reached
+**exactly 2048 stolen tasks on each rank**. One passing c=95 control
+does not close F-2026-09-27-001. These reports are retained under the
+matching `/home/qinhaiyan/cake-weave-activation4-48b811b3*/` roots and
+mirrored locally. Promotion disposition: retain the four-row B300
+Schedule/lowering as a development candidate; do not infer a generic
+cross-target rule or an external-baseline speedup from this scope.
+
+Before promotion, resolve the open c=95 mismatch Finding, qualify the
+target's four-device timing reset, and run a matched open baseline under
+the same measurement contract. This task branch remains a development
+successor, not a qualified claim of Weave speedup or full temporal overlap.
