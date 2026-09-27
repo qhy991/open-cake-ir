@@ -33,7 +33,9 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
     if (block_m, block_n, block_k, num_stages) not in (
             (16, 32, 64, 2), (16, 32, 256, 2),
             (16, 32, 512, 2), (16, 32, 1024, 1),
-            (16, 16, 512, 2), (16, 64, 512, 2)):
+            (16, 16, 512, 2), (16, 64, 512, 2),
+            (32, 64, 256, 2), (64, 64, 256, 2),
+            (64, 128, 256, 2)):
         raise ValueError("tensor-core tile/stage choice is outside the bounded study")
     declarations = [
         f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
@@ -42,12 +44,12 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
     ]
     return (
         'from open_cake_ir.compiler import frontend as cake\n\n'
-        f'@cake.schedule(name="{workload.workload_id}-tensorcore-16x{block_n}x{block_k}-s{num_stages}", '
+        f'@cake.schedule(name="{workload.workload_id}-tensorcore-{block_m}x{block_n}x{block_k}-s{num_stages}", '
         f'target="{workload.target}", backend="triton", '
         'entry_point="cake_fib004_tensorcore")\n'
         f'def candidate(lm, {", ".join(declarations)}):\n'
         '    compute = lm.role(execution_groups=[0, 1, 2, 3])\n'
-        '    row = lm.program(a, axis=0, dimension=0, tile=16)\n'
+        f'    row = lm.program(a, axis=0, dimension=0, tile={block_m})\n'
         f'    column = lm.program(b, axis=1, dimension=0, tile={block_n})\n'
         f'    for k in lm.range(a, name="k_loop", dimension=1, tile={block_k}, '
         f'num_stages={num_stages}, disallow_acc_multi_buffer=True):\n'
@@ -56,7 +58,7 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
         '            b_tile = lm.load(b[column, k], id="load_b")\n'
         '            acc = lm.mma(a_tile, b_tile, '
         'instruction={"contract": "triton.dot.fp16_fp32"}, '
-        f'tile_shape=(16, {block_n}, {block_k}), id="dot")\n'
+        f'tile_shape=({block_m}, {block_n}, {block_k}), id="dot")\n'
         '    with compute:\n'
         '        rounded = lm.cast(acc, to="fp16", id="round_out")\n'
         '        lm.store(out[row, column], rounded, id="store_out")\n'

@@ -110,6 +110,29 @@ class FlashInferGemmTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tensorcore_source(workload, block_n=8, block_k=512)
 
+    def test_004_large_m_tiles_reuse_b_across_more_output_rows(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(gemm.workload_document(
+            'fib_gemm_n128_k2048', rows=8828))
+        for block_m, block_n, expected_grid in (
+                (32, 64, [276, 2, 1]),
+                (64, 64, [138, 2, 1]),
+                (64, 128, [138, 1, 1])):
+            with self.subTest(tile=(block_m, block_n)):
+                schedule = parse(tensorcore_source(
+                    workload, block_m=block_m, block_n=block_n, block_k=256)).document
+                dot = next(op for op in schedule['operations'] if op['kind'] == 'mma')
+                self.assertEqual(dot['parameters']['tile_shape'],
+                                 [block_m, block_n, 256])
+                assessment = compiler.assess(schedule)
+                self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                                 assessment.findings)
+                lowered = compiler.lower(assessment)
+                self.assertEqual(lowered.toolchain_requirements['grid'], expected_grid)
+                self.assertIn('rounded = acc.to(tl.float16)', lowered.source)
+        with self.assertRaises(ValueError):
+            tensorcore_source(workload, block_m=64, block_n=128, block_k=512)
+
     def test_004_scalar_warp_rewrite_keeps_small_m_outputs_independent(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         for rows in (1, 2, 8):
