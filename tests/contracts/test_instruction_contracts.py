@@ -190,7 +190,8 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
         # metal_fma.py reaches its fma, and sm_100a has none because its atomic is bound
         # implicitly.
         self.assertEqual(unreached, {
-            "xcore1002": ["maca.fma.f32", "maca.tanh.f32"],
+            "xcore1002": ["maca.fma.f32", "maca.fma.rd.f32", "maca.fma.ru.f32",
+                          "maca.fma.rz.f32", "maca.tanh.f32"],
             "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "apple_gpu_family8": ["metal.precise.tanh.f32"],
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
