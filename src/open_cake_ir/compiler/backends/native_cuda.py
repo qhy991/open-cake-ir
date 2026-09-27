@@ -156,11 +156,160 @@ def _role_carried_domain(s, target, loop):
     return True
 
 
+def _inverse_carried_domain(s, target, loop):
+    """Exact B300 K32 inverse-MMA chunk path with explicit RHS and U phases.
+
+    The inverse factor is a separate BF16 input. Numerical equivalence to a
+    triangular solve belongs to the Workload oracle, not this emission guard.
+    """
+    source = s.buffer(loop.buffer)
+    if (target.target_id != 'sm_103a' or len(s.tile_loops) != 1
+            or s.loop_parent().get(loop.name) is not None
+            or not loop.carried_buffers or loop.dimension != 0 or loop.tile != 1
+            or loop.range_options.num_stages != 2
+            or source is None or len(source.shape) != 4
+            or source.shape[:2] != (256, 64) or _head64_axis(s) is None):
+        return False
+    roles = {role.name: role.execution_groups for role in s.roles}
+    if (roles.get('compute') != (0, 1, 2, 3)
+            or roles.get('mma') != (4,) or roles.get('copy') != (5,)):
+        return False
+    owners = [p for p in s.pipelines if _pipeline_loop(s, p) == loop]
+    staged = [p for p in owners if p.stages == 2]
+    inverse = [p for p in owners if p.stages == 1]
+    if len(owners) != 3 or len(staged) != 2 or len(inverse) != 1:
+        return False
+    for pipeline in staged:
+        loads = [op for op in s.loop_operations(loop)
+                 if op.pipeline == pipeline.name and op.kind is OperationKind.LOAD]
+        mmas = [op for op in s.loop_operations(loop)
+                if op.pipeline == pipeline.name and op.kind is OperationKind.MMA]
+        ready = [b for b in s.barriers if b.pipeline == pipeline.name]
+        if (len(loads) != 2 or len(mmas) != 2 or len(ready) != 1
+                or any(op.role != 'copy' or op.parameters.movement is not LoadMovement.TMA
+                       for op in loads)
+                or any(op.role != 'mma' for op in mmas)
+                or ready[0].count != 2):
+            return False
+    inverse_mmas = [op for op in s.loop_operations(loop)
+                    if op.pipeline == inverse[0].name]
+    if len(inverse_mmas) != 1 or inverse_mmas[0].kind is not OperationKind.MMA:
+        return False
+    mma = inverse_mmas[0]
+    if (mma.role != 'mma' or len(mma.reads) != 2 or len(mma.writes) != 1
+            or mma.parameters.tile_shape != (128, 32, 32)
+            or mma.parameters.instruction is None
+            or mma.parameters.instruction.shape != (128, 32, 16)
+            or mma.parameters.instruction.operand_major
+               != (OperandMajorMode.K, OperandMajorMode.MN)
+            or mma.parameters.instruction.operand_source is not OperandSource.TENSOR):
+        return False
+    a, b, dst = (s.buffer(mma.reads[0]), s.buffer(mma.reads[1]),
+                 s.buffer(mma.writes[0]))
+    if (a is None or b is None or dst is None
+            or a.space is not MemorySpace.TENSOR or a.dtype is not DType.BF16
+            or a.shape != (128, 32) or a.byte_offset != 304 * 512
+            or b.space is not MemorySpace.SHARED or b.dtype is not DType.BF16
+            or b.shape != (32, 32) or b.swizzle is not Swizzle.B64
+            or b.stages != 2
+            or dst.space is not MemorySpace.TENSOR or dst.dtype is not DType.FP32
+            or dst.shape != (128, 32) or dst.byte_offset != 320 * 512
+            or a.allocation != dst.allocation):
+        return False
+    allocation = next((x for x in s.allocations if x.name == a.allocation), None)
+    if allocation is None or allocation.tensor_columns != 512:
+        return False
+    for view in s.buffers:
+        if (view.space is MemorySpace.TENSOR and view.allocation == a.allocation
+                and view.name not in (a.name, dst.name)):
+            if len(view.shape) != 2:
+                return False
+            first = view.byte_offset // 512
+            columns = (view.shape[1] * view.dtype.itemsize + 3) // 4
+            if first < 352 and first + columns > 304:
+                return False
+    if any(op.pipeline is None and op.role != 'compute'
+           and not (op.kind is OperationKind.LOAD and op.writes == (b.name,))
+           for op in s.loop_operations(loop)):
+        return False
+    writers = {name: op for op in s.operations for name in op.writes}
+    rhs_store, inverse_load = writers.get(a.name), writers.get(b.name)
+    if (rhs_store is None or rhs_store.kind is not OperationKind.TMEM_STORE
+            or rhs_store.role != 'compute' or rhs_store.pipeline is not None
+            or len(rhs_store.reads) != 1 or len(rhs_store.signals) != 1
+            or rhs_store.parameters.destination_atom.op != 'tcgen05.St32x32b'
+            or rhs_store.parameters.destination_atom.repetition != 8
+            or inverse_load is None or inverse_load.kind is not OperationKind.LOAD
+            or inverse_load.role != 'mma' or inverse_load.pipeline is not None
+            or inverse_load.parameters.movement is not LoadMovement.GLOBAL
+            or inverse_load.waits or inverse_load.signals
+            or [op for op in s.operations if a.name in op.reads] != [mma]
+            or [op for op in s.operations if b.name in op.reads] != [mma]):
+        return False
+    rhs = s.buffer(rhs_store.reads[0])
+    rhs_cast = writers.get(rhs.name) if rhs is not None else None
+    inverse_source = s.buffer(inverse_load.reads[0]) if inverse_load.reads else None
+    if (rhs is None or rhs.space is not MemorySpace.REGISTER
+            or rhs.dtype is not DType.BF16 or rhs.shape != (128, 32)
+            or rhs_cast is None or rhs_cast.kind is not OperationKind.CAST
+            or rhs_cast.role != 'compute'
+            or len(rhs_cast.reads) != 1
+            or (rhs_fp := s.buffer(rhs_cast.reads[0])) is None
+            or rhs_fp.space is not MemorySpace.REGISTER
+            or rhs_fp.dtype is not DType.FP32 or rhs_fp.shape != (128, 32)
+            or [op for op in s.operations if rhs.name in op.reads] != [rhs_store]
+            or inverse_source is None or inverse_source.space is not MemorySpace.GLOBAL
+            or inverse_source.dtype is not DType.BF16
+            or inverse_source.shape != (256, 64, 32, 32)):
+        return False
+    ready = next((x for x in s.barriers if x.name == rhs_store.signals[0]), None)
+    done = next((x for x in s.barriers if x.name in mma.signals), None)
+    readers = [op for op in s.operations if dst.name in op.reads]
+    if (ready is None or ready.mechanism is not BarrierMechanism.MBARRIER
+            or ready.count != 4 or ready.producers != ('compute',)
+            or ready.consumers != ('mma',) or ready.pipeline is not None
+            or mma.waits != (ready.name,)
+            or done is None or done.mechanism is not BarrierMechanism.MBARRIER
+            or done.count != 1 or done.producers != ('mma',)
+            or done.consumers != ('compute',) or done.pipeline is not None
+            or len(readers) != 1 or readers[0].kind is not OperationKind.LOAD
+            or readers[0].role != 'compute'
+            or len(readers[0].writes) != 1
+            or readers[0].parameters.movement is not LoadMovement.TMEM
+            or readers[0].waits != (done.name,)
+            or s.buffer(readers[0].writes[0]).shape != (128, 32)):
+        return False
+    positions = {name: loop.body.index(name) for name in loop.body}
+    first, second = sorted(staged, key=lambda p: min(
+        positions[op.op_id] for op in s.loop_operations(loop)
+        if op.pipeline == p.name))
+    first_mmas = [op for op in s.loop_operations(loop)
+                  if op.pipeline == first.name and op.kind is OperationKind.MMA]
+    second_mmas = [op for op in s.loop_operations(loop)
+                   if op.pipeline == second.name and op.kind is OperationKind.MMA]
+    if any(len(op.reads) != 2 for op in first_mmas + second_mmas):
+        return False
+    update = writers.get(second_mmas[0].reads[0])
+    if (any(op.reads[0] not in loop.carried_buffers for op in first_mmas)
+            or any(op.reads[0] != second_mmas[0].reads[0] for op in second_mmas)
+            or update is None or update.kind is not OperationKind.TMEM_STORE
+            or not (max(positions[op.op_id] for op in first_mmas)
+                    < positions[inverse_load.op_id]
+                    < positions[rhs_store.op_id]
+                    < positions[mma.op_id]
+                    < positions[readers[0].op_id]
+                    < positions[update.op_id]
+                    < min(positions[op.op_id] for op in second_mmas))):
+        return False
+    return True
+
+
 def _vector_p_stage(s, target, op):
-    """A 16-byte contiguous BF16 P copy with a scalar unaligned fallback."""
+    """A 16-byte BF16 P or inverse copy with a scalar unaligned fallback."""
     scope = _scope(s, op)
     if (op.kind is not OperationKind.LOAD or scope is None
-            or not _role_carried_domain(s, target, scope)
+            or not (_role_carried_domain(s, target, scope)
+                    or _inverse_carried_domain(s, target, scope))
             or len(op.reads) != 1 or len(op.writes) != 1):
         return False
     source, destination = s.buffer(op.reads[0]), s.buffer(op.writes[0])
@@ -189,7 +338,8 @@ def _last_chunk_terminal_store(s, target, op):
     scope = _scope(s, op)
     if (op.kind is not OperationKind.STORE or scope is None
             or not (_persistent_carried_domain(s, target, scope)
-                    or _prefetch_carried_domain(s, target, scope))
+                    or _prefetch_carried_domain(s, target, scope)
+                    or _inverse_carried_domain(s, target, scope))
             or len(op.reads) != 1 or len(op.writes) != 1
             or scope.body[-1] != op.op_id):
         return False
@@ -432,6 +582,19 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             unknown.append(refusal('NATIVE_REFERENCE_UNKNOWN', f'access_maps[{i}].buffer', f'unknown buffer {access.buffer!r}'))
     if unknown:
         return tuple(failures+unknown)
+    inverse_loops = {loop.name for loop in s.tile_loops
+                     if _inverse_carried_domain(s, target, loop)}
+    for i, loop in enumerate(s.tile_loops):
+        owners = [p for p in s.pipelines if _pipeline_loop(s, p) == loop]
+        if (loop.carried_buffers and len(owners) == 3
+                and any(p.stages == 1 and any(
+                    op.kind is OperationKind.MMA and op.pipeline == p.name
+                    for op in s.loop_operations(loop)) for p in owners)):
+            check(loop.name in inverse_loops, 'NATIVE_INVERSE_MMA_DOMAIN',
+                  f'tile_loops[{i}]',
+                  'K32 inverse MMA requires exact BF16 RHS publication, '
+                  'one same-warp inverse B stage, four ready arrivals, '
+                  'one completed TMEM result, ordered state and nonoverlapping TMEM columns')
     transpose_stores = _terminal_transpose_stores(s)
     transpose_loads = _input_transpose_loads(s)
     transpose_views = {op.writes[0] for op in s.operations
@@ -506,11 +669,14 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         if not loop.carried_buffers:
             continue
         owners = [p for p in s.pipelines if _pipeline_loop(s, p) == loop]
-        check(len(owners) in (1, 2), 'NATIVE_CARRIED_PIPELINE_COUNT',
+        inverse_route = loop.name in inverse_loops
+        check(len(owners) in (1, 2) or inverse_route and len(owners) == 3,
+              'NATIVE_CARRIED_PIPELINE_COUNT',
               f'tile_loops[{loop_index}].body',
-              'a carried-state loop has one contraction or two ordered contractions')
+              'a carried-state loop has one or two ordered contractions, or the qualified K32 inverse contraction')
         for owner in owners:
-            check(owner.stages == 1 or _prefetch_carried_domain(s, target, loop),
+            check(owner.stages == 1 or _prefetch_carried_domain(s, target, loop)
+                  or inverse_route and owner.stages == 2,
                   'NATIVE_CARRIED_PIPELINE_STAGES',
                   f'pipelines[{s.pipelines.index(owner)}].stages',
                   'carried contractions use one completed stage per chunk or the qualified H64 two-slot prefetch ring')
@@ -569,6 +735,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         if len(scopes) != 1:
             continue
         loop = _pipeline_loop(s, pipeline)
+        if loop is not None and loop.name in inverse_loops and pipeline.stages == 1:
+            # The exact same-warp inverse load plus RHS TMEM publication is
+            # guarded by _inverse_carried_domain, not the TMA producer rule.
+            continue
         if loop is not None:
             pipe_loops[loop.name] = pipeline
         carried = loop is not None and bool(loop.carried_buffers)
@@ -757,8 +927,11 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'native MMA requires explicit M128/N8..256/K16 f16-family and either shared/shared or TMEM-A/shared-B operands')
             if mn_b:
                 b_operand = buffers[op.reads[1]] if len(op.reads) == 2 else None
+                scope = _scope(s, op)
+                inverse_k32 = (scope is not None and scope.name in inverse_loops
+                               and p.tile_shape == (128, 32, 32))
                 check(tensor_a and target.target_id in _TMEM_A_MN_B_EVIDENCE
-                      and p.tile_shape == (128, 32, 128)
+                      and (p.tile_shape == (128, 32, 128) or inverse_k32)
                       and b_operand is not None and b_operand.dtype is DType.BF16
                       and b_operand.swizzle is Swizzle.B64,
                       'NATIVE_MN_MAJOR_B_UNQUALIFIED', path+'.parameters.instruction.operand_major',
@@ -826,7 +999,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                     if barrier is not None:
                         owned_barriers.add(barrier.name)
                 else:
-                    check(op.pipeline is not None and (scope is None or scope.name in pipe_loops),
+                    check((op.pipeline is not None and (scope is None or scope.name in pipe_loops))
+                          or (scope is not None and scope.name in inverse_loops
+                              and op.role == 'mma'),
                           'NATIVE_SHARED_LOAD_SCOPE', path+'.pipeline',
                           'other native global-to-shared staging belongs to a contraction pipeline')
             if p.movement is LoadMovement.TMA:
@@ -1042,11 +1217,14 @@ class _Emitter:
                                  if _prefetch_carried_domain(s, target, loop)}
         self.role_carried = {loop.name for loop in s.tile_loops
                              if _role_carried_domain(s, target, loop)}
+        self.inverse_carried = {loop.name for loop in s.tile_loops
+                                if _inverse_carried_domain(s, target, loop)}
         self.vector_p_stages = {op.op_id for op in s.operations
                                 if _vector_p_stage(s, target, op)}
         self.persistent_carried = {loop.name for loop in s.tile_loops
                                    if (_persistent_carried_domain(s, target, loop)
-                                       or loop.name in self.prefetch_carried)}
+                                       or loop.name in self.prefetch_carried
+                                       or loop.name in self.inverse_carried)}
         self.rootpipes = [p for p in s.pipelines if _pipeline_loop(s,p) is None]
         self.loopvars = {loop.iterator:f'it{i}' for i,loop in enumerate(s.tile_loops)}
         self.axisvars = {axis.name:f'blockIdx.{"xyz"[axis.axis]}' for axis in s.program_map.axes} if s.program_map else {}
@@ -1107,7 +1285,7 @@ class _Emitter:
         """Keep one P view per parity while compute consumes the prior chunk."""
         scope = _scope(self.s, op)
         if (buffer.stages == 2 and scope is not None
-                and scope.name in self.role_carried):
+                and scope.name in self.role_carried | self.inverse_carried):
             return f'({self.loopvars[scope.iterator]}&1)'
         return '0'
     def taddr(self, buffer):
@@ -1244,7 +1422,7 @@ class _Emitter:
 
     def carried_loop(self, loop):
         """Run one complete chunk per trip, publishing the next TMEM phase last."""
-        if loop.name in self.role_carried:
+        if loop.name in self.role_carried | self.inverse_carried:
             self.carried_role_loop(loop)
             return
         pipelines = [p for p in self.s.pipelines if _pipeline_loop(self.s, p) == loop]
@@ -1312,7 +1490,25 @@ class _Emitter:
 
     def carried_role_loop(self, loop):
         """Run copy, MMA and compute at independent chunk positions via barriers."""
-        pipelines = [p for p in self.s.pipelines if _pipeline_loop(self.s, p) == loop]
+        inverse_route = loop.name in self.inverse_carried
+        pipelines = [p for p in self.s.pipelines if _pipeline_loop(self.s, p) == loop
+                     and (not inverse_route or p.stages == 2)]
+        pipelines.sort(key=lambda p: min(
+            loop.body.index(op.op_id) for op in self.s.loop_operations(loop)
+            if op.pipeline == p.name))
+        inverse_pipeline = (next(p for p in self.s.pipelines
+                                 if _pipeline_loop(self.s, p) == loop and p.stages == 1)
+                            if inverse_route else None)
+        inverse_mma = (next(op for op in self.s.loop_operations(loop)
+                            if op.kind is OperationKind.MMA
+                            and op.pipeline == inverse_pipeline.name)
+                       if inverse_pipeline is not None else None)
+        rhs_store = (next(op for op in self.s.operations
+                          if inverse_mma.reads[0] in op.writes)
+                     if inverse_mma is not None else None)
+        rhs_cast = (next(op for op in self.s.operations
+                         if rhs_store.reads[0] in op.writes)
+                    if rhs_store is not None else None)
         p_load = next(op for op in self.s.loop_operations(loop)
                       if op.kind is OperationKind.LOAD and op.pipeline is None
                       and self.b(op.writes[0]).space is MemorySpace.SHARED)
@@ -1327,6 +1523,8 @@ class _Emitter:
             for mma in self.s.operations:
                 if mma.kind is OperationKind.MMA and mma.pipeline == p.name:
                     self.line(f'cake_init({self.barvars[mma.signals[0]]}, 1);')
+        if inverse_mma is not None:
+            self.line(f'cake_init({self.barvars[inverse_mma.signals[0]]}, 1);')
         self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
         self.end()
         self.line('__syncthreads();')
@@ -1347,6 +1545,8 @@ class _Emitter:
         self.begin(f'for (int {var}=0; {var}<{self.trip(loop)}; ++{var})')
         self.issue_prefetched_mma(loop, pipelines[0])
         self.operation(p_load)
+        if inverse_mma is not None:
+            self.issue_inverse_mma(loop, inverse_mma)
         self.issue_prefetched_mma(loop, pipelines[1])
         self.end()
         self.end()
@@ -1357,7 +1557,12 @@ class _Emitter:
         self.begin(f'for (int {var}=0; {var}<{self.trip(loop)}; ++{var})')
         for op in self.s.loop_operations(loop):
             if op.pipeline is None and op is not p_load:
-                self.operation(op)
+                if inverse_route and op is rhs_cast:
+                    self.line(f'// CAKE_OP: {op.op_id} fused into BF16 TMEM publication')
+                elif inverse_route and op is rhs_store:
+                    self.emit_inverse_rhs_store(op, rhs_cast)
+                else:
+                    self.operation(op)
         self.end()
         self.end()
 
@@ -1370,6 +1575,65 @@ class _Emitter:
                 self.line(f'cake_inval(free{self.s.pipelines.index(p)}+{stage});')
         self.end()
         self.invalidate_completions(loop)
+
+    def emit_inverse_rhs_store(self, op, rhs_cast):
+        """Round FP32 RHS once and pack paired BF16 values for K32 TMEM-A."""
+        src = self.names[rhs_cast.reads[0]]
+        dst = self.b(op.writes[0])
+        row = self.row(op)
+        self.line(f'// CAKE_OP: {op.op_id}')
+        self.begin(f'if ({self.role_condition(op.role)})')
+        self.line('#pragma unroll')
+        self.begin('for (int group=0; group<2; ++group)')
+        self.line('uint32_t words[8];')
+        self.line('#pragma unroll')
+        self.begin('for (int pair=0; pair<8; ++pair)')
+        self.line('const int col = group*16 + pair*2;')
+        self.line(f'const uint32_t lo = __bfloat16_as_ushort(__float2bfloat16_rn({src}[col]));')
+        self.line(f'const uint32_t hi = __bfloat16_as_ushort(__float2bfloat16_rn({src}[col+1]));')
+        self.line('words[pair] = lo | (hi << 16);')
+        self.end()
+        operands = ', '.join(f'"r"(words[{i}])' for i in range(8))
+        self.line(f'const uint32_t addr = {self.taddr(dst)} + (({row}/32)*32 << 16) + group*8;')
+        self.line('asm volatile("tcgen05.st.sync.aligned.32x32b.x8.b32 '
+                  '[%0], {%1,%2,%3,%4,%5,%6,%7,%8};" :: '
+                  '"r"(addr), '
+                  f'{operands} : "memory");')
+        self.end()
+        self.line('asm volatile("tcgen05.wait::st.sync.aligned;" ::: "memory");')
+        self.begin('if ((threadIdx.x & 31) == 0)')
+        self.line(f'cake_arrive({self.barvars[op.signals[0]]});')
+        self.end()
+        self.end()
+
+    def issue_inverse_mma(self, loop, mma):
+        """Use the proven M128/N32/K32 TMEM-A and shared inverse B mapping."""
+        var = self.loopvars[loop.iterator]
+        a, b = [self.b(name) for name in mma.reads]
+        dst = self.b(mma.writes[0])
+        rhs_store = next(op for op in self.s.operations if a.name in op.writes)
+        atom_k = mma.parameters.instruction.shape[2]
+        m, n, _ = mma.parameters.tile_shape
+        dtype_bit = 1 if a.dtype is DType.BF16 else 0
+        desc = ((1 << 4) | (dtype_bit << 7) | (dtype_bit << 10)
+                | (1 << 16) | ((n >> 3) << 17) | ((m >> 4) << 24))
+        width, mode = _SWIZZLE[b.swizzle]
+        self.begin(f'if ({self.role_condition(mma.role)} && (threadIdx.x & 31) == 0)')
+        self.line(f'// CAKE_OP: {mma.op_id}')
+        self.line(f'cake_wait({self.barvars[rhs_store.signals[0]]}, ({var}&1));')
+        self.line('asm volatile("tcgen05.fence::after_thread_sync;" ::: "memory");')
+        for start, end in mma.parameters.contribution_ranges:
+            self.line('#pragma unroll')
+            self.begin(f'for (int atom={start//atom_k}; atom<{end//atom_k}; ++atom)')
+            b_step = atom_k * b.dtype.itemsize * n
+            b_desc = (f'cake_desc(cake_smem({self.pointer(b, f"({var}&1)")}) '
+                      f'+ atom*{b_step}, {width*8}, {mode})')
+            self.line(f'cake_mma_tmem_a({self.taddr(dst)}, '
+                      f'{self.taddr(a)} + atom*{atom_k//2}, {b_desc}, '
+                      f'{desc}u, atom != {start//atom_k});')
+            self.end()
+        self.line(f'cake_commit({self.barvars[mma.signals[0]]});')
+        self.end()
 
     def invalidate_completions(self, scope):
         # Only the immediate parent of a contraction owns its final-publication
@@ -1604,8 +1868,12 @@ class _Emitter:
             self.line(f'cake_wait({self.barvars[op.waits[0]]}, {phase});')
             self.line('asm volatile("tcgen05.fence::after_thread_sync;" ::: "memory");')
             rep=op.parameters.source_atom.repetition
-            self.line('#pragma unroll')
-            self.begin(f'for (int col=0; col<{src.shape[1]}; col+={rep * (2 if src.dtype is DType.BF16 else 1)})')
+            single_fp32_atom = (src.dtype is DType.FP32 and src.shape[1] == rep
+                                and scope is not None
+                                and scope.name in self.inverse_carried)
+            if not single_fp32_atom:
+                self.line('#pragma unroll')
+                self.begin(f'for (int col=0; col<{src.shape[1]}; col+={rep * (2 if src.dtype is DType.BF16 else 1)})')
             operands=', '.join(f'%{i}' for i in range(rep))
             if src.dtype is DType.BF16:
                 for i in range(rep):
@@ -1613,15 +1881,19 @@ class _Emitter:
                 outputs=', '.join(f'"=r"(word{i})' for i in range(rep))
                 address=f'{self.taddr(src)} + (({row}/32)*32 << 16) + col/2'
             else:
-                outputs=', '.join(f'"=f"({d}[col+{i}])' for i in range(rep))
-                address=f'{self.taddr(src)} + (({row}/32)*32 << 16) + col'
+                outputs=', '.join(f'"=f"({d}[{i if single_fp32_atom else f"col+{i}"}])' for i in range(rep))
+                address=f'{self.taddr(src)} + (({row}/32)*32 << 16)' + ('' if single_fp32_atom else ' + col')
+                if single_fp32_atom:
+                    self.line(f'const uint32_t addr = {address};')
+                    address = 'addr'
             self.line(f'asm volatile("tcgen05.ld.sync.aligned.32x32b.x{rep}.b32 {{{operands}}}, [%{rep}];" : {outputs} : "r"({address}) : "memory");')
             self.line('asm volatile("tcgen05.wait::ld.sync.aligned;" ::: "memory");')
             if src.dtype is DType.BF16:
                 for i in range(rep):
                     self.line(f'{d}[col+{2*i}] = __ushort_as_bfloat16(uint16_t(word{i}));')
                     self.line(f'{d}[col+{2*i+1}] = __ushort_as_bfloat16(uint16_t(word{i} >> 16));')
-            self.end()
+            if not single_fp32_atom:
+                self.end()
         elif op.kind is OperationKind.TMEM_STORE:
             self.line('#pragma unroll')
             self.begin(f'for (int group=0; group<{src.shape[1]//16}; ++group)')
@@ -1667,9 +1939,10 @@ class _Emitter:
                 scalar_copy()
             self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
             self.line('__syncwarp();')
-            self.begin('if ((threadIdx.x & 31) == 0)')
-            self.line(f'cake_arrive({self.barvars[op.signals[0]]});')
-            self.end()
+            if op.signals:
+                self.begin('if ((threadIdx.x & 31) == 0)')
+                self.line(f'cake_arrive({self.barvars[op.signals[0]]});')
+                self.end()
         elif op.kind is OperationKind.LOAD:
             self.line('#pragma unroll')
             self.begin(f'for (int col=0; col<{_slots(self.s,dst)}; ++col)')
