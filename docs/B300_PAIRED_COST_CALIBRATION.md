@@ -23,7 +23,8 @@ or qualified. Existing `EmpiricalCostModel` instances and the Lab policy remain 
 they are; the B300 scientific Study does not admit empirical candidate selection.
 
 `tools/calibrate_paired_cost.py check-plan /external/candidate` admits a frozen
-candidate snapshot without a GPU. Its `plan.json` names the clean Compiler and
+candidate snapshot outside every Git checkout without a GPU. Its `plan.json`
+names the clean Compiler and
 Executor references, the committed B300 GEMM Study and Workload, three distinct
 complete Schedule files, a sealed baseline bundle **inside the snapshot**, the
 M-axis bindings for `a` and `c`, an exact isolated Triton toolchain identity and

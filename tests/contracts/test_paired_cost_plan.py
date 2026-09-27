@@ -161,6 +161,13 @@ class PairedCostPlanTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Workload binding"):
                 instrument.check_plan(snapshot)
 
+    def test_calibration_snapshot_cannot_live_in_another_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, _ = self.fixture(directory)
+            (Path(directory).resolve() / ".git").mkdir()
+            with self.assertRaisesRegex(ValueError, "outside every checkout"):
+                instrument.check_plan(snapshot)
+
     def test_baseline_record_cannot_name_another_launch_spec(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshot, plan = self.fixture(directory)

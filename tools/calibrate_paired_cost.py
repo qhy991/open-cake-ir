@@ -32,9 +32,13 @@ from open_cake_ir.tasks.workloads import load_workload  # noqa: E402
 
 
 def _external(path: str | Path) -> Path:
-    resolved = Path(path).resolve(strict=True)
-    if resolved == ROOT or ROOT in resolved.parents:
-        raise ValueError("paired calibration snapshot must remain outside source")
+    path = Path(path).absolute()
+    if any(parent.is_symlink() for parent in (path, *path.parents)):
+        raise ValueError("paired calibration external path contains a symlink")
+    resolved = path.resolve(strict=True)
+    if (resolved == ROOT or ROOT in resolved.parents
+            or any((parent / ".git").exists() for parent in (resolved, *resolved.parents))):
+        raise ValueError("paired calibration artifacts must remain outside every checkout")
     return resolved
 
 
