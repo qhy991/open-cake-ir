@@ -207,6 +207,18 @@ c=95 case, qualified latency, or a gain against the equal-reset sequential
 control. Promotion disposition remains **no merge or Lab rule** pending those
 gates.
 
+Broker job `gpuq-6a9bd1a3b62a` extended `b360415f` to four frozen routes
+× K=4/2/1 at c=64 and budget 46920. All 12 separately sealed controls
+passed: 0/50,331,648 FP64-oracle failures, exact agreement for 960 CPU/GPU
+tile-event count slots, zero output bit differences from v3, and no payload or
+steal-cap discrepancies. Every control retained positive same-rank evidence
+that Cake stage work advanced while communication CTAs produced the next
+event. The report and overlap records are retained at
+`/home/qinhaiyan/cake-weave-dual-role-b360415f-matrix12/` and mirrored
+locally. These results establish the bounded pipeline across the frozen
+route/K matrix on that code commit; they do not transfer automatically to a
+successor memory-ordering revision or qualify a latency gain.
+
 The first barrier revision counted communication CTA arrivals with a plain
 atomic add. That atomicity alone did not state how each CTA's prior tile and
 metadata writes reached the last arrival. Successor `c8550363` uses PTX
