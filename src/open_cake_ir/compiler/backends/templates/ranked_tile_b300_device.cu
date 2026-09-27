@@ -186,22 +186,19 @@ __global__ void tile_schedule_probe(
       if (block==0 && threadIdx.x<kExperts)
         assign_expert_tiles(source_params,selected_event,chunk_tokens,
                             int(threadIdx.x));
-      // Only CTA 0 consumes the tile count before task expansion. Synchronize
-      // its threads here; the following producer barrier publishes both tile
-      // assignment and task counts to the gather CTAs together.
-      if (block==0) __syncthreads();
+      producer_barrier(source_params,selected_event,3,communication_ctas);
       record_phase(source_params,selected_event,6,block);
       if (block==0 && threadIdx.x<kStages)
         expand_event_tasks(source_params,task_counts,
                            selected_event,int(threadIdx.x));
-      producer_barrier(source_params,selected_event,3,communication_ctas);
+      producer_barrier(source_params,selected_event,4,communication_ctas);
       record_phase(source_params,selected_event,7,block);
       gather_event_rows(source_params,selected_event,block,communication_ctas);
       __threadfence_system();
       // Producer-side proxy ordering precedes the tile-ready release. A
       // consumer also fences after acquire before issuing Cake's TMA reads.
       asm volatile("fence.proxy.async.global;" ::: "memory");
-      producer_barrier(source_params,selected_event,4,communication_ctas);
+      producer_barrier(source_params,selected_event,5,communication_ctas);
       record_phase(source_params,selected_event,8,block);
       if (block==0 && threadIdx.x==0)
         publish_event_snapshot(source_params,selected_event);
@@ -366,7 +363,7 @@ constexpr int R=4,T=512,K=8,E=128,H=2048;
 static_assert(R==kSourceRanks,"source-event count follows the EP world size");
 constexpr int LOCAL_E=E/R,MAX_ROWS=R*T,ROUTES=R*T*K,LOCAL_ROUTES=T*K;
 constexpr int kPhasePoints=10;
-constexpr int kProducerPhases=5;
+constexpr int kProducerPhases=6;
 constexpr int PAYLOAD_CAP=(R-1)*T;
 constexpr size_t HIDDEN_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 constexpr size_t IDS_BYTES=size_t(ROUTES)*sizeof(int);
