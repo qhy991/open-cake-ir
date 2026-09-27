@@ -53,8 +53,12 @@ state; a missing child `GPUQ_JOB_ID` is never replaced by a guessed job. Under
 that assignment the controller seals the candidate and baseline for each of
 the nine observations and calls the common paired evaluator in the inherited
 broker process group. Each worker receipt is checked before its cost row is
-retained. Post-release Run and stage-receipt replay, followed by the fitter,
-remains to be integrated.
+retained. After the node reports terminal completion, `fit RUN --output NEW_DIR`
+replays the task, source, CPU compile bundles, both stage receipts, broker
+assignment and every raw evaluator result. It publishes `model.json` only when
+the held-out audit passes; failures leave an `audit.json` with the reason. This
+offline action does not allocate a GPU or turn the independent calibration into
+Study promotion.
 
 | Model context field | Paired owner |
 | --- | --- |

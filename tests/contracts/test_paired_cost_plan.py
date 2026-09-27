@@ -403,6 +403,103 @@ class PairedCostPlanTest(unittest.TestCase):
             self.assertEqual((result["status"], result["validity"]), ("passed", "valid"))
             self.assertEqual(result["metrics"]["observation_count"], 9)
 
+    def test_terminal_fit_checks_receipts_before_publishing_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            run = snapshot.parent
+            task = self.task_fixture(run, plan)
+            compile_stage = run / "stages/compile"
+            compile_stage.mkdir(parents=True)
+            isolated = self.FakeIsolatedCompiler(plan["toolchain_identity"])
+            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
+                instrument.prepare_compile(snapshot, compile_stage, isolated)
+            run_id = "SYNTHETIC-NOT-A-GPU-RUN"
+            node = {"run_id": run_id, "task_id": task["task_id"],
+                    "task_sha256": "a" * 64, "candidate_sha256": "b" * 64}
+            write(run / "request.json", {"schema": "kernelinfra.request.v1", **node})
+            write(run / "state.json", {"schema": "kernelinfra.state.v1", **node,
+                                       "state": "completed", "terminal_at": "SYNTHETIC",
+                                       "run_dir": str(run)})
+            checked = instrument.check_plan(snapshot)
+            baseline = load_baseline_bundle(ROOT, snapshot / plan["baseline_bundle_path"])
+            candidates = {spec["id"]: load_baseline_bundle(ROOT, compile_stage / spec["id"] / "candidate.json")
+                          for spec in plan["candidates"]}
+            policy = json.loads((ROOT / plan["study_path"]).read_text())["evaluation_protocol"]
+            assignment = {"run_id": run_id, "broker_job_id": "gpuq-123456789abc",
+                          "physical_gpu": 7,
+                          "node_state": {"schema": "kernelinfra.state.v1", **node,
+                                         "stage_id": "collection", "stage_kind": "judge",
+                                         "stage_index": 1}}
+            stage = run / "stages/collection"
+            stage.mkdir()
+            write(stage / "execution-context.json", {**assignment,
+                                                      "broker_peer": [100, 321, 654], "uid": 321})
+            rows = []
+            for spec in plan["observations"]:
+                candidate = candidates[spec["candidate_id"]]
+                observation_dir = stage / spec["id"]
+                instrument._seal_observation(observation_dir, candidate, baseline, plan, policy)
+                (observation_dir / "result.json").write_text('{"synthetic":true}')
+                candidate_index = [item["id"] for item in plan["candidates"]].index(spec["candidate_id"])
+                factor = {"fit": 1, "calibration": 1.02, "audit": 1.03}[spec["split"]]
+                schedule_file = next(item["schedule"] for item in plan["candidates"]
+                                     if item["id"] == spec["candidate_id"])
+                row = {"candidate_id": spec["candidate_id"], "split": spec["split"],
+                       "schedule": json.loads((snapshot / schedule_file).read_text()),
+                       "observation": {"candidate_record_sha256": candidate.canonical_sha256,
+                                       "baseline_record_sha256": baseline.canonical_sha256,
+                                       "workload_sha256": self.workload.canonical_sha256,
+                                       "case_id": "primary",
+                                       "evaluation_protocol_sha256": sha256(canonical_json_bytes(policy)).hexdigest(),
+                                       "job_id": assignment["broker_job_id"],
+                                       "gpu_uuid": "GPU-SYNTHETIC",
+                                       "candidate_us": (10 + candidate_index * 10) * factor,
+                                       "baseline_us": 100, "sample_count": 250}}
+                write(observation_dir / "observation.json", row)
+                rows.append(row)
+            write(stage / "observations.json", {"rows": rows, "context": checked["context"],
+                                                "assignment": assignment})
+            for name, kind, execution in (("compile", "compile", "local"),
+                                          ("collection", "judge", "broker")):
+                directory = run / "stages" / name
+                receipt = {"schema": "kernelinfra.stage-receipt.v1", "run_id": run_id,
+                           "stage_id": name, "stage_kind": kind, "execution": execution,
+                           "judge_identity": self.executor.executor_id,
+                           "exit_code": 0, "judge_result_valid": True, "error": None,
+                           "gpu_ids": [7] if name == "collection" else [],
+                           "broker_job_id": assignment["broker_job_id"] if name == "collection" else None}
+                write(directory / "receipt.json", receipt)
+                artifacts = {file.relative_to(directory).as_posix(): file.relative_to(directory).as_posix()
+                             for file in directory.rglob("*") if file.is_file()
+                             and file not in {directory / "result.json", directory / "receipt.json"}}
+                write(directory / "result.json", {"schema": "kernelinfra.stage-result.v1",
+                                                  "status": "passed", "validity": "valid",
+                                                  "artifacts": artifacts})
+            write(run / "result.json", {"schema": "kernelinfra.run-result.v1", **node,
+                                        "outcome": "completed", "validity": "valid",
+                                        "frontier_eligible": False,
+                                        "stages": [{"id": name, "kind": kind, "status": "passed", "validity": "valid"}
+                                                   for name, kind in (("compile", "compile"),
+                                                                      ("collection", "judge"))]})
+            by_directory = {spec["id"]: row for spec, row in zip(plan["observations"], rows, strict=True)}
+            with patch.object(instrument, "_observed_evaluation",
+                              side_effect=lambda directory, *args: by_directory[directory.name]):
+                self.assertEqual(instrument.fit_run(run, run / "fit-output"), 0)
+            model = json.loads((run / "fit-output/model.json").read_text())
+            self.assertEqual(len(model["curves"]), 3)
+            self.assertEqual(model["reported_evidence"]["run_id"], run_id)
+            receipt_path = stage / "receipt.json"
+            tampered = json.loads(receipt_path.read_text())
+            tampered["broker_job_id"] = "gpuq-aaaaaaaaaaaa"
+            write(receipt_path, tampered)
+            with patch.object(instrument, "_observed_evaluation",
+                              side_effect=lambda directory, *args: by_directory[directory.name]):
+                self.assertEqual(instrument.fit_run(run, run / "tampered-output"), 1)
+            failure = json.loads((run / "tampered-output/audit.json").read_text())
+            self.assertFalse(failure["passed"])
+            self.assertIn("broker assignment", failure["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

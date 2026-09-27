@@ -32,7 +32,7 @@ from open_cake_ir.lab.executor import ExecutorRevision, _external_file  # noqa: 
 from open_cake_ir.lab.selection import _paired_empirical_context  # noqa: E402
 from open_cake_ir.lab.process import sanitized_environment  # noqa: E402
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler  # noqa: E402
-from open_cake_ir.lab.paired_cost_calibration import observed_paired_cost  # noqa: E402
+from open_cake_ir.lab.paired_cost_calibration import derive_paired_cost_model, observed_paired_cost  # noqa: E402
 from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment  # noqa: E402
 from open_cake_ir.tasks.launch import parse_launch_manifest  # noqa: E402
@@ -472,10 +472,11 @@ def _observed_evaluation(directory: Path, spec: dict, plan: dict, policy: dict,
     from open_cake_ir.tasks import evaluate as worker
 
     authority = worker._load_authority(_external_file(directory, "request.json", "paired evaluator request"))
+    expected_request, _ = _paired_request(candidate, baseline, plan, policy)
     if (authority.candidate.canonical_sha256 != candidate.canonical_sha256
             or authority.baseline is None
             or authority.baseline.canonical_sha256 != baseline.canonical_sha256
-            or authority.request["evaluation_protocol"] != policy):
+            or canonical_json_bytes(authority.request) != canonical_json_bytes(expected_request)):
         raise ValueError("paired evaluator request differs from frozen participants")
     result = _read(_external_file(directory, "result.json", "paired evaluator result"))
     if (result.get("schema_version") != 1 or result.get("job_id") != job_id
@@ -605,10 +606,147 @@ def collect_device() -> int:
         return 1
 
 
+def _new_external(path: str | Path) -> Path:
+    path = Path(path).absolute()
+    if path.is_symlink():
+        raise ValueError("paired cost derived output cannot be a symlink")
+    parent = _external(path.parent)
+    output = parent / path.name
+    if output.exists():
+        raise ValueError("paired cost derived output must be new")
+    return output
+
+
+def _completed_run(run: Path, task: dict, executor: ExecutorRevision) -> tuple[dict, dict]:
+    result = _read(_external_file(run, "result.json", "paired cost run result"))
+    if (result.get("schema") != "kernelinfra.run-result.v1"
+            or result.get("outcome") != "completed" or result.get("validity") != "valid"
+            or result.get("task_id") != task["task_id"]
+            or result.get("frontier_eligible") is not False
+            or not isinstance(result.get("run_id"), str) or not result["run_id"]
+            or [(row.get("id"), row.get("kind"), row.get("status"), row.get("validity"))
+                for row in result.get("stages", [])] != [
+                    ("compile", "compile", "passed", "valid"),
+                    ("collection", "judge", "passed", "valid")]):
+        raise ValueError("paired cost run is not terminal, valid calibration evidence")
+    state = _read(_external_file(run, "state.json", "paired cost terminal state"))
+    request = _read(_external_file(run, "request.json", "paired cost node request"))
+    if (any(result.get(key) != request.get(key) or state.get(key) != request.get(key)
+            for key in ("run_id", "task_id", "task_sha256", "candidate_sha256"))
+            or state.get("run_id") != result["run_id"] or state.get("state") != "completed"
+            or state.get("terminal_at") is None):
+        raise ValueError("paired cost node has not reported terminal completion")
+    receipts = {}
+    for stage_spec in task["stages"]:
+        name = stage_spec["id"]
+        stage = run / "stages" / name
+        receipt = _read(_external_file(stage, "receipt.json", "paired cost stage receipt"))
+        expected = {"schema": "kernelinfra.stage-receipt.v1", "run_id": result["run_id"],
+                    "stage_id": name, "stage_kind": stage_spec["kind"],
+                    "execution": stage_spec["execution"],
+                    "judge_identity": executor.executor_id,
+                    "exit_code": 0, "judge_result_valid": True, "error": None}
+        if any(receipt.get(key) != value for key, value in expected.items()):
+            raise ValueError(f"paired cost {name} stage receipt differs")
+        stage_result = _read(_external_file(stage, "result.json", "paired cost stage result"))
+        if (stage_result.get("schema") != "kernelinfra.stage-result.v1"
+                or stage_result.get("status") != "passed"
+                or stage_result.get("validity") != "valid"
+                or not isinstance(stage_result.get("artifacts"), dict)):
+            raise ValueError(f"paired cost {name} stage result differs")
+        for relative in stage_result["artifacts"].values():
+            _external_file(stage, relative, "paired retained stage artifact")
+        receipts[name] = receipt
+    ids = receipts["collection"].get("gpu_ids")
+    if (not isinstance(ids, list) or len(ids) != 1 or type(ids[0]) is not int
+            or ids[0] < 0
+            or not isinstance(receipts["collection"].get("broker_job_id"), str)
+            or re.fullmatch(r"gpuq-[0-9a-f]{12}", receipts["collection"]["broker_job_id"]) is None):
+        raise ValueError("paired cost collection receipt names no exclusive broker allocation")
+    return result, receipts
+
+
+def fit_run(run: str | Path, output: str | Path) -> int:
+    """Replay a terminal Run, then publish only a held-out-qualified model."""
+    output = _new_external(output)
+    output.mkdir()
+    try:
+        run = _external(run)
+        snapshot = run / "candidate"
+        checked = check_plan(snapshot)
+        plan = _read(_external_file(snapshot, "plan.json", "paired cost plan"))
+        executor = ExecutorRevision.load_reference(ROOT, plan["executor_revision"],
+                                                   "paired_cost.executor_revision")
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        workload = load_workload(_external_file(ROOT, plan["workload"]["path"],
+                                                "paired cost Workload"))
+        task = _task(run, plan, executor, workload)
+        run_result, receipts = _completed_run(run, task, executor)
+        compiled = _compiled_candidates(run, plan, checked, compiler, workload)
+        baseline = load_baseline_bundle(ROOT, _external_file(snapshot, plan["baseline_bundle_path"],
+                                                             "paired cost baseline bundle"))
+        study = _read(_external_file(ROOT, plan["study_path"], "paired cost Study"))
+        policy = study["evaluation_protocol"]
+        context = _read(_external_file(run / "stages/collection", "execution-context.json",
+                                       "paired cost retained broker assignment"))
+        request = _read(_external_file(run, "request.json", "paired cost node request"))
+        assignment = {key: context[key] for key in ("run_id", "broker_job_id", "physical_gpu", "node_state")}
+        expected_node = {"schema": "kernelinfra.state.v1", "run_id": run_result["run_id"],
+                         "task_id": task["task_id"],
+                         "task_sha256": request["task_sha256"],
+                         "candidate_sha256": request["candidate_sha256"],
+                         "stage_id": "collection", "stage_kind": "judge", "stage_index": 1}
+        peer = context.get("broker_peer")
+        if (assignment["run_id"] != run_result["run_id"]
+                or assignment["broker_job_id"] != receipts["collection"]["broker_job_id"]
+                or assignment["physical_gpu"] != receipts["collection"]["gpu_ids"][0]
+                or assignment["node_state"] != expected_node
+                or not isinstance(peer, list) or len(peer) != 3
+                or any(type(item) is not int for item in peer)
+                or context.get("uid") != peer[1]):
+            raise ValueError("paired cost retained broker assignment differs from node receipts")
+        rows = []
+        for spec in plan["observations"]:
+            candidate = compiled[spec["candidate_id"]]
+            schedule = _read(_external_file(snapshot,
+                                            next(item["schedule"] for item in plan["candidates"]
+                                                 if item["id"] == spec["candidate_id"]),
+                                            "paired frozen Schedule"))
+            directory = run / "stages/collection" / spec["id"]
+            row = _observed_evaluation(directory, spec, plan, policy, candidate, baseline,
+                                       assignment["broker_job_id"], schedule)
+            if _read(_external_file(directory, "observation.json", "retained paired observation")) != row:
+                raise ValueError("paired cost retained observation differs from raw replay")
+            rows.append(row)
+        index = _read(_external_file(run / "stages/collection", "observations.json",
+                                     "paired cost observation index"))
+        if index != {"rows": rows, "context": checked["context"], "assignment": assignment}:
+            raise ValueError("paired cost observation index differs from raw replay")
+        passed, model, audit = derive_paired_cost_model(
+            model_id=plan["model_id"], compiler_revision_id=checked["compiler_revision_id"],
+            target=plan["target"], executor=executor,
+            workload_sha256=workload.canonical_sha256, case_id=plan["case_id"],
+            evaluation_protocol=policy, baseline=baseline, rows=rows,
+            varying_dimensions=plan["varying_dimensions"], acceptance=plan["acceptance"],
+        )
+        model["reported_evidence"].update(run_id=run_result["run_id"], plan_id=plan["plan_id"])
+        _write_new(output / "audit.json", {**audit, "run_id": run_result["run_id"]})
+        if passed:
+            _write_new(output / "model.json", model)
+        return 0 if passed else 1
+    except Exception as error:
+        if not (output / "audit.json").exists():
+            _write_new(output / "audit.json", {"passed": False,
+                                               "failure_class": type(error).__name__,
+                                               "reason": str(error)})
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("check-plan", "collect-compile", "collect-device"))
+    parser.add_argument("action", choices=("check-plan", "collect-compile", "collect-device", "fit"))
     parser.add_argument("snapshot", type=Path, nargs="?")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.action == "collect-compile":
         if args.snapshot is not None:
@@ -618,6 +756,10 @@ def main() -> int:
         if args.snapshot is not None:
             parser.error("collect-device reads the GPU Infra run from its environment")
         return collect_device()
+    if args.action == "fit":
+        if args.snapshot is None or args.output is None:
+            parser.error("fit requires a terminal Run and a new --output directory")
+        return fit_run(args.snapshot, args.output)
     if args.snapshot is None:
         parser.error("check-plan requires an external candidate snapshot")
     print(json.dumps(check_plan(args.snapshot), indent=2, sort_keys=True))
