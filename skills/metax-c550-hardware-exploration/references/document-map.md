@@ -53,3 +53,15 @@ full-text access. Use as `sample_hypothesis` numerical background, then qualify
 real Cake-generated artifacts under the Workload oracle and exact MACA runtime.
 The fixed nine-partial TwoSum screen was flat; read the platform result before
 repeating it or inferring speed from a numerical algorithm's source shape.
+
+## Explicit-rounding API background
+
+[NVIDIA CUDA Math API13.1.2: single-precision intrinsics](https://docs.nvidia.com/cuda/archive/13.1.2/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__SINGLE.html),
+reviewed2026-09-27, sections `__fmaf_rd/rn/ru/rz` and `__fmaf_ieee_*`. This is
+primary documentation for the CUDA-compatible wrapper's expected arithmetic,
+including exact-zero signs and NaN/infinity cases. The IEEE-suffixed CUDA variants
+have a distinct denormal/FTZ contract; do not infer that behavior for plain MACA
+functions or rename a contract to imply it. This reference explains API semantics,
+not MetaX instruction support, mode-register encoding or performance. Use installed
+MACA linked bodies and C550 output words for those platform questions; observed
+state restoration is in the focused rounding reference and platform result.
