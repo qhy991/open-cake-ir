@@ -32,6 +32,22 @@ FlagTree `0.5.1+metax3.1`／Triton API `3.1.0` 捕获仍由旧源码提交
 命令生成并绑定解释器、包、构建工具、MACA runtime、MCPTI 库及其 API 版本。
 每个 worker 都重新 admission；实际已映射的库必须是捕获的绝对路径。
 
+## 修复后的封存 FP8 Workload 验证
+
+源码 `875724d4` 的 C550-2 broker job `maca-1a6e9f748221` 通过 common worker
+加载已封存的 native ELF；没有 JIT、重新编译或 fallback。NT v2 Workload 的
+37 组固定 `M=N=K=64` 输入覆盖 151552 个输出，全部比较通过，最大绝对误差为 0，
+FP8 输入不变。实际计数为 37 次模块加载、37 次 kernel 调用和 0 次计时。
+原始 worker 结果、correctness-output、launch receipt 与 null timing artifact
+保留于 checkout 外的
+`open-cake-ir-evidence/metax-native-abi-request-875724d4/device-run/`，收集复核为
+同目录上级的 `device-verification.json`。
+
+这关闭 [F-2026-09-27-001](../findings/2026-09-27-001-metax-native-scratch-abi.json)
+的原生 launcher 参数缺口。范围是该精确 Workload 和运行时的封存原生正确性，
+没有逐 bit GPU 输出审计、性能、其他形状、原生 FP8 MMA 或框架资格。
+测量与 profiler 入口的软件准入已同步；它们的设备资格仍需各自收据。
+
 ## 编译与执行
 
 编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。
