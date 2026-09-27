@@ -555,20 +555,25 @@ __device__ void dispatch_source_chunk(const BinParams* params,int block,
       if (slot<0) continue;
       Bin* remote=params->bins[owner];
       __nv_bfloat16* output=remote->payload+size_t(slot)*H;
-      // Each slot and token starts on a 16-byte boundary. Move 16 bytes per
-      // instruction pair; the subsequent CTA barrier and system release keep
-      // the existing cross-GPU payload publication order.
-      for (int byte=int(threadIdx.x)*16;
-           byte<H*int(sizeof(__nv_bfloat16));byte+=int(blockDim.x)*16) {
-        const char* source=reinterpret_cast<const char*>(input)+byte;
-        char* destination=reinterpret_cast<char*>(output)+byte;
-        uint32_t a,b,c,d;
-        asm volatile("ld.global.v4.b32 {%0,%1,%2,%3}, [%4];"
-                     : "=r"(a),"=r"(b),"=r"(c),"=r"(d)
-                     : "l"(source) : "memory");
-        asm volatile("st.global.v4.b32 [%0], {%1,%2,%3,%4};"
-                     :: "l"(destination),"r"(a),"r"(b),"r"(c),"r"(d)
-                     : "memory");
+      // Each slot is aligned; a caller's hidden tensor may start at a BF16
+      // aligned subview. Preserve that admitted input with the scalar path.
+      // The token stride is 4096 bytes, so the source alignment is stable.
+      if ((reinterpret_cast<std::uintptr_t>(input)&15u)==0) {
+        for (int byte=int(threadIdx.x)*16;
+             byte<H*int(sizeof(__nv_bfloat16));byte+=int(blockDim.x)*16) {
+          const char* source=reinterpret_cast<const char*>(input)+byte;
+          char* destination=reinterpret_cast<char*>(output)+byte;
+          uint32_t a,b,c,d;
+          asm volatile("ld.global.v4.b32 {%0,%1,%2,%3}, [%4];"
+                       : "=r"(a),"=r"(b),"=r"(c),"=r"(d)
+                       : "l"(source) : "memory");
+          asm volatile("st.global.v4.b32 [%0], {%1,%2,%3,%4};"
+                       :: "l"(destination),"r"(a),"r"(b),"r"(c),"r"(d)
+                       : "memory");
+        }
+      } else {
+        for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
+          output[feature]=input[feature];
       }
       __syncthreads();
       // CAKE_EFFECT: payload.publish
