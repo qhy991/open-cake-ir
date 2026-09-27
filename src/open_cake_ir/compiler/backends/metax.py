@@ -1,10 +1,9 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
-
+from types import MappingProxyType
 from ..diagnostics import Finding
 from ..ir import DType, OperationKind, Schedule
 from ..target import Target
 from .common import refusal
-from types import MappingProxyType
 
 
 # Emission spelling only; instruction kind and dtype belong to the registry.

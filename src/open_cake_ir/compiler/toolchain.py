@@ -55,6 +55,12 @@ _TRITON_MODULES = frozenset({"triton", "tl", "libdevice"})
 _TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range", "float"}
 
 
+def _libdevice_function_allowed(name, requirements) -> bool:
+    from .backends.metax import DIRECTED_FMA_FUNCTIONS
+    return (name == "tanh" or requirements.get("code_object") == CodeObject.MCFATBIN.value
+            and name in DIRECTED_FMA_FUNCTIONS.values())
+
+
 def _approved_libdevice_call(node, requirements) -> bool:
     if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute)
         or not isinstance(node.func.value, ast.Name)
@@ -62,9 +68,7 @@ def _approved_libdevice_call(node, requirements) -> bool:
         return False
     if node.func.attr == "tanh":
         return True  # Preserve the existing source boundary.
-    from .backends.metax import DIRECTED_FMA_FUNCTIONS
-    return (requirements.get("code_object") == CodeObject.MCFATBIN.value
-            and node.func.attr in DIRECTED_FMA_FUNCTIONS.values()
+    return (_libdevice_function_allowed(node.func.attr, requirements)
             and len(node.args) == 3 and not node.keywords
             and all(not isinstance(arg, ast.Starred) for arg in node.args))
 
@@ -226,10 +230,8 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                         if not allowed:
                             raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract or materialization identity at line {node.lineno}")
                 elif isinstance(node.value, ast.Name) and node.value.id == "libdevice":
-                    call = parents.get(node)
                     allowed = (has_libdevice and isinstance(node.ctx, ast.Load)
-                               and isinstance(call, ast.Call) and call.func is node
-                               and _approved_libdevice_call(call, requirements))
+                               and _libdevice_function_allowed(node.attr, requirements))
                 else:
                     allowed = node.attr == "to" and isinstance(node.ctx, ast.Load)
                 if not allowed:
