@@ -128,8 +128,9 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
         document = json.loads(assessment.schedule_bytes)
         observed_abi = [(b["name"], b["dtype"], b["shape"], b["mode"])
                         for b in document["buffers"] if b["space"] == "global"]
-        if document["lowering"] != route or observed_abi != expected_abi:
-            raise ValueError(f"paired cost Schedule {item['id']} differs from Study route or Workload ABI")
+        if (document["lowering"] != route or observed_abi != expected_abi
+                or document["metadata"].get("workload_contract_sha256") != workload.canonical_sha256):
+            raise ValueError(f"paired cost Schedule {item['id']} differs from Study route or Workload binding")
         distinct = {**document, "schedule_id": "candidate-display-id"}
         signatures.add(json.dumps(distinct, sort_keys=True, separators=(",", ":")).encode())
     if len(signatures) != 3:

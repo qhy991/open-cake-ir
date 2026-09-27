@@ -65,6 +65,7 @@ class PairedCostPlanTest(unittest.TestCase):
             schedule = copy.deepcopy(self.base)
             schedule["schedule_id"] = name
             schedule["residency"]["registers_per_thread"] = cap
+            schedule["metadata"]["workload_contract_sha256"] = self.workload.canonical_sha256
             relative = f"schedules/{name}.json"
             write(snapshot / relative, schedule)
             candidates.append({"id": name, "schedule": relative})
@@ -111,6 +112,16 @@ class PairedCostPlanTest(unittest.TestCase):
             next(buffer for buffer in schedule["buffers"] if buffer["name"] == "a")["shape"][0] = 256
             write(source, schedule)
             with self.assertRaises(ValueError):
+                instrument.check_plan(snapshot)
+
+    def test_corpus_placeholder_workload_identity_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            source = snapshot / plan["candidates"][0]["schedule"]
+            schedule = json.loads(source.read_text())
+            schedule["metadata"]["workload_contract_sha256"] = "0" * 64
+            write(source, schedule)
+            with self.assertRaisesRegex(ValueError, "Workload binding"):
                 instrument.check_plan(snapshot)
 
     def test_baseline_record_cannot_name_another_launch_spec(self):

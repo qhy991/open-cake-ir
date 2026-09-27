@@ -27,6 +27,8 @@ candidate snapshot without a GPU. Its `plan.json` names the clean Compiler and
 Executor references, the committed B300 GEMM Study and Workload, three distinct
 complete Schedule files, a sealed baseline bundle **inside the snapshot**, the
 M-axis bindings for `a` and `c`, acceptance limits, and all nine observations.
+Each Schedule must replace the Corpus starter's placeholder Workload identity with
+the frozen Workload's canonical identity before admission.
 The observation order is three fit candidates, the reversed calibration order,
 then a rotated held-out audit order. The checker derives the paired context from
 the Study and baseline; the plan cannot substitute a free-text timer or a mutable
