@@ -39,6 +39,7 @@ class FitterBindingTest(unittest.TestCase):
         base = json.loads((ROOT / "corpus/schedules/fma-b8-smoke.json").read_text())
         base["target"] = target
         cases, curves, rows = [], [], []
+        duration_by_id = {}
         collector = Path(instrument.__file__).read_bytes()
         assessment = self.compiler.assess(base)
         revision = assessment.compiler_revision_id
@@ -60,7 +61,8 @@ class FitterBindingTest(unittest.TestCase):
                 cubin = b"\x7fELF-SYNTHETIC-NOT-EXECUTABLE-" + case["id"].encode()
                 resource = CompiledResources(lowering.source_sha256, sha256(cubin).hexdigest(), target, lowering.toolchain_requirements["kernel_entry_point"], 128, 16, 0, 0, 0, 0, "synthetic", "synthetic")
                 duration = 10 + variant + extent / 16
-                row = {**case, "grid": list(lowering.toolchain_requirements["grid"]), "profile": {"compiled_resources": resource.as_dict()}, "correct": True, "inputs_unchanged": True, "quality_passed": True, "samples_us": [[duration] * 2 for _ in range(2)]}
+                duration_by_id[case["id"]] = duration
+                row = {**case, "grid": list(lowering.toolchain_requirements["grid"]), "profile": {"compiled_resources": resource.as_dict()}, "correct": True, "inputs_unchanged": True, "quality_passed": True, "samples_us": []}
                 rows.append(row)
                 path = run / "stages/compile" / f"{len(rows)-1:04d}"
                 write(path / "schedule.json", json.loads(assessment.schedule_bytes))
@@ -87,7 +89,7 @@ class FitterBindingTest(unittest.TestCase):
             path.mkdir(parents=True, exist_ok=True)
             (path / "collector.py").write_bytes(collector)
             write(path / "plan.json", plan)
-            write(path / "observations.json", {"schema_version": 1, "runtime": {"compiler_version": "synthetic"}, "quality_passed": True, "rows": rows})
+            write(path / "observations.json", {"schema_version": 1, "runtime": {"compiler_version": "synthetic"}, "device_checks_passed": True, "rows": rows})
             write(path / "receipt.json", {"execution": "broker", "exit_code": 0, "judge_result_valid": True, "broker_job_id": "synthetic-not-an-actual-job"})
             stages.append({"id": phase, "status": "passed", "validity": "valid"})
         write(run / "result.json", {"outcome": "completed", "validity": "valid", "run_id": "SYNTHETIC-NOT-A-GPU-RUN", "stages": stages})
@@ -102,7 +104,7 @@ class FitterBindingTest(unittest.TestCase):
                 common = {"device": 0, "context": 1, "stream": 7}
                 events.extend([
                     {"cat": "kernel", "name": "FillFunctor<unsigned char>", "ts": position * 100, "dur": 1, "args": common},
-                    {"cat": "kernel", "name": row["profile"]["compiled_resources"]["entry_point"], "ts": position * 100 + 2, "dur": row["samples_us"][repetition][0], "args": {**common, "grid": row["grid"], "block": [128, 1, 1], "correlation": position + 1}},
+                    {"cat": "kernel", "name": row["profile"]["compiled_resources"]["entry_point"], "ts": position * 100 + 2, "dur": duration_by_id[row["id"]], "args": {**common, "grid": row["grid"], "block": [128, 1, 1], "correlation": position + 1}},
                     {"cat": "cuda_driver", "name": "cuLaunchKernel", "args": {"correlation": position + 1}},
                 ])
             path = run / "stages/collection"

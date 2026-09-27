@@ -454,25 +454,20 @@ def _collect():
                 torch.cuda.synchronize()
             observation.export_chrome_trace(str(stage / f"cupti-trace-{repetition}.json"))
             _write(stage / f"launch-order-{repetition}.json", order)
-            for row, samples in zip(rows, _trace_samples(stage, repetition, plan, rows), strict=True):row["samples_us"].append(samples)
     quality = True
     for row, (_, module, cpu, inputs, output, expected, tolerance) in zip(rows, launches, strict=True):
         deviation = (output.cpu() - expected).abs().max().item()
         row["correct"] = math.isfinite(deviation) and deviation <= tolerance
         row["inputs_unchanged"] = all(torch.equal(tensor.cpu(), original) for tensor, original in zip(inputs, cpu, strict=True))
         row["quality_passed"] = row["correct"] and row["inputs_unchanged"]
-        if kind == "profile":
-            row["summaries"] = [{"median_us": statistics.median(values), "cv": statistics.pstdev(values) / statistics.mean(values)} for values in row["samples_us"]]
-            medians = [item["median_us"] for item in row["summaries"]]
-            row["repeat_median_ratio"] = max(medians) / min(medians)
-            row["quality_passed"] &= row["repeat_median_ratio"] <= plan["acceptance"]["maximum_repeat_median_ratio"] and all(item["cv"] <= plan["acceptance"]["maximum_cohort_cv"] for item in row["summaries"])
         quality &= row["quality_passed"]
         _driver_call(driver, "cuModuleUnload", module, outputs=0)
-    _write(stage / "observations.json", {"schema_version": 1, "runtime": runtime, "quality_passed": quality, "rows": rows})
+    _write(stage / "observations.json", {"schema_version": 1, "runtime": runtime,
+                                          "device_checks_passed": quality, "rows": rows})
     artifacts = {"observations": "observations.json", "plan": "plan.json", "collector": "collector.py", "execution_context": "execution-context.json"}
     for path in sorted(stage.glob("*trace-*.json")):artifacts[path.stem] = path.name
     for path in sorted(stage.glob("launch-order-*.json")):artifacts[path.stem] = path.name
-    _write(os.environ["KERNELINFRA_RESULT"], {"schema": "kernelinfra.stage-result.v1", "status": "passed" if quality else "failed", "validity": "valid" if quality else "unknown", "summary": "all cases passed" if quality else "quality gate failed; do not fit", "workloads": [{"id": row["id"], "correct": row["correct"]} for row in rows] if kind == "correctness" else [], "artifacts": artifacts, "metrics": {"quality_passed": quality, "case_count": len(rows)}})
+    _write(os.environ["KERNELINFRA_RESULT"], {"schema": "kernelinfra.stage-result.v1", "status": "passed" if quality else "failed", "validity": "valid" if quality else "unknown", "summary": "device checks and trace capture passed; timing audit follows off device" if quality else "device checks failed; do not fit", "workloads": [{"id": row["id"], "correct": row["correct"]} for row in rows] if kind == "correctness" else [], "artifacts": artifacts, "metrics": {"device_checks_passed": quality, "case_count": len(rows)}})
 
 
 def _fit(run, output):
@@ -494,11 +489,17 @@ def _fit(run, output):
         raise ValueError("retained target differs from calibration plan")
     if reference.compiler_revision_id != plan["compiler_revision_id"]:
         raise ValueError(f"fitting Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {reference.compiler_revision_id!r}")
-    if not observed["quality_passed"]:raise ValueError("quality failed before fitting")
+    if not observed["device_checks_passed"]:raise ValueError("device checks failed before fitting")
     rows = observed["rows"]
     for row, case in zip(rows, plan["cases"], strict=True):
-        if any(row[key] != value for key, value in case.items()) or not row["correct"] or not row["inputs_unchanged"]:
+        if (any(row[key] != value for key, value in case.items())
+                or not row["correct"] or not row["inputs_unchanged"]
+                or row["samples_us"] != []):
             raise ValueError("collected domain or correctness differs")
+    for repetition in range(plan["sampling"]["repetitions"]):
+        for row, samples in zip(rows, _trace_samples(stage, repetition, plan, rows), strict=True):
+            row["samples_us"].append(samples)
+    for row in rows:
         medians = []
         if len(row["samples_us"]) != plan["sampling"]["repetitions"]:raise ValueError("repetition count differs")
         for values in row["samples_us"]:
@@ -506,9 +507,6 @@ def _fit(run, output):
             medians.append(statistics.median(values))
         if max(medians) / min(medians) > plan["acceptance"]["maximum_repeat_median_ratio"]:raise ValueError("repetition drift differs")
         row["kernel_us"] = statistics.median(medians)
-    for repetition in range(plan["sampling"]["repetitions"]):
-        for row, values in zip(rows, _trace_samples(stage, repetition, plan, rows), strict=True):
-            if row["samples_us"][repetition] != values:raise ValueError("retained durations differ from trace")
     for name in ("compile", "correctness", "collection"):
         receipt = _read(run / f"stages/{name}/receipt.json")
         if (receipt["execution"] != ("local" if name == "compile" else "broker")
@@ -585,7 +583,7 @@ def _bind_artifacts(run, plan, rows, compiler):
             raise ValueError("stage collector differs from the frozen fitter")
         phase_document = _read(directory / "observations.json")
         phase_rows[phase] = phase_document["rows"]
-        if phase_document["quality_passed"] is not True or any(row["correct"] is not True or row["inputs_unchanged"] is not True for row in phase_rows[phase]):
+        if phase_document["device_checks_passed"] is not True or any(row["correct"] is not True or row["inputs_unchanged"] is not True for row in phase_rows[phase]):
             raise ValueError("stage correctness or input preservation differs")
         if len(phase_rows[phase]) != len(rows) or len(compiled_rows) != len(rows):
             raise ValueError("stage case count differs")
