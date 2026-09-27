@@ -134,6 +134,20 @@ controls, not a general performance gain. Before promotion, check further
 c/steal controls and compare against the equal-reset persistent control
 under the Target's qualified timing contract.
 
+Same-lease ABBA job `gpuq-465099593875` compared the equal-reset sequential
+persistent source (`3e1ecb94`) with lookahead (`1aff5d01`) on the mixed K=4,
+c=64, budget=46920 control. All four arms passed the FP64 oracle, CPU tile
+plan, v3 bitwise comparison and CUPTI reset/activity checks; each sample had
+16 layer kernels and 92 layer memsets. Old/new/new/old development medians
+were 10.01/10.03/10.07/9.81 ms, giving aggregate old/new medians of
+9.91/10.05 ms. The retained report is
+`/home/qinhaiyan/cake-weave-lookahead-vs-persistent-abba/report.json`.
+Useful-work overlap in the three matrix controls did **not** yield a latency
+gain in this matched mixed-route assay. The lookahead still defers the next
+source-completion publication until the current FFN finishes, so next-event
+planning and gather do not overlap. Promotion disposition: **no merge or Lab
+rule** from this bounded lookahead result.
+
 ## Required next transition
 
 The original one-grid step was **sequential across events within each rank**.
