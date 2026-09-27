@@ -189,6 +189,8 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 原始 CAKE CUDA 把准备和状态递推放在一个 kernel 与更深的角色流水中；目前两阶段 Cake 路线承受准备值约 480 MB 的写回/重读和两次 kernel 活动。Triton 能生成准备值，native 已能直接消费；本机结果证明**正确性接通不等于性能追平**。5.20× 的完整差距要求缩短消费者 256 次状态依赖串行路径，并在同 CTA 片上衔接准备、MMA、状态更新与 epilogue；只改 beta 地址、再加 B ring 或把两项跨作业组件时间简单相加都不足以解释收益。下一轮 lowering 须给每条融合边明确生产者、消费者、槽与同步合同，并以同一完整 Workload 重新测量。
 
+当前 promotion disposition：保留 `4dc1561e` 作为**正确但慢的固定 H64 两阶段种子**与 beta 存储方向的资格化组件，**No promotion** 为六形状 dispatcher、共享 pass 或“超过 CAKE”的性能结果。下一轮先用原始 M64 两 value slice 的具体 CTA/寄存器/TMEM 所有权作受限设计对照；在新 Schedule 和 native 发射上证明资源、state-ready、P/compute 与 epilogue 的时序，再测同一完整 Workload。不要把原始 M64 的常数、五槽或 PTX 片段脱离这些前提直接复制。
+
 ### 2.21 原始 CAKE CUDA 的机制对照：下一轮 lowering 应承诺什么
 
 冻结的[原始 CAKE M64 绑定](../experiments/flashinfer_rewrites/references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m64_binding.cu)声明 **1,024 threads/CTA、219,136 字节 dynamic shared**，固定 H64 单序列时以每 head 两个 M64 value slice 发射 **128 个 CTA**；这些是源码与适配 B300 的已测几何，不是根据 native 计时反推。[CUDA kernel](../experiments/flashinfer_rewrites/references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m64.cu)可见不同的 compute、epilogue、MMA、load 和 preparation 分工：compute warp0–3 持续递推，epilogue warp4–7 等 `final_ready` 后从 TMEM 读输出，用 `stmatrix` 写双槽 shared，再由 TMA store 写 token-major 输出；MMA warp9 与 load warp10 分别持有发射和装载，preparation 角色在后续 warps 中用五槽 shared 流水。可见的 `setmaxnreg.dec/inc` 把部分角色的寄存器预算让给 compute，且多个 mbarrier phase、`free/ready` 和末尾 drain 明确规定槽的重用。源码中这些机制共存；没有逐项消融，不能把约 456.578 µs 的完整 H64 延迟单独归因于任一机制。
