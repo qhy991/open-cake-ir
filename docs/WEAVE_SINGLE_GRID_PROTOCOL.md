@@ -132,15 +132,23 @@ budget=46920 control, 15 related contracts and the 179-case Corpus Gate pass;
 B300 NVCC reports the same 80 registers, 9,216 B static shared memory and
 zero spills. The ELF shrank from 502,584 B to 383,800 B. One four-GPU trial
 passed the FP64 oracle over 4,194,304 elements, matched all 80 CPU event
-counts and was bitwise equal to the v3 output. The same-lease ABBA development
+counts and was bitwise equal to the v3 output. Job `gpuq-643d4d4f94c9` then
+ran all four frozen routes at K=4/2/1 with separately sealed c=64,
+budget=46920 plans: 50,331,648 output elements had zero FP64-oracle failures,
+all 960 rank/event counts matched the CPU plan, and all outputs were bitwise
+equal to v3. The same-lease ABBA development
 comparison `gpuq-c4fd0c759ea8` ran old/new/new/old on one broker allocation
 with the same frozen mixed case, control and L2-flush protocol. Its four
 per-arm CUPTI medians were 10.71/9.99/9.54/10.98 ms; the old/new aggregate
 medians were 10.85/9.76 ms (1.11× old-over-new). Each arm passed its oracle,
 tile-plan and activity checks. The report is retained at
 `/home/qinhaiyan/cake-weave-sort-paired-abba-15fb89e7/report.json` and
-mirrored locally. This is evidence of a development improvement for that
-control, not yet a qualified general or external-baseline gain. The
-successor's four-route K=4/2/1 correctness matrix is prepared under
-`/home/qinhaiyan/cake-weave-sort-15fb89e7-matrix12/` and must pass before
-considering promotion.
+mirrored locally. A second same-lease ABBA comparison
+`gpuq-33897db5cffc` isolated `c4c79545` (the diagnostic predecessor) from
+`15fb89e7`: old/new/new/old medians were 10.79/12.18/9.68/11.06 ms, and
+old/new aggregate medians were both about 10.93 ms. One new arm had longer
+late-event tails on one rank; its cause is unproven. This run-to-run variation
+prevents attributing the first ABBA's 1.11× result to dynamic sorting alone.
+The code-size and correctness changes are established; timing improvement
+and an external-baseline gain remain unqualified. Promotion disposition:
+**no merge or Lab rule** from these development timing comparisons.
