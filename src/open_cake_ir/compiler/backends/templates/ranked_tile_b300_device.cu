@@ -97,6 +97,8 @@ __device__ __forceinline__ int completion_release_increment(int* pointer) {
 }
 
 struct BinParams;
+__device__ __forceinline__ void system_publish(int* pointer);
+__device__ __forceinline__ int system_acquire(const int* pointer);
 __device__ void wait_prior_snapshot(const BinParams* params,int event,
                                     int source_rank);
 __device__ void dispatch_source_chunk(const BinParams* params,int block,
@@ -119,6 +121,8 @@ __device__ void publish_event_snapshot(const BinParams* params,int event);
 __device__ void record_phase(const BinParams* params,int event,int point,
                              int block);
 __device__ bool owns_source_event(const BinParams* params,int source_rank);
+__device__ void producer_barrier(const BinParams* params,int event,int phase,
+                                 int participants);
 
 @UPGATE_STAGE@
 @ACTIVATION_STAGE@
@@ -143,89 +147,74 @@ __global__ void tile_schedule_probe(
   cg::grid_group grid = cg::this_grid();
   bool tensor_owned = false;
   int logical_offset=0;
-  for (int selected_event=first_event;
-       selected_event<chunks*(kSourceRanks+1);++selected_event) {
-    const int source_rank=selected_event%(kSourceRanks+1);
-    const int source_wave=selected_event/(kSourceRanks+1);
-    record_phase(source_params,selected_event,0,block);
-    if (block==0 && threadIdx.x==0 && source_rank<kSourceRanks)
-      wait_prior_snapshot(source_params,selected_event,source_rank);
-    grid.sync();
-    record_phase(source_params,selected_event,1,block);
-    if (selected_event==first_event && source_rank<kSourceRanks &&
-        block<communication_ctas) {
-      dispatch_source_chunk(source_params,block,communication_ctas,
-                            source_wave,chunk_tokens,source_rank);
-      __threadfence_system();
-    }
-    grid.sync();
-    record_phase(source_params,selected_event,2,block);
-    if (source_rank<kSourceRanks && block==0 && threadIdx.x==0)
-      publish_source_completion(source_params,source_wave,source_rank);
-    grid.sync();
-    record_phase(source_params,selected_event,3,block);
-    if (block==0 && threadIdx.x==0)
-      wait_source_completion(source_params,source_wave,source_rank);
-    grid.sync();
-    record_phase(source_params,selected_event,4,block);
-    if (block<kExperts)
-      derive_expert_snapshot(source_params,block,source_wave,source_rank,
-                             chunks,chunk_tokens);
-    grid.sync();
-    record_phase(source_params,selected_event,5,block);
-    if (block==0 && threadIdx.x<kExperts)
-      assign_expert_tiles(source_params,selected_event,chunk_tokens,
-                          int(threadIdx.x));
-    grid.sync();
-    record_phase(source_params,selected_event,6,block);
-    if (block==0 && threadIdx.x<kStages)
-      expand_event_tasks(source_params,task_counts,
-                         selected_event,int(threadIdx.x));
-    grid.sync();
-    record_phase(source_params,selected_event,7,block);
-    gather_event_rows(source_params,selected_event,block,int(gridDim.x));
-    __threadfence_system();
-    grid.sync();
-    record_phase(source_params,selected_event,8,block);
-    if (block==0 && threadIdx.x==0)
-      publish_event_snapshot(source_params,selected_event);
-    grid.sync();
-    record_phase(source_params,selected_event,9,block);
-    // Gather wrote tile rows through the generic proxy in this same kernel.
-    // The Cake up/gate TMA reads them through the async proxy.
-    asm volatile("fence.proxy.async.global;" ::: "memory");
-    // Source dispatch for the next event touches only peer bins. The current
-    // event's tile rows are already gathered, so computation CTAs may work on
-    // them while this rank's communication CTAs dispatch the next source.
-    const int next_event=selected_event+1;
-    const int next_source=next_event%(kSourceRanks+1);
-    if (next_event<chunks*(kSourceRanks+1) &&
-        next_source<kSourceRanks &&
-        owns_source_event(source_params,next_source) &&
-        block<communication_ctas) {
-      if (threadIdx.x==0)
-        wait_prior_snapshot(source_params,next_event,next_source);
-      __syncthreads();
-      int completed_before=0;
-      if (block==0 && threadIdx.x==0)
+  if (block<communication_ctas) {
+    for (int selected_event=first_event;
+         selected_event<chunks*(kSourceRanks+1);++selected_event) {
+      const int source_rank=selected_event%(kSourceRanks+1);
+      const int source_wave=selected_event/(kSourceRanks+1);
+      int previous_completed=0;
+      if (selected_event>first_event && block==0 && threadIdx.x==0)
         for (int stage=0;stage<kStages;++stage)
-          completed_before+=atomicAdd(
-              &processed[stage*kEvents+selected_event],0);
+          previous_completed+=atomicAdd(
+              &processed[stage*kEvents+selected_event-1],0);
+      record_phase(source_params,selected_event,0,block);
+      if (threadIdx.x==0 && source_rank<kSourceRanks)
+        wait_prior_snapshot(source_params,selected_event,source_rank);
       __syncthreads();
-      dispatch_source_chunk(source_params,block,communication_ctas,
-                            next_event/(kSourceRanks+1),chunk_tokens,
-                            next_source);
+      record_phase(source_params,selected_event,1,block);
+      if (source_rank<kSourceRanks &&
+          owns_source_event(source_params,source_rank)) {
+        dispatch_source_chunk(source_params,block,communication_ctas,
+                              source_wave,chunk_tokens,source_rank);
+        __threadfence_system();
+      }
+      producer_barrier(source_params,selected_event,0,communication_ctas);
+      record_phase(source_params,selected_event,2,block);
+      if (source_rank<kSourceRanks && block==0 && threadIdx.x==0)
+        publish_source_completion(source_params,source_wave,source_rank);
+      producer_barrier(source_params,selected_event,1,communication_ctas);
+      record_phase(source_params,selected_event,3,block);
+      if (threadIdx.x==0)
+        wait_source_completion(source_params,source_wave,source_rank);
+      __syncthreads();
+      record_phase(source_params,selected_event,4,block);
+      for (int expert=block;expert<kExperts;expert+=communication_ctas)
+        derive_expert_snapshot(source_params,expert,source_wave,source_rank,
+                               chunks,chunk_tokens);
+      producer_barrier(source_params,selected_event,2,communication_ctas);
+      record_phase(source_params,selected_event,5,block);
+      if (block==0 && threadIdx.x<kExperts)
+        assign_expert_tiles(source_params,selected_event,chunk_tokens,
+                            int(threadIdx.x));
+      producer_barrier(source_params,selected_event,3,communication_ctas);
+      record_phase(source_params,selected_event,6,block);
+      if (block==0 && threadIdx.x<kStages)
+        expand_event_tasks(source_params,task_counts,
+                           selected_event,int(threadIdx.x));
+      producer_barrier(source_params,selected_event,4,communication_ctas);
+      record_phase(source_params,selected_event,7,block);
+      gather_event_rows(source_params,selected_event,block,communication_ctas);
       __threadfence_system();
-      __syncthreads();
-      if (block==0 && threadIdx.x==0) {
+      // Producer-side proxy ordering precedes the tile-ready release. A
+      // consumer also fences after acquire before issuing Cake's TMA reads.
+      asm volatile("fence.proxy.async.global;" ::: "memory");
+      producer_barrier(source_params,selected_event,5,communication_ctas);
+      record_phase(source_params,selected_event,8,block);
+      if (block==0 && threadIdx.x==0)
+        publish_event_snapshot(source_params,selected_event);
+      record_phase(source_params,selected_event,9,block);
+      if (selected_event>first_event && block==0 && threadIdx.x==0) {
         int completed_after=0;
         for (int stage=0;stage<kStages;++stage)
           completed_after+=atomicAdd(
-              &processed[stage*kEvents+selected_event],0);
-        if (completed_after>completed_before)
-          atomicExch(&overlap[2+selected_event],1);
+              &processed[stage*kEvents+selected_event-1],0);
+        if (completed_after>previous_completed)
+          atomicExch(&overlap[1+selected_event],1);
       }
     }
+  }
+  for (int selected_event=first_event;
+       selected_event<chunks*(kSourceRanks+1);++selected_event) {
     for (int wave=selected_event; wave<=selected_event; ++wave) {
       // CAKE_EFFECT: tile.acquire
       // CAKE_EFFECT: task.acquire
@@ -233,6 +222,7 @@ __global__ void tile_schedule_probe(
         while (worker_wave_acquire(&wave_ready[wave])==0)
           __nanosleep(64);
       __syncthreads();
+      asm volatile("fence.proxy.async.global;" ::: "memory");
       const int tile_count=task_counts[wave]/kUpGateTasksPerTile;
       const int total_tasks=task_counts[wave]+task_counts[kEvents+wave]+
                             task_counts[2*kEvents+wave];
@@ -344,11 +334,11 @@ __global__ void tile_schedule_probe(
         }
         __syncthreads();
       }
-      grid.sync();  // Only the next source wave waits for the whole grid.
-      record_phase(source_params,selected_event,10,block);
+      __syncthreads();
       logical_offset+=tile_count;
     }
   }
+  grid.sync();
   if (tensor_owned) {
     __syncthreads();
     if (warp==0) {
@@ -372,7 +362,8 @@ int check(cudaError_t status, const char* operation) {
 constexpr int R=4,T=512,K=8,E=128,H=2048;
 static_assert(R==kSourceRanks,"source-event count follows the EP world size");
 constexpr int LOCAL_E=E/R,MAX_ROWS=R*T,ROUTES=R*T*K,LOCAL_ROUTES=T*K;
-constexpr int kPhasePoints=11;
+constexpr int kPhasePoints=10;
+constexpr int kProducerPhases=6;
 constexpr int PAYLOAD_CAP=(R-1)*T;
 constexpr size_t HIDDEN_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 constexpr size_t IDS_BYTES=size_t(ROUTES)*sizeof(int);
@@ -396,6 +387,8 @@ struct Bin {
   int payload_key[PAYLOAD_CAP];
   int source_wave_done[R][kWaves];
   int wave_consumed[kEvents];
+  int producer_arrivals[kEvents][kProducerPhases];
+  int producer_ready[kEvents][kProducerPhases];
   int ready[LOCAL_E*MAX_ROWS];
   int keys[LOCAL_E*MAX_ROWS];
   int row_payload_slot[LOCAL_E*MAX_ROWS];
@@ -424,6 +417,20 @@ struct BinParams {
 };
 __device__ bool owns_source_event(const BinParams* params,int source_rank) {
   return params->rank==source_rank;
+}
+__device__ void producer_barrier(const BinParams* params,int event,int phase,
+                                 int participants) {
+  __syncthreads();
+  if (threadIdx.x==0) {
+    Bin* local=params->bins[params->rank];
+    int old=atomicAdd(&local->producer_arrivals[event][phase],1);
+    if (old==participants-1)
+      system_publish(&local->producer_ready[event][phase]);
+    else
+      while (system_acquire(&local->producer_ready[event][phase])==0)
+        __nanosleep(64);
+  }
+  __syncthreads();
 }
 __device__ void record_phase(const BinParams* params,int event,int point,
                              int block) {
