@@ -871,8 +871,9 @@ def _audit_selected(run, output):
         result = _read(run / "stages" / phase / "result.json")
         if result["metrics"]["case_count"] != len(selected):
             raise ValueError("device stage measured a different candidate count")
-    frozen = _read(_candidate_file(run / "candidate", selection["predictions_path"], "frozen predictions"))
-    model = _read(_candidate_file(run / "candidate", selection["model_path"], "empirical model"))
+    candidate = _external(run / "candidate")
+    frozen = _read(_candidate_file(candidate, selection["predictions_path"], "frozen predictions"))
+    model = _read(_candidate_file(candidate, selection["model_path"], "empirical model"))
     predicted = {row["case_id"]: row for row in frozen["predictions"]}
     report_rows = [{"case_id": row["id"], "workload_id": row["workload_id"],
                     "observed_us": row["kernel_us"],
