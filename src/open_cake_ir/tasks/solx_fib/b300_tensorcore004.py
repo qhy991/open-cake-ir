@@ -61,3 +61,18 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
         '        rounded = lm.cast(acc, to="fp16", id="round_out")\n'
         '        lm.store(out[row, column], rounded, id="store_out")\n'
     )
+
+
+def n32_k512_development_lead_source(
+        workload: WorkloadContract, case_id: str = "primary") -> str:
+    """Apply the measured M128/M172 recipe; reject unqualified shape transfer.
+
+    Both shapes passed the task-pack workload, all five frozen project input
+    distributions and two independent quality-passed paired assays on B300.
+    This is a shape-level authoring recipe, not a complete-task dispatcher.
+    """
+    validate_contract(workload.document)
+    rows = workload.tensor_abi(case_id)[0].shape[0]
+    if rows not in (128, 172):
+        raise ValueError("N32 K512 development lead is qualified only at M128 and M172")
+    return tensorcore_source(workload, case_id, block_n=32, block_k=512)

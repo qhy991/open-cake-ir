@@ -10,7 +10,8 @@ from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
 from open_cake_ir.tasks.solx_fib.b300_gemv004 import column_tiled_source, scalar_warp_program
-from open_cake_ir.tasks.solx_fib.b300_tensorcore004 import tensorcore_source
+from open_cake_ir.tasks.solx_fib.b300_tensorcore004 import (
+    n32_k512_development_lead_source, tensorcore_source)
 from open_cake_ir.tasks.tiles.workload import _round
 from open_cake_ir.tasks.workloads import create_task, reference_outputs, load_workload
 from open_cake_ir.tasks.efficiency import task_work
@@ -19,6 +20,26 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
+    def test_004_measured_tensorcore_recipe_keeps_its_shape_boundary(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for rows in (128, 172):
+            with self.subTest(rows=rows):
+                workload = WorkloadContract(gemm.workload_document(
+                    'fib_gemm_n128_k2048', rows=rows))
+                source = n32_k512_development_lead_source(workload)
+                self.assertEqual(source, tensorcore_source(
+                    workload, block_n=32, block_k=512))
+                assessment = compiler.assess(parse(source).document)
+                self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                                 assessment.findings)
+                self.assertIn('tl.dot(', compiler.lower(assessment).source)
+        for rows in (93, 289):
+            with self.subTest(rows=rows):
+                workload = WorkloadContract(gemm.workload_document(
+                    'fib_gemm_n128_k2048', rows=rows))
+                with self.assertRaisesRegex(ValueError, 'qualified only at M128 and M172'):
+                    n32_k512_development_lead_source(workload)
+
     def test_004_tensorcore_route_covers_each_official_m_at_least_16(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         rows_values = [rows for rows in gemm.SPECS['fib_gemm_n128_k2048']['batches']
