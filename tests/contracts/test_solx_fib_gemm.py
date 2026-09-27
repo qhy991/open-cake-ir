@@ -1,5 +1,6 @@
 """FlashInfer GEMM integration: exact axes, FP16 ABI, independent oracle and lowering."""
 from copy import deepcopy
+import json
 import math
 import unittest
 from pathlib import Path
@@ -8,7 +9,7 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
-from open_cake_ir.tasks.solx_fib.b300_gemv004 import column_tiled_source
+from open_cake_ir.tasks.solx_fib.b300_gemv004 import column_tiled_source, scalar_warp_program
 from open_cake_ir.tasks.tiles.workload import _round
 from open_cake_ir.tasks.workloads import create_task, reference_outputs, load_workload
 from open_cake_ir.tasks.efficiency import task_work
@@ -17,6 +18,27 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
+    def test_004_scalar_warp_rewrite_keeps_128_outputs_independent(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(gemm.workload_document('fib_gemm_n128_k2048', rows=1))
+        starter = parse(gemm.starter_source(workload)).document
+        for warps in (4, 8, 16):
+            program = scalar_warp_program(compiler, workload, num_warps=warps)
+            self.assertEqual(len(program.stages), 1)
+            self.assertEqual(set(program.inputs), {'a', 'b'})
+            self.assertEqual(program.outputs, ('out',))
+            schedule = json.loads(program.stages[0].schedule_bytes)
+            self.assertEqual(schedule['operations'], starter['operations'])
+            self.assertEqual(schedule['access_maps'], starter['access_maps'])
+            self.assertEqual(schedule['roles'][0]['execution_groups'], list(range(warps)))
+            lowered = compiler.lower_program(program)
+            lowered.validate_binding()
+            self.assertIn('_kernel[(1, 128, 1)]', lowered.lowerings[0].source)
+            self.assertIn(f'num_warps={warps}', lowered.lowerings[0].source)
+        with self.assertRaises(ValueError):
+            scalar_warp_program(compiler, WorkloadContract(gemm.workload_document(
+                'fib_gemm_n128_k2048', rows=2)), num_warps=4)
+
     def test_004_column_tiles_reuse_a_and_reduce_each_b_row(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         workload = WorkloadContract(gemm.workload_document('fib_gemm_n128_k2048', rows=1))
