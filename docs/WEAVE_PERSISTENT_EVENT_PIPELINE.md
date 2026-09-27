@@ -207,6 +207,18 @@ c=95 case, qualified latency, or a gain against the equal-reset sequential
 control. Promotion disposition remains **no merge or Lab rule** pending those
 gates.
 
+The first barrier revision counted communication CTA arrivals with a plain
+atomic add. That atomicity alone did not state how each CTA's prior tile and
+metadata writes reached the last arrival. Successor `c8550363` uses PTX
+`atom.acq_rel.sys.global.add.s32` on each per-event, per-phase arrival, then a
+system-scope release for the ready flag; waiters use a system-scope acquire.
+The [PTX memory model](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html)
+defines the acquire and release patterns used for this handoff. Its clean
+commit passes 15 related contracts, the 179-case Corpus Gate and B300 NVCC
+(84 registers, 9,216 B static shared memory, zero spills). The frozen
+`b360415f` matrix remains a separate run; successor device qualification is
+pending and cannot be borrowed from that run.
+
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
 four-device timing reset and matched open baseline. This task branch remains
