@@ -19,11 +19,13 @@ import calibrate_paired_cost as instrument
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.toolchain import TritonCompilation
 from open_cake_ir.evaluation import LaunchableCandidate
-from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.lab.bindings import load_baseline_bundle
+from open_cake_ir.lab.build import TritonToolchainBuilder
+from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.serialization import canonical_json_bytes
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.tasks import evaluate as worker
 
@@ -45,18 +47,27 @@ class PairedCostPlanTest(unittest.TestCase):
         root = Path(directory).resolve()
         snapshot = root / "candidate"
         baseline_root = snapshot / "baseline"
-        manifest = TensorLaunchManifest.for_workload(
-            self.workload, "primary", target="sm_103a", kernel_name="cake_gemm_bias_b1_smoke",
-            grid=[8, 4, 1], block=[128, 1, 1],
-            dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=2,
+        identity = {"kind": "bubblewrap_triton_kernel_v1",
+                    "python": self.executor.document["host_environment"]["python"]["invocation_path"],
+                    "triton_version": self.executor.document["host_environment"]["packages"]["triton"],
+                    "fixture": "synthetic; no executable compiler"}
+        baseline_schedule = copy.deepcopy(self.base)
+        baseline_schedule["schedule_id"] = "synthetic-baseline-b300"
+        baseline_schedule["metadata"]["workload_contract_sha256"] = self.workload.canonical_sha256
+        baseline_root.mkdir(parents=True, exist_ok=True)
+        (baseline_root / "schedule.json").write_bytes(canonical_json_bytes(baseline_schedule))
+        baseline_environment = TaskOpenCakeEnvironment(
+            self.compiler,
+            TritonToolchainBuilder(workload=self.workload, case_id="primary",
+                                  isolated_compiler=self.FakeIsolatedCompiler(identity)),
+            authority_document={"lowering_route": baseline_schedule["lowering"]},
+            workload=self.workload, case_id="primary", executor=self.executor,
         )
-        payloads = {"cubin": b"\x7fELF-SYNTHETIC-NONEXECUTABLE",
-                    "launch_manifest": canonical_json_bytes(manifest.as_dict())}
-        baseline = LaunchableCandidate(
-            "1" * 64, "sm_103a", manifest.kernel_name,
-            {key: sha256(value).hexdigest() for key, value in payloads.items()},
-            manifest.canonical_sha256, payloads,
-        )
+        baseline_result = baseline_environment.build(CandidateSubmission.seal(
+            baseline_environment.media_type, canonical_json_bytes(baseline_schedule)))
+        self.assertEqual(baseline_result.disposition, "launchable", baseline_result.feedback)
+        baseline = baseline_result.launchable
+        payloads = baseline.artifact_payloads
         paths = {}
         for role, payload in payloads.items():
             path = baseline_root / f"{role}.bin"
@@ -92,13 +103,11 @@ class PairedCostPlanTest(unittest.TestCase):
                              "workload_id": self.workload.workload_id,
                              "canonical_sha256": self.workload.canonical_sha256},
                 "case_id": "primary", "target": "sm_103a",
-                "baseline_bundle_path": "baseline/candidate.json", "candidates": candidates,
+                "baseline_bundle_path": "baseline/candidate.json",
+                "baseline_schedule_path": "baseline/schedule.json", "candidates": candidates,
                 "observations": instrument.observation_order([row["id"] for row in candidates]),
                 "varying_dimensions": [{"buffer": name, "dimension": 0} for name in ("a", "c")],
-                "toolchain_identity": {"kind": "bubblewrap_triton_kernel_v1",
-                                       "python": self.executor.document["host_environment"]["python"]["invocation_path"],
-                                       "triton_version": self.executor.document["host_environment"]["packages"]["triton"],
-                                       "fixture": "synthetic; no executable compiler"},
+                "toolchain_identity": identity,
                 "toolchain_config_path": "toolchain.json",
                 "acceptance": {"maximum_baseline_drift_ratio": 1.05,
                                "maximum_mape": .1, "maximum_relative_error": .2,
@@ -140,7 +149,7 @@ class PairedCostPlanTest(unittest.TestCase):
             self.calls += 1
             artifacts = {role: f"SYNTHETIC NONEXECUTABLE {role}".encode()
                          for role in ("ttir", "ttgir", "llir", "ptx", "cubin")}
-            artifacts["cubin"] = b"\x7fELF SYNTHETIC NONEXECUTABLE " + str(self.calls).encode()
+            artifacts["cubin"] = b"\x7fELF SYNTHETIC NONEXECUTABLE " + sha256(source).digest()
             artifacts["source"] = source + b"\n# synthetic compiler expansion\n"
             return TritonCompilation(
                 source, "sm_103a", requirements["kernel_entry_point"], artifacts,
@@ -202,8 +211,42 @@ class PairedCostPlanTest(unittest.TestCase):
             )
             document["candidate"] = candidate_identity(mismatched)
             write(bundle, document)
-            with self.assertRaisesRegex(ValueError, "launch seal differs"):
+            with self.assertRaisesRegex(ValueError, "launch seal"):
                 instrument.check_plan(snapshot)
+
+    def test_baseline_schedule_and_compiled_binary_share_one_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            source = snapshot / plan["baseline_schedule_path"]
+            original_bytes = source.read_bytes()
+            original = json.loads(original_bytes)
+            changed = copy.deepcopy(original)
+            changed["residency"]["registers_per_thread"] += 1
+            write(source, changed)
+            with self.assertRaisesRegex(ValueError, "frozen Compiler lowering"):
+                instrument.check_plan(snapshot)
+            source.write_bytes(original_bytes)
+            bundle = snapshot / plan["baseline_bundle_path"]
+            record = json.loads(bundle.read_text())
+            frozen = load_baseline_bundle(ROOT, bundle)
+            payloads = dict(frozen.artifact_payloads)
+            payloads["cubin"] = b"\x7fELF DIFFERENT SYNTHETIC NONEXECUTABLE"
+            (bundle.parent / record["artifact_paths"]["cubin"]).write_bytes(payloads["cubin"])
+            altered = LaunchableCandidate(
+                frozen.candidate_sha256, frozen.target, frozen.entry_point,
+                {role: sha256(value).hexdigest() for role, value in payloads.items()},
+                frozen.launch_spec_sha256, payloads,
+            )
+            record["candidate"] = candidate_identity(altered)
+            write(bundle, record)
+            instrument.check_plan(snapshot)
+            stage = Path(directory).resolve() / "compile"
+            stage.mkdir()
+            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}), \
+                    self.assertRaisesRegex(ValueError, "baseline binary differs"):
+                instrument.prepare_compile(
+                    snapshot, stage, self.FakeIsolatedCompiler(plan["toolchain_identity"]))
 
     def test_cpu_compile_seals_all_three_common_candidates(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -215,7 +258,7 @@ class PairedCostPlanTest(unittest.TestCase):
                     patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
                 index = instrument.prepare_compile(snapshot, stage, isolated)
             self.assertTrue(isolated.checked)
-            self.assertEqual(isolated.calls, 3)
+            self.assertEqual(isolated.calls, 4)
             self.assertEqual(len(index["candidates"]), 3)
             self.assertEqual(json.loads((stage / "compile-index.json").read_text()), index)
             for spec in plan["candidates"]:
@@ -260,7 +303,7 @@ class PairedCostPlanTest(unittest.TestCase):
             self.assertEqual((result["status"], result["validity"]), ("passed", "valid"))
             self.assertEqual(result["metrics"]["candidate_count"], 3)
             self.assertIn("tile-64/candidate.json", result["artifacts"])
-            self.assertEqual(isolated.calls, 3)
+            self.assertEqual(isolated.calls, 4)
 
     def test_device_stage_requires_own_task_and_node_assignment(self):
         with tempfile.TemporaryDirectory() as directory:

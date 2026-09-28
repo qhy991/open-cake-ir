@@ -29,6 +29,10 @@ Executor references, the committed B300 GEMM Study and Workload, three distinct
 complete Schedule files, a sealed baseline bundle **inside the snapshot**, the
 M-axis bindings for `a` and `c`, an exact isolated Triton toolchain identity and
 its in-snapshot configuration, acceptance limits, and all nine observations.
+The baseline's own complete Schedule is sealed beside its bundle. `check-plan`
+matches its submission bytes, Compiler lowering, Workload ABI and launch seal;
+the CPU local stage recompiles it with the frozen isolated toolchain and refuses
+any difference in the complete artifact bundle before measuring a candidate.
 Each Schedule must replace the Corpus starter's placeholder Workload identity with
 the frozen Workload's canonical identity before admission.
 The observation order is three fit candidates, the reversed calibration order,
