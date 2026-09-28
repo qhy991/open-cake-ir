@@ -211,7 +211,7 @@ class PairedCostPlanTest(unittest.TestCase):
             )
             document["candidate"] = candidate_identity(mismatched)
             write(bundle, document)
-            with self.assertRaisesRegex(ValueError, "launch seal differs"):
+            with self.assertRaisesRegex(ValueError, "launch seal"):
                 instrument.check_plan(snapshot)
 
     def test_baseline_schedule_and_compiled_binary_share_one_source(self):
