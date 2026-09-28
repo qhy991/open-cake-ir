@@ -674,9 +674,33 @@ unexplained 27 ms arm, small absolute saving and missing target clock
 qualification prevent a general performance claim. Both comparison roots
 are retained under `/home/qinhaiyan/cake-weave-n64-vs-n128-*-2c638aad-fanin/`
 and mirrored locally. Promotion disposition: retain N128 as a bounded
-development candidate; do not select it by default or generalize beyond
-fanin K=4/c=64 until the route/K matrix, timing stability and profiler
-qualification are checked.
+development candidate; do not select it by default from this small timing
+gain while the order-specific slow arm and target clock qualification remain
+unresolved. The speed observation is limited to fanin K=4/c=64.
+
+Job `gpuq-1a73f0c69804` tested the successor N128 Program at c=64 and
+full analyzed steal capacity 12,750 across four frozen routes × K=4/2/1.
+All 12 separately sealed runs passed the FP64 oracle with
+**0/50,331,648** output failures, **960/960** CPU/GPU tile-event count
+slots, zero v3 output bit mismatches and matching remote payloads. All 12
+controls retained actual Cake task progress while the producer advanced the
+next event. This expands N128's correctness and bounded temporal-overlap
+evidence across the frozen route/K matrix; it provides no multi-route
+performance estimate. The report and overlap audit are retained at
+`/home/qinhaiyan/cake-weave-n128-matrix12-2c638aad/` and mirrored locally.
+
+Job `gpuq-c4eac1dae550` then exercised six c/steal controls on mixed K=4:
+c=1 at budgets 0/5,888; c=74 at 0/5,888/12,750; and c=95 at 12,750.
+All six separately sealed runs passed with **0/25,165,824** oracle
+failures, **480/480** tile-event slots, v3 bitwise agreement and positive
+producer/consumer overlap. Zero-budget controls stole no tasks; positive
+budget controls stole work without exceeding their bound. The c=95 control
+passed once, which does not close the intermittent
+F-2026-09-27-001 route-location Finding. Reports are retained at
+`/home/qinhaiyan/cake-weave-n128-sweep6-2c638aad/` and mirrored locally.
+Promotion disposition remains a bounded N128 candidate: spatial, temporal
+and steal behavior is supported on these frozen controls, while timing
+qualification and the c=95 Finding remain open.
 
 Before promotion, resolve the open c=95 mismatch Finding, qualify the
 target's four-device timing reset, and run a matched open baseline under
