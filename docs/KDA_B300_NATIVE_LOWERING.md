@@ -282,7 +282,32 @@ Finding events 247–248。这是**完整同范围结果**：片上融合与原�
 | Cake 准备＋native TMEM 消费者 | 2,372.627 | 5.201× |
 | 四 TCGEN＋warp-MMA 片上准备／消费 | 15,879.295 | 34.803× |
 
-Finding events 257–258。相对 145.401 ms 全标量融合，硬件四收缩把同范围延迟大幅降低，但这两个融合数来自不同有效配对作业，不能当作同 GPU 成对加速比。剩余 `forward_substitute` 的严格下三角仍有每行每块 496 个源码 FP32 FMA 项，固定 H64 约 **1.040B 项**；prep warp 每块串行门控前缀、64 CTA 持有 256 次同步循环也都可能影响时间，**目前没有 profiler 计数把 15.9 ms 精确分摊给它们**。Promotion disposition：**No promotion** of this slow complete seed。下一项实验先有界标记/拆解每块准备、base/query、solve、U 后 MMA 的完成边，并在不改变冻结 oracle/计时政策的后继上量化关键路径；若主要时间来自每块全 CTA drain，设计有明确 ready/free 与 shared 字节共用的双槽/五槽 producer-ahead，而不是继续微调已经合格的单条 PTX atom。
+Finding events 257–258。相对 145.401 ms 全标量融合，硬件四收缩把同范围延迟大幅降低，但这两个融合数来自不同有效配对作业，不能当作同 GPU 成对加速比。剩余 `forward_substitute` 的严格下三角仍有每行每块 496 个源码 FP32 FMA 项，固定 H64 约 **1.040B 项**；prep warp 每块串行门控前缀、64 CTA 持有 256 次同步循环也都可能影响时间，**仅凭该时间与静态循环数不能归因**。Promotion disposition：**No promotion** of this slow complete seed。下面用不改数学或 barrier 拓扑的时钟诊断选择下一项数据放置实验。
+
+#### 严格下三角 U 的寄存器所有权：阶段证据与完整收益
+
+首份 `clock64` 源码在现有 CTA 同步边写时间戳，broker-shared `gpuq-0a0da161a9b6` 的完整 H64 外部 oracle 仍零超差；每 `(head,chunk)` 的四段中位周期约 **4,482 Q/K 归一化与 state TMEM、3,151 门控／因子、12,493 base/query 加 P/B、124,528 U 求解加后半收缩**，最后一段占观测 phase 周期约 **86.1%**。该插桩 AOT 从 157 改为 128 寄存器，不能把绝对周期直接移给未插桩 kernel。继任 `gpuq-13d531ce4bdc` 在 row0 完成严格求解处再留一个时间戳，AOT 恢复 **157 寄存器、161,920 B shared、0 spill**、外部 oracle 仍通过；五段中位周期约 **4,587／1,809／12,414／118,303／6,162**，严格求解到 row0 完成占这份插桩观测周期 **82.57%**，余下求解等待、U→TMEM 与后半收缩／状态发布约 **4.30%**。两份是 broker-shared 上的**同 SM phase-cycle 诊断**，不含正式 CUPTI 延迟，thread0 打点也会扰动调度；但它把下一次源码实验明确指向 U 前值的存放位置。Finding events 259–260。
+
+旧混合 kernel 的每 V-row 线程把 FP32 `U[0..31]` 写到 shared，内层 `i<t` 每次从 shared 取前值；即使数学 FMA 数为 496，依赖链仍串接动态 shared 读取。一个 CPU-only 后继生成 **32 个显式 FP32 寄存器标量**和固定 `t=0..31, i=0..t-1` 次序的全部 496 条 `fmaf`，BF16 `U` 仍由同一行写入 shared 后进 TMEM；P 的读取、BF16 舍入、四项 TCGEN、barrier 和 Workload 均未改变。精确 B300 AOT 从 **157 寄存器、161,920 B shared** 变为 **132 寄存器、145,536 B shared**，两者都是 0 stack/spill。broker-shared `gpuq-ee32aefef366` 的 67,108,864 输出和 1,048,576 原位状态全部过冻结外部 oracle；独立 host 对两份 GPU 快照逐 bit 比较均为 **0 差异**。Finding events 261–262。这里需要在未来混合 lowering **保留**已有 `FORWARD_SUBSTITUTE` 的逐行寄存器所有权，而不是给 IR 增加另一种数学 solve。
+
+同 GPU1 的 `gpuq-a0476ed07efa` 五轮交替、每轮每臂 25 次冷 L2 CUPTI、无 graph，四臂各用 512 个独立 BF16 初始状态槽；二十份完整输出与最终状态快照释放后均过外部 oracle，最大轮内 CV **0.1192%**：
+
+| 完整 H64/T8192 | µs，轮中位数的中位数 | 相对原始 CAKE |
+| --- | ---: | ---: |
+| 原始 CAKE M64（适配 B300） | 456.131 | 1.000× |
+| Cake 准备＋native TMEM 消费者 | 2,360.974 | 5.176× |
+| 旧四 TCGEN 合体：FP32 U 在 shared | 15,864.360 | 34.780× |
+| 后继四 TCGEN 合体：FP32 U 在寄存器 | 4,754.015 | 10.423× |
+
+寄存器版与旧合体的成对轮比值中位数 **0.29967×**，约 **3.34×** 提升；仍比两阶段慢 **2.014×**、比原始 CAKE 慢 **10.423×**。Finding event 263。这是实测的结构性收益，**不是**完整任务达标或 Compiler 资格。当前 disposition：保留 source-only 寄存器 U 后继作为强种子，**No promotion** 到默认 native emitter/平台，因为完整路径仍落后且没有高保留、六形状、正式 Program alias 的验收。下一轮对该后继重做同样有界的 phase 诊断，若前缀／MMA／barrier 成为主因，再设计精确 B64/P shared 字节共用、双槽或五槽 producer-ahead；若 U 依赖仍主导，再筛选数值有据的并行求解及精确 fallback，始终以完整输出与最终状态验收。
+
+#### 寄存器 U 后的相位重定位与双槽容量前提
+
+继任 `clock64` 源码只在现有 CTA barrier 和寄存器 solve 结束处打点，`gpuq-d6d03b95d94b` 的完整冻结 H64 外部 oracle 仍零超差；AOT **136 寄存器、145,536 B shared、0 spill**，相对未插桩寄存器版的 132 寄存器仍有扰动。五段中位周期分别为 **4,500**（state→TMEM/QK norm）、**3,076**（门控／因子）、**12,081**（base/query TCGEN 与 P/B warp MMA）、**11,893**（row0 严格求解）、**6,410**（其余 solve 等待／U→TMEM／后半两 MMA／状态发布）；在这份插桩中约占 **11.8/8.1/31.9/31.3/16.9%**。Finding event 264。与旧共享 FP32 U 版本的 82.6% 求解相位相比，寄存器所有权关闭了先前单一主导路径；但这些不是 CUPTI 计时，且阶段重叠使各占比不能作为删除某一段的因果加速上限。后继应尝试**准备 j+1 与计算 j 的角色重叠**，同时保护 carried state 的单一写入次序。
+
+双槽不能只复制一个 B64 名字。对固定 `sm_103a`，当前寄存器 U 源码 AOT shared **145,536 B**，准备七项值每额外槽 **29,312 B**（base-key/query 各 8,192；final-key 8,192；output B 2,048；P 2,048；beta 128；prefix 512）。朴素双槽 **174,848 B**，Target 上限 **232,448 B**，纸面余 **57,600 B**。本 source-only 的相对 XOR B64 视图要保持与已通过 witness 相同的 1,024 B 基址相位，额外槽 stride 应从 29,312 填充到 **29,696 B**（384 B padding）；加到现有 AOT 为 **175,232 B**，在新 barrier/实际分配前纸面余 **57,216 B**。同样直接加四个填充槽的五槽为 **264,320 B**，未放 V ring 已超上限 **31,872 B**，必须重构共享区域才可谈五槽。Finding events 265–266 保留读取 AOT/Target/ABI 的 CPU 算式；它既非实际 AOT，也不证明双槽吞吐收益。
+
+下一项具体 CUDA 排程先给 prep warps5–8 与 compute/MMA warps0–4 分开循环：准备角色写 `slot=j mod 2` 的两个 B64 base 槽、P、final/output B、beta、prefix，完成自身 proxy fence 后各到达一次 `prep_ready[slot]`（四到达）；MMA 发射角色和四个 compute warp 分别等当前槽 phase。生产 `j+2` 前，准备角色等 `prep_free[slot]`；该 free 必须在四个 V-row warp 完成当前块输出/状态读者、且 MMA warp 完成后半 TCGEN 对槽 B 的读取后收齐 **五到达**。slot 的第 `j/2` 次复用有自己的奇偶 phase；A/C/U/post 四条 state/TMEM barrier 仍按 chunk 奇偶 phase。反例包括：slot 在任何 V-row 读 P/prefix 前覆写、缺一个 compute 到达、MMA 在 post-U B 读取完成前归还 free、或第二槽 B64 基址不满足本相对 XOR 物理相位。共享 IR/Verifier 需以具体字节区间与生产／消费操作证明这些条件，NVIDIA emitter 才发 mbarrier/PTX；不引入 layout algebra，也不把独立 witness 的通过当作自动调度授权。
 
 下一种大幅下降所需的 lowering 不是单纯添加 `setmaxnreg` 或五槽常数，而是先在 Cake Schedule 中给**同 CTA 准备→MMA→状态递推→epilogue**的每条存储边指定生产者、消费者、槽数、release/acquire 和读完后的复用条件；共享 IR/Verifier 维护值和别名语义，NVIDIA backend 负责 TMA/TMEM/PTX 发射，Target 检查真实 1,024-thread/约 219 KiB 路线资源，Lab 才选择何时采用。先以真实固定 H64 的完整输出、最终原位状态和同机计时比较，再看 packed/tail 与高保留反例。没有完整候选前，原始 CAKE 的代码只能作为**已知实现的设计证据**，不能把它的隐含机制直接当成新 Compiler pass。
 
