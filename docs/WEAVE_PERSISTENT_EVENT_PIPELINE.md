@@ -594,6 +594,27 @@ Cake CUPTI ABBA and is not a qualified Cake-to-baseline speedup. A common
 timer, repeated matched samples and target clock/reset qualification
 remain required.
 
+The matching Cake fanin K=4/c=64/budget=19,890 Nsight trial uses the same
+input and oracle snapshot as that baseline. Its first external root,
+`/home/qinhaiyan/cake-weave-cake-nsys-fanin-20260928/`, ended at profiler
+argument parsing in broker job `gpuq-10091f12229d`: the host's Nsight
+Systems 2025.5 does not accept `--cuda-trace-scope=process-tree`. No device
+sample or latency came from that job. A successor root,
+`/home/qinhaiyan/cake-weave-cake-nsys-fanin-v2-20260928/`, passed CPU-only
+candidate admission and submitted broker job `gpuq-d5a5e7d5c69f` with a
+single-process `--trace=cuda,nvtx` invocation. The four-GPU job outcome,
+oracle, trace coverage and any matched-time inference remain pending while
+the SSH route is unavailable; do not resubmit this create-only root.
+
+A separate CPU-only N=128 tensor-tile feasibility check edited no source or
+frozen Campaign. `Compiler.assess` admitted both modified up/gate and down
+Schedules without blocking findings, and native CUDA lowering emitted grids
+`[1,12,1]` and `[1,16,1]`, respectively, with 65,584 bytes of dynamic shared
+memory each. The current persistent-worker stage admission, TMEM allocation,
+store offset and device composition still explicitly require N=64. The
+larger tile is therefore an IR/lowering candidate, not a runnable EP4
+result; NVCC register use, spills, oracle and latency have not been measured.
+
 Before promotion, resolve the open c=95 mismatch Finding, qualify the
 target's four-device timing reset, and run a matched open baseline under
 the same measurement contract. This task branch remains a development
