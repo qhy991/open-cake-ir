@@ -68,13 +68,27 @@ def observation_order(names: list[str]) -> list[dict[str, str]]:
             for name in order]
 
 
+def _admitted_schedule(compiler, workload, plan, source: Path, route: dict,
+                       expected_abi: list[tuple], label: str):
+    assessment = compiler.assess_file(source)
+    if assessment.target != plan["target"] or not assessment.accepted or not assessment.lowering_eligible:
+        raise ValueError(f"paired cost {label} Schedule is not admitted")
+    document = json.loads(assessment.schedule_bytes)
+    observed_abi = [(b["name"], b["dtype"], b["shape"], b["mode"])
+                    for b in document["buffers"] if b["space"] == "global"]
+    if (document["lowering"] != route or observed_abi != expected_abi
+            or document["metadata"].get("workload_contract_sha256") != workload.canonical_sha256):
+        raise ValueError(f"paired cost {label} Schedule differs from Study route or Workload binding")
+    return assessment, compiler.lower(assessment), document
+
+
 def check_plan(snapshot: str | Path) -> dict[str, object]:
     """Resolve all non-device authorities from one immutable external snapshot."""
     snapshot = _external(snapshot)
     plan = _read(_external_file(snapshot, "plan.json", "paired cost plan"))
     fields = {"schema_version", "state", "plan_id", "model_id", "compiler_revision",
               "executor_revision", "study_path", "workload", "case_id", "target",
-              "baseline_bundle_path", "candidates", "observations",
+              "baseline_bundle_path", "baseline_schedule_path", "candidates", "observations",
               "varying_dimensions", "acceptance", "toolchain_identity",
               "toolchain_config_path"}
     if (not isinstance(plan, dict) or set(plan) != fields
@@ -128,18 +142,37 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     protocol = paired_protocol(policy)
     if protocol is None or policy["case_id"] != plan["case_id"] or policy["paired_timing"]["kind"] != PAIRED_KIND:
         raise ValueError("paired cost Study does not declare the expected CUPTI case")
+    route = study["arms"]["open_cake"]["lowering_route"]
+    expected_abi = [(arg.name, arg.dtype, list(arg.shape), arg.mode)
+                    for arg in workload.tensor_abi(plan["case_id"])]
     baseline_path = plan["baseline_bundle_path"]
-    if not isinstance(baseline_path, str) or Path(baseline_path).is_absolute():
+    baseline_schedule_path = plan["baseline_schedule_path"]
+    if (not isinstance(baseline_path, str) or Path(baseline_path).is_absolute()
+            or not isinstance(baseline_schedule_path, str)):
         raise ValueError("paired cost baseline must belong to the candidate snapshot")
     baseline = load_baseline_bundle(
         ROOT, _external_file(snapshot, baseline_path, "paired cost baseline bundle"),
     )
+    baseline_source = _external_file(snapshot, baseline_schedule_path, "paired cost baseline Schedule")
+    _, baseline_lowering, _ = _admitted_schedule(
+        compiler, workload, plan, baseline_source, route, expected_abi, "baseline",
+    )
     manifest = parse_launch_manifest(json.loads(baseline.artifact_payloads["launch_manifest"]))
     manifest.check_workload(workload, plan["case_id"])
+    requirements = baseline_lowering.toolchain_requirements
+    submitted = CandidateSubmission.seal(TaskOpenCakeEnvironment.media_type,
+                                         baseline_source.read_bytes())
+    warp_size = compiler._revision.targets[plan["target"]].warp_size
     if (baseline.target != plan["target"] or baseline.target != manifest.target
             or baseline.entry_point != manifest.kernel_name
-            or baseline.launch_spec_sha256 != manifest.canonical_sha256):
-        raise ValueError("paired cost baseline target or launch seal differs")
+            or baseline.launch_spec_sha256 != manifest.canonical_sha256
+            or baseline.candidate_sha256 != submitted.sha256
+            or baseline.artifact_payloads.get("lowered_source") != baseline_lowering.source.encode()
+            or baseline.entry_point != requirements["kernel_entry_point"]
+            or list(manifest.grid) != requirements["grid"]
+            or tuple(manifest.block) != (requirements["compile_options"]["num_warps"] * warp_size, 1, 1)
+            or manifest.hidden_null_pointer_parameters != 2):
+        raise ValueError("paired cost baseline differs from frozen Compiler lowering or launch seal")
     candidates = plan["candidates"]
     if (not isinstance(candidates, list) or len(candidates) != 3
             or any(not isinstance(item, dict) or set(item) != {"id", "schedule"}
@@ -154,21 +187,12 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     bindings = plan["varying_dimensions"]
     if (not isinstance(bindings, list) or bindings != [{"buffer": name, "dimension": 0} for name in ("a", "c")]):
         raise ValueError("paired cost B300 GEMM varying dimensions differ")
-    route = study["arms"]["open_cake"]["lowering_route"]
-    expected_abi = [(arg.name, arg.dtype, list(arg.shape), arg.mode)
-                    for arg in workload.tensor_abi(plan["case_id"])]
     signatures: set[bytes] = set()
     for item in candidates:
         source = _external_file(snapshot, item["schedule"], "paired cost Schedule")
-        assessment = compiler.assess_file(source)
-        if assessment.target != plan["target"] or not assessment.accepted or not assessment.lowering_eligible:
-            raise ValueError(f"paired cost Schedule {item['id']} is not admitted")
-        document = json.loads(assessment.schedule_bytes)
-        observed_abi = [(b["name"], b["dtype"], b["shape"], b["mode"])
-                        for b in document["buffers"] if b["space"] == "global"]
-        if (document["lowering"] != route or observed_abi != expected_abi
-                or document["metadata"].get("workload_contract_sha256") != workload.canonical_sha256):
-            raise ValueError(f"paired cost Schedule {item['id']} differs from Study route or Workload binding")
+        _, _, document = _admitted_schedule(
+            compiler, workload, plan, source, route, expected_abi, item["id"],
+        )
         distinct = {**document, "schedule_id": "candidate-display-id"}
         signatures.add(json.dumps(distinct, sort_keys=True, separators=(",", ":")).encode())
     if len(signatures) != 3:
@@ -228,6 +252,17 @@ def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) 
         authority_document={"lowering_route": study["arms"]["open_cake"]["lowering_route"]},
         workload=workload, case_id=plan["case_id"], executor=executor,
     )
+    baseline_source = _external_file(snapshot, plan["baseline_schedule_path"],
+                                     "paired cost baseline Schedule").read_bytes()
+    rebuilt = environment.build(CandidateSubmission.seal(environment.media_type,
+                                                        baseline_source))
+    if rebuilt.disposition != "launchable" or rebuilt.launchable is None:
+        raise ValueError(f"paired cost baseline build refused: {rebuilt.feedback}")
+    frozen_baseline = load_baseline_bundle(
+        ROOT, _external_file(snapshot, plan["baseline_bundle_path"], "paired cost baseline bundle"))
+    if (candidate_identity(rebuilt.launchable) != candidate_identity(frozen_baseline)
+            or dict(rebuilt.launchable.artifact_payloads) != dict(frozen_baseline.artifact_payloads)):
+        raise ValueError("paired cost baseline binary differs from frozen isolated compilation")
     rows = []
     for spec in plan["candidates"]:
         source = _external_file(snapshot, spec["schedule"], "paired cost Schedule").read_bytes()
