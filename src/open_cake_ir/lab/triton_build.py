@@ -151,7 +151,8 @@ def _worker(path: str) -> int:
     source = request['source'].encode()
     validate_triton_kernel(source, request['requirements'])
     try:
-        result = compile_triton(source, request['requirements'])
+        result = compile_triton(source, request['requirements'],
+                                source_path=Path('/build/lowered.py'))
     except Exception as error:
         candidate_rejection, diagnostic = _compile_failure(error)
         print(diagnostic, file=sys.stderr)
