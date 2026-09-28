@@ -236,6 +236,28 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 融合不能通过把两边 shared 数组直接相加来实现。新的固定源码容量筛查读取 `4dc1561e` 消费者的 **57,472 B** dynamic shared、单 chunk 准备 AOT 的 **41,088 B** static shared 和 Target 声明的 **232,448 B/CTA**：one-chunk 直加 **98,560 B**，纸面余 **133,888 B**，适合先做带真实 P/B/其它因子的单 chunk producer→consumer witness；把五槽七输出加 V ring 的 **187,520 B** 直接叠到现有消费者则需 **244,992 B**，超上限 **12,544 B**。后一算式会重复计算一部分现有 B/P 槽，说明真正五槽设计必须让准备生产者与消费者**共用这些具体 shared 字节及其 swizzle/phase 所有权**，并对 barrier、TMEM、寄存器驻留重新验证；它不是融合不可行的证明。原始 CAKE M64 实际 219,136 B 进一步给出可行几何对照，但不能把其隐式地址直接导入新 IR。Finding event 237 保留计算脚本及来源。性能主线先实现 one-chunk 合体与外部 oracle，再设计跨 chunk 槽复用，而不提升上述慢的 standalone 准备路线。
 
+#### 真实 one-chunk shared 生产／消费与状态别名
+
+新的冻结 H64 前 32 token 及全部 64 heads 的独立 CPU 递推 oracle 有 **262,144 个 BF16 输出**和 **1,048,576 个 BF16 最终状态**，保留原始 Q/K/V/G/beta/A_log/dt_bias 与初始状态位型。第一个**真正同 CTA** 源码 witness 在四 warp 中从原始 Q/K/G 归一化并生成七项因子，用 `ldmatrix`+warp MMA 生成 P/B；barrier 后每个线程独占一个 V 行，从 shared 直接读 P/B/base/final 因子、计算 RHS/严格下三角 U/输出/下一状态。它还把七项因子写到全局，只作诊断快照。精确 B300 AOT **56 寄存器、103,040 B shared、0 spill、448 B/thread stack**；broker-shared `gpuq-04d2327d61dc` 完成释放后，外部逐 token oracle 检查全部输出和原位状态零超差/无非有限值，最大绝对差 `0.000488/0.003906`，七项准备快照也对先前 Cake 准备证据零超差，公开输入未改写。它证明的是 one-chunk 数据流与别名，不是完整 256-chunk 性能。Finding events 238–239。
+
+四组按 V 行索引的 `base_prediction/query_prediction/U_fp/U_bf` 临时数组解释了上述局部栈。继任源码把这四组行独占数组放到显式 shared，AOT 变为 **64 寄存器、160,384 B shared、0 stack/spill**；`gpuq-9ed48260a00d` 完成外部 oracle，全部输出/状态及七项准备值与前版设备快照逐 bit 相同。第一次栈版对 shared 版的独占配对 `gpuq-f876b10714a7` 在预启动外来 PID 门禁处失败，**无有效计时**，不得凭静态 stack 变化推断收益。Finding events 240–242。
+
+第三版移除七项诊断性全局写回与 ABI 参数，状态消费者仍直接读同 CTA shared；精确 B300 AOT **48 寄存器、160,384 B shared、0 stack/spill**。broker-shared `gpuq-d3dc514d7ea0` 的全部公开输出/原位状态再过独立 oracle，且对上一版设备快照逐 bit 相同。与有诊断写回版的同 GPU7 五轮、每轮每臂 25 次冷 L2 CUPTI 配对 `gpuq-24322b2e090a` 中，两臂各用 512 个独立初始 BF16 状态槽；首次 host 派生分析因沿用旧臂名报 `KeyError`，保留失败。修正的 host_v2 只重读同一设备样本/快照，完整输出与最终状态均零超差，轮中位数的中位数为**诊断写回 574.662 µs、无物化 567.718 µs**，成对轮比值 `0.98797×`，净收益约 **1.2%**，最大轮内 CV 0.0734%。Finding events 243–244。去掉全局因子写回确有 bounded 收益，但当前消费者用标量 FP32 FMA 做四组矩阵乘法，且这只是 T32 one-chunk，不可与原始 CAKE 的 H64/T8192 完整延迟跨范围比较。**No promotion** to Compiler or完整 KDA；下一步把该已证明的片上边扩成两个 chunk 的状态传递，再把标量消费者换成有类型和 barrier 所有权的 TMEM contraction。
+
+#### 两 chunk 与完整 H64：正确的数据流、错误的计算映射
+
+独立 CPU 逐 token oracle 从同一冻结 H64 取前 64 token，给出 **524,288 输出、1,048,576 最终状态**。无物化合体源码将 `state_shared` 初始化一次，在同 CTA 内循环两个 chunk：每 chunk 重算真实 Q/K/G 因子、复用同一 shared 存储、生成 P/B，128 个 V 行各自产出输出并把 BF16 下一状态写回 `state_shared`，CTA barrier 后才允许下一 chunk 覆盖因子；只有第二块末尾把状态写到与初始状态同一设备地址。精确 B300 AOT 保持 **48 寄存器、160,384 B shared、0 stack/spill**；broker-shared `gpuq-4515dc19dacb` 完成释放后，T64 输出与状态对独立 oracle 零超差、无非有限值，最大绝对差分别 `0.000488/0.003906`，输入未改写。Finding events 245–246。这个证明关闭了**两次 producer→consumer shared 槽复用与 chunk 边界状态传递**的数值缺口，但没有证明 256 次循环的时序或速度。
+
+把同一 source loop 的界从 2 扩到 256，`gpuq-f705e63e27b4` 在 broker-shared GPU0 完成释放后，冻结 H64 的 **67,108,864 输出及 1,048,576 原位最终状态**全部通过外部逐 token oracle、零超差/无非有限值，最大绝对差仍为 `0.000488/0.003906`；公开输入保持不变。随后同 GPU1 的五轮三臂 `gpuq-71b11efe6982` 每轮每臂 25 次冷 L2 CUPTI、无 graph、各自 512 个 BF16 初始状态槽，十五份完整输出/状态快照均经释放后外部 oracle 零超差，最大轮内 CV **0.3251%**。轮中位数的中位数与成对比值：
+
+| 完整 H64/T8192 方案 | µs | 相对原始 CAKE |
+| --- | ---: | ---: |
+| 适配 B300 的原始 CAKE M64 | 456.131 | 1.000× |
+| Cake Triton 准备＋native TMEM 消费者 | 2,359.598 | 5.173× |
+| 单 kernel 无物化准备＋标量 row-owned 消费者 | 145,400.808 | 318.815× |
+
+Finding events 247–248。这是**完整同范围结果**：片上融合与原位状态数值成立，但标量消费者不是可接受性能种子。源码每个 V 行、每 chunk 明确做 base/query 两个 `32×128` 点积、严格下三角 496 个更新项、输出 `32×32` 与状态 `128×32` 校正，约 **13,808 次标量 FP32 FMA/行**；固定 H64 的 128 行×64 heads×256 chunk 约 **28.96B 个源码 FMA 项**，不是实测 SASS 动态指令数。当前 `4dc1561e` native 消费者用 TCGEN05/TMEM 承担这四项收缩，而该融合 witness 把它们退成标量循环；这给 145 ms 的方向性解释，**不能单凭计数精确归因**。Promotion disposition：**No promotion of scalar fused consumer**。下一项 NVIDIA lowering 不是再减少准备值全局写回，而是把已验证的 Q/K/G→P/B/base/final 片上生产者写入现有 TMEM 消费者的**确切 B64/P shared 视图**，由生产者发布 ready、MMA 角色消费并在读完后归还槽；IR/Verifier 要验证 source register/shared→TMEM 的物理区域、相位与所有权，而不是通过调用原来指向全局准备值的 TMA 来伪装融合。先在 one-chunk 契约证明四收缩和原位状态，再扩到两 chunk、256 chunk 并重做完整配对。
+
 下一种大幅下降所需的 lowering 不是单纯添加 `setmaxnreg` 或五槽常数，而是先在 Cake Schedule 中给**同 CTA 准备→MMA→状态递推→epilogue**的每条存储边指定生产者、消费者、槽数、release/acquire 和读完后的复用条件；共享 IR/Verifier 维护值和别名语义，NVIDIA backend 负责 TMA/TMEM/PTX 发射，Target 检查真实 1,024-thread/约 219 KiB 路线资源，Lab 才选择何时采用。先以真实固定 H64 的完整输出、最终原位状态和同机计时比较，再看 packed/tail 与高保留反例。没有完整候选前，原始 CAKE 的代码只能作为**已知实现的设计证据**，不能把它的隐含机制直接当成新 Compiler pass。
 
 ### 2.22 完整候选的 Program 与 Evaluation 别名边界
