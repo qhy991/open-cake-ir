@@ -78,7 +78,11 @@ Study promotion.
 A calibration successor must prepare complete Schedules under a clean Compiler
 commit, compile and seal the corresponding candidates, and collect paired Evaluation
 receipts under GPU Infra. It must replay raw timing, oracle, baseline, broker,
-source and split-freeze bindings before using the pure fitter. Only after an actual pre-GPU candidate cut and
+source and split-freeze bindings before using the pure fitter. The compile index
+owns the baseline and candidate artifact identities. A later pre-GPU cut or
+selected Evaluation using this model must consume those exact sealed binaries;
+recompiling the same Schedule does not establish CUBIN identity on B300.
+Only after an actual pre-GPU candidate cut and
 its separately frozen full audit can a Study policy be considered for this Workload;
 that decision must preserve the scientific comparison's treatment and acceptance
 contract. The current context helper alone authorizes no device work or Lab policy
