@@ -378,6 +378,15 @@ def _node_assignment(run: Path, task: dict, *, timeout_s: float = 2) -> dict:
     visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     if not isinstance(visible, str) or re.fullmatch(r"[0-9]+", visible) is None:
         raise ValueError("paired cost requires one broker-visible CUDA device")
+    exported_job = os.environ.get("GPUQ_JOB_ID")
+    if (not isinstance(exported_job, str)
+            or re.fullmatch(r"gpuq-[0-9a-f]{12}", exported_job) is None
+            or exported_job == "gpuq-000000000000"
+            or os.environ.get("GPUQ_MODE") != "exclusive"
+            or os.environ.get("GPUQ_BACKEND") != "nvidia"
+            or os.environ.get("GPUQ_DEVICE_IDS") != visible
+            or os.environ.get("GPUQ_OCCUPANCY_SCOPE") != "system"):
+        raise ValueError("paired cost requires broker-owned gpuq_v1 allocation environment")
     deadline = time.monotonic() + timeout_s
     while True:
         state = _read(_external_file(run, "state.json", "paired cost node state"))
@@ -393,11 +402,8 @@ def _node_assignment(run: Path, task: dict, *, timeout_s: float = 2) -> dict:
         if (state.get("state") == "running"
                 and isinstance(job_id, str)
                 and re.fullmatch(r"gpuq-[0-9a-f]{12}", job_id) is not None
-                and job_id != "gpuq-000000000000"
+                and job_id == exported_job
                 and state.get("gpu_ids") == [int(visible)]):
-            exported = os.environ.get("GPUQ_JOB_ID")
-            if exported is not None and exported != job_id:
-                raise ValueError("paired cost exported broker job differs from node assignment")
             return {"run_id": run_id, "broker_job_id": job_id,
                     "physical_gpu": int(visible), "node_state": expected}
         if (state.get("state") not in {"submitting", "queued"}
