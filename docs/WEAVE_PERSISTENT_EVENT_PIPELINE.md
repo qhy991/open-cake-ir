@@ -552,6 +552,15 @@ stages. Their coverage-failure reports and raw records remain at the
 `/home/qinhaiyan/cake-weave-sglang-cupti-feasibility*-20260928/` roots.
 Neither run supports a four-rank GPU latency.
 
+A third independent job `gpuq-b1952cc5c401` enabled cupti-python before
+the first baseline forward. Its FP64 oracle again passed with zero failures,
+but its four rank files retained only initialization activities and **zero
+sample kernels**. The original, forced-flush and early-enable overlays thus
+all fail complete-layer coverage in this multi-process path. The third
+coverage-failure record is retained at
+`/home/qinhaiyan/cake-weave-sglang-cupti-before-warmup-20260928/` and
+mirrored locally. No latency is selected from any of the three.
+
 A third broker job, `gpuq-97abd4ebc7fc`, used one warmup, a synchronized
 L2 clear per rank and a Torch profiler trace on the same baseline inputs. Its
 post-release oracle passed with zero failures. All four traces retained 49
