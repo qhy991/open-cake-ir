@@ -176,7 +176,8 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
             or req.get('source_chunk_tokens_by_chunks')
                != {'1':512,'2':256,'4':128}
             or req.get('logical_tile_capacity') != 255
-            or req.get('stage_task_capacity') != 19890
+            or req.get('stage_task_capacity')
+               != lowered.analysis.stage_task_slots_per_rank
             or req.get('rank_local_controls') is not True
             or req.get('state_reset') != 'zero_all_rank_mailboxes_before_launch'
             or req.get('peer_pair_runtime_check') is not True

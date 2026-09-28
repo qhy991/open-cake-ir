@@ -43,11 +43,14 @@ class RankedTileLaunchContract(unittest.TestCase):
         combine=Schedule.from_dict(json.loads((ROOT/'examples/schedules/native/'
             'weave-model-weighted-combine-rank512-b300.json').read_text()))
         cls.lowered=compiler.lower_ranked_tiles(effects,local,combine)
+        n128=Program.from_dict(json.loads((ROOT/'examples/programs/'
+            'weave-model-local-expert-ffn-native-b300-n128.json').read_text()))
+        cls.lowered_n128=compiler.lower_ranked_tiles(effects,n128,combine)
         cls.workload=load_workload(ROOT/'contracts/workloads/'
             'weave-model-ep4-bf16-moe-b300-v1.json')
 
-    def fixtures(self):
-        req=self.lowered.toolchain_requirements
+    def fixtures(self, lowered=None):
+        req=(lowered or self.lowered).toolchain_requirements
         inputs={};outputs={};plans={}
         for rank in range(4):
             cursor=0x1000
@@ -65,7 +68,8 @@ class RankedTileLaunchContract(unittest.TestCase):
         return inputs,outputs,plans
 
     def prepare(self,inputs,outputs,plans,*,isolated=True,launch_status=0,
-                calls=None,tile_counts=None):
+                calls=None,tile_counts=None,lowered=None):
+        selected=lowered or self.lowered
         events=[] if calls is None else calls
         def bind(bound_inputs,bound_outputs,contexts):
             events.append(('bind',tuple(contexts)))
@@ -79,17 +83,27 @@ class RankedTileLaunchContract(unittest.TestCase):
                 destroy=lambda:(events.append(('destroy',)) or 0),
             )
         def loader(lowered):
-            self.assertIs(lowered,self.lowered)
+            self.assertIs(lowered,selected)
             events.append(('load',))
             return RankedTileExecutable(4,20,512*2048*2,isolated,bind)
         bound=prepare_ranked_tile_case(
-            self.lowered,self.workload,'fanin_v2',inputs,outputs,plans,
+            selected,self.workload,'fanin_v2',inputs,outputs,plans,
             load_source=loader,
             check_tensor=lambda tensor,spec:self.assertEqual(tensor.spec,spec),
             storage_span=lambda tensor:(tensor.device,tensor.start,tensor.end),
             execution_context=lambda rank:f'ctx{rank}',
         )
         return bound,events
+
+    def test_n128_capacity_admits_checked_four_rank_launch(self):
+        inputs,outputs,plans=self.fixtures(self.lowered_n128)
+        for row in plans.values():
+            row['steal_budget']=12750
+        bound,events=self.prepare(inputs,outputs,plans,
+                                  lowered=self.lowered_n128)
+        self.assertIn(('load',),events)
+        self.assertEqual(bound.lowering.analysis.stage_task_slots_per_rank,12750)
+        bound.close()
 
     def test_workload_case_binding_and_shard_refusals(self):
         for case_id in self.workload.case_ids:
