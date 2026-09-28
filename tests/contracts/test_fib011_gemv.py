@@ -8,7 +8,7 @@ from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
-from open_cake_ir.tasks.solx_fib.b300_gemv011 import column_tiled_source
+from open_cake_ir.tasks.solx_fib.b300_gemv011 import column_tiled_source, row_tiled_source
 
 ROOT = Path(__file__).resolve().parents[2]
 TASK = "fib_gemm_n28672_k4096"
@@ -60,6 +60,46 @@ class Fib011GemvTest(unittest.TestCase):
         ):
             with self.subTest(other=other.workload_id), self.assertRaises(ValueError):
                 column_tiled_source(other)
+
+    def test_row_tiling_reuses_b_and_covers_m2_m4(self) -> None:
+        for rows, tile, k_tile, warps in ((2, 2, 512, 1), (2, 4, 1024, 4),
+                                          (4, 2, 1024, 1), (4, 4, 2048, 4)):
+            with self.subTest(rows=rows, tile=tile, k_tile=k_tile, warps=warps):
+                workload = WorkloadContract(gemm.workload_document(TASK, rows=rows))
+                schedule = parse(row_tiled_source(
+                    workload, rows_per_cta=tile, k_tile=k_tile,
+                    execution_groups=warps)).document
+                self.assertEqual(schedule["program_map"]["axes"][0]["tile"], tile)
+                reductions = [op for op in schedule["operations"]
+                              if op["id"].startswith("sum_k_")]
+                self.assertEqual(len(reductions), 4096 // k_tile)
+                self.assertTrue(all(op["parameters"]["axis"] == 1
+                                    for op in reductions))
+                assessment = self.compiler.assess(schedule)
+                self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                                 assessment.findings)
+                lowered = self.compiler.lower_program(Program.from_schedule(schedule))
+                lowered.validate_binding()
+                leaf = lowered.lowerings[0]
+                self.assertEqual(leaf.toolchain_requirements["grid"],
+                                 [(rows + tile - 1) // tile, 28672, 1])
+                if tile > rows:
+                    self.assertIn("mask=", leaf.source)
+
+    def test_row_tiling_refuses_unrelated_shapes_and_widths(self) -> None:
+        workload = WorkloadContract(gemm.workload_document(TASK, rows=2))
+        for kwargs in ({"rows_per_cta": 3}, {"k_tile": 256},
+                       {"execution_groups": 8}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                row_tiled_source(workload, **kwargs)
+        for other in (
+            WorkloadContract(gemm.workload_document(TASK, rows=1)),
+            WorkloadContract(gemm.workload_document(TASK, rows=7)),
+            WorkloadContract(gemm.workload_document(TASK, rows=2,
+                                                   backend="triton-b200")),
+        ):
+            with self.subTest(other=other.workload_id), self.assertRaises(ValueError):
+                row_tiled_source(other)
 
 
 if __name__ == "__main__":
