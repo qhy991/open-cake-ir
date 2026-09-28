@@ -124,12 +124,12 @@ CAKE_DEMO_DIR=$(mktemp -d)
 | [examples/](examples/) · [corpus/](corpus/) · [tests/](tests/) | 可读示例、编译器语料和合同测试；[贡献说明](CONTRIBUTING.md) |
 | [docs/](docs/README.md) · [findings/](findings/) · [reports/](reports/) | 报告索引、问题记录与[当前状态](reports/current/STATUS.md)；[完整目录](docs/catalog.md) |
 
-更细的模块边界见 [Context map](CONTEXT-MAP.md)，平台操作与历史材料见[文档总目录](docs/catalog.md)。
+更细的模块边界见 [Context map](CONTEXT-MAP.md)，平台操作与历史材料见[文档总目录](docs/catalog.md)，按主题阅读见[Wiki](docs/wiki/README.md)。
 
 ## 参与与引用
 
 - **参与开发：** [贡献说明](CONTRIBUTING.md) · [平台与分支维护](docs/DEVELOPMENT_BRANCHES.md) · [设计决策](docs/adr/README.md) · [研究路线](docs/ROADMAP.md)。
-- **引用报告：** [PDF 正文](docs/open-cake-ir-technical-report.pdf) · [TeX 源码](docs/open-cake-ir-technical-report.tex) · [推荐引用与 BibTeX](docs/README.md#引用--citation) · [机器可读引用](CITATION.cff)。引用具体论点请记录所读提交；实验结果还需注明各自的源码版本与测量范围。
+- **引用报告：** [PDF 正文](docs/open-cake-ir-technical-report.pdf) · [TeX 源码](docs/open-cake-ir-technical-report.tex) · [B300 MoE 案例](docs/WEAVE_CASE_STUDY.md) · [推荐引用与 BibTeX](docs/README.md#引用--citation) · [机器可读引用](CITATION.cff)。引用具体论点请记录所读提交；实验结果还需注明各自的源码版本与测量范围。
 - **问题与许可：** [安全问题](SECURITY.md) · [Apache-2.0](LICENSE) · [NOTICE](NOTICE) · [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 作者：秦海岩（Haiyan Qin），联系：<haiyanq@buaa.edu.cn>。
