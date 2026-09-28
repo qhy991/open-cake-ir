@@ -27,8 +27,8 @@ def column_tiled_source(workload: WorkloadContract, case_id: str = "primary", *,
         raise ValueError("column-tiled GEMV admits 2 or 4 columns per CTA")
     if type(k_tile) is not int or k_tile not in (512, 1024, 2048):
         raise ValueError("column-tiled GEMV admits K tiles 512, 1024 or 2048")
-    if type(execution_groups) is not int or execution_groups not in (4, 8):
-        raise ValueError("column-tiled GEMV admits 4 or 8 execution groups")
+    if type(execution_groups) is not int or execution_groups not in (1, 4, 8):
+        raise ValueError("column-tiled GEMV admits 1, 4 or 8 execution groups")
     declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
                     + (', mode="output")' if arg.mode == "output" else ')')
                     for arg in args]

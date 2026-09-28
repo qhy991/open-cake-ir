@@ -21,7 +21,8 @@ class Fib010GemvTest(unittest.TestCase):
 
     def test_segments_cover_k_and_columns_cover_n(self) -> None:
         workload = WorkloadContract(gemm.workload_document(TASK, rows=1))
-        for columns, k_tile, warps in ((2, 512, 4), (2, 1024, 4),
+        for columns, k_tile, warps in ((2, 512, 1), (4, 1024, 1),
+                                        (2, 512, 4), (2, 1024, 4),
                                         (2, 2048, 4), (4, 1024, 8)):
             with self.subTest(columns=columns, k_tile=k_tile, warps=warps):
                 schedule = parse(column_tiled_source(
@@ -48,7 +49,7 @@ class Fib010GemvTest(unittest.TestCase):
     def test_wrong_task_target_shape_and_tile_are_refused(self) -> None:
         workload = WorkloadContract(gemm.workload_document(TASK, rows=1))
         for kw in ({"columns_per_cta": 3}, {"k_tile": 256},
-                   {"execution_groups": 1}):
+                   {"execution_groups": 3}):
             with self.subTest(kw=kw), self.assertRaises(ValueError):
                 column_tiled_source(workload, **kw)
         for other in (
