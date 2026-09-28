@@ -191,7 +191,8 @@ runpy.run_path('tools/report_schedule_profile.py',run_name='__main__')
         )}
         seen = {}
         def fake_compile(source, *, target, options):
-            seen.update(target=target, options=options)
+            seen.update(target=target, options=options,
+                        filename=source[0].__code__.co_filename)
             return Compiled()
         modules["triton.backends.compiler"].GPUTarget = lambda *args: args
         modules["triton.compiler"].ASTSource = lambda *args: args
@@ -203,6 +204,15 @@ runpy.run_path('tools/report_schedule_profile.py',run_name='__main__')
                         "code_object": "cubin", "triton_arch": 100, "warp_size": 32}
         with patch.dict(sys.modules, modules), patch("importlib.metadata.version", return_value="fixture"):
             compilation = compile_triton(b"def kernel(): pass\n", requirements)
+            with tempfile.TemporaryDirectory() as directory:
+                stable = Path(directory) / "lowered.py"
+                compile_triton(b"def kernel(): pass\n", requirements, source_path=stable)
+                self.assertEqual(seen["filename"], str(stable))
+                self.assertFalse(stable.exists())
+                stable.write_text("existing source")
+                with self.assertRaisesRegex(ValueError, "new absolute lowered.py"):
+                    compile_triton(b"def kernel(): pass\n", requirements, source_path=stable)
+                self.assertEqual(stable.read_text(), "existing source")
         self.assertEqual(seen["target"], ("cuda", 100, 32))
         self.assertEqual(compilation.threads_per_cta, 128)
         self.assertEqual(compilation.dynamic_shared_bytes, 32)

@@ -447,9 +447,11 @@ class NativePairingContractTests(unittest.TestCase):
                         def supervise(argv, **kwargs):
                             stderr = StringIO()
                             with mock.patch('importlib.metadata.version', return_value='fixture'), \
-                                 mock.patch.object(triton_build, 'compile_triton', side_effect=error), \
+                                 mock.patch.object(triton_build, 'compile_triton', side_effect=error) as compile_, \
                                  contextlib.redirect_stderr(stderr):
                                 code = triton_build._worker(str(Path(kwargs['cwd']) / 'request.json'))
+                                self.assertEqual(compile_.call_args.kwargs['source_path'],
+                                                 Path('/build/lowered.py'))
                             returncodes.append(code)
                             return subprocess.CompletedProcess(argv, code, b'fixture build stdout\n', stderr.getvalue().encode())
                         submission = CandidateSubmission.seal(environment.media_type, encoded(payload))

@@ -7,6 +7,7 @@ needs neither Triton nor CUDA; those are required only for an explicit compilati
 from __future__ import annotations
 
 import ast
+import contextlib
 from dataclasses import dataclass
 from hashlib import sha256
 import importlib.util
@@ -419,8 +420,34 @@ def triton_route(requirements: Mapping[str, object]) -> TritonRoute:
     )
 
 
-def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonCompilation:
-    """Compile a complete emitted source; never launch it or initialize GPU handles."""
+@contextlib.contextmanager
+def _lowered_source_file(source: bytes, source_path: Path | None):
+    """The isolated worker supplies a stable guest path; standalone builds own a tempdir."""
+    if source_path is None:
+        with tempfile.TemporaryDirectory(prefix="open-cake-triton-") as directory:
+            path = Path(directory) / "lowered.py"
+            path.write_bytes(source)
+            yield path
+        return
+    path = Path(source_path)
+    if (not path.is_absolute() or path.name != "lowered.py" or path.exists()
+            or path.is_symlink() or not path.parent.is_dir()):
+        raise ValueError("offline Triton source path must be a new absolute lowered.py")
+    path.write_bytes(source)
+    try:
+        yield path
+    finally:
+        path.unlink()
+
+
+def compile_triton(source: bytes, requirements: Mapping[str, object], *,
+                   source_path: Path | None = None) -> TritonCompilation:
+    """Compile a complete emitted source; never launch it or initialize GPU handles.
+
+    In the isolated build jail, `/build` is unique per invocation but has a stable
+    guest spelling. Its fixed source path keeps debug locations from changing the
+    emitted text and CUBIN when the same Schedule is compiled again.
+    """
     route = triton_route(requirements)
     target = requirements["target"]
     if (
@@ -441,9 +468,7 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
     from triton.backends.compiler import GPUTarget
     from triton.compiler import ASTSource, compile as triton_compile
 
-    with tempfile.TemporaryDirectory(prefix="open-cake-triton-") as directory:
-        path = Path(directory) / "lowered.py"
-        path.write_bytes(source)
+    with _lowered_source_file(source, source_path) as path:
         spec = importlib.util.spec_from_file_location("open_cake_offline_lowering", path)
         if spec is None or spec.loader is None:
             raise ValueError("Triton lowering module specification failed")
