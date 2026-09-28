@@ -620,14 +620,63 @@ oracle and analysis are retained at
 locally. The worker is the first target for the next compiler/lowering/kernel
 trial.
 
-A separate CPU-only N=128 tensor-tile feasibility check edited no source or
-frozen Campaign. `Compiler.assess` admitted both modified up/gate and down
-Schedules without blocking findings, and native CUDA lowering emitted grids
-`[1,12,1]` and `[1,16,1]`, respectively, with 65,584 bytes of dynamic shared
-memory each. The current persistent-worker stage admission, TMEM allocation,
-store offset and device composition still explicitly require N=64. The
-larger tile is therefore an IR/lowering candidate, not a runnable EP4
-result; NVCC register use, spills, oracle and latency have not been measured.
+A CPU-only N=128 feasibility check first showed that `Compiler.assess`
+admitted both modified up/gate and down Schedules without blocking findings;
+standalone native CUDA lowering emitted grids `[1,12,1]` and `[1,16,1]` at
+65,584 dynamic shared bytes each. Commit `0177ca57` added a distinct N128
+Program and bounded worker lowering. Ranked-tile analysis derives
+`12+22+16=50` tasks per logical tile and a 12,750-stage-task capacity,
+versus N64's `24+22+32=78` and 19,890. NVCC compiled the full N128 library
+with 145 registers/thread, zero spills and 9,216 static shared bytes; the
+same-commit N64 control uses 84 registers/thread with zero spills. The N128
+variant keeps the existing N64 Program and experiment artifacts intact.
+
+The first four-GPU N128 job `gpuq-dd1cdbaba524` failed before model-kernel
+execution because Evaluation admission still required 19,890 stage tasks.
+The failed root is retained at
+`/home/qinhaiyan/cake-weave-n128-nsys-fanin-0177ca57/`. Commit `2c638aad`
+changed that admission to require the capacity from the checked ranked-tile
+analysis. A CPU replay of the failed N128 Program, lowering and exact plan
+then passed at `/home/qinhaiyan/cake-weave-n128-admission-replay-2c638aad/`;
+25 related contracts and all 179 Corpus Gate cases passed at the fixed
+commit. The workload, FP64 oracle, route snapshot and L2 reset did not change.
+
+Successor job `gpuq-057623aa7116` completed on four B300 GPUs. Its
+post-release audit found **0/4,194,304** FP64-oracle failures, zero v3 bit
+differences and exact agreement on all 80 CPU tile-event slots; the ranks
+stole 951/1,038/1,048/968 tasks. The complete Nsight window is 7.455 ms,
+the host window 7.447 ms, and the single development joint GPU activity
+span **7.335 ms**, with per-rank worker kernels of 5.672–5.810 ms. That is
+shorter than the earlier N64 Nsight span of 7.733 ms, but separate leases
+and one sample per arm cannot establish a speedup. The N128 root is
+`/home/qinhaiyan/cake-weave-n128-nsys-fanin-2c638aad/` and mirrored locally.
+
+Two same-commit, same-input, same-lease CUPTI comparisons then exercised
+N64 and N128 at c=64 with their respective full analyzed steal capacities,
+19,890 and 12,750. Every arm performed two warmups and three L2-flushed
+samples on four GPUs. All 12 measured samples in each four-arm trial had complete
+16-kernel and 92-memset layer coverage, plus four reset kernels. Every arm
+passed the FP64 oracle, v3 bitwise check and CPU tile-event plan.
+In `gpuq-4111913e8f16` (N64/N128/N128/N64), the first three arm medians
+were 6.447/6.210/6.224 ms, but the final N64 arm took **27.082 ms**;
+its worker kernels, not a trace gap, took roughly 18–26 ms across devices.
+The retained `interpretation-v2.json` explicitly selects no performance
+ratio from that trial; the automatic 2.696 ratio in its original report is
+invalid as a performance estimate. The cause of this order-specific slow
+arm remains unproven.
+
+Independent reversed-order `gpuq-f1c87673109b` (N128/N64/N64/N128)
+measured arm medians 6.184/6.373/6.315/5.997 ms. Its N64 and N128
+two-arm medians are **6.344 and 6.091 ms**, a **1.042x** N64/N128
+development ratio on this route. The first ABBA's stable opening pair and
+the separate Nsight observations point in the same direction, but the
+unexplained 27 ms arm, small absolute saving and missing target clock
+qualification prevent a general performance claim. Both comparison roots
+are retained under `/home/qinhaiyan/cake-weave-n64-vs-n128-*-2c638aad-fanin/`
+and mirrored locally. Promotion disposition: retain N128 as a bounded
+development candidate; do not select it by default or generalize beyond
+fanin K=4/c=64 until the route/K matrix, timing stability and profiler
+qualification are checked.
 
 Before promotion, resolve the open c=95 mismatch Finding, qualify the
 target's four-device timing reset, and run a matched open baseline under
