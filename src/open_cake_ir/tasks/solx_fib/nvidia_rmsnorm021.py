@@ -1,4 +1,4 @@
-"""B300 Cake row-group candidates for FlashInfer RMSNorm task 021."""
+"""Exact NVIDIA Cake row-group candidates for FlashInfer RMSNorm task 021."""
 from __future__ import annotations
 
 from open_cake_ir.evaluation.workload import WorkloadContract
@@ -7,6 +7,7 @@ from .workload import SPECS, TASKS, validate_solx_fib_contract
 
 TASK = "fib_rmsnorm_h128"
 ROW_GROUPS = frozenset((4, 8, 16))
+TARGETS = frozenset(("sm_100a", "sm_103a"))
 QUALIFIED_T16_ROWS = frozenset((49532, 65016, 520128))
 
 
@@ -19,9 +20,9 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
     This mapping changes CTA count and reuse, not Workload semantics.
     """
     validate_solx_fib_contract(workload.document)
-    if (workload.target != "sm_103a"
+    if (workload.target not in TARGETS
             or workload.document["operator"] != TASKS[TASK][0]):
-        raise ValueError("row-group FIB 021 mapping requires the exact B300 task")
+        raise ValueError("row-group FIB 021 mapping requires the exact B200 or B300 task")
     if type(rows_per_cta) is not int or rows_per_cta not in ROW_GROUPS:
         raise ValueError("FIB 021 row group must be 4, 8 or 16")
     x, weight, out = workload.tensor_abi(case_id)
@@ -71,6 +72,8 @@ def qualified_rowgroup16_source(workload: WorkloadContract,
     This is a shape-level Lab recipe, not a complete-task dispatcher.
     """
     validate_solx_fib_contract(workload.document)
+    if workload.target != "sm_103a":
+        raise ValueError("FIB 021 T16 measured development leads require B300")
     rows = workload.tensor_abi(case_id)[0].shape[0]
     if rows not in QUALIFIED_T16_ROWS:
         raise ValueError("FIB 021 T16 development lead is qualified only at R49532, R65016 and R520128")
