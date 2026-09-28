@@ -82,6 +82,10 @@ class Fib021RowGroupTest(unittest.TestCase):
                         schedule = parse(source).document
                         self.assertEqual(schedule["roles"][0]["execution_groups"],
                                          list(range(warps)))
+                        reduction = next(op for op in schedule["operations"]
+                                         if op["id"] == "sum_square")
+                        self.assertEqual(reduction["parameters"]["axis"],
+                                         0 if tile == 1 else 1)
                         lowered = self.compiler.lower_program(
                             Program.from_schedule(schedule))
                         lowered.validate_binding()

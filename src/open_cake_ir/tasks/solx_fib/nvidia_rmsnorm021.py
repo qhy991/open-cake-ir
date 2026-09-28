@@ -40,6 +40,9 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
     entry = f"cake_fib021_rowgroup_{rows_per_cta}"
     if num_warps != 4:
         entry += f"_w{num_warps}"
+    reduction_axis = 0 if rows_per_cta == 1 else 1
+    inverse_value = "inverse" if rows_per_cta == 1 else "lm.broadcast(inverse, axis=0)"
+    weight_value = "weights" if rows_per_cta == 1 else "lm.broadcast(weights, axis=1)"
     return (
         'from open_cake_ir.compiler import frontend as cake\n\n'
         f'@cake.schedule(name="{workload.workload_id}-row-group-{rows_per_cta}{warp_suffix}", '
@@ -56,14 +59,14 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
         '        stored = lm.load(x[row, column], id="load_x")\n'
         '        values = lm.cast(stored, to="fp32", id="widen_x")\n'
         '        squares = lm.square(values, id="square")\n'
-        '        totals = lm.reduce(squares, op="sum", axis=1, '
+        f'        totals = lm.reduce(squares, op="sum", axis={reduction_axis}, '
         'scope="cta", across_loop=False, id="sum_square")\n'
         '        mean_square = totals / 128.0\n'
         f'        inverse = lm.rsqrt(mean_square + {epsilon!r}, id="inverse")\n'
         '        stored_weight = lm.load(weight[column], id="load_weight")\n'
         '        weights = lm.cast(stored_weight, to="fp32", id="widen_weight")\n'
-        '        normalized = values * lm.broadcast(inverse, axis=0)\n'
-        '        weighted = normalized * lm.broadcast(weights, axis=1)\n'
+        f'        normalized = values * {inverse_value}\n'
+        f'        weighted = normalized * {weight_value}\n'
         '        narrowed = lm.cast(weighted, to="bf16", id="narrow_out")\n'
         '        lm.store(out[row, column], narrowed, '
         'coalesced=False, id="store_out")\n'
