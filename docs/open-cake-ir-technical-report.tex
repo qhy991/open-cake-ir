@@ -1797,10 +1797,52 @@ CPU 与留存 Cake 准备参考。再加入 Q 后，同一 TMEM state 分别
 精确 AOT 为 78 寄存器、33,792 字节 shared、0 spill；
 \code{gpuq-ab0d1c2b2ca8} 的三组每组两份各 4,096 项
 与独立 CPU 乘法均零超差，最大绝对差 \(3.73\times10^{-8}\)。
-这证明真实生产者到 TCGEN05 消费者的两条物理边；
-P／solve、U 后两项收缩、跨 chunk barrier phase 和完整延迟
-仍需独立资格化。Compiler 还须明确 shared 到 warp fragment
-及同 CTA B 槽的生产者、ready/free 与覆盖规则。
+这证明真实生产者到 TCGEN05 消费者的两条物理边；后续
+P／solve、U 后两项收缩及跨 chunk barrier phase 的证据如下。
+Compiler 仍须明确 shared 到 warp fragment 及同 CTA B 槽
+生产者、ready/free 与覆盖的合法性规则。
+
+\paragraph{四项 TCGEN 合体的完整资格与性能。}
+U 后两项 K-major B64 shared／TMEM 收缩先在独立 B300 witness
+中对四组输入通过 CPU 矩阵乘法，状态校正为 \(128\times128\)，
+输出校正为 \(128\times32\)。并入同 CTA 后，首版的 P/B 与
+base/query 路径正确，输出和状态却大面积超差；新增的两个 B64
+槽用相对 XOR swizzle，仅声明 128 字节基址对齐。
+只把这两个视图改为 1,024 字节对齐的继任版通过 T32 oracle。
+这是该手写物理映射的有界修复，不能推成通用硬件最小对齐。
+四个 ready/done barrier 再以奇偶 phase 复用到两个 chunk，
+T64 输出／状态通过独立 oracle。完整 256 chunk 原型的 AOT 为
+157 寄存器、161,920 字节 shared、0 stack/spill；
+\code{gpuq-29171a9c5e0f} 对冻结 H64 的全部
+67,108,864 个输出与 1,048,576 个原位状态零超差，
+最大绝对差 0.000488／0.003906。
+
+第一次四臂计时因外来计算进程被严格门禁拒绝，未采用其局部样本。
+
+\code{gpuq-2aa5ffefd517} 是新的三臂作业，在同 GPU5 完成五轮、
+每轮每臂 25 次冷 L2 CUPTI、无 graph；十五份完整输出与状态
+快照均通过冻结外部 oracle，最大轮内 CV 为 0.1324\%。
+\begin{table}[htbp]
+\centering
+\caption{B300-M4 完整 H64/T8192 的同 GPU5 三臂有效配对。}
+\label{tab:kda-b300-four-tcgen-full}
+\small
+\begin{tabular}{lrr}
+\toprule
+实现 & 轮中位数的中位数（\,$\mu$s） & 相对原始 CAKE \\
+\midrule
+原始 CAKE M64（适配 B300） & 456.260 & 1.000\(\times\) \\
+Cake Triton 准备＋native TMEM 消费 & 2,372.627 & 5.201\(\times\) \\
+片上准备＋四 TCGEN 收缩 & 15,879.295 & 34.803\(\times\) \\
+\bottomrule
+\end{tabular}
+\end{table}
+四收缩显著降低了先前标量融合的耗时，但两次融合数字来自不同
+有效作业，不能报告为成对加速比。该版本仍比两阶段慢 6.692 倍，
+当前 \emph{No promotion}。严格下三角求解、每块准备前缀和
+256 次 CTA 完成边的成本尚未分别测定；下一轮要先保留同一
+oracle／计时政策作有界阶段诊断，再设计共享字节和 ready/free
+明确归属的 producer-ahead 流水。
 
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
