@@ -59,8 +59,7 @@
 \renewcommand{\footrulewidth}{0pt}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/677eb444fec593294c470dcc5793262ae769fce2/#1}{#2}}
-\newcommand{\weaverepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/73065ad672c2e7f7ef1c8bb9b7cb76b488d392b9/#1}{#2}}
-\newcommand{\weavecode}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/2c638aad856909de36efaa234aefb48799d42bcc/#1}{#2}}
+\newcommand{\weaverepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/93d052021cc3b4b0d8a5580837f7d87bbbd2fc02/#1}{#2}}
 \newcommand{\scope}[1]{\textcolor{accent}{\textbf{#1}}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newtcolorbox{notebox}[1][]{enhanced,breakable,colback=mist,colframe=mist,boxrule=0pt,borderline west={2pt}{0pt}{accent},left=4mm,right=4mm,top=3mm,bottom=3mm,#1}
@@ -120,8 +119,9 @@
 \begin{notebox}
 \noindent\textbf{报告边界}\quad 主体章节所读源码固定为
 \code{677eb444fec593294c470dcc5793262ae769fce2}。第\ref{sec:weave-case}节是
-2026 年 9 月 28 日的 MoE 案例增补，另以 \code{2c638aad} 固定 Compiler 与 CUDA lowering；
-不将后续代码追认为主体快照。设备实验各自绑定精确目标、Workload、oracle 和计时协议。
+2026 年 9 月 28 日的 MoE 案例增补，其实验代码固定于尚未合入主线的
+\code{2c638aad}；主线本次只纳入案例记录，不将后续代码追认为主体快照。
+设备实验各自绑定精确目标、Workload、oracle 和计时协议。
 \end{notebox}
 \end{titlepage}
 
@@ -954,11 +954,11 @@ $K=4/2/1$ 的 12 个控制上有 \textbf{0/50,331,648} 个 FP64-oracle 失败、
 与下一事件生产重叠。此处是有界正确性和执行证据，不是对开源实现的加速声明。
 \end{notebox}
 
-这一增补单独固定 Compiler 与 CUDA lowering 于 \code{2c638aad}，完整的逐提交、
-broker 作业与外部证据根见\weaverepo{docs/WEAVE_PERSISTENT_EVENT_PIPELINE.md}{MoE 任务记录}。
-\weavecode{src/open_cake_ir/compiler/ir/ranked_tile.py}{RankedTile 分析}
+这一增补的实验代码单独固定于尚未合入主线的 \code{2c638aad}，
+作业编号、外部证据根与结论边界见\weaverepo{docs/WEAVE_CASE_STUDY.md}{MoE 案例记录}。
+\code{RankedTileEffects.analyze}
 由 ProgramMap 推导各阶段的 CTA 工作单元与安全任务容量；
-\weavecode{src/open_cake_ir/compiler/backends/native_cuda_ranked_tile.py}{native CUDA 组合 lowering}
+\code{lower\_ranked\_tiles}
 把 up/gate、activation、down 的 Cake Schedule 与事件发布、前驱依赖和有界偷取
 绑定为一个完整的 B300 worker。一个 rank 的一层只启动一次持久 cooperative grid：
 前 $c$ 个 CTA 生产路由、Bin 和 tile，其余 CTA 消费就绪任务；生产者完成事件工作后
@@ -970,7 +970,7 @@ broker 作业与外部证据根见\weaverepo{docs/WEAVE_PERSISTENT_EVENT_PIPELIN
 下一事件 lookahead 与双角色流水建立了实际任务重叠，早期完整层计时仍接近持平。
 随后把同 GPU 生产者 barrier 的 PTX acquire/release 收窄为 device scope，
 跨 GPU 发布仍保留 system scope；远端 BF16 payload 在对齐时使用 128-bit PTX
-加载/存储，非对齐子视图走标量路径。\weavecode{src/open_cake_ir/compiler/backends/native_cuda_tile_stage.py}{FFN stage lowering}
+加载/存储，非对齐子视图走标量路径。\code{emit\_tensor\_tile\_stage}
 进一步把 activation 从每 CTA 一行改为四行、六个 warp 各一行，并给最后的不足六行
 加掩码；N128 版本同时改变 TMA box、MMA 形状、TMEM 列数、共享内存位置与输出偏移。
 这些资源和任务容量随 Schedule 派生，不由 Evaluation 另行指定。
@@ -1289,7 +1289,7 @@ def softmax(lm, x: cake.Tensor((8, 512, 128), "fp32"),
 当前 Compiler & \repo{reports/current/STATUS.md}{状态页}、\repo{compiler/revision.json}{版本清单}与精确目标文档 \\
 B300 FlashInfer & \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{逐任务状态}；每行链接自己的 Finding 与收据 \\
 B300 TinyGEMM2 & \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{严格数值与成对计时报告} \\
-B300 MoE 增补 & \weaverepo{docs/WEAVE_PERSISTENT_EVENT_PIPELINE.md}{持久事件流水、N128 与开源基线专题}；实验另固定 \code{2c638aad} \\
+B300 MoE 增补 & \weaverepo{docs/WEAVE_CASE_STUDY.md}{持久事件流水、N128 与开源基线案例}；实验代码另固定于未合入主线的 \code{2c638aad} \\
 Apple、Hygon、AMD & 各平台 \repo{docs/RESULTS.md}{发布汇总}与原记录 \\
 MetaX C550 & \repo{docs/metax-c550.md}{平台专题}及 \repo{docs/ARCHITECTURE.md}{当前 Run 案例} \\
 迁移离线试点 & \repo{docs/OPTIMIZATION_TRANSFER.md}{机制与证据边界} \\
@@ -1320,7 +1320,7 @@ Assessment 与 lowering；设备结果则须在原任务的目标、工具链、
 本文是项目维护者撰写的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
 所读源码提交；引用性能时还需追溯案例自己的执行源码、精确目标、Workload、baseline、
 oracle、计时区间与质量门。主体章节的仓库链接固定到 \code{677eb444}；MoE 增补
-分别固定到 \code{2c638aad} 源码和 \code{73065ad6} 任务记录，实验原始收据的身份
+的主线案例记录固定到 \code{93d05202}，实验代码另固定到未合入主线的 \code{2c638aad}，原始收据身份
 仍由该专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
 
@@ -1343,7 +1343,7 @@ arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
 \bibitem{amdresults} H. Qin. \repo{docs/results/amd/README.md}{AMD 平台结果}. open-cake-ir@677eb444, 2026.
 \bibitem{metax} H. Qin. \repo{docs/metax-c550.md}{C550 专题与 M17 独立确认}. open-cake-ir@677eb444, 2026.
 \bibitem{cakecomparison} H. Qin. \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{B300 CAKE 重叠任务对照}. open-cake-ir@677eb444, 2026.
-\bibitem{weavecase} H. Qin. \weaverepo{docs/WEAVE_PERSISTENT_EVENT_PIPELINE.md}{B300 MoE 持久事件流水与 N128 验证}. open-cake-ir@73065ad6；执行源码 open-cake-ir@2c638aad, 2026.
+\bibitem{weavecase} H. Qin. \weaverepo{docs/WEAVE_CASE_STUDY.md}{B300 MoE 持久事件流水与 N128 验证}. open-cake-ir@93d05202；实验源码 2c638aad 尚未合入主线，2026.
 \bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}. open-cake-ir@677eb444, 2026.
 \bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}. open-cake-ir@677eb444, 2026.
 \end{reportbibliography}
