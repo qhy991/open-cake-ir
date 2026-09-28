@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import json
 import os
 import subprocess
@@ -15,6 +16,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import calibrate_paired_cost as instrument
+from tests.contracts.test_paired_cost_binary import make_cubin
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.toolchain import TritonCompilation
@@ -247,6 +249,38 @@ class PairedCostPlanTest(unittest.TestCase):
                     self.assertRaisesRegex(ValueError, "baseline binary differs"):
                 instrument.prepare_compile(
                     snapshot, stage, self.FakeIsolatedCompiler(plan["toolchain_identity"]))
+
+    def test_baseline_recompile_allows_only_nonexecuting_debug_lines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            bundle = snapshot / plan["baseline_bundle_path"]
+            record = json.loads(bundle.read_text())
+            frozen = load_baseline_bundle(ROOT, bundle)
+            payloads = dict(frozen.artifact_payloads)
+            payloads["cubin"] = make_cubin()
+            (bundle.parent / record["artifact_paths"]["cubin"]).write_bytes(payloads["cubin"])
+            sealed = LaunchableCandidate(
+                frozen.candidate_sha256, frozen.target, frozen.entry_point,
+                {role: sha256(value).hexdigest() for role, value in payloads.items()},
+                frozen.launch_spec_sha256, payloads,
+            )
+            record["candidate"] = candidate_identity(sealed)
+            write(bundle, record)
+            instrument.check_plan(snapshot)
+
+            class DebugLineCompiler(self.FakeIsolatedCompiler):
+                def compile(self, source, requirements):
+                    compiled = super().compile(source, requirements)
+                    return replace(compiled, artifacts={**compiled.artifacts,
+                        "cubin": make_cubin(line=b"path-B-1234", merc_line=b"merc-B-1234")})
+
+            stage = Path(directory).resolve() / "compile"
+            stage.mkdir()
+            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
+                index = instrument.prepare_compile(
+                    snapshot, stage, DebugLineCompiler(plan["toolchain_identity"]))
+            self.assertEqual(len(index["candidates"]), 3)
 
     def test_cpu_compile_seals_all_three_common_candidates(self):
         with tempfile.TemporaryDirectory() as directory:

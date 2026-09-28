@@ -21,7 +21,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tools"))
 
+from paired_cost_binary import equivalent_except_debug_lines  # noqa: E402
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evaluation import EvaluationReceipt  # noqa: E402
 from open_cake_ir.evaluation.paired import PAIRED_KIND, candidate_identity, paired_protocol  # noqa: E402
@@ -260,8 +262,17 @@ def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) 
         raise ValueError(f"paired cost baseline build refused: {rebuilt.feedback}")
     frozen_baseline = load_baseline_bundle(
         ROOT, _external_file(snapshot, plan["baseline_bundle_path"], "paired cost baseline bundle"))
-    if (candidate_identity(rebuilt.launchable) != candidate_identity(frozen_baseline)
-            or dict(rebuilt.launchable.artifact_payloads) != dict(frozen_baseline.artifact_payloads)):
+    rebuilt_payloads = dict(rebuilt.launchable.artifact_payloads)
+    frozen_payloads = dict(frozen_baseline.artifact_payloads)
+    if (rebuilt.launchable.candidate_sha256 != frozen_baseline.candidate_sha256
+            or rebuilt.launchable.target != frozen_baseline.target
+            or rebuilt.launchable.entry_point != frozen_baseline.entry_point
+            or rebuilt.launchable.launch_spec_sha256 != frozen_baseline.launch_spec_sha256
+            or set(rebuilt_payloads) != set(frozen_payloads)
+            or any(rebuilt_payloads[role] != frozen_payloads[role]
+                   for role in rebuilt_payloads if role != "cubin")
+            or not equivalent_except_debug_lines(frozen_payloads["cubin"],
+                                                 rebuilt_payloads["cubin"])):
         raise ValueError("paired cost baseline binary differs from frozen isolated compilation")
     rows = []
     for spec in plan["candidates"]:

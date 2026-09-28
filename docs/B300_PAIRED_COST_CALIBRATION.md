@@ -32,7 +32,11 @@ its in-snapshot configuration, acceptance limits, and all nine observations.
 The baseline's own complete Schedule is sealed beside its bundle. `check-plan`
 matches its submission bytes, Compiler lowering, Workload ABI and launch seal;
 the CPU local stage recompiles it with the frozen isolated toolchain and refuses
-any difference in the complete artifact bundle before measuring a candidate.
+any difference in the complete artifact bundle before measuring a candidate,
+except CUBIN bytes confined to the non-executing `.debug_line` and
+`.nv.merc.debug_line` ELF sections. The section table, all other CUBIN bytes and
+every other artifact must be identical. This exception follows a retained
+repeated-compile diagnosis; it changes no launched binary or timing rule.
 Each Schedule must replace the Corpus starter's placeholder Workload identity with
 the frozen Workload's canonical identity before admission.
 The observation order is three fit candidates, the reversed calibration order,
