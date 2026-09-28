@@ -1749,6 +1749,42 @@ one-chunk 片上生产／消费验证。把五槽七输出与 V ring 的
 lowering 须复用确切 shared 字节，重新约束 swizzle、槽 phase、
 barrier 和 TMEM 生命周期，不能由容量公式推断最终延迟。
 
+\paragraph{首次完整同 CTA 融合的边界。}
+一个 source-only 原型从真实 Q/K/G 在同 CTA shared 生成因子和 P/B，
+再让各 V 行读取这些片上值，跨 chunk 持有 BF16 状态，只在末尾原位
+写回。前 32 和 64 token 的独立逐 token oracle 均零超差；
+完整 256-chunk H64 作业 \code{gpuq-f705e63e27b4} 的
+67,108,864 个输出及 1,048,576 个最终状态也全部零超差，
+最大绝对差 0.000488／0.003906，输入未改写。
+去掉七项诊断性全局写回后，单 chunk 同 GPU 配对从
+574.662 降至 567.718\,$\mu$s，净降约 1.2\%；
+这只是 T32 的源级诊断，不能跨范围对比完整 CAKE。
+
+\begin{table}[htbp]
+\centering
+\caption{B300-M4 完整 H64/T8192 三臂同 GPU1 配对；五轮、每轮每臂
+25 次冷 L2 CUPTI，无 graph，十五份完整输出及状态快照均通过外部 oracle。}
+\label{tab:kda-b300-full-fused-scalar}
+\small
+\begin{tabular}{lrr}
+\toprule
+实现 & 轮中位数的中位数（\,$\mu$s） & 相对原始 CAKE \\
+\midrule
+原始 CAKE M64（适配 B300） & 456.131 & 1.000\(\times\) \\
+Cake Triton 准备＋native TMEM 消费 & 2,359.598 & 5.173\(\times\) \\
+同 CTA 无物化准备＋标量状态消费 & 145,400.808 & 318.815\(\times\) \\
+\bottomrule
+\end{tabular}
+\end{table}
+融合的数据生命周期正确，标量消费者的计算映射却严重退化：
+源码每个 V 行每 chunk 约有 13,808 个 FP32 FMA 项，固定 H64
+累计约 28.96B 项；这是源码循环次数，不是实测动态指令数。
+现有 native 消费者的四项收缩使用 TCGEN05/TMEM。
+因此该标量融合路线当前 \emph{No promotion}；下一阶段须把
+片上准备值直接发布到 TMEM 消费者使用的 B/P shared 视图，
+同时验证 ready/free 相位和寄存器／shared 驻留，再以完整 Workload
+重新衡量延迟。
+
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
 路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
