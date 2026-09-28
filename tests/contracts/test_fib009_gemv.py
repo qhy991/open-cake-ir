@@ -9,7 +9,7 @@ from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
 from open_cake_ir.tasks.solx_fib.b300_gemv009 import (
-    column_tiled_source, scalar_warp_program,
+    column_tiled_source, row_tiled_source, scalar_warp_program,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,14 +66,39 @@ class Fib009GemvTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "official M=1"):
             column_tiled_source(WorkloadContract(gemm.workload_document(
                 TASK, rows=2)))
+        with self.assertRaisesRegex(ValueError, "official M>=2"):
+            row_tiled_source(workload)
         for other in (
                 WorkloadContract(gemm.workload_document(
                     TASK, rows=1, backend="triton-b200")),
                 WorkloadContract(gemm.workload_document(
                     "fib_gemm_n128_k2048", rows=1)),
                 WorkloadContract(gemm.workload_document(TASK, rows=16))):
-            with self.assertRaises(ValueError):
-                scalar_warp_program(self.compiler, other, num_warps=8)
+                with self.assertRaises(ValueError):
+                    scalar_warp_program(self.compiler, other, num_warps=8)
+
+    def test_row_tiling_reuses_b_and_masks_small_m_tails(self) -> None:
+        for rows in (2, 4, 5, 6, 8):
+            workload = WorkloadContract(gemm.workload_document(TASK, rows=rows))
+            for tile in (2, 4, 8):
+                with self.subTest(rows=rows, tile=tile):
+                    schedule = parse(row_tiled_source(
+                        workload, rows_per_cta=tile)).document
+                    self.assertEqual(schedule["program_map"]["axes"][0]["tile"], tile)
+                    reduction = next(op for op in schedule["operations"]
+                                     if op["id"] == "sum_k")
+                    self.assertEqual(reduction["parameters"]["axis"], 1)
+                    assessment = self.compiler.assess(schedule)
+                    self.assertFalse(
+                        [f for f in assessment.findings if f.blocks_lowering],
+                        assessment.findings)
+                    lowered = self.compiler.lower_program(
+                        Program.from_schedule(schedule))
+                    lowered.validate_binding()
+                    leaf = lowered.lowerings[0]
+                    self.assertEqual(leaf.toolchain_requirements["grid"],
+                                     [(rows + tile - 1) // tile, 5120, 1])
+                    self.assertIn("mask=", leaf.source)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,41 @@ def column_tiled_source(workload: WorkloadContract, case_id: str = "primary", *,
             '    with compute:\n        ' + '\n        '.join(body) + '\n')
 
 
+def row_tiled_source(workload: WorkloadContract, case_id: str = "primary", *,
+                    rows_per_cta: int = 4, execution_groups: int = 4) -> str:
+    """Reuse one B row while reducing several independent A rows per CTA."""
+    args = _small_m_arguments(workload, case_id)
+    if args[0].shape[0] == 1:
+        raise ValueError("row-tiled FIB 009 GEMV requires official M>=2")
+    if type(rows_per_cta) is not int or rows_per_cta not in (2, 4, 8):
+        raise ValueError("row-tiled GEMV admits 2, 4 or 8 rows per CTA")
+    if type(execution_groups) is not int or execution_groups not in (4, 8):
+        raise ValueError("row-tiled GEMV admits 4 or 8 execution groups")
+    declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
+                    + (', mode="output")' if arg.mode == "output" else ')')
+                    for arg in args]
+    body = [
+        'stored_a = lm.load(a[row, :], id="load_a")',
+        'stored_b = lm.load(b[column, :], id="load_b")',
+        'a32 = lm.cast(stored_a, to="fp32", id="widen_a")',
+        'b32 = lm.cast(stored_b, to="fp32", id="widen_b")',
+        'products = a32 * lm.broadcast(b32, axis=1)',
+        'totals = lm.reduce(products, op="sum", axis=1, scope="cta", '
+        'across_loop=False, id="sum_k")',
+        'rounded = lm.cast(totals, to="fp16", id="round_out")',
+        'lm.store(out[row, column], rounded, coalesced=False, id="store_out")',
+    ]
+    return ('from open_cake_ir.compiler import frontend as cake\n\n'
+            f'@cake.schedule(name="{workload.workload_id}-gemv-m{rows_per_cta}-w{execution_groups}", '
+            f'target="{workload.target}", backend="triton", '
+            f'entry_point="cake_fib009_gemv_m{rows_per_cta}_w{execution_groups}")\n'
+            f'def candidate(lm, {", ".join(declarations)}):\n'
+            f'    compute = lm.role(execution_groups={list(range(execution_groups))!r})\n'
+            f'    row = lm.program(a, axis=0, dimension=0, tile={rows_per_cta})\n'
+            '    column = lm.program(b, axis=1, dimension=0, tile=1)\n'
+            '    with compute:\n        ' + '\n        '.join(body) + '\n')
+
+
 def scalar_warp_program(compiler, workload: WorkloadContract,
                         case_id: str = "primary", *, num_warps: int) -> Program:
     """Keep one output per CTA and specialize the starter's execution width.
