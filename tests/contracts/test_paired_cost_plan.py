@@ -275,11 +275,18 @@ class PairedCostPlanTest(unittest.TestCase):
                      "gpu_ids": [7], "run_dir": str(run), "terminal_at": None}
             write(run / "state.json", state)
             environment = {"KERNELINFRA_RUN_ID": identity["run_id"],
-                           "CUDA_VISIBLE_DEVICES": "7"}
+                           "CUDA_VISIBLE_DEVICES": "7",
+                           "GPUQ_JOB_ID": "gpuq-123456789abc", "GPUQ_MODE": "exclusive",
+                           "GPUQ_BACKEND": "nvidia", "GPUQ_DEVICE_IDS": "7",
+                           "GPUQ_OCCUPANCY_SCOPE": "system"}
             with patch.dict(os.environ, environment, clear=True):
                 assignment = instrument._node_assignment(run, task)
             self.assertEqual(assignment["broker_job_id"], state["broker_job_id"])
             self.assertEqual(assignment["physical_gpu"], 7)
+            with patch.dict(os.environ, {key: value for key, value in environment.items()
+                                          if key != "GPUQ_JOB_ID"}, clear=True), \
+                    self.assertRaisesRegex(ValueError, "gpuq_v1 allocation environment"):
+                instrument._node_assignment(run, task)
             state["candidate_sha256"] = "c" * 64
             write(run / "state.json", state)
             with patch.dict(os.environ, environment, clear=True), \
@@ -398,6 +405,9 @@ class PairedCostPlanTest(unittest.TestCase):
                            "KERNELINFRA_STAGE_KIND": "judge",
                            "KERNELINFRA_STAGE_ID": "collection",
                            "CUDA_VISIBLE_DEVICES": "7",
+                           "GPUQ_JOB_ID": "gpuq-123456789abc",
+                           "GPUQ_MODE": "exclusive", "GPUQ_BACKEND": "nvidia",
+                           "GPUQ_DEVICE_IDS": "7", "GPUQ_OCCUPANCY_SCOPE": "system",
                            "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
             with patch.dict(os.environ, environment, clear=True), \
                     patch.object(ExecutorRevision, "admit_host", return_value=object()), \

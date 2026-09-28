@@ -56,7 +56,8 @@ Before a broker-owned collection can launch, the device stage checks the exact
 two-stage GPU Infra task, the daemon's running assignment and broker parent,
 then replays the baseline and all three candidate bundles against their frozen
 Schedules, lowerings, Workload ABI and launch seals. The node's broker job is read from its retained
-state; a missing child `GPUQ_JOB_ID` is never replaced by a guessed job. Under
+state and the broker-owned `gpuq_v1` environment; a missing child `GPUQ_JOB_ID`
+or mismatched mode, backend, device or occupancy scope is refused. Under
 that assignment the controller seals the candidate and baseline for each of
 the nine observations and calls the common paired evaluator in the inherited
 broker process group. Each worker receipt is checked before its cost row is
