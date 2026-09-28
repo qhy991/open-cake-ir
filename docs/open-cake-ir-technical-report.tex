@@ -1844,6 +1844,55 @@ Cake Triton 准备＋native TMEM 消费 & 2,372.627 & 5.201\(\times\) \\
 oracle／计时政策作有界阶段诊断，再设计共享字节和 ready/free
 明确归属的 producer-ahead 流水。
 
+\paragraph{U 的寄存器所有权。}
+对四收缩完整 kernel 的后继 \code{clock64} 诊断保持外部 oracle
+通过：插桩源码的 CTA phase 周期约 82.57\% 落在严格下三角 U
+求解到 row0 完成，后续 U→TMEM、两项校正与状态发布约 4.30\%。
+这些是受插桩影响的同 SM 周期比例，不是正式 CUPTI 延迟。
+旧源码的每 V 行 FP32 U 前值反复从 shared 读取；后继按
+\(t=0,\ldots,31\)、\(i=0,\ldots,t-1\) 原顺序展开 496 项
+FMA，让 32 个 FP32 U 值留在行所有者寄存器，BF16 U 的发布和
+四项 TCGEN 保持不变。AOT 从 157 寄存器、161,920 字节 shared
+变为 132 寄存器、145,536 字节 shared，均无 stack/spill。
+全 H64 输出与状态过冻结外部 oracle；新旧设备快照逐 bit 相同。
+
+\begin{table}[htbp]
+\centering
+\caption{B300-M4 完整 H64/T8192 的同 GPU1 四臂有效配对，五轮、
+每臂每轮 25 次冷 L2 CUPTI；二十份输出与状态快照均过 oracle。}
+\label{tab:kda-b300-register-solve-full}
+\small
+\begin{tabular}{lrr}
+\toprule
+实现 & 中位延迟（\,$\mu$s） & 相对原始 CAKE \\
+\midrule
+原始 CAKE M64 & 456.131 & 1.000\(\times\) \\
+Cake 准备＋native 消费 & 2,360.974 & 5.176\(\times\) \\
+四 TCGEN 融合，FP32 U 在 shared & 15,864.360 & 34.780\(\times\) \\
+四 TCGEN 融合，FP32 U 在寄存器 & 4,754.015 & 10.423\(\times\) \\
+\bottomrule
+\end{tabular}
+\end{table}
+寄存器版对旧融合的成对轮比值中位数为 0.29967，
+约 3.34 倍加速；仍比两阶段慢 2.014 倍。
+该机制说明混合 warp-MMA／TCGEN lowering 必须保留已有
+\code{FORWARD\_SUBSTITUTE} 的行寄存器所有权；
+完整候选当前 \emph{No promotion}。下一轮重新定位寄存器版的
+关键 phase，再选择 producer-ahead 流水或有数值资格的并行求解。
+
+寄存器版后继的同类 \code{clock64} 打点仍通过完整 H64 外部
+oracle；五段观测周期占比约为 11.8\%（state／QK）、8.1\%
+（门控因子）、31.9\%（base/query 与 P/B）、31.3\%
+（严格求解）、16.9\%（其余 U 后收缩与状态发布）。插桩 AOT
+为 136 寄存器，较未插桩多 4 个；阶段重叠及打点扰动使这些
+比例不能作为消除一段后的因果加速上限。双槽准备流水的初步
+容量核算以当前 145,536 字节 shared 和目标 232,448 字节
+上限为基准：第二槽的七项准备值需 29,312 字节；按已验证
+B64 相对 XOR 基址相位补齐 384 字节后，纸面合计
+175,232 字节，尚余 57,216 字节供新屏障及实际分配。
+这只是 CPU 算式，尚无双槽 AOT、设备正确性或速度结论；
+五槽直接复制在放入 V ring 前就超过上限。
+
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
 路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
