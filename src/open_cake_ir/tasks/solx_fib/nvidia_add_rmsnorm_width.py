@@ -1,4 +1,4 @@
-"""Explicit B300 CTA-width candidates for FlashInfer fused add RMSNorm 001/002."""
+"""Exact NVIDIA CTA-width candidates for FlashInfer fused add RMSNorm 001/002."""
 from __future__ import annotations
 
 from open_cake_ir.compiler import Program
@@ -11,6 +11,7 @@ from .workload import TASKS, validate_solx_fib_contract
 
 TASK_NAMES = ("fib_fused_add_rmsnorm_h2048", "fib_fused_add_rmsnorm_h4096")
 OPERATORS = frozenset(TASKS[name][0] for name in TASK_NAMES)
+TARGETS = frozenset(("sm_100a", "sm_103a"))
 
 
 def candidate_program(compiler, workload: WorkloadContract,
@@ -21,8 +22,8 @@ def candidate_program(compiler, workload: WorkloadContract,
     lowering gates, rather than this task adapter, own the warp-count decision.
     """
     validate_solx_fib_contract(workload.document)
-    if workload.target != "sm_103a" or workload.document["operator"] not in OPERATORS:
-        raise ValueError("fused add RMSNorm width candidate requires an admitted B300 Workload")
+    if workload.target not in TARGETS or workload.document["operator"] not in OPERATORS:
+        raise ValueError("fused add RMSNorm width candidate requires an exact B200 or B300 Workload")
     starter = parse(starter_source(workload, case_id), filename="fib_add_rmsnorm_starter.py").document
     program = Program.from_schedule(starter)
     width = workload.tensor_abi(case_id)[0].shape[-1]

@@ -12,7 +12,7 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib.authoring import starter_source
-from open_cake_ir.tasks.solx_fib.b300_add_rmsnorm_width import candidate_program
+from open_cake_ir.tasks.solx_fib.nvidia_add_rmsnorm_width import candidate_program
 from open_cake_ir.tasks.solx_fib.workload import (
     ATOL, CASES, RTOL, SEED_ELEMENT_CAP, SPECS, TASKS,
     admitting_backends, default_rows, launchable_tasks, materialize_case,
@@ -302,23 +302,40 @@ class StarterTests(unittest.TestCase):
 
     def test_001_002_width_candidates_use_the_qualified_compiler_rewrite(self):
         for task in ("fib_fused_add_rmsnorm_h2048", "fib_fused_add_rmsnorm_h4096"):
-            workload = _tiny(task, rows=64)
-            starter = parse(starter_source(workload)).document
-            for warps in (4, 8):
-                program = candidate_program(self.compiler, workload, num_warps=warps)
-                self.assertEqual(len(program.stages), 1)
-                self.assertEqual(set(program.inputs), {"x", "residual", "weight"})
-                self.assertEqual(program.outputs, ("out",))
-                schedule = json.loads(program.stages[0].schedule_bytes)
-                self.assertEqual(schedule["operations"], starter["operations"])
-                self.assertEqual(schedule["access_maps"], starter["access_maps"])
-                self.assertEqual(schedule["roles"][0]["execution_groups"], list(range(warps)))
-                lowered = self.compiler.lower_program(program)
-                lowered.validate_binding()
-                self.assertEqual(len(lowered.lowerings), 1)
+            for backend, target in (("triton-b200", "sm_100a"),
+                                    ("triton-b300", "sm_103a")):
+                workload = _tiny(task, rows=64, backend=backend)
+                starter = parse(starter_source(workload)).document
+                for warps in (4, 8):
+                    with self.subTest(task=task, target=target, warps=warps):
+                        program = candidate_program(self.compiler, workload, num_warps=warps)
+                        self.assertEqual(len(program.stages), 1)
+                        self.assertEqual(set(program.inputs), {"x", "residual", "weight"})
+                        self.assertEqual(program.outputs, ("out",))
+                        schedule = json.loads(program.stages[0].schedule_bytes)
+                        self.assertEqual(schedule["operations"], starter["operations"])
+                        self.assertEqual(schedule["access_maps"], starter["access_maps"])
+                        self.assertEqual(schedule["roles"][0]["execution_groups"], list(range(warps)))
+                        lowered = self.compiler.lower_program(program)
+                        lowered.validate_binding()
+                        self.assertEqual(len(lowered.lowerings), 1)
+                        self.assertEqual(lowered.lowerings[0].target, target)
         with self.assertRaises(ValueError):
             candidate_program(self.compiler, _tiny("fib_fused_add_rmsnorm_h7168", rows=64),
                               num_warps=4)
+        with self.assertRaisesRegex(ValueError, "exact B200 or B300"):
+            candidate_program(self.compiler, _tiny("fib_fused_add_rmsnorm_h4096", rows=64,
+                                                   backend="triton-gfx1151"), num_warps=4)
+
+    def test_002_b200_width_candidate_lowers_every_official_batch(self):
+        task = "fib_fused_add_rmsnorm_h4096"
+        for rows in SPECS[task]["batches"]:
+            with self.subTest(rows=rows):
+                workload = _tiny(task, rows=rows, backend="triton-b200")
+                program = candidate_program(self.compiler, workload, num_warps=4)
+                lowered = self.compiler.lower_program(program)
+                lowered.validate_binding()
+                self.assertEqual(lowered.lowerings[0].target, "sm_100a")
 
     def test_the_starter_keeps_the_bf16_abi_and_widens_only_in_between(self):
         for task in launchable_tasks():
