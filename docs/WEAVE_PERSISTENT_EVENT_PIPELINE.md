@@ -577,6 +577,23 @@ mirrored locally. The baseline's declared `qualified_latency_ns` remains
 null. A shared low-perturbation four-rank timer and target reset contract
 are still required before an external speedup claim.
 
+An out-of-process Nsight Systems successor tested a lower-perturbation
+trace route on the same frozen baseline and input snapshot. Broker job
+`gpuq-480e8fd1e65f` completed after one warmup and one synchronized L2
+clear per rank; the post-release FP64 oracle passed with 0/4,194,304
+failures. Its four-process report has one NVTX complete-layer window per
+rank of 2.289–2.353 ms. Inside each window, the unified GPU timeline
+contains 49 kernels and 12 GPU copy records: four DeepEP dispatches, eight
+BF16 GEMM kernels, four SiLU kernels and four DeepEP combines. A retained
+unsigned-char fill kernel precedes each NVTX window, and the CPU-only audit
+reports a **2.149 ms developmental joint GPU activity span**. The source
+overlay, Nsight report, SQLite export, oracle result and audit are retained
+at `/home/qinhaiyan/cake-weave-sglang-nsys-warm-20260928/` and mirrored
+locally. This single Nsight observation uses a different profiler from the
+Cake CUPTI ABBA and is not a qualified Cake-to-baseline speedup. A common
+timer, repeated matched samples and target clock/reset qualification
+remain required.
+
 Before promotion, resolve the open c=95 mismatch Finding, qualify the
 target's four-device timing reset, and run a matched open baseline under
 the same measurement contract. This task branch remains a development
