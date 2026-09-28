@@ -599,12 +599,26 @@ input and oracle snapshot as that baseline. Its first external root,
 `/home/qinhaiyan/cake-weave-cake-nsys-fanin-20260928/`, ended at profiler
 argument parsing in broker job `gpuq-10091f12229d`: the host's Nsight
 Systems 2025.5 does not accept `--cuda-trace-scope=process-tree`. No device
-sample or latency came from that job. A successor root,
-`/home/qinhaiyan/cake-weave-cake-nsys-fanin-v2-20260928/`, passed CPU-only
-candidate admission and submitted broker job `gpuq-d5a5e7d5c69f` with a
-single-process `--trace=cuda,nvtx` invocation. The four-GPU job outcome,
-oracle, trace coverage and any matched-time inference remain pending while
-the SSH route is unavailable; do not resubmit this create-only root.
+sample or latency came from that job. Successor broker job
+`gpuq-d5a5e7d5c69f` ran and released four GPUs normally. The post-release
+audit passed the shared FP64 oracle with **0/4,194,304** output failures,
+matched the v3 output bitwise, and matched all 80 CPU tile-event slots;
+the four ranks stole 1,509/1,549/1,462/1,493 stage tasks.
+
+The successor Nsight report has one complete-layer NVTX window of 7.847 ms
+around the four-rank sample, agreeing with the 7.838 ms host window. Inside
+it, each device has one worker, scatter, wait and combine kernel, ten GPU
+copies and 23 memsets; an L2 clear kernel precedes the window on every
+device. The development joint GPU activity span is **7.733 ms**; the worker
+kernel alone takes 5.937–6.086 ms per rank. The baseline's single Nsight
+span was 2.149 ms on the exact same inputs. The observed Cake span is about
+3.60 times longer, but these are single instrumented observations with
+different Nsight versions and separate leases, so this is a bottleneck lead,
+not a qualified speedup or slowdown estimate. The report, SQLite export,
+oracle and analysis are retained at
+`/home/qinhaiyan/cake-weave-cake-nsys-fanin-v2-20260928/` and mirrored
+locally. The worker is the first target for the next compiler/lowering/kernel
+trial.
 
 A separate CPU-only N=128 tensor-tile feasibility check edited no source or
 frozen Campaign. `Compiler.assess` admitted both modified up/gate and down
