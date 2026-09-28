@@ -6,13 +6,14 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 from .workload import SPECS, TASKS, validate_solx_fib_contract
 
 TASK = "fib_rmsnorm_h128"
-ROW_GROUPS = frozenset((4, 8, 16))
+ROW_GROUPS = frozenset((1, 2, 4, 8, 16))
+WARP_COUNTS = frozenset((1, 2, 4))
 TARGETS = frozenset(("sm_100a", "sm_103a"))
 QUALIFIED_T16_ROWS = frozenset((49532, 65016, 520128))
 
 
 def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
-                     rows_per_cta: int = 4) -> str:
+                     rows_per_cta: int = 4, num_warps: int = 4) -> str:
     """Reuse one 128-element weight vector across several independent rows.
 
     The row tile is explicit, including a masked tail at batch boundaries.
@@ -24,7 +25,9 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
             or workload.document["operator"] != TASKS[TASK][0]):
         raise ValueError("row-group FIB 021 mapping requires the exact B200 or B300 task")
     if type(rows_per_cta) is not int or rows_per_cta not in ROW_GROUPS:
-        raise ValueError("FIB 021 row group must be 4, 8 or 16")
+        raise ValueError("FIB 021 row group must be 1, 2, 4, 8 or 16")
+    if type(num_warps) is not int or num_warps not in WARP_COUNTS:
+        raise ValueError("FIB 021 warp count must be 1, 2 or 4")
     x, weight, out = workload.tensor_abi(case_id)
     rows = x.shape[0]
     if (rows not in SPECS[TASK]["batches"]
@@ -33,16 +36,20 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
             or (x.dtype, weight.dtype, out.dtype) != ("bf16", "bf16", "bf16")):
         raise ValueError("row-group FIB 021 mapping requires the official BF16 ABI")
     epsilon = workload.document["semantics"]["epsilon"]
+    warp_suffix = f"-w{num_warps}" if num_warps != 4 else ""
+    entry = f"cake_fib021_rowgroup_{rows_per_cta}"
+    if num_warps != 4:
+        entry += f"_w{num_warps}"
     return (
         'from open_cake_ir.compiler import frontend as cake\n\n'
-        f'@cake.schedule(name="{workload.workload_id}-row-group-{rows_per_cta}", '
+        f'@cake.schedule(name="{workload.workload_id}-row-group-{rows_per_cta}{warp_suffix}", '
         f'target="{workload.target}", backend="triton", '
-        f'entry_point="cake_fib021_rowgroup_{rows_per_cta}")\n'
+        f'entry_point="{entry}")\n'
         'def candidate(lm, '
         f'x: cake.Tensor(({rows}, 128), "bf16"), '
         'weight: cake.Tensor((128,), "bf16"), '
         f'out: cake.Tensor(({rows}, 128), "bf16", mode="output")):\n'
-        '    compute = lm.role(execution_groups=[0, 1, 2, 3])\n'
+        f'    compute = lm.role(execution_groups={list(range(num_warps))!r})\n'
         f'    row = lm.program(x, axis=0, dimension=0, tile={rows_per_cta})\n'
         '    column = lm.program(x, axis=1, dimension=1, tile=128)\n'
         '    with compute:\n'
