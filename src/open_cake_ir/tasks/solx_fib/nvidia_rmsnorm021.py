@@ -6,7 +6,8 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 from .workload import SPECS, TASKS, validate_solx_fib_contract
 
 TASK = "fib_rmsnorm_h128"
-ROW_GROUPS = frozenset((4, 8, 16))
+ROW_GROUPS = frozenset((4, 8, 16, 32, 64))
+LARGE_ROWS = frozenset((49532, 65016, 396256, 520128))
 TARGETS = frozenset(("sm_100a", "sm_103a"))
 QUALIFIED_T16_ROWS = frozenset((49532, 65016, 520128))
 
@@ -24,7 +25,7 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
             or workload.document["operator"] != TASKS[TASK][0]):
         raise ValueError("row-group FIB 021 mapping requires the exact B200 or B300 task")
     if type(rows_per_cta) is not int or rows_per_cta not in ROW_GROUPS:
-        raise ValueError("FIB 021 row group must be 4, 8 or 16")
+        raise ValueError("FIB 021 row group must be 4, 8, 16, 32 or 64")
     x, weight, out = workload.tensor_abi(case_id)
     rows = x.shape[0]
     if (rows not in SPECS[TASK]["batches"]
@@ -32,6 +33,8 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
             or out.shape != (rows, 128)
             or (x.dtype, weight.dtype, out.dtype) != ("bf16", "bf16", "bf16")):
         raise ValueError("row-group FIB 021 mapping requires the official BF16 ABI")
+    if rows_per_cta >= 32 and rows not in LARGE_ROWS:
+        raise ValueError("FIB 021 T32/T64 mapping is bounded to four official large batches")
     epsilon = workload.document["semantics"]["epsilon"]
     return (
         'from open_cake_ir.compiler import frontend as cake\n\n'

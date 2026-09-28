@@ -56,8 +56,10 @@ class Fib021RowGroupTest(unittest.TestCase):
     def test_other_target_task_and_row_tile_are_refused(self) -> None:
         workload = WorkloadContract(workload_document(
             TASK, rows=24, columns=128, backend="triton-b300"))
-        with self.assertRaisesRegex(ValueError, "must be 4, 8 or 16"):
+        with self.assertRaisesRegex(ValueError, "must be 4, 8, 16, 32 or 64"):
             row_group_source(workload, rows_per_cta=2)
+        with self.assertRaisesRegex(ValueError, "bounded to four official large batches"):
+            row_group_source(workload, rows_per_cta=32)
         other_target = WorkloadContract(workload_document(
             TASK, rows=24, columns=128, backend="triton-gfx1151"))
         with self.assertRaisesRegex(ValueError, "exact B200 or B300 task"):
@@ -66,6 +68,29 @@ class Fib021RowGroupTest(unittest.TestCase):
             "fib_rmsnorm_h512", rows=7, columns=512, backend="triton-b300"))
         with self.assertRaisesRegex(ValueError, "exact B200 or B300 task"):
             row_group_source(other)
+
+    def test_large_row_groups_lower_at_exact_targets_only(self) -> None:
+        for backend, target in (("triton-b200", "sm_100a"),
+                                ("triton-b300", "sm_103a")):
+            for rows in (49532, 65016, 396256, 520128):
+                workload = WorkloadContract(workload_document(
+                    TASK, rows=rows, columns=128, backend=backend))
+                for tile in (32, 64):
+                    with self.subTest(target=target, rows=rows, tile=tile):
+                        source = row_group_source(workload, rows_per_cta=tile)
+                        schedule = parse(source).document
+                        self.assertEqual(schedule["program_map"]["axes"][0]["tile"], tile)
+                        assessment = self.compiler.assess(schedule)
+                        self.assertFalse(
+                            [f for f in assessment.findings if f.blocks_lowering],
+                            assessment.findings)
+                        lowered = self.compiler.lower_program(
+                            Program.from_schedule(schedule))
+                        lowered.validate_binding()
+                        leaf = lowered.lowerings[0]
+                        self.assertEqual(leaf.target, target)
+                        self.assertEqual(leaf.toolchain_requirements["grid"],
+                                         [(rows + tile - 1) // tile, 1, 1])
 
     def test_measured_t16_recipe_keeps_its_batch_boundary(self) -> None:
         for rows in (49532, 65016, 520128):
