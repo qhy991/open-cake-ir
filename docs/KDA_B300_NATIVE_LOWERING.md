@@ -264,7 +264,25 @@ Finding events 247–248。这是**完整同范围结果**：片上融合与原�
 
 第二层让 CTA 的四个 prep warp 从真实冻结 K/G 归一化、门控前缀并在 B64 shared 中生成 `base_key_mn`，MMA warp 直接消费该 shared 槽；global B 写回仅是诊断，MMA 不从那里读取。AOT **53 寄存器、17,408 B shared、0 spill**；broker-shared `gpuq-5eaa18b5ef8b` 释放后，首/中/末三个冻结 `(chunk,head)` 的 base 因子对独立 CPU 与留存 Cake 准备值各零超差，每组 `state @ base_key` 的 **4,096 FP32 输出**对独立乘法零超差，最大绝对误差 `3.73e-8`。Finding event 250。第三层同时从 Q/K/G 生成相互独立的 base-key/base-query B64 shared 槽；同一 TMEM state 经两组各八条 K16 MMA 写两个不重叠 FP32 TMEM 列区，单个完成 barrier 后四 compute warp 读取两份结果。AOT **78 寄存器、33,792 B shared、0 spill**；broker-shared `gpuq-ab0d1c2b2ca8` 完成释放，三组每组**两份各 4,096 FP32 输出**及两项 BF16 因子都对 CPU 与 Cake 快照零超差，输出最大绝对差不超过 `3.73e-8`，输入未改写。Finding event 251。它验证了真实 Q/K/G→两个 B64 槽→TMEM-A base/query 的**确切本卡单 chunk 指令/物理地址合同**，尚无 P/solve、U 后两收缩、256 次槽 phase 或延迟。
 
-该边在现有 Cake IR/native 路线上还有两个明确所有者：prep 侧 `ldmatrix` 的 shared→warp fragment 搬运和四 warp tile 所有权需要 IR/Verifier 明确；消费侧 `native_cuda` 当前要求每个 MMA B 的 writer 是 TMA `LOAD`，须允许被审查的**同 CTA shared 生产者**，并证明所有写者在 ready 到达前完成、MMA commit 后才 free，同一槽相位不能被下一 chunk 覆盖。不得把已通过的 standalone PTX 函数按 Schedule 名字插进 backend。下一步 one-chunk 混合原型保留 prep warp 写两个 B64 槽与四 compute warp 持有 state TMEM，再接 P/strict-lower solve、U 的 correction/output 两收缩；独立外部 output/state oracle 及原位别名仍是进入完整 H64 的门禁。
+该边在现有 Cake IR/native 路线上还有两个明确所有者：prep 侧 `ldmatrix` 的 shared→warp fragment 搬运和四 warp tile 所有权需要 IR/Verifier 明确；消费侧 `native_cuda` 当前要求每个 MMA B 的 writer 是 TMA `LOAD`，须允许被审查的**同 CTA shared 生产者**，并证明所有写者在 ready 到达前完成、MMA commit 后才 free，同一槽相位不能被下一 chunk 覆盖。不得把已通过的 standalone PTX 函数按 Schedule 名字插进 backend。下面的后继以同一外部 output/state oracle 和原位别名为门禁，继续验证 P/strict-lower solve、U 后 correction/output 两收缩及 256 次相位复用。
+
+#### 四项 TCGEN 收缩的融合后继：对齐缺陷、完整数值与性能拒绝
+
+求解后的 U `[M128,K32]` 先写 TMEM 列 64–79，状态校正的 B 是 K-major BF16 `[N128,K32]`，输出校正的 B 是 `[N32,K32]`；两者不是前两条 `[K128,N32]` MN-major B 的同一地址解释。独立源码让 CTA warp 把这两个 K-major B 以 B64 XOR 地址发布到 shared，MMA warp 各发两条 K16 TCGEN05，结果写互不重叠的 FP32 TMEM 列区。精确 B300 AOT **40 寄存器、11,264 B shared、0 stack/spill**；broker-shared `gpuq-f677064c3448` 释放后，随机、行编码、交替符号及真实冻结分布四组的 **128×128 状态校正**与 **128×32 输出校正**全部对 BF16 操作数的独立 CPU 乘法零超差，最大绝对误差不超过 `1.79e-7`。Finding event 252。它资格化**手写 K-major B64→U TMEM-A 两收缩**，未证明与完整 KDA 的生命周期融合。
+
+在已正确的真实 Q/K/G→base/query TCGEN 和 warp-MMA P/B 的 one-chunk 源码上加入 U 发布与两项后半收缩，首份 exact-B300 AOT **80 寄存器、128,656 B shared、0 spill**，但 `gpuq-5769688eaab3` 的外部 oracle 对输出 **23,047 项**、状态 **749,905 项**判超差；保留失败快照。新增两个 B64 shared 视图用的是**相对 byte offset XOR**，却只声明 128 B 基址对齐；先前单独通过的 B64 witness 基址为 1,024 B 对齐。只把这两项视图提高到 **1,024 B 对齐**的继任源码 AOT 为 **80 寄存器、129,040 B shared、0 spill**，`gpuq-31cb79a742fb` 的全部 **262,144 T32 输出与 1,048,576 原位状态**对独立逐 token oracle 零超差，最大绝对差 `0.000488/0.003906`；相比前一正确两 TCGEN 合体仅有 2 个输出、7 个状态 BF16 位差。**有界推断**：本手写相对 XOR 映射对 shared 基址相位敏感，1024 B 对齐在这个 B300 映射上关闭了错误；不能从一次修复推出所有 B64 硬件指令都要求 1024 B。Finding events 253–254。今后 native shared view admission 必须说明**物理基址相位**，而非只声明“B64 swizzle”名称；错误对齐反例由拥有该发射的规则拒绝。
+
+同一修正版保留 state TMEM 分配，在两个 chunk 上让 A-ready/C-ready/U-ready/post-done 四个 mbarrier 按奇偶 phase 复用；P、B 和因子 shared 每块只在全部读者完成后的 CTA barrier 后覆盖。精确 B300 AOT **157 寄存器、161,920 B shared、0 stack/spill**，低于 `sm_103a` 每 CTA 232,448 B 限额；`gpuq-21aefe517c09` 的前 64 token **524,288 输出及 1,048,576 状态**对独立 oracle 零超差。把循环上界扩到 256，`gpuq-29171a9c5e0f` 的完整固定 H64 **67,108,864 输出与 1,048,576 原位状态**全部零超差/无非有限值，最大绝对差仍为 `0.000488/0.003906`，公开输入未改写。Finding events 255–256。这是完整固定形状的 source-only 硬件正确性，不是 Cake-emitted Program，也没有六形状资格。
+
+第一次完整四臂独占作业 `gpuq-5795c92be77d` 在第一轮两阶段臂计时期间发现外来 PID，broker 释放 GPU5 后保留失败与局部样本，**整作业没有可接受延迟**。新三臂 `gpuq-2aa5ffefd517` 在同 GPU5 对原始 CAKE M64、两阶段 Cake/native 与四收缩无物化合体做五轮交替、每轮每臂 25 次冷 L2 CUPTI、无 graph；每臂 512 个独立 BF16 初始状态槽，十五份完整输出及最终状态快照在释放后均过冻结外部 oracle，最大轮内 CV **0.1324%**：
+
+| 完整 H64/T8192 | µs，轮中位数的中位数 | 相对原始 CAKE |
+| --- | ---: | ---: |
+| 原始 CAKE M64（适配 B300） | 456.260 | 1.000× |
+| Cake 准备＋native TMEM 消费者 | 2,372.627 | 5.201× |
+| 四 TCGEN＋warp-MMA 片上准备／消费 | 15,879.295 | 34.803× |
+
+Finding events 257–258。相对 145.401 ms 全标量融合，硬件四收缩把同范围延迟大幅降低，但这两个融合数来自不同有效配对作业，不能当作同 GPU 成对加速比。剩余 `forward_substitute` 的严格下三角仍有每行每块 496 个源码 FP32 FMA 项，固定 H64 约 **1.040B 项**；prep warp 每块串行门控前缀、64 CTA 持有 256 次同步循环也都可能影响时间，**目前没有 profiler 计数把 15.9 ms 精确分摊给它们**。Promotion disposition：**No promotion** of this slow complete seed。下一项实验先有界标记/拆解每块准备、base/query、solve、U 后 MMA 的完成边，并在不改变冻结 oracle/计时政策的后继上量化关键路径；若主要时间来自每块全 CTA drain，设计有明确 ready/free 与 shared 字节共用的双槽/五槽 producer-ahead，而不是继续微调已经合格的单条 PTX atom。
 
 下一种大幅下降所需的 lowering 不是单纯添加 `setmaxnreg` 或五槽常数，而是先在 Cake Schedule 中给**同 CTA 准备→MMA→状态递推→epilogue**的每条存储边指定生产者、消费者、槽数、release/acquire 和读完后的复用条件；共享 IR/Verifier 维护值和别名语义，NVIDIA backend 负责 TMA/TMEM/PTX 发射，Target 检查真实 1,024-thread/约 219 KiB 路线资源，Lab 才选择何时采用。先以真实固定 H64 的完整输出、最终原位状态和同机计时比较，再看 packed/tail 与高保留反例。没有完整候选前，原始 CAKE 的代码只能作为**已知实现的设计证据**，不能把它的隐含机制直接当成新 Compiler pass。
 
