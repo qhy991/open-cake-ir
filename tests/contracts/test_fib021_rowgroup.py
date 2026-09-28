@@ -65,7 +65,7 @@ class Fib021RowGroupTest(unittest.TestCase):
             row_group_source(other)
 
     def test_measured_t16_recipe_keeps_its_batch_boundary(self) -> None:
-        for rows in (49532, 65016):
+        for rows in (49532, 65016, 520128):
             with self.subTest(rows=rows):
                 workload = WorkloadContract(workload_document(
                     TASK, rows=rows, columns=128, backend="triton-b300"))
@@ -77,12 +77,12 @@ class Fib021RowGroupTest(unittest.TestCase):
                     [f for f in assessment.findings if f.blocks_lowering],
                     assessment.findings)
                 self.assertIn("axis=1", self.compiler.lower(assessment).source)
-        for rows in (24, 2528, 520128):
+        for rows in (24, 2528, 396256):
             with self.subTest(rows=rows):
                 workload = WorkloadContract(workload_document(
                     TASK, rows=rows, columns=128, backend="triton-b300"))
                 with self.assertRaisesRegex(ValueError,
-                                            "qualified only at R49532 and R65016"):
+                                            "qualified only at R49532, R65016 and R520128"):
                     qualified_rowgroup16_source(workload)
 
 
