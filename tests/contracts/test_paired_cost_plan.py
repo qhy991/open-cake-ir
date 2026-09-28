@@ -306,12 +306,15 @@ class PairedCostPlanTest(unittest.TestCase):
             self.assertEqual(set(compiled), {row["id"] for row in plan["candidates"]})
             self.assertEqual(json.loads(context["input_scope"])[
                 "baseline_candidate_record_sha256"], baseline.canonical_sha256)
-            baseline_record = json.loads((stage / "baseline/candidate.json").read_text())
+            baseline_record_path = stage / "baseline/candidate.json"
+            baseline_record = json.loads(baseline_record_path.read_text())
+            original_record = copy.deepcopy(baseline_record)
             baseline_record["candidate"]["artifact_roles"]["cubin"] = "0" * 64
-            write(stage / "baseline/candidate.json", baseline_record)
+            write(baseline_record_path, baseline_record)
             with self.assertRaises(ValueError):
                 instrument._compiled_candidates(run, plan, checked,
                                                 self.compiler, self.workload)
+            write(baseline_record_path, original_record)
             index = json.loads((stage / "compile-index.json").read_text())
             index["candidates"][0]["candidate_id"] = "another"
             write(stage / "compile-index.json", index)
