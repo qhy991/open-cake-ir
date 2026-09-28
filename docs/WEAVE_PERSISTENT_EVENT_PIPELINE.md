@@ -500,6 +500,30 @@ F-2026-09-27-001. Results are retained under the matching
 locally. Promotion disposition: keep this six-warp B300 Schedule and
 lowering as a development candidate; no generic rule or Lab recipe yet.
 
+The next bounded spatial diagnosis kept the same `1c02cd74` source and
+mixed K=4 workload. CUPTI job `gpuq-4268c9028bc2` measured development
+medians of 120.56/120.16 ms for c=1 at budgets 0/5888; 13.28/7.12/7.19
+ms for c=74 at budgets 0/5888/19,890; and 7.84 ms for c=95 at budget
+19,890. Every arm passed the external oracle, v3 bitwise output, and the
+four-rank reset and activity audit. The c=95 samples did not reproduce
+F-2026-09-27-001 and do not close it.
+
+Two same-source, same-budget c scans reversed their order on separate
+four-GPU leases. Job `gpuq-475b7c1687b2` profiled c=48/56/64/74 at
+8.251/7.726/7.005/6.846 ms; job `gpuq-582b7efa2a21` ran c=74/64/56/48
+and reported c=48/56/64/74 at 7.989/7.725/6.815/6.793 ms. All eight
+controls passed the oracle, v3 bitwise comparison, L2 reset and CUPTI
+activity coverage. Thus c=48 and c=56 were slower than c=64/74 in both
+orders on this route. Direct same-lease ABBA `gpuq-5cb9c26c249d`
+measured c=64/c=74 at 6.806/6.919 ms, a small difference opposite the
+sequential profiles. The profile reports are retained under the matching
+`/home/qinhaiyan/cake-weave-activation6-1c02cd74-c-profile4*/` roots;
+the paired report is at
+`/home/qinhaiyan/cake-weave-activation6-c64-vs-c74-abba-1c02cd74/`.
+They are mirrored locally. Promotion disposition: **no c-selection rule**
+from these small, order-sensitive differences; c=64 remains the fixed
+development comparison control.
+
 Before promotion, resolve the open c=95 mismatch Finding, qualify the
 target's four-device timing reset, and run a matched open baseline under
 the same measurement contract. This task branch remains a development
