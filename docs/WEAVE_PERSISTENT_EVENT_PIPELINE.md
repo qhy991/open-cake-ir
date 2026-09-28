@@ -524,6 +524,50 @@ They are mirrored locally. Promotion disposition: **no c-selection rule**
 from these small, order-sensitive differences; c=64 remains the fixed
 development comparison control.
 
+An external handoff audit now relates the model-scale Cake `fanin_v2` case
+to the retained SGLang `v0.5.12.post1` + DeepEP `1.2.1` fallback. A CPU-only
+full-array comparison found zero differences across all four ranks in the
+BF16 hidden values, expert IDs, FP32 route weights, and every BF16 gate,
+up and down weight after Cake's declared up/gate packing. The FP32 oracle
+outputs are bitwise identical. The report and comparison script are retained
+at `/home/qinhaiyan/cake-weave-vs-sglang-fanin-input-match-20260928/` and
+mirrored locally. This establishes an exact input/oracle relation for this
+synthetic case, not equivalence to the paper's SGLang version or its
+ShareGPT evaluation.
+
+A separate CPU-only output relation compared the six-warp Cake fanin K=4
+device output with the warmed SGLang/DeepEP output. Both passed that same
+FP64 oracle and tolerance, but **2,763,349/4,194,304 BF16 output bit
+patterns differed** across the four ranks. The numerical implementations
+are therefore not bitwise interchangeable. The retained
+`output_relation.json` sits beside the input-match report.
+
+Two separate four-GPU broker jobs tested whether the baseline could share
+Cake's low-overhead CUPTI activity window. Jobs `gpuq-a6a4a9314469` and
+`gpuq-822103215b27` each passed the original baseline FP64 oracle over
+4,194,304 values, with no failures. Per-rank cupti-python activities,
+including the successor's callback-before-enable and forced-flush change,
+retained only four sample kernels each and omitted the FFN and combine
+stages. Their coverage-failure reports and raw records remain at the
+`/home/qinhaiyan/cake-weave-sglang-cupti-feasibility*-20260928/` roots.
+Neither run supports a four-rank GPU latency.
+
+A third broker job, `gpuq-97abd4ebc7fc`, used one warmup, a synchronized
+L2 clear per rank and a Torch profiler trace on the same baseline inputs. Its
+post-release oracle passed with zero failures. All four traces retained 49
+CUDA kernels each, including four DeepEP dispatch and four combine kernels;
+the CPU trace recorded eight bmm and four SiLU operations per rank. The
+trace timestamps fall inside their rank's wall-clock sample window after
+accounting for profiler setup. The trial's developmental joint kernel span
+was 12.764 ms, while each profiled host window was about 243 ms and spent
+about 210 ms before its first kernel. That instrumented span is **not** a
+Cake-vs-baseline latency ratio. The trace audit, failed first timestamp
+audit, corrected containment audit, four trace files and oracle result are
+retained at `/home/qinhaiyan/cake-weave-sglang-warm-trace-20260928/` and
+mirrored locally. The baseline's declared `qualified_latency_ns` remains
+null. A shared low-perturbation four-rank timer and target reset contract
+are still required before an external speedup claim.
+
 Before promotion, resolve the open c=95 mismatch Finding, qualify the
 target's four-device timing reset, and run a matched open baseline under
 the same measurement contract. This task branch remains a development
