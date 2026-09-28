@@ -1,0 +1,1189 @@
+{
+  "schema_version": 1,
+  "program_id": "weave-model-local-expert-ffn-native-b300-n128",
+  "target": "sm_103a",
+  "tensors": {
+    "x": {
+      "shape": [
+        128,
+        2048
+      ],
+      "dtype": "bf16"
+    },
+    "w_up_gate": {
+      "shape": [
+        1536,
+        2048
+      ],
+      "dtype": "bf16"
+    },
+    "w_down": {
+      "shape": [
+        2048,
+        768
+      ],
+      "dtype": "bf16"
+    },
+    "up_gate": {
+      "shape": [
+        128,
+        1536
+      ],
+      "dtype": "fp32"
+    },
+    "activated": {
+      "shape": [
+        128,
+        768
+      ],
+      "dtype": "bf16"
+    },
+    "out": {
+      "shape": [
+        128,
+        2048
+      ],
+      "dtype": "fp32"
+    }
+  },
+  "inputs": [
+    "x",
+    "w_up_gate",
+    "w_down"
+  ],
+  "outputs": [
+    "out"
+  ],
+  "stages": [
+    {
+      "name": "up_gate",
+      "schedule": {
+        "schema_version": 2,
+        "schedule_id": "weave-model-upgate-tile-b300-n128",
+        "target": "sm_103a",
+        "lowering": {
+          "backend": "native_cuda",
+          "entry_point": "cake_weave_model_upgate"
+        },
+        "metadata": {},
+        "roles": [
+          {
+            "name": "epilogue",
+            "execution_groups": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "mma",
+            "execution_groups": [
+              4
+            ]
+          },
+          {
+            "name": "copy",
+            "execution_groups": [
+              5
+            ]
+          }
+        ],
+        "allocations": [
+          {
+            "name": "operands",
+            "space": "shared",
+            "size_bytes": 65536
+          },
+          {
+            "name": "tensor",
+            "space": "tensor",
+            "size_bytes": 65536,
+            "tensor_columns": 128,
+            "allocating_role": "epilogue"
+          }
+        ],
+        "buffers": [
+          {
+            "name": "a",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              128,
+              2048
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "b",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              1536,
+              2048
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "c",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              128,
+              1536
+            ],
+            "mode": "output"
+          },
+          {
+            "name": "a_stage",
+            "space": "shared",
+            "dtype": "bf16",
+            "shape": [
+              128,
+              64
+            ],
+            "mode": "scratch",
+            "allocation": "operands",
+            "stages": 2,
+            "swizzle": "swizzle_128b"
+          },
+          {
+            "name": "b_stage",
+            "space": "shared",
+            "dtype": "bf16",
+            "shape": [
+              128,
+              64
+            ],
+            "mode": "scratch",
+            "allocation": "operands",
+            "byte_offset": 32768,
+            "stages": 2,
+            "swizzle": "swizzle_128b"
+          },
+          {
+            "name": "acc",
+            "space": "tensor",
+            "dtype": "fp32",
+            "shape": [
+              128,
+              128
+            ],
+            "mode": "scratch",
+            "allocation": "tensor"
+          },
+          {
+            "name": "dot",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              128,
+              128
+            ],
+            "mode": "scratch"
+          }
+        ],
+        "pipelines": [
+          {
+            "name": "main",
+            "stages": 2
+          }
+        ],
+        "barriers": [
+          {
+            "name": "ready",
+            "count": 2,
+            "producers": [
+              "copy"
+            ],
+            "consumers": [
+              "mma"
+            ],
+            "pipeline": "main",
+            "mechanism": "mbarrier"
+          },
+          {
+            "name": "done",
+            "count": 1,
+            "producers": [
+              "mma"
+            ],
+            "consumers": [
+              "epilogue"
+            ],
+            "mechanism": "mbarrier"
+          }
+        ],
+        "operations": [
+          {
+            "id": "load_a",
+            "kind": "load",
+            "role": "copy",
+            "reads": [
+              "a"
+            ],
+            "writes": [
+              "a_stage"
+            ],
+            "parameters": {
+              "movement": "tma",
+              "descriptor_box": [
+                128,
+                64
+              ]
+            },
+            "signals": [
+              "ready"
+            ],
+            "pipeline": "main"
+          },
+          {
+            "id": "load_b",
+            "kind": "load",
+            "role": "copy",
+            "reads": [
+              "b"
+            ],
+            "writes": [
+              "b_stage"
+            ],
+            "parameters": {
+              "movement": "tma",
+              "descriptor_box": [
+                128,
+                64
+              ]
+            },
+            "signals": [
+              "ready"
+            ],
+            "pipeline": "main"
+          },
+          {
+            "id": "mma",
+            "kind": "mma",
+            "role": "mma",
+            "reads": [
+              "a_stage",
+              "b_stage"
+            ],
+            "writes": [
+              "acc"
+            ],
+            "parameters": {
+              "accumulator": "fp32",
+              "instruction": {
+                "contract": "tcgen05.mma.cta_group::1.kind::f16",
+                "shape": [
+                  128,
+                  128,
+                  16
+                ],
+                "cta_group": 1,
+                "operand_source": "shared",
+                "operand_major": [
+                  "k",
+                  "k"
+                ]
+              },
+              "tile_shape": [
+                128,
+                128,
+                64
+              ]
+            },
+            "waits": [
+              "ready"
+            ],
+            "signals": [
+              "done"
+            ],
+            "pipeline": "main",
+            "depends_on": [
+              "load_a",
+              "load_b"
+            ]
+          },
+          {
+            "id": "read_acc",
+            "kind": "load",
+            "role": "epilogue",
+            "reads": [
+              "acc"
+            ],
+            "writes": [
+              "dot"
+            ],
+            "parameters": {
+              "movement": "tmem",
+              "source_atom": {
+                "op": "tcgen05.Ld32x32b",
+                "repetition": 16
+              }
+            },
+            "waits": [
+              "done"
+            ],
+            "depends_on": [
+              "mma"
+            ]
+          },
+          {
+            "id": "store",
+            "kind": "store",
+            "role": "epilogue",
+            "reads": [
+              "dot"
+            ],
+            "writes": [
+              "c"
+            ],
+            "parameters": {
+              "coalesced": false
+            },
+            "depends_on": [
+              "read_acc"
+            ]
+          }
+        ],
+        "outputs": [
+          "c"
+        ],
+        "tile_loops": [
+          {
+            "name": "contraction",
+            "iterator": "kk",
+            "buffer": "a",
+            "dimension": 1,
+            "tile": 64,
+            "body": [
+              "load_a",
+              "load_b",
+              "mma"
+            ],
+            "range_options": {
+              "num_stages": 2,
+              "loop_unroll_factor": 1,
+              "flatten": false,
+              "warp_specialize": true,
+              "disallow_acc_multi_buffer": true,
+              "disable_licm": false
+            }
+          }
+        ],
+        "access_maps": [
+          {
+            "operation": "load_a",
+            "buffer": "a",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "rows"
+              },
+              {
+                "source": "loop_tile",
+                "name": "kk"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_b",
+            "buffer": "b",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "cols"
+              },
+              {
+                "source": "loop_tile",
+                "name": "kk"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "store",
+            "buffer": "c",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "rows"
+              },
+              {
+                "source": "program_tile",
+                "name": "cols"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          }
+        ],
+        "program_map": {
+          "axes": [
+            {
+              "name": "rows",
+              "axis": 0,
+              "buffer": "a",
+              "dimension": 0,
+              "tile": 128
+            },
+            {
+              "name": "cols",
+              "axis": 1,
+              "buffer": "b",
+              "dimension": 0,
+              "tile": 128
+            }
+          ]
+        }
+      },
+      "bindings": {
+        "a": "x",
+        "b": "w_up_gate",
+        "c": "up_gate"
+      }
+    },
+    {
+      "name": "activation",
+      "schedule": {
+        "schema_version": 2,
+        "schedule_id": "weave-model-swiglu-bf16-b300",
+        "target": "sm_103a",
+        "roles": [
+          {
+            "name": "compute",
+            "execution_groups": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        ],
+        "allocations": [],
+        "pipelines": [],
+        "barriers": [],
+        "buffers": [
+          {
+            "name": "up_gate",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              128,
+              1536
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "activated",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              128,
+              768
+            ],
+            "mode": "output"
+          },
+          {
+            "name": "up",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "gate",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "neg",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "exponential",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "denominator",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "silu",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "result",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "rounded",
+            "space": "register",
+            "dtype": "bf16",
+            "shape": [
+              6,
+              768
+            ],
+            "mode": "scratch"
+          }
+        ],
+        "operations": [
+          {
+            "id": "load_up",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "up_gate"
+            ],
+            "writes": [
+              "up"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "load_gate",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "up_gate"
+            ],
+            "writes": [
+              "gate"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "neg_gate",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "gate"
+            ],
+            "writes": [
+              "neg"
+            ],
+            "parameters": {
+              "op": "mul",
+              "scalar": -1
+            },
+            "depends_on": [
+              "load_gate"
+            ]
+          },
+          {
+            "id": "exp_gate",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "neg"
+            ],
+            "writes": [
+              "exponential"
+            ],
+            "parameters": {
+              "op": "exp"
+            },
+            "depends_on": [
+              "neg_gate"
+            ]
+          },
+          {
+            "id": "denom",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "exponential"
+            ],
+            "writes": [
+              "denominator"
+            ],
+            "parameters": {
+              "op": "add",
+              "scalar": 1
+            },
+            "depends_on": [
+              "exp_gate"
+            ]
+          },
+          {
+            "id": "silu",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "gate",
+              "denominator"
+            ],
+            "writes": [
+              "silu"
+            ],
+            "parameters": {
+              "op": "div"
+            },
+            "depends_on": [
+              "load_gate",
+              "denom"
+            ]
+          },
+          {
+            "id": "multiply",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "up",
+              "silu"
+            ],
+            "writes": [
+              "result"
+            ],
+            "parameters": {
+              "op": "mul"
+            },
+            "depends_on": [
+              "load_up",
+              "silu"
+            ]
+          },
+          {
+            "id": "round_bf16",
+            "kind": "cast",
+            "role": "compute",
+            "reads": [
+              "result"
+            ],
+            "writes": [
+              "rounded"
+            ],
+            "parameters": {
+              "to": "bf16"
+            },
+            "depends_on": [
+              "multiply"
+            ]
+          },
+          {
+            "id": "store",
+            "kind": "store",
+            "role": "compute",
+            "reads": [
+              "rounded"
+            ],
+            "writes": [
+              "activated"
+            ],
+            "parameters": {
+              "coalesced": true
+            },
+            "depends_on": [
+              "round_bf16"
+            ]
+          }
+        ],
+        "outputs": [
+          "activated"
+        ],
+        "tile_loops": [],
+        "access_maps": [
+          {
+            "operation": "load_up",
+            "buffer": "up_gate",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "token"
+              },
+              {
+                "source": "dimension",
+                "dimension": 1,
+                "extent": 768
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_gate",
+            "buffer": "up_gate",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "token"
+              },
+              {
+                "source": "dimension",
+                "dimension": 1,
+                "offset": 768
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "store",
+            "buffer": "activated",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "token"
+              },
+              {
+                "source": "dimension",
+                "dimension": 1
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          }
+        ],
+        "metadata": {},
+        "lowering": {
+          "backend": "native_cuda",
+          "entry_point": "cake_weave_model_swiglu"
+        },
+        "program_map": {
+          "axes": [
+            {
+              "name": "token",
+              "axis": 0,
+              "buffer": "up_gate",
+              "dimension": 0,
+              "tile": 6
+            }
+          ]
+        }
+      },
+      "bindings": {
+        "up_gate": "up_gate",
+        "activated": "activated"
+      }
+    },
+    {
+      "name": "down",
+      "schedule": {
+        "schema_version": 2,
+        "schedule_id": "weave-model-down-tile-b300-n128",
+        "target": "sm_103a",
+        "lowering": {
+          "backend": "native_cuda",
+          "entry_point": "cake_weave_model_down"
+        },
+        "metadata": {},
+        "roles": [
+          {
+            "name": "epilogue",
+            "execution_groups": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "mma",
+            "execution_groups": [
+              4
+            ]
+          },
+          {
+            "name": "copy",
+            "execution_groups": [
+              5
+            ]
+          }
+        ],
+        "allocations": [
+          {
+            "name": "operands",
+            "space": "shared",
+            "size_bytes": 65536
+          },
+          {
+            "name": "tensor",
+            "space": "tensor",
+            "size_bytes": 65536,
+            "tensor_columns": 128,
+            "allocating_role": "epilogue"
+          }
+        ],
+        "buffers": [
+          {
+            "name": "a",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              128,
+              768
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "b",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              2048,
+              768
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "c",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              128,
+              2048
+            ],
+            "mode": "output"
+          },
+          {
+            "name": "a_stage",
+            "space": "shared",
+            "dtype": "bf16",
+            "shape": [
+              128,
+              64
+            ],
+            "mode": "scratch",
+            "allocation": "operands",
+            "stages": 2,
+            "swizzle": "swizzle_128b"
+          },
+          {
+            "name": "b_stage",
+            "space": "shared",
+            "dtype": "bf16",
+            "shape": [
+              128,
+              64
+            ],
+            "mode": "scratch",
+            "allocation": "operands",
+            "byte_offset": 32768,
+            "stages": 2,
+            "swizzle": "swizzle_128b"
+          },
+          {
+            "name": "acc",
+            "space": "tensor",
+            "dtype": "fp32",
+            "shape": [
+              128,
+              128
+            ],
+            "mode": "scratch",
+            "allocation": "tensor"
+          },
+          {
+            "name": "dot",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              128,
+              128
+            ],
+            "mode": "scratch"
+          }
+        ],
+        "pipelines": [
+          {
+            "name": "main",
+            "stages": 2
+          }
+        ],
+        "barriers": [
+          {
+            "name": "ready",
+            "count": 2,
+            "producers": [
+              "copy"
+            ],
+            "consumers": [
+              "mma"
+            ],
+            "pipeline": "main",
+            "mechanism": "mbarrier"
+          },
+          {
+            "name": "done",
+            "count": 1,
+            "producers": [
+              "mma"
+            ],
+            "consumers": [
+              "epilogue"
+            ],
+            "mechanism": "mbarrier"
+          }
+        ],
+        "operations": [
+          {
+            "id": "load_a",
+            "kind": "load",
+            "role": "copy",
+            "reads": [
+              "a"
+            ],
+            "writes": [
+              "a_stage"
+            ],
+            "parameters": {
+              "movement": "tma",
+              "descriptor_box": [
+                128,
+                64
+              ]
+            },
+            "signals": [
+              "ready"
+            ],
+            "pipeline": "main"
+          },
+          {
+            "id": "load_b",
+            "kind": "load",
+            "role": "copy",
+            "reads": [
+              "b"
+            ],
+            "writes": [
+              "b_stage"
+            ],
+            "parameters": {
+              "movement": "tma",
+              "descriptor_box": [
+                128,
+                64
+              ]
+            },
+            "signals": [
+              "ready"
+            ],
+            "pipeline": "main"
+          },
+          {
+            "id": "mma",
+            "kind": "mma",
+            "role": "mma",
+            "reads": [
+              "a_stage",
+              "b_stage"
+            ],
+            "writes": [
+              "acc"
+            ],
+            "parameters": {
+              "accumulator": "fp32",
+              "instruction": {
+                "contract": "tcgen05.mma.cta_group::1.kind::f16",
+                "shape": [
+                  128,
+                  128,
+                  16
+                ],
+                "cta_group": 1,
+                "operand_source": "shared",
+                "operand_major": [
+                  "k",
+                  "k"
+                ]
+              },
+              "tile_shape": [
+                128,
+                128,
+                64
+              ]
+            },
+            "waits": [
+              "ready"
+            ],
+            "signals": [
+              "done"
+            ],
+            "pipeline": "main",
+            "depends_on": [
+              "load_a",
+              "load_b"
+            ]
+          },
+          {
+            "id": "read_acc",
+            "kind": "load",
+            "role": "epilogue",
+            "reads": [
+              "acc"
+            ],
+            "writes": [
+              "dot"
+            ],
+            "parameters": {
+              "movement": "tmem",
+              "source_atom": {
+                "op": "tcgen05.Ld32x32b",
+                "repetition": 16
+              }
+            },
+            "waits": [
+              "done"
+            ],
+            "depends_on": [
+              "mma"
+            ]
+          },
+          {
+            "id": "store",
+            "kind": "store",
+            "role": "epilogue",
+            "reads": [
+              "dot"
+            ],
+            "writes": [
+              "c"
+            ],
+            "parameters": {
+              "coalesced": false
+            },
+            "depends_on": [
+              "read_acc"
+            ]
+          }
+        ],
+        "outputs": [
+          "c"
+        ],
+        "tile_loops": [
+          {
+            "name": "contraction",
+            "iterator": "kk",
+            "buffer": "a",
+            "dimension": 1,
+            "tile": 64,
+            "body": [
+              "load_a",
+              "load_b",
+              "mma"
+            ],
+            "range_options": {
+              "num_stages": 2,
+              "loop_unroll_factor": 1,
+              "flatten": false,
+              "warp_specialize": true,
+              "disallow_acc_multi_buffer": true,
+              "disable_licm": false
+            }
+          }
+        ],
+        "access_maps": [
+          {
+            "operation": "load_a",
+            "buffer": "a",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "rows"
+              },
+              {
+                "source": "loop_tile",
+                "name": "kk"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_b",
+            "buffer": "b",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "cols"
+              },
+              {
+                "source": "loop_tile",
+                "name": "kk"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "store",
+            "buffer": "c",
+            "indices": [
+              {
+                "source": "program_tile",
+                "name": "rows"
+              },
+              {
+                "source": "program_tile",
+                "name": "cols"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          }
+        ],
+        "program_map": {
+          "axes": [
+            {
+              "name": "rows",
+              "axis": 0,
+              "buffer": "a",
+              "dimension": 0,
+              "tile": 128
+            },
+            {
+              "name": "cols",
+              "axis": 1,
+              "buffer": "b",
+              "dimension": 0,
+              "tile": 128
+            }
+          ]
+        }
+      },
+      "bindings": {
+        "a": "activated",
+        "b": "w_down",
+        "c": "out"
+      }
+    }
+  ]
+}

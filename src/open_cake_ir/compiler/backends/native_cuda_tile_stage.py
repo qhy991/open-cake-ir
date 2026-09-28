@@ -26,9 +26,11 @@ _ROUTE_EVIDENCE = frozenset({'sm_103a'})
 class _WorkerTensorEmitter(native_cuda._Emitter):
     """Use the caller's checked N-subtile range for one complete store tile."""
 
-    def __init__(self, schedule, target, entry, *, output_width: int):
+    def __init__(self, schedule, target, entry, *, output_width: int,
+                 tile_columns: int):
         super().__init__(schedule, target, entry)
         self.output_width = output_width
+        self.tile_columns = tile_columns
 
     def operation(self, op):
         if op.kind is not OperationKind.STORE:
@@ -40,7 +42,7 @@ class _WorkerTensorEmitter(native_cuda._Emitter):
         self.line('#pragma unroll')
         self.begin(f'for (int col=0; col<{native_cuda._slots(self.s, source)}; ++col)')
         self.line(f'{self.names[output.name]}[{self.row(op)} * '
-                  f'{self.output_width} + n_tile * 64 + col] = '
+                  f'{self.output_width} + n_tile * {self.tile_columns} + col] = '
                   f'{self.names[source.name]}[col];')
         self.end()
         self.end()
@@ -53,6 +55,7 @@ class TileStageEmission:
     function_name: str
     dynamic_shared_bytes: int
     tmem_columns: int
+    tensor_address_offset: int
     mapped_operations: tuple[str, ...]
 
 
@@ -72,6 +75,7 @@ class RankedTileStageComposition:
     declared_shared_bytes: int
     emitted_shared_bytes: int
     tensor_bytes: int
+    tensor_address_offset: int
     required_execution_groups: int
     target_id: str
     compute_capability: tuple[int, int]
@@ -100,9 +104,11 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
                                       for f in failures))
     mapping = schedule.program_map
     if (mapping is None or mapping.persistent or len(mapping.axes) != 2
-            or tuple(axis.tile for axis in mapping.axes) != (128, 64)
+            or mapping.axes[0].tile != 128
+            or mapping.axes[1].tile not in (64, 128)
             or tuple(axis.axis for axis in mapping.axes) != (0, 1)):
-        raise EmitError('worker tensor tile needs M128/N64 finite program axes')
+        raise EmitError('worker tensor tile needs M128/N64 or N128 finite program axes')
+    tile_columns = mapping.axes[1].tile
     globals_ = [b for b in schedule.buffers if b.space is MemorySpace.GLOBAL]
     loads = [op for op in schedule.operations if op.kind is OperationKind.LOAD
              and op.parameters.movement is LoadMovement.TMA]
@@ -127,7 +133,7 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
     store_input = schedule.buffer(store.reads[0])
     access = schedule.access_map(store.op_id, output.name)
     epilogue = next(role for role in schedule.roles if role.name == store.role)
-    if (store_input.shape != (128, 64)
+    if (store_input.shape != (128, tile_columns)
             or epilogue.execution_groups != (0, 1, 2, 3)
             or access is None or access.boundary is not BoundaryPolicy.MASK_TILED_AXES
             or len(access.indices) != 2
@@ -138,12 +144,14 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
         raise EmitError('worker unmasked store needs full row/column tile ownership')
     tensor = [alloc for alloc in schedule.allocations
               if alloc.space is MemorySpace.TENSOR]
-    if len(tensor) != 1 or tensor[0].tensor_columns != 64:
-        raise EmitError('worker tensor tile needs one externally owned 64-column TMEM allocation')
+    if len(tensor) != 1 or tensor[0].tensor_columns != tile_columns:
+        raise EmitError('worker tensor tile needs one matching externally owned TMEM allocation')
     emitter = _WorkerTensorEmitter(schedule, target, function_name,
-                                   output_width=output.shape[1])
-    if emitter.shared_bytes > 49200:
-        raise EmitError('worker tensor tile exceeds the evidenced CTA shared-memory footprint')
+                                   output_width=output.shape[1],
+                                   tile_columns=tile_columns)
+    expected_shared_bytes = {64: 49200, 128: 65584}[tile_columns]
+    if emitter.shared_bytes != expected_shared_bytes:
+        raise EmitError('worker tensor tile shared-memory footprint differs')
     emitter.axisvars = {mapping.axes[0].name: '0', mapping.axes[1].name: 'n_tile'}
     emitter.mapnames = {loads[0].op_id: 'maps_a[0]',
                         loads[1].op_id: 'map_b[0]'}
@@ -152,7 +160,7 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
     emitter.begin(f'__device__ __forceinline__ void {function_name}('
                   'unsigned char* smem, uint32_t* tm1, int warp, float* output, '
                   'const CUtensorMap* maps_a, const CUtensorMap* map_b, int n_tile)')
-    emitter.line(f'if (n_tile < 0 || n_tile >= {output.shape[1] // 64}) '
+    emitter.line(f'if (n_tile < 0 || n_tile >= {output.shape[1] // tile_columns}) '
                  'asm volatile("trap;");')
     for barrier in schedule.barriers:
         key = 'barrier:' + barrier.name
@@ -178,7 +186,8 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
         raise EmitError('worker stage source map differs from its Schedule operations')
     return TileStageEmission(source, native_cuda._INSTRUCTIONS,
                              function_name, emitter.shared_bytes,
-                             tensor[0].tensor_columns, mapped)
+                             tensor[0].tensor_columns,
+                             emitter.offsets['tmem:' + tensor[0].name], mapped)
 
 
 def emit_model_activation_stage(schedule, target, *, function_name: str) -> TileStageEmission:
@@ -224,7 +233,7 @@ def emit_model_activation_stage(schedule, target, *, function_name: str) -> Tile
                    for line in emitter.lines if '// CAKE_OP: ' in line)
     if mapped != tuple(op.op_id for op in schedule.operations):
         raise EmitError('worker activation source map differs from its Schedule operations')
-    return TileStageEmission(source, '', function_name, 0, 0, mapped)
+    return TileStageEmission(source, '', function_name, 0, 0, 0, mapped)
 
 
 def compose_model_ranked_tile_stages(
@@ -254,12 +263,17 @@ def compose_model_ranked_tile_stages(
             != ('up_gate', 'activation', 'down')):
         raise EmitError('ranked tile stage composition needs the exact model EP4 domain')
     analysis = effects.analyze(local_program, combine_schedule)
-    if (analysis.items_per_rank != 512 or analysis.routes_per_item != 8
+    up_n = local_program.stages[0].schedule.program_map.axes[1].tile
+    down_n = local_program.stages[2].schedule.program_map.axes[1].tile
+    if (up_n != down_n or up_n not in (64, 128)
+            or analysis.items_per_rank != 512 or analysis.routes_per_item != 8
             or analysis.feature_width != 2048
             or analysis.stage_work_units
-            != (('up_gate', 24), ('activation', 22), ('down', 32))
+            != (('up_gate', 1536 // up_n), ('activation', 22),
+                ('down', 2048 // down_n))
             or analysis.logical_tile_slots_per_rank != 255
-            or analysis.stage_task_slots_per_rank != 19890
+            or analysis.stage_task_slots_per_rank
+            != 255 * (1536 // up_n + 22 + 2048 // down_n)
             or analysis.required_execution_groups != 6):
         raise EmitError('ranked tile safe capacity or Cake stage work units differ')
     from .native_cuda_model_combine import preflight as combine_preflight
@@ -279,6 +293,10 @@ def compose_model_ranked_tile_stages(
     )
     if stages[0].instruction_helpers != stages[2].instruction_helpers:
         raise EmitError('ranked tile tensor stages disagree on PTX helpers')
+    if (stages[0].tmem_columns != stages[2].tmem_columns
+            or stages[0].tensor_address_offset
+            != stages[2].tensor_address_offset):
+        raise EmitError('ranked tile tensor stage allocations differ')
     shared = max(stage.dynamic_shared_bytes for stage in stages)
     if (shared < analysis.maximum_shared_bytes
             or shared > target.resource_limits.maximum_shared_memory_bytes
@@ -291,6 +309,7 @@ def compose_model_ranked_tile_stages(
         analysis.stage_task_slots_per_rank,
         analysis.maximum_shared_bytes, shared,
         analysis.maximum_tensor_bytes,
+        stages[0].tensor_address_offset,
         analysis.required_execution_groups,
         target.target_id,
         target.compute_capability,

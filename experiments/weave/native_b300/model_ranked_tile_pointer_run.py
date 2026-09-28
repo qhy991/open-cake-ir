@@ -24,13 +24,17 @@ def read(path: Path) -> dict:
 def contract(root: Path) -> dict:
     manifest = read(root / 'manifest.json')
     lowering = read(root / 'lowering_report.json')
+    tensor_n_tile = manifest.get('tensor_n_tile', 64)
+    stage_capacity = {64: 19890, 128: 12750}.get(tensor_n_tile)
     if (manifest.get('target') != 'sm_103a'
             or manifest.get('generation') != 'cake_ranked_tile_pointer_abi'
+            or stage_capacity is None
             or len(manifest.get('source_commit', '')) != 40
             or lowering.get('source_commit') != manifest['source_commit']
             or lowering.get('entry_point') != ENTRY
             or lowering.get('logical_tile_capacity') != 255
-            or lowering.get('stage_task_capacity') != 19890
+            or lowering.get('tensor_n_tile') != tensor_n_tile
+            or lowering.get('stage_task_capacity') != stage_capacity
             or not (root / 'ranked_tile.cu').is_file()):
         raise ValueError('ranked-tile library source or Compiler binding differs')
     return manifest

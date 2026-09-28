@@ -116,11 +116,21 @@ def emit_source_event_device(composition: RankedTileStageComposition,
 
     `combine_source` is the Cake combine emitted by the same clean Compiler.
     """
+    profiles = {
+        ((('up_gate', 24), ('activation', 22), ('down', 32)),
+         19890, 49200, 32768, 49192, 64),
+        ((('up_gate', 12), ('activation', 22), ('down', 16)),
+         12750, 65584, 65536, 65576, 128),
+    }
     if (not isinstance(composition, RankedTileStageComposition)
             or len(composition.stages) != 3
             or composition.safe_logical_tile_slots_per_rank != 255
-            or composition.safe_stage_task_slots_per_rank != 19890
-            or composition.emitted_shared_bytes != 49200
+            or (composition.stage_work_units,
+                composition.safe_stage_task_slots_per_rank,
+                composition.emitted_shared_bytes,
+                composition.tensor_bytes,
+                composition.tensor_address_offset,
+                composition.stages[0].tmem_columns) not in profiles
             or composition.target_id != 'sm_103a'
             or composition.compute_capability != (10, 3)
             or composition.warp_size != 32
@@ -146,6 +156,8 @@ def emit_source_event_device(composition: RankedTileStageComposition,
         '@THREADS@': str(composition.required_execution_groups*
                             composition.warp_size),
         '@SHARED_BYTES@': str(composition.emitted_shared_bytes),
+        '@TENSOR_ADDRESS_OFFSET@': str(composition.tensor_address_offset),
+        '@TENSOR_COLUMNS@': str(composition.stages[0].tmem_columns),
         '@TILE_CAPACITY@': str(composition.safe_logical_tile_slots_per_rank),
         '@UPGATE_UNITS@': str(composition.stage_work_units[0][1]),
         '@ACTIVATION_UNITS@': str(composition.stage_work_units[1][1]),

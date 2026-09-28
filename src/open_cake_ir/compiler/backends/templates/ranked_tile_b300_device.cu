@@ -2,8 +2,9 @@
 // per remote destination rank, and expert-bin rows reference that payload.
 // A source completion publishes every newly full tile; the wave-end event
 // flushes thresholded partial tiles.
-// Each finite cooperative Cake worker uses the 192-thread/49,200-B CTA
-// footprint, allocating TMEM at its first task and releasing it on exit.
+// Each finite cooperative Cake worker uses the checked 192-thread CTA
+// footprint, allocating its Schedule-declared TMEM at the first task and
+// releasing it on exit.
 // The stage body below follows the retained Cake
 // tensor-core emissions; activation uses the Cake FP32-to-BF16 graph.
 // Per-tile completion counters publish successors with GPU-scope release/
@@ -34,6 +35,7 @@ namespace cg = cooperative_groups;
 namespace {
 constexpr int kThreads = @THREADS@;
 constexpr int kDynamicShared = @SHARED_BYTES@;
+constexpr int kTensorColumns = @TENSOR_COLUMNS@;
 constexpr int kWaves = 4;
 constexpr int kSourceRanks = 4;
 constexpr int kEvents = kWaves * (kSourceRanks+1);
@@ -140,7 +142,7 @@ __global__ void tile_schedule_probe(
     const BinParams* source_params,int chunk_tokens,int chunks,
     int first_event) {
   extern __shared__ __align__(1024) unsigned char shared[];
-  uint32_t* tensor_address = reinterpret_cast<uint32_t*>(shared + 49192);
+  uint32_t* tensor_address = reinterpret_cast<uint32_t*>(shared + @TENSOR_ADDRESS_OFFSET@);
   __shared__ int claimed, claimed_stage, claimed_tile, claimed_subtile;
   __shared__ int borrowed;
   const int block = int(blockIdx.x);
@@ -298,7 +300,7 @@ __global__ void tile_schedule_probe(
           if (warp==0) {
             asm volatile(
                 "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
-                :: "r"(smem_address(tensor_address)), "n"(64) : "memory");
+                :: "r"(smem_address(tensor_address)), "n"(kTensorColumns) : "memory");
           }
           __syncthreads();
           tensor_owned=true;
@@ -344,7 +346,7 @@ __global__ void tile_schedule_probe(
     __syncthreads();
     if (warp==0) {
       asm volatile("tcgen05.dealloc.cta_group::1.sync.aligned.b32 %0, %1;"
-                   :: "r"(*tensor_address), "n"(64) : "memory");
+                   :: "r"(*tensor_address), "n"(kTensorColumns) : "memory");
       asm volatile(
           "tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;"
           ::: "memory");

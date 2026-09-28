@@ -9,7 +9,10 @@ from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PROGRAM = ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300.json'
+PROGRAMS = {
+    64: ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300.json',
+    128: ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300-n128.json',
+}
 EFFECTS = ROOT / 'examples/programs/weave-model-ranked-tile-effects-b300.json'
 COMBINE = ROOT / 'examples/schedules/native/weave-model-weighted-combine-rank512-b300.json'
 
@@ -19,7 +22,9 @@ def generate(evidence_root: Path) -> None:
     if compiler.commit is None:
         raise ValueError('ranked-tile library generation needs a clean commit')
     manifest = json.loads((evidence_root / 'manifest.json').read_text())
-    if (manifest.get('source_commit') != compiler.commit
+    tensor_n_tile = manifest.get('tensor_n_tile', 64)
+    if (type(tensor_n_tile) is not int or tensor_n_tile not in PROGRAMS
+            or manifest.get('source_commit') != compiler.commit
             or manifest.get('target') != 'sm_103a'
             or manifest.get('generation') != 'cake_ranked_tile_pointer_abi'
             or any((evidence_root / name).exists()
@@ -27,7 +32,8 @@ def generate(evidence_root: Path) -> None:
                                 'local_program.json', 'effects.json',
                                 'combine.json'))):
         raise ValueError('ranked-tile library source or create-only root differs')
-    local = Program.from_dict(json.loads(PROGRAM.read_text()))
+    program_path = PROGRAMS[tensor_n_tile]
+    local = Program.from_dict(json.loads(program_path.read_text()))
     effects = RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
     combine = Schedule.from_dict(json.loads(COMBINE.read_text()))
     lowered = compiler.lower_ranked_tiles(effects, local, combine)
@@ -35,7 +41,7 @@ def generate(evidence_root: Path) -> None:
     req = lowered.toolchain_requirements
     (evidence_root / 'ranked_tile.cu').write_text(lowered.source)
     for name,document in (
-            ('local_program.json',json.loads(PROGRAM.read_text())),
+            ('local_program.json',json.loads(program_path.read_text())),
             ('effects.json',effects.document),
             ('combine.json',json.loads(COMBINE.read_text()))):
         (evidence_root / name).write_text(json.dumps(document,indent=2)+'\n')
@@ -44,7 +50,8 @@ def generate(evidence_root: Path) -> None:
         'compiler_revision_id': lowered.compiler_revision_id,
         'target': local.target,
         'effects': str(EFFECTS.relative_to(ROOT)),
-        'program': str(PROGRAM.relative_to(ROOT)),
+        'program': str(program_path.relative_to(ROOT)),
+        'tensor_n_tile': tensor_n_tile,
         'combine': str(COMBINE.relative_to(ROOT)),
         'entry_point': effects.lowering.entry_point,
         'logical_tile_capacity': lowered.analysis.logical_tile_slots_per_rank,

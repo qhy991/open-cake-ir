@@ -111,7 +111,7 @@ cudaError_t ranked_tile_bind(RankedTileHostState& state,int rank) {
   cuuint64_t down_dims_a[2]={kHidden,kRows};
   cuuint64_t down_dims_b[2]={kHidden,kOutput};
   cuuint64_t down_stride[1]={kHidden*2};
-  cuuint32_t box_a[2]={64,kRows},box_b[2]={64,64},steps[2]={1,1};
+  cuuint32_t box_a[2]={64,kRows},box_b[2]={64,kTensorColumns},steps[2]={1,1};
   alignas(128) CUtensorMap up_a[kLogicalTiles],up_b[kExperts];
   alignas(128) CUtensorMap down_a[kLogicalTiles],down_b[kExperts];
   for (int tile=0;tile<kLogicalTiles;++tile) {

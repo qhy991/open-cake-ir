@@ -25,6 +25,7 @@ from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
 
 ROOT = Path(__file__).resolve().parents[2]
 PROGRAM = ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300.json'
+PROGRAM_N128 = ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300-n128.json'
 EFFECTS = ROOT / 'examples/programs/weave-model-ranked-tile-effects-b300.json'
 COMBINE = ROOT / 'examples/schedules/native/weave-model-weighted-combine-rank512-b300.json'
 
@@ -33,6 +34,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.program = Program.from_dict(json.loads(PROGRAM.read_text()))
+        cls.program_n128 = Program.from_dict(json.loads(PROGRAM_N128.read_text()))
         cls.target = Compiler.load(ROOT)._revision.targets['sm_103a']
 
     def test_both_model_tensor_stages_use_schedule_operations(self):
@@ -46,6 +48,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
                                  tuple(op.op_id for op in stage.schedule.operations))
                 self.assertEqual(result.dynamic_shared_bytes, 49200)
                 self.assertEqual(result.tmem_columns, 64)
+                self.assertEqual(result.tensor_address_offset, 49192)
                 self.assertIn('cp.async.bulk.tensor.2d', result.instruction_helpers)
                 self.assertIn('tcgen05.mma', result.instruction_helpers)
                 self.assertIn('maps_a[0]', result.source)
@@ -71,6 +74,38 @@ class NativeCudaTileStageTest(unittest.TestCase):
         with self.assertRaisesRegex(EmitError, 'exact B300'):
             emit_tensor_tile_stage(stage.schedule, other,
                                    function_name='tile_stage')
+
+    def test_n128_tensor_stages_and_ranked_composition(self):
+        for index, function in ((0, 'cake_upgate_stage_work'),
+                                (2, 'cake_down_stage_work')):
+            with self.subTest(stage=index):
+                stage = self.program_n128.stages[index]
+                result = emit_tensor_tile_stage(
+                    stage.schedule, self.target, function_name=function)
+                self.assertEqual(result.dynamic_shared_bytes, 65584)
+                self.assertEqual(result.tmem_columns, 128)
+                self.assertEqual(result.tensor_address_offset, 65576)
+                self.assertIn('n_tile * 128', result.source)
+                self.assertEqual(result.mapped_operations,
+                                 tuple(op.op_id for op in stage.schedule.operations))
+        effects = RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
+        combine = Schedule.from_dict(json.loads(COMBINE.read_text()))
+        result = compose_model_ranked_tile_stages(
+            effects, self.program_n128, combine, self.target)
+        self.assertEqual(result.stage_work_units,
+                         (('up_gate', 12), ('activation', 22), ('down', 16)))
+        self.assertEqual(result.safe_stage_task_slots_per_rank, 12750)
+        self.assertEqual(result.tensor_bytes, 65536)
+        self.assertEqual(result.emitted_shared_bytes, 65584)
+        device = emit_source_event_device(
+            result, combine_source='#include "combine/kernel.cu"')
+        self.assertIn('constexpr int kTensorColumns = 128;', device)
+        self.assertIn('shared + 65576', device)
+        self.assertIn('"n"(kTensorColumns)', device)
+        library = emit_source_event_library(
+            result, combine_source=native_cuda.emit(combine, self.target).source,
+            entry=effects.lowering.entry_point)
+        self.assertIn('box_b[2]={64,kTensorColumns}', library)
 
     def test_activation_stage_comes_from_its_cast_explicit_schedule(self):
         schedule = self.program.stages[1].schedule
@@ -278,6 +313,36 @@ class NativeCudaTileStageTest(unittest.TestCase):
                              True)
             self.assertEqual(len([name for name in report['source_map']
                                   if name.startswith('effect.')]),27)
+
+    def test_clean_compiler_emits_n128_pointer_abi(self):
+        commit = Compiler.load(ROOT).commit
+        if commit is None:
+            self.skipTest('N128 ranked-tile ABI generation needs a clean commit')
+        script = ROOT / 'experiments/weave/native_b300/generate_ranked_tile_library.py'
+        with tempfile.TemporaryDirectory(prefix='cake-ranked-tile-n128-') as directory:
+            root = Path(directory)
+            (root / 'manifest.json').write_text(json.dumps({
+                'target': 'sm_103a', 'source_commit': commit,
+                'generation': 'cake_ranked_tile_pointer_abi',
+                'tensor_n_tile': 128,
+            }))
+            environment = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+            subprocess.run([sys.executable, str(script), '--evidence-root',
+                            str(root)], env=environment, check=True,
+                           capture_output=True, text=True)
+            source = (root / 'ranked_tile.cu').read_text()
+            report = json.loads((root / 'lowering_report.json').read_text())
+            self.assertEqual(Program.from_dict(json.loads(
+                (root / 'local_program.json').read_text())), self.program_n128)
+            self.assertEqual(report['tensor_n_tile'], 128)
+            self.assertEqual(report['stage_work_units'],
+                             [['up_gate', 12], ['activation', 22], ['down', 16]])
+            self.assertEqual(report['stage_task_capacity'], 12750)
+            self.assertEqual(report['emitted_shared_bytes'], 65584)
+            self.assertIn('constexpr int kTensorColumns = 128;', source)
+            self.assertIn('shared + 65576', source)
+            from experiments.weave.native_b300.model_ranked_tile_pointer_run import contract
+            self.assertEqual(contract(root)['tensor_n_tile'], 128)
 
     def test_exact_model_program_has_complete_ranked_tile_lowering(self):
         compiler=Compiler.load(ROOT)
