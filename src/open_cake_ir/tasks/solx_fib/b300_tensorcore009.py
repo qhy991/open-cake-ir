@@ -7,7 +7,8 @@ from .gemm import SPECS, TASKS, validate_contract
 
 
 TASK = "fib_gemm_n5120_k2048"
-TILES = frozenset(((16, 64, 256), (32, 64, 256), (64, 128, 256)))
+TILES = frozenset(((16, 64, 256), (32, 64, 256), (64, 128, 256),
+                   (64, 64, 64), (64, 64, 128), (64, 64, 256)))
 
 
 def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,

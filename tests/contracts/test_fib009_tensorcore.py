@@ -19,7 +19,7 @@ class Fib009TensorcoreTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
-    def test_three_structural_tiles_lower_at_three_official_batch_sizes(self) -> None:
+    def test_bounded_structural_tiles_lower_at_three_official_batch_sizes(self) -> None:
         for rows in (128, 952, 8828):
             workload = WorkloadContract(gemm.workload_document(TASK, rows=rows))
             for block_m, block_n, block_k in sorted(TILES):
