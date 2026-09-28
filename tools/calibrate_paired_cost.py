@@ -21,9 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "tools"))
 
-from paired_cost_binary import equivalent_except_debug_lines  # noqa: E402
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evaluation import EvaluationReceipt  # noqa: E402
 from open_cake_ir.evaluation.paired import PAIRED_KIND, candidate_identity, paired_protocol  # noqa: E402
@@ -90,11 +88,11 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     plan = _read(_external_file(snapshot, "plan.json", "paired cost plan"))
     fields = {"schema_version", "state", "plan_id", "model_id", "compiler_revision",
               "executor_revision", "study_path", "workload", "case_id", "target",
-              "baseline_bundle_path", "baseline_schedule_path", "candidates", "observations",
+              "baseline_schedule_path", "candidates", "observations",
               "varying_dimensions", "acceptance", "toolchain_identity",
               "toolchain_config_path"}
     if (not isinstance(plan, dict) or set(plan) != fields
-            or type(plan["schema_version"]) is not int or plan["schema_version"] != 1
+            or type(plan["schema_version"]) is not int or plan["schema_version"] != 2
             or plan["state"] != "frozen"
             or any(not isinstance(plan[key], str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", plan[key]) is None
                    for key in ("plan_id", "model_id"))):
@@ -147,34 +145,13 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     route = study["arms"]["open_cake"]["lowering_route"]
     expected_abi = [(arg.name, arg.dtype, list(arg.shape), arg.mode)
                     for arg in workload.tensor_abi(plan["case_id"])]
-    baseline_path = plan["baseline_bundle_path"]
     baseline_schedule_path = plan["baseline_schedule_path"]
-    if (not isinstance(baseline_path, str) or Path(baseline_path).is_absolute()
-            or not isinstance(baseline_schedule_path, str)):
-        raise ValueError("paired cost baseline must belong to the candidate snapshot")
-    baseline = load_baseline_bundle(
-        ROOT, _external_file(snapshot, baseline_path, "paired cost baseline bundle"),
-    )
+    if not isinstance(baseline_schedule_path, str):
+        raise ValueError("paired cost baseline Schedule must belong to the candidate snapshot")
     baseline_source = _external_file(snapshot, baseline_schedule_path, "paired cost baseline Schedule")
-    _, baseline_lowering, _ = _admitted_schedule(
+    _admitted_schedule(
         compiler, workload, plan, baseline_source, route, expected_abi, "baseline",
     )
-    manifest = parse_launch_manifest(json.loads(baseline.artifact_payloads["launch_manifest"]))
-    manifest.check_workload(workload, plan["case_id"])
-    requirements = baseline_lowering.toolchain_requirements
-    submitted = CandidateSubmission.seal(TaskOpenCakeEnvironment.media_type,
-                                         baseline_source.read_bytes())
-    warp_size = compiler._revision.targets[plan["target"]].warp_size
-    if (baseline.target != plan["target"] or baseline.target != manifest.target
-            or baseline.entry_point != manifest.kernel_name
-            or baseline.launch_spec_sha256 != manifest.canonical_sha256
-            or baseline.candidate_sha256 != submitted.sha256
-            or baseline.artifact_payloads.get("lowered_source") != baseline_lowering.source.encode()
-            or baseline.entry_point != requirements["kernel_entry_point"]
-            or list(manifest.grid) != requirements["grid"]
-            or tuple(manifest.block) != (requirements["compile_options"]["num_warps"] * warp_size, 1, 1)
-            or manifest.hidden_null_pointer_parameters != 2):
-        raise ValueError("paired cost baseline differs from frozen Compiler lowering or launch seal")
     candidates = plan["candidates"]
     if (not isinstance(candidates, list) or len(candidates) != 3
             or any(not isinstance(item, dict) or set(item) != {"id", "schedule"}
@@ -183,7 +160,9 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
                    or not isinstance(item["schedule"], str) for item in candidates)):
         raise ValueError("paired cost candidate pool differs")
     names = [item["id"] for item in candidates]
-    if (len(set(names)) != 3 or len({item["schedule"] for item in candidates}) != 3
+    if (len(set(names)) != 3 or "baseline" in names
+            or len({item["schedule"] for item in candidates}) != 3
+            or baseline_schedule_path in {item["schedule"] for item in candidates}
             or plan["observations"] != observation_order(names)):
         raise ValueError("paired cost pool or frozen observation order differs")
     bindings = plan["varying_dimensions"]
@@ -211,20 +190,33 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
             raise ValueError(f"paired cost acceptance {key} differs")
     if limits["envelope_allowance"] >= 1:
         raise ValueError("paired cost envelope allowance differs")
-    context = _paired_empirical_context(
-        executor, workload_sha256=workload.canonical_sha256,
-        case_id=plan["case_id"], evaluation_protocol=policy,
-        baseline_identity=candidate_identity(baseline),
-    )
     return {"plan_id": plan["plan_id"], "compiler_revision_id": revision.revision_id,
             "executor_revision_id": executor.executor_id, "workload_id": workload.workload_id,
             "target": plan["target"], "candidate_count": 3,
-            "observation_count": len(plan["observations"]), "context": context}
+            "observation_count": len(plan["observations"]),
+            "baseline_binding": "compile-stage", "paired_kind": PAIRED_KIND}
 
 
 def _write_new(path: Path, value: object) -> None:
     with path.open("xb") as stream:
         stream.write(canonical_json_bytes(value))
+
+
+def _seal_compiled(directory: Path, assessment, candidate) -> None:
+    directory.mkdir()
+    with (directory / "schedule.json").open("xb") as stream:
+        stream.write(assessment.schedule_bytes)
+    paths = {}
+    for role, payload in candidate.artifact_payloads.items():
+        if not role.isidentifier():
+            raise ValueError("paired cost artifact role cannot be a file name")
+        filename = f"candidate-{role}.bin"
+        with (directory / filename).open("xb") as stream:
+            stream.write(payload)
+        paths[role] = filename
+    _write_new(directory / "candidate.json", {
+        "candidate": candidate_identity(candidate), "artifact_paths": paths,
+    })
 
 
 def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) -> dict[str, object]:
@@ -236,7 +228,8 @@ def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) 
     if not stage.is_dir() or (stage / "compile-index.json").exists():
         raise ValueError("paired cost compile stage already has candidate output")
     plan = _read(_external_file(snapshot, "plan.json", "paired cost plan"))
-    if any((stage / spec["id"]).exists() for spec in plan["candidates"]):
+    if (stage / "baseline").exists() or any(
+            (stage / spec["id"]).exists() for spec in plan["candidates"]):
         raise ValueError("paired cost compile stage already has candidate output")
     if canonical_json_bytes(isolated_compiler.identity) != canonical_json_bytes(plan["toolchain_identity"]):
         raise ValueError("paired cost isolated toolchain differs from frozen plan")
@@ -256,24 +249,21 @@ def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) 
     )
     baseline_source = _external_file(snapshot, plan["baseline_schedule_path"],
                                      "paired cost baseline Schedule").read_bytes()
+    baseline_assessment = compiler.assess(json.loads(baseline_source))
+    baseline_lowering = compiler.lower(baseline_assessment)
     rebuilt = environment.build(CandidateSubmission.seal(environment.media_type,
                                                         baseline_source))
     if rebuilt.disposition != "launchable" or rebuilt.launchable is None:
         raise ValueError(f"paired cost baseline build refused: {rebuilt.feedback}")
-    frozen_baseline = load_baseline_bundle(
-        ROOT, _external_file(snapshot, plan["baseline_bundle_path"], "paired cost baseline bundle"))
-    rebuilt_payloads = dict(rebuilt.launchable.artifact_payloads)
-    frozen_payloads = dict(frozen_baseline.artifact_payloads)
-    if (rebuilt.launchable.candidate_sha256 != frozen_baseline.candidate_sha256
-            or rebuilt.launchable.target != frozen_baseline.target
-            or rebuilt.launchable.entry_point != frozen_baseline.entry_point
-            or rebuilt.launchable.launch_spec_sha256 != frozen_baseline.launch_spec_sha256
-            or set(rebuilt_payloads) != set(frozen_payloads)
-            or any(rebuilt_payloads[role] != frozen_payloads[role]
-                   for role in rebuilt_payloads if role != "cubin")
-            or not equivalent_except_debug_lines(frozen_payloads["cubin"],
-                                                 rebuilt_payloads["cubin"])):
-        raise ValueError("paired cost baseline binary differs from frozen isolated compilation")
+    baseline = rebuilt.launchable
+    if baseline.artifact_payloads.get("lowered_source") != baseline_lowering.source.encode():
+        raise ValueError("paired cost baseline compilation differs from frozen Schedule")
+    _seal_compiled(stage / "baseline", baseline_assessment, baseline)
+    context = _paired_empirical_context(
+        executor, workload_sha256=workload.canonical_sha256, case_id=plan["case_id"],
+        evaluation_protocol=study["evaluation_protocol"],
+        baseline_identity=candidate_identity(baseline),
+    )
     rows = []
     for spec in plan["candidates"]:
         source = _external_file(snapshot, spec["schedule"], "paired cost Schedule").read_bytes()
@@ -285,25 +275,12 @@ def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) 
         candidate = built.launchable
         if candidate.artifact_payloads.get("lowered_source") != lowering.source.encode():
             raise ValueError("paired cost compiled source differs from frozen Schedule")
-        directory = stage / spec["id"]
-        directory.mkdir()
-        with (directory / "schedule.json").open("xb") as stream:
-            stream.write(assessment.schedule_bytes)
-        paths = {}
-        for role, payload in candidate.artifact_payloads.items():
-            if not role.isidentifier():
-                raise ValueError("paired cost artifact role cannot be a file name")
-            filename = f"candidate-{role}.bin"
-            with (directory / filename).open("xb") as stream:
-                stream.write(payload)
-            paths[role] = filename
-        _write_new(directory / "candidate.json", {
-            "candidate": candidate_identity(candidate), "artifact_paths": paths,
-        })
+        _seal_compiled(stage / spec["id"], assessment, candidate)
         rows.append({"candidate_id": spec["id"], "schedule": spec["schedule"],
                      "candidate": candidate_identity(candidate)})
     index = {"plan_id": plan["plan_id"], "source_commit": compiler.commit,
-             "context": checked["context"], "toolchain_identity": plan["toolchain_identity"],
+             "context": context, "toolchain_identity": plan["toolchain_identity"],
+             "baseline": candidate_identity(baseline),
              "candidates": rows}
     _write_new(stage / "compile-index.json", index)
     return index
@@ -429,8 +406,36 @@ def _node_assignment(run: Path, task: dict, *, timeout_s: float = 2) -> dict:
         time.sleep(.05)
 
 
-def _compiled_candidates(run: Path, plan: dict, checked: dict, compiler: Compiler, workload) -> dict:
-    """Replay every compile seal against the frozen Schedule and current Compiler."""
+def _replay_compiled_schedule(run: Path, plan: dict, compiler: Compiler,
+                              workload, source_path: str, directory: Path):
+    source = _external_file(run / "candidate", source_path, "frozen paired Schedule").read_bytes()
+    assessment = compiler.assess(json.loads(source))
+    lowering = compiler.lower(assessment)
+    if (_external_file(directory, "schedule.json", "compiled Schedule").read_bytes()
+            != assessment.schedule_bytes):
+        raise ValueError("paired cost compiled Schedule differs")
+    candidate = load_baseline_bundle(ROOT, directory / "candidate.json")
+    expected_submission = CandidateSubmission.seal(TaskOpenCakeEnvironment.media_type, source)
+    manifest = parse_launch_manifest(json.loads(candidate.artifact_payloads["launch_manifest"]))
+    manifest.check_workload(workload, plan["case_id"])
+    requirements = lowering.toolchain_requirements
+    warp_size = compiler._revision.targets[plan["target"]].warp_size
+    if (candidate.candidate_sha256 != expected_submission.sha256
+            or candidate.target != plan["target"]
+            or candidate.artifact_payloads.get("lowered_source") != lowering.source.encode()
+            or candidate.entry_point != requirements["kernel_entry_point"]
+            or candidate.launch_spec_sha256 != manifest.canonical_sha256
+            or list(manifest.grid) != requirements["grid"]
+            or tuple(manifest.block) != (
+                requirements["compile_options"]["num_warps"] * warp_size, 1, 1)
+            or manifest.hidden_null_pointer_parameters != 2):
+        raise ValueError("paired cost compiled artifact differs from frozen lowering")
+    return candidate
+
+
+def _compiled_candidates(run: Path, plan: dict, checked: dict, compiler: Compiler,
+                         workload) -> tuple[dict, object, dict]:
+    """Replay stage-owned baseline and candidates against their frozen Schedules."""
     stage = run / "stages/compile"
     result = _read(_external_file(stage, "result.json", "paired cost compile stage result"))
     receipt = _read(_external_file(stage, "receipt.json", "paired cost compile stage receipt"))
@@ -442,35 +447,36 @@ def _compiled_candidates(run: Path, plan: dict, checked: dict, compiler: Compile
     index = _read(_external_file(stage, "compile-index.json", "paired cost compile index"))
     if (index.get("plan_id") != plan["plan_id"]
             or index.get("source_commit") != compiler.commit
-            or index.get("context") != checked["context"]
+            or checked["compiler_revision_id"] != compiler._revision.revision_id
             or index.get("toolchain_identity") != plan["toolchain_identity"]
             or not isinstance(index.get("candidates"), list)
             or len(index["candidates"]) != len(plan["candidates"])):
         raise ValueError("paired cost compile index differs from frozen plan")
+    baseline = _replay_compiled_schedule(
+        run, plan, compiler, workload, plan["baseline_schedule_path"],
+        stage / "baseline",
+    )
+    executor = ExecutorRevision.load_reference(ROOT, plan["executor_revision"],
+                                               "paired_cost.executor_revision")
+    study = _read(_external_file(ROOT, plan["study_path"], "paired cost Study"))
+    context = _paired_empirical_context(
+        executor, workload_sha256=workload.canonical_sha256, case_id=plan["case_id"],
+        evaluation_protocol=study["evaluation_protocol"],
+        baseline_identity=candidate_identity(baseline),
+    )
+    if index.get("baseline") != candidate_identity(baseline) or index.get("context") != context:
+        raise ValueError("paired cost compile baseline or assay context differs")
     admitted = {}
     for spec, row in zip(plan["candidates"], index["candidates"], strict=True):
-        source = _external_file(run / "candidate", spec["schedule"], "frozen paired Schedule").read_bytes()
-        assessment = compiler.assess(json.loads(source))
-        lowering = compiler.lower(assessment)
-        if (row.get("candidate_id") != spec["id"] or row.get("schedule") != spec["schedule"]
-                or _external_file(stage / spec["id"], "schedule.json", "compiled Schedule").read_bytes()
-                != assessment.schedule_bytes):
+        if row.get("candidate_id") != spec["id"] or row.get("schedule") != spec["schedule"]:
             raise ValueError("paired cost compiled Schedule differs")
-        candidate = load_baseline_bundle(ROOT, stage / spec["id"] / "candidate.json")
-        expected_submission = CandidateSubmission.seal(TaskOpenCakeEnvironment.media_type, source)
-        manifest = parse_launch_manifest(json.loads(candidate.artifact_payloads["launch_manifest"]))
-        manifest.check_workload(workload, plan["case_id"])
-        requirements = lowering.toolchain_requirements
-        if (row.get("candidate") != candidate_identity(candidate)
-                or candidate.candidate_sha256 != expected_submission.sha256
-                or candidate.target != plan["target"]
-                or candidate.artifact_payloads.get("lowered_source") != lowering.source.encode()
-                or candidate.entry_point != requirements["kernel_entry_point"]
-                or candidate.launch_spec_sha256 != manifest.canonical_sha256
-                or list(manifest.grid) != requirements["grid"]):
+        candidate = _replay_compiled_schedule(
+            run, plan, compiler, workload, spec["schedule"], stage / spec["id"],
+        )
+        if row.get("candidate") != candidate_identity(candidate):
             raise ValueError("paired cost compiled artifact differs from frozen lowering")
         admitted[spec["id"]] = candidate
-    return admitted
+    return admitted, baseline, context
 
 
 def _paired_request(candidate, baseline, plan: dict, policy: dict) -> tuple[dict, dict[str, bytes]]:
@@ -582,9 +588,8 @@ def collect_device() -> int:
         workload = load_workload(_external_file(ROOT, plan["workload"]["path"],
                                                 "paired cost Workload"))
         task = _task(run, plan, executor, workload)
-        compiled = _compiled_candidates(run, plan, checked, compiler, workload)
-        baseline = load_baseline_bundle(ROOT, _external_file(snapshot, plan["baseline_bundle_path"],
-                                                             "paired cost baseline bundle"))
+        compiled, baseline, assay_context = _compiled_candidates(
+            run, plan, checked, compiler, workload)
         study = _read(_external_file(ROOT, plan["study_path"], "paired cost Study"))
         policy = study["evaluation_protocol"]
         executor.admit_host()
@@ -630,7 +635,7 @@ def collect_device() -> int:
                 raise ValueError("paired cost baseline drift exceeded the frozen limit")
             if len({item["observation"]["gpu_uuid"] for item in rows}) != 1:
                 raise ValueError("paired cost observations span multiple GPU UUIDs")
-        _write_new(stage / "observations.json", {"rows": rows, "context": checked["context"],
+        _write_new(stage / "observations.json", {"rows": rows, "context": assay_context,
                                                   "assignment": assignment})
         artifacts = {path.relative_to(stage).as_posix(): path.relative_to(stage).as_posix()
                      for path in sorted(stage.rglob("*")) if path.is_file() and path != result}
@@ -728,9 +733,8 @@ def fit_run(run: str | Path, output: str | Path) -> int:
                                                 "paired cost Workload"))
         task = _task(run, plan, executor, workload)
         run_result, receipts = _completed_run(run, task, executor)
-        compiled = _compiled_candidates(run, plan, checked, compiler, workload)
-        baseline = load_baseline_bundle(ROOT, _external_file(snapshot, plan["baseline_bundle_path"],
-                                                             "paired cost baseline bundle"))
+        compiled, baseline, assay_context = _compiled_candidates(
+            run, plan, checked, compiler, workload)
         study = _read(_external_file(ROOT, plan["study_path"], "paired cost Study"))
         policy = study["evaluation_protocol"]
         context = _read(_external_file(run / "stages/collection", "execution-context.json",
@@ -766,7 +770,7 @@ def fit_run(run: str | Path, output: str | Path) -> int:
             rows.append(row)
         index = _read(_external_file(run / "stages/collection", "observations.json",
                                      "paired cost observation index"))
-        if index != {"rows": rows, "context": checked["context"], "assignment": assignment}:
+        if index != {"rows": rows, "context": assay_context, "assignment": assignment}:
             raise ValueError("paired cost observation index differs from raw replay")
         passed, model, audit = derive_paired_cost_model(
             model_id=plan["model_id"], compiler_revision_id=checked["compiler_revision_id"],
@@ -775,6 +779,8 @@ def fit_run(run: str | Path, output: str | Path) -> int:
             evaluation_protocol=policy, baseline=baseline, rows=rows,
             varying_dimensions=plan["varying_dimensions"], acceptance=plan["acceptance"],
         )
+        if model["context"] != assay_context:
+            raise ValueError("paired cost model context differs from compiled baseline")
         model["reported_evidence"].update(run_id=run_result["run_id"], plan_id=plan["plan_id"])
         _write_new(output / "audit.json", {**audit, "run_id": run_result["run_id"]})
         if passed:

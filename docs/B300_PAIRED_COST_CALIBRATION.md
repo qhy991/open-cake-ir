@@ -16,47 +16,46 @@ stable paired CUPTI observations. `derive_paired_cost_model` fits one exact-case
 point per candidate from separate fit observations, sets each descriptive range
 from calibration observations, then checks held-out prediction error, all provider
 orders of the three-to-two cut, and fixed-baseline drift. This is a pure
-derivation; a future collector must still establish the Schedule, compiled
-artifact, broker and split-freeze custody before publishing its output.
+derivation; the collector establishes the Schedule, compiled artifact, broker
+and split-freeze custody before publishing its output.
 The context is a comparison boundary, not evidence that any model has been measured
 or qualified. Existing `EmpiricalCostModel` instances and the Lab policy remain as
 they are; the B300 scientific Study does not admit empirical candidate selection.
 
 `tools/calibrate_paired_cost.py check-plan /external/candidate` admits a frozen
 candidate snapshot outside every Git checkout without a GPU. Its `plan.json`
-names the clean Compiler and
-Executor references, the committed B300 GEMM Study and Workload, three distinct
-complete Schedule files, a sealed baseline bundle **inside the snapshot**, the
-M-axis bindings for `a` and `c`, an exact isolated Triton toolchain identity and
-its in-snapshot configuration, acceptance limits, and all nine observations.
-The baseline's own complete Schedule is sealed beside its bundle. `check-plan`
-matches its submission bytes, Compiler lowering, Workload ABI and launch seal;
-the CPU local stage recompiles it with the frozen isolated toolchain and refuses
-any difference in the complete artifact bundle before measuring a candidate,
-except CUBIN bytes confined to the non-executing `.debug_line` and
-`.nv.merc.debug_line` ELF sections. The section table, all other CUBIN bytes and
-every other artifact must be identical. This exception follows a retained
-repeated-compile diagnosis; it changes no launched binary or timing rule.
+names the clean Compiler and Executor references, the committed B300 GEMM Study
+and Workload, three distinct complete candidate Schedules, one complete baseline
+Schedule, the M-axis bindings for `a` and `c`, an exact isolated Triton toolchain
+identity and its in-snapshot configuration, acceptance limits, and all nine
+observations. `check-plan` verifies each Schedule's Compiler admission, lowering
+route and Workload ABI. Schema v2 places no compiled baseline in the snapshot:
+the CPU local stage compiles that Schedule once and seals the exact artifact
+bundle used by every later observation. Repeated CPU compilation of one PTX on
+B300-M4 produced different executable SASS in retained v2 diagnostics, so a
+second binary cannot stand in for the stage-owned baseline.
 Each Schedule must replace the Corpus starter's placeholder Workload identity with
 the frozen Workload's canonical identity before admission.
 The observation order is three fit candidates, the reversed calibration order,
-then a rotated held-out audit order. The checker derives the paired context from
-the Study and baseline; the plan cannot substitute a free-text timer or a mutable
-baseline path. Admission does not compile, measure, fit, or change Study policy.
+then a rotated held-out audit order. The CPU stage derives the paired context
+from the Study and its sealed baseline record; the plan cannot substitute a
+free-text timer or a mutable baseline path. Admission does not compile, measure,
+fit, or change Study policy.
 
 GPU Infra's CPU-only local `compile` stage invokes
 `tools/calibrate_paired_cost.py collect-compile` with its normal candidate, stage
 and result environment. The tool admits the exact Executor host and isolated
-Triton compiler, builds all three candidates through the common Open Cake
-Authoring Environment, and seals Schedule and artifact bundles plus one compile
-index in the stage. It refuses a visible GPU allocation and a toolchain that
+Triton compiler, builds the baseline once and all three candidates through the
+common Open Cake Authoring Environment, and seals their Schedule and artifact
+bundles plus one compile index in the stage. The index binds the exact baseline
+record to the derived paired context. It refuses a visible GPU allocation and a toolchain that
 differs from the frozen identity. This stage does not claim numerical correctness
 or candidate performance.
 
 Before a broker-owned collection can launch, the device stage checks the exact
 two-stage GPU Infra task, the daemon's running assignment and broker parent,
-then replays all three compile bundles against their frozen Schedules, lowerings,
-Workload ABI and launch seals. The node's broker job is read from its retained
+then replays the baseline and all three candidate bundles against their frozen
+Schedules, lowerings, Workload ABI and launch seals. The node's broker job is read from its retained
 state; a missing child `GPUQ_JOB_ID` is never replaced by a guessed job. Under
 that assignment the controller seals the candidate and baseline for each of
 the nine observations and calls the common paired evaluator in the inherited
