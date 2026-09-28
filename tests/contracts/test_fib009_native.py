@@ -8,7 +8,9 @@ from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
-from open_cake_ir.tasks.solx_fib.b300_native009 import native_m8828_source
+from open_cake_ir.tasks.solx_fib.b300_native009 import (
+    native_m8828_n128_source, native_m8828_source,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -49,6 +51,25 @@ class Fib009NativeTest(unittest.TestCase):
                     task, rows=rows, backend=backend))
                 with self.assertRaises(ValueError):
                     native_m8828_source(workload)
+                with self.assertRaises(ValueError):
+                    native_m8828_n128_source(workload)
+
+    def test_n128_successor_owns_half_as_many_column_ctas(self) -> None:
+        workload = WorkloadContract(gemm.workload_document(
+            "fib_gemm_n5120_k2048", rows=8828))
+        schedule = parse(native_m8828_n128_source(workload)).document
+        self.assertEqual(schedule["program_map"]["axes"][1]["tile"], 128)
+        mma = next(op for op in schedule["operations"] if op["kind"] == "mma")
+        self.assertEqual(mma["parameters"]["tile_shape"], [128, 128, 64])
+        assessment = self.compiler.assess(schedule)
+        self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                         assessment.findings)
+        lowered = self.compiler.lower_program(Program.from_schedule(schedule))
+        lowered.validate_binding()
+        leaf = lowered.lowerings[0]
+        self.assertEqual(leaf.toolchain_requirements["grid"], [69, 40, 1])
+        self.assertEqual(leaf.toolchain_requirements["argument_order"],
+                         ["a", "b", "out"])
 
 
 if __name__ == "__main__":
