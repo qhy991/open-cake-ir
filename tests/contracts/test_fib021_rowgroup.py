@@ -7,7 +7,7 @@ from pathlib import Path
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.solx_fib.nvidia_rmsnorm021 import (
+from open_cake_ir.tasks.solx_fib.nvidia_rmsnorm_rowgroup import (
     qualified_rowgroup16_source, row_group_source)
 from open_cake_ir.tasks.solx_fib.workload import SPECS, workload_document
 
@@ -60,11 +60,11 @@ class Fib021RowGroupTest(unittest.TestCase):
             row_group_source(workload, rows_per_cta=2)
         other_target = WorkloadContract(workload_document(
             TASK, rows=24, columns=128, backend="triton-gfx1151"))
-        with self.assertRaisesRegex(ValueError, "exact B200 or B300 task"):
+        with self.assertRaisesRegex(ValueError, "exact B200 or B300 task 021/022"):
             row_group_source(other_target)
         other = WorkloadContract(workload_document(
-            "fib_rmsnorm_h512", rows=7, columns=512, backend="triton-b300"))
-        with self.assertRaisesRegex(ValueError, "exact B200 or B300 task"):
+            "fib_rmsnorm_h1536", rows=7, columns=1536, backend="triton-b300"))
+        with self.assertRaisesRegex(ValueError, "exact B200 or B300 task 021/022"):
             row_group_source(other)
 
     def test_measured_t16_recipe_keeps_its_batch_boundary(self) -> None:
@@ -89,7 +89,7 @@ class Fib021RowGroupTest(unittest.TestCase):
                     qualified_rowgroup16_source(workload)
         b200 = WorkloadContract(workload_document(
             TASK, rows=49532, columns=128, backend="triton-b200"))
-        with self.assertRaisesRegex(ValueError, "require B300"):
+        with self.assertRaisesRegex(ValueError, "require the B300 task 021"):
             qualified_rowgroup16_source(b200)
 
 
