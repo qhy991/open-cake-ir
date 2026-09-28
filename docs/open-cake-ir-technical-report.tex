@@ -1785,6 +1785,23 @@ Cake Triton 准备＋native TMEM 消费 & 2,359.598 & 5.173\(\times\) \\
 同时验证 ready/free 相位和寄存器／shared 驻留，再以完整 Workload
 重新衡量延迟。
 
+\paragraph{片上因子直接进入 TMEM 消费者。}
+为替代上述标量计算，下一组精确 B300 PTX witness 先让 CTA 按 B64
+swizzle 将 BF16 \([K128,N32]\) 因子写 shared，再由 TMEM-A 的
+八条 K16 TCGEN05 MMA 消费。独立 BF16 矩阵乘法的四组各
+4,096 个 FP32 输出均零超差。继任版本从真实冻结 K/G 在 CTA 内
+生成 base-key 因子，不读取其诊断性全局写回；首、中、末三组
+因子及 \(\mathrm{state}@\mathrm{base\_key}\) 各 4,096 项均通过
+CPU 与留存 Cake 准备参考。再加入 Q 后，同一 TMEM state 分别
+收缩两个 B64 槽，得到 base-key／base-query 两份 FP32 投影：
+精确 AOT 为 78 寄存器、33,792 字节 shared、0 spill；
+\code{gpuq-ab0d1c2b2ca8} 的三组每组两份各 4,096 项
+与独立 CPU 乘法均零超差，最大绝对差 \(3.73\times10^{-8}\)。
+这证明真实生产者到 TCGEN05 消费者的两条物理边；
+P／solve、U 后两项收缩、跨 chunk barrier phase 和完整延迟
+仍需独立资格化。Compiler 还须明确 shared 到 warp fragment
+及同 CTA B 槽的生产者、ready/free 与覆盖规则。
+
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
 路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
