@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
 import json
 import os
 import subprocess
@@ -16,18 +15,13 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import calibrate_paired_cost as instrument
-from tests.contracts.test_paired_cost_binary import make_cubin
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.toolchain import TritonCompilation
-from open_cake_ir.evaluation import LaunchableCandidate
 from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.lab.bindings import load_baseline_bundle
-from open_cake_ir.lab.build import TritonToolchainBuilder
-from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.serialization import canonical_json_bytes
-from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.tasks import evaluate as worker
 
@@ -58,26 +52,6 @@ class PairedCostPlanTest(unittest.TestCase):
         baseline_schedule["metadata"]["workload_contract_sha256"] = self.workload.canonical_sha256
         baseline_root.mkdir(parents=True, exist_ok=True)
         (baseline_root / "schedule.json").write_bytes(canonical_json_bytes(baseline_schedule))
-        baseline_environment = TaskOpenCakeEnvironment(
-            self.compiler,
-            TritonToolchainBuilder(workload=self.workload, case_id="primary",
-                                  isolated_compiler=self.FakeIsolatedCompiler(identity)),
-            authority_document={"lowering_route": baseline_schedule["lowering"]},
-            workload=self.workload, case_id="primary", executor=self.executor,
-        )
-        baseline_result = baseline_environment.build(CandidateSubmission.seal(
-            baseline_environment.media_type, canonical_json_bytes(baseline_schedule)))
-        self.assertEqual(baseline_result.disposition, "launchable", baseline_result.feedback)
-        baseline = baseline_result.launchable
-        payloads = baseline.artifact_payloads
-        paths = {}
-        for role, payload in payloads.items():
-            path = baseline_root / f"{role}.bin"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(payload)
-            paths[role] = path.name
-        bundle = baseline_root / "candidate.json"
-        write(bundle, {"candidate": candidate_identity(baseline), "artifact_paths": paths})
         candidates = []
         for cap in (64, 96, 128):
             name = f"tile-{cap}"
@@ -95,7 +69,7 @@ class PairedCostPlanTest(unittest.TestCase):
                             "triton_version": self.executor.document["host_environment"]["packages"]["triton"],
                             "timeout_seconds": 600}
         write(snapshot / "toolchain.json", toolchain_config)
-        plan = {"schema_version": 1, "state": "frozen",
+        plan = {"schema_version": 2, "state": "frozen",
                 "plan_id": "synthetic-paired-plan", "model_id": "synthetic-paired-model",
                 "compiler_revision": {"path": "compiler/revision.json",
                                       "revision_id": self.compiler._revision.revision_id},
@@ -105,7 +79,6 @@ class PairedCostPlanTest(unittest.TestCase):
                              "workload_id": self.workload.workload_id,
                              "canonical_sha256": self.workload.canonical_sha256},
                 "case_id": "primary", "target": "sm_103a",
-                "baseline_bundle_path": "baseline/candidate.json",
                 "baseline_schedule_path": "baseline/schedule.json", "candidates": candidates,
                 "observations": instrument.observation_order([row["id"] for row in candidates]),
                 "varying_dimensions": [{"buffer": name, "dimension": 0} for name in ("a", "c")],
@@ -166,7 +139,8 @@ class PairedCostPlanTest(unittest.TestCase):
             self.assertEqual(checked["target"], "sm_103a")
             self.assertEqual(checked["candidate_count"], 3)
             self.assertEqual(checked["observation_count"], 9)
-            self.assertIn("fixed_baseline_paired_cupti_v1", checked["context"]["timer"])
+            self.assertEqual(checked["baseline_binding"], "compile-stage")
+            self.assertEqual(checked["paired_kind"], instrument.PAIRED_KIND)
 
     def test_changed_order_and_schedule_abi_are_refused_before_device(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -201,86 +175,29 @@ class PairedCostPlanTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outside every checkout"):
                 instrument.check_plan(snapshot)
 
-    def test_baseline_record_cannot_name_another_launch_spec(self):
-        with tempfile.TemporaryDirectory() as directory:
-            snapshot, plan = self.fixture(directory)
-            bundle = snapshot / plan["baseline_bundle_path"]
-            document = json.loads(bundle.read_text())
-            identity = document["candidate"]
-            mismatched = LaunchableCandidate(
-                identity["candidate_sha256"], identity["target"], identity["entry_point"],
-                identity["artifact_roles"], "4" * 64,
-            )
-            document["candidate"] = candidate_identity(mismatched)
-            write(bundle, document)
-            with self.assertRaisesRegex(ValueError, "launch seal"):
-                instrument.check_plan(snapshot)
-
-    def test_baseline_schedule_and_compiled_binary_share_one_source(self):
+    def test_baseline_schedule_is_admitted_before_compile(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshot, plan = self.fixture(directory)
             source = snapshot / plan["baseline_schedule_path"]
-            original_bytes = source.read_bytes()
-            original = json.loads(original_bytes)
-            changed = copy.deepcopy(original)
-            changed["residency"]["registers_per_thread"] += 1
-            write(source, changed)
-            with self.assertRaisesRegex(ValueError, "frozen Compiler lowering"):
+            schedule = json.loads(source.read_text())
+            schedule["metadata"]["workload_contract_sha256"] = "0" * 64
+            write(source, schedule)
+            with self.assertRaisesRegex(ValueError, "Workload binding"):
                 instrument.check_plan(snapshot)
-            source.write_bytes(original_bytes)
-            bundle = snapshot / plan["baseline_bundle_path"]
-            record = json.loads(bundle.read_text())
-            frozen = load_baseline_bundle(ROOT, bundle)
-            payloads = dict(frozen.artifact_payloads)
-            payloads["cubin"] = b"\x7fELF DIFFERENT SYNTHETIC NONEXECUTABLE"
-            (bundle.parent / record["artifact_paths"]["cubin"]).write_bytes(payloads["cubin"])
-            altered = LaunchableCandidate(
-                frozen.candidate_sha256, frozen.target, frozen.entry_point,
-                {role: sha256(value).hexdigest() for role, value in payloads.items()},
-                frozen.launch_spec_sha256, payloads,
-            )
-            record["candidate"] = candidate_identity(altered)
-            write(bundle, record)
-            instrument.check_plan(snapshot)
-            stage = Path(directory).resolve() / "compile"
-            stage.mkdir()
-            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
-                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}), \
-                    self.assertRaisesRegex(ValueError, "baseline binary differs"):
-                instrument.prepare_compile(
-                    snapshot, stage, self.FakeIsolatedCompiler(plan["toolchain_identity"]))
 
-    def test_baseline_recompile_allows_only_nonexecuting_debug_lines(self):
+    def test_compile_stage_owns_one_baseline_binary(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshot, plan = self.fixture(directory)
-            bundle = snapshot / plan["baseline_bundle_path"]
-            record = json.loads(bundle.read_text())
-            frozen = load_baseline_bundle(ROOT, bundle)
-            payloads = dict(frozen.artifact_payloads)
-            payloads["cubin"] = make_cubin()
-            (bundle.parent / record["artifact_paths"]["cubin"]).write_bytes(payloads["cubin"])
-            sealed = LaunchableCandidate(
-                frozen.candidate_sha256, frozen.target, frozen.entry_point,
-                {role: sha256(value).hexdigest() for role, value in payloads.items()},
-                frozen.launch_spec_sha256, payloads,
-            )
-            record["candidate"] = candidate_identity(sealed)
-            write(bundle, record)
-            instrument.check_plan(snapshot)
-
-            class DebugLineCompiler(self.FakeIsolatedCompiler):
-                def compile(self, source, requirements):
-                    compiled = super().compile(source, requirements)
-                    return replace(compiled, artifacts={**compiled.artifacts,
-                        "cubin": make_cubin(line=b"path-B-1234", merc_line=b"merc-B-1234")})
-
             stage = Path(directory).resolve() / "compile"
             stage.mkdir()
             with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
                     patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
                 index = instrument.prepare_compile(
-                    snapshot, stage, DebugLineCompiler(plan["toolchain_identity"]))
-            self.assertEqual(len(index["candidates"]), 3)
+                    snapshot, stage, self.FakeIsolatedCompiler(plan["toolchain_identity"]))
+            baseline = load_baseline_bundle(ROOT, stage / "baseline/candidate.json")
+            self.assertEqual(index["baseline"], candidate_identity(baseline))
+            self.assertEqual(json.loads(index["context"]["input_scope"])[
+                "baseline_candidate_record_sha256"], baseline.canonical_sha256)
 
     def test_cpu_compile_seals_all_three_common_candidates(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -295,6 +212,7 @@ class PairedCostPlanTest(unittest.TestCase):
             self.assertEqual(isolated.calls, 4)
             self.assertEqual(len(index["candidates"]), 3)
             self.assertEqual(json.loads((stage / "compile-index.json").read_text()), index)
+            self.assertTrue((stage / "baseline/candidate.json").is_file())
             for spec in plan["candidates"]:
                 candidate = load_baseline_bundle(ROOT, stage / spec["id"] / "candidate.json")
                 self.assertIn("cubin", candidate.artifact_payloads)
@@ -336,6 +254,7 @@ class PairedCostPlanTest(unittest.TestCase):
             result = json.loads((stage / "result.json").read_text())
             self.assertEqual((result["status"], result["validity"]), ("passed", "valid"))
             self.assertEqual(result["metrics"]["candidate_count"], 3)
+            self.assertIn("baseline/candidate.json", result["artifacts"])
             self.assertIn("tile-64/candidate.json", result["artifacts"])
             self.assertEqual(isolated.calls, 4)
 
@@ -382,9 +301,17 @@ class PairedCostPlanTest(unittest.TestCase):
             write(stage / "receipt.json", {"execution": "local", "exit_code": 0,
                                            "judge_result_valid": True})
             checked = instrument.check_plan(snapshot)
-            compiled = instrument._compiled_candidates(run, plan, checked,
-                                                        self.compiler, self.workload)
+            compiled, baseline, context = instrument._compiled_candidates(
+                run, plan, checked, self.compiler, self.workload)
             self.assertEqual(set(compiled), {row["id"] for row in plan["candidates"]})
+            self.assertEqual(json.loads(context["input_scope"])[
+                "baseline_candidate_record_sha256"], baseline.canonical_sha256)
+            baseline_record = json.loads((stage / "baseline/candidate.json").read_text())
+            baseline_record["candidate"]["artifact_roles"]["cubin"] = "0" * 64
+            write(stage / "baseline/candidate.json", baseline_record)
+            with self.assertRaises(ValueError):
+                instrument._compiled_candidates(run, plan, checked,
+                                                self.compiler, self.workload)
             index = json.loads((stage / "compile-index.json").read_text())
             index["candidates"][0]["candidate_id"] = "another"
             write(stage / "compile-index.json", index)
@@ -403,7 +330,7 @@ class PairedCostPlanTest(unittest.TestCase):
                     patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
                 instrument.prepare_compile(snapshot, stage, isolated)
             candidate = load_baseline_bundle(ROOT, stage / "tile-64/candidate.json")
-            baseline = load_baseline_bundle(ROOT, snapshot / plan["baseline_bundle_path"])
+            baseline = load_baseline_bundle(ROOT, stage / "baseline/candidate.json")
             study = json.loads((ROOT / plan["study_path"]).read_text())
             observation = run / "stages/collection/fit-tile-64"
             observation.parent.mkdir()
@@ -499,7 +426,7 @@ class PairedCostPlanTest(unittest.TestCase):
                                        "state": "completed", "terminal_at": "SYNTHETIC",
                                        "run_dir": str(run)})
             checked = instrument.check_plan(snapshot)
-            baseline = load_baseline_bundle(ROOT, snapshot / plan["baseline_bundle_path"])
+            baseline = load_baseline_bundle(ROOT, compile_stage / "baseline/candidate.json")
             candidates = {spec["id"]: load_baseline_bundle(ROOT, compile_stage / spec["id"] / "candidate.json")
                           for spec in plan["candidates"]}
             policy = json.loads((ROOT / plan["study_path"]).read_text())["evaluation_protocol"]
@@ -535,7 +462,8 @@ class PairedCostPlanTest(unittest.TestCase):
                                        "baseline_us": 100, "sample_count": 250}}
                 write(observation_dir / "observation.json", row)
                 rows.append(row)
-            write(stage / "observations.json", {"rows": rows, "context": checked["context"],
+            compile_index = json.loads((compile_stage / "compile-index.json").read_text())
+            write(stage / "observations.json", {"rows": rows, "context": compile_index["context"],
                                                 "assignment": assignment})
             for name, kind, execution in (("compile", "compile", "local"),
                                           ("collection", "judge", "broker")):
