@@ -43,7 +43,7 @@ FP8 输入不变。实际计数为 37 次模块加载、37 次 kernel 调用和 
 `open-cake-ir-evidence/metax-native-abi-request-875724d4/device-run/`，收集复核为
 同目录上级的 `device-verification.json`。
 
-这关闭 [F-2026-09-27-001](../findings/2026-09-27-001-metax-native-scratch-abi.json)
+这关闭 [F-2026-09-27-004](../findings/2026-09-27-004-metax-native-scratch-abi.json)
 的原生 launcher 参数缺口。范围是该精确 Workload 和运行时的封存原生正确性，
 没有逐 bit GPU 输出审计、性能、其他形状、原生 FP8 MMA 或框架资格。
 测量与 profiler 入口的软件准入已同步；它们的设备资格仍需各自收据。
@@ -72,7 +72,7 @@ shared bytes；带宽、指令计数和 achieved occupancy 未采集。
 外部活动未排除。没有其他形状、原生 FP8 dot、GPU bitwise 审计或服务性能外推。
 收据与复核为 checkout 外的
 `open-cake-ir-evidence/metax-cake-streaming-c3be4379-v2/device-verification.json`，
-详见 [F-2026-09-27-002](../findings/2026-09-27-002-metax-fp8-streaming-lowering.json)。
+详见 [F-2026-09-27-005](../findings/2026-09-27-005-metax-fp8-streaming-lowering.json)。
 
 ## 有限 FP8 分桶 FP16 dot 组合
 
@@ -135,7 +135,7 @@ A/A `maca-4224867cdcc4` 为 11.776／11.520 µs（0.9783×、close-null），0/8
 上述资格限定为捕获的 C550-2 Triton 3.6、固定 NT64 Workload 和 primary MCPTI
 边界，分配仍为 `local_serialized`、外部活动未排除。原 native-source 探针的
 1.125× search／1.0976× confirmation 保留独立身份，不替代生成产物结果。
-详见 [F-2026-09-27-003](../findings/2026-09-27-003-metax-comparison-magnitude-emission.json)
+详见 [F-2026-09-27-006](../findings/2026-09-27-006-metax-comparison-magnitude-emission.json)
 及 checkout 外 `open-cake-ir-evidence/metax-magnitude-generated-confirm-90739901/verification.json`。
 
 ## 分桶配方的 N16 输出 tile
@@ -245,7 +245,7 @@ Triton 3.1 的原捕获 launcher 只传非 constexpr 参数。C550-2 Triton 3.6
 原生 ELF 的 MetaX note 才包含全部 launcher 槽位。封存与 loader 必须分别检查
 公开 tensor ABI 和原生参数计数，并拒绝非零或未建模的 scratch 要求。
 原三指针封存 FP8 基线在 launch 崩溃，对照追加两个零指针后 primary 输出通过；
-完整设备资格仍待修复后重验，见 [F-2026-09-27-001](../findings/2026-09-27-001-metax-native-scratch-abi.json)。
+完整设备资格仍待修复后重验，见 [F-2026-09-27-004](../findings/2026-09-27-004-metax-native-scratch-abi.json)。
 
 ### FP32 FMA 指令 lowering
 
@@ -319,7 +319,7 @@ RZ/RD/RU各有508/510/506位置可区分“后续普通算术恢复RN”与“�
 `7451c2bc` 的三个拟议 FMA 名字均先由 `TARGET_INSTRUCTION_UNSUPPORTED` 拒绝；
 手写对应library调用又被原生源码边界拒绝。证据在
 `metax-directed-fma-admission-7451c2bc/result.json`。见
-[F-2026-09-27-004](../findings/2026-09-27-004-metax-directed-fma-lowering.json)：
+[F-2026-09-27-007](../findings/2026-09-27-007-metax-directed-fma-lowering.json)：
 复用既有FMA原语，先由共享owner注册合同与源码边界，再接入MetaX声明/发射；
 当前不推广Target能力，实际Cake生成产物仍须独立验收。
 
@@ -354,7 +354,7 @@ manifest、mcfatbin和native ELF与已验收的66ca6c83产物逐字节相同。�
 性能证据绑定同一产物，未做新设备重测；此结果不证明整个Compiler的等价性。
 外部边界记录为`metax-fp8-sync-handoff-b5da553f/handoff.json`。
 
-[F-2026-09-27-004](../findings/2026-09-27-004-metax-directed-fma-lowering.json)已回填accepted，
+[F-2026-09-27-007](../findings/2026-09-27-007-metax-directed-fma-lowering.json)已回填accepted，
 实现提交aee427d9、验证产物来源b5da553f及平台合并30d3895d均保留。共享PR #269
 仍在main的独立评审流程中，未宣称main评审完成。此次接受的是上述有界lowering能力，
 不是性能优化、任意运行时或完整模型资格。

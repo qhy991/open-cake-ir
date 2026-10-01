@@ -1,6 +1,8 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-27-004",
+  "id": "F-2026-09-27-007",
+  "legacy_platform_ref": "metax@5f93bb6e",
+  "legacy_platform_id": "F-2026-09-27-004",
   "date": "2026-09-27",
   "kind": "capacity",
   "backend": "triton",
@@ -58,5 +60,10 @@
     "authority": "user explicit instruction: first push and merge current commits into metax",
     "merge_commit": "30d3895de5d8ac7afa158a6b3b7ba9ec2293f38d",
     "main_independent_review": "pending; no claim of completed main review"
+  },
+  "main_shared_contract_integration": {
+    "merge_commit": "6ee0f4c7ec1eb0b720bfa54abbe415621de5832b",
+    "review": "Independent source and contract-boundary review found no blocking issue at task/core-metax-directed-fma-admission@3bb0a4db.",
+    "verification": "At clean 3bb0a4db, 48 focused contracts and the unchanged 179-case Corpus Gate passed; all five PR269 CI checks passed."
   }
 }

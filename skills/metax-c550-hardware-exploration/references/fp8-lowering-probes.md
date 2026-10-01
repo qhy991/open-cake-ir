@@ -73,7 +73,7 @@ The exact NT v2 sealed baseline at `875724d4` completed broker job
 `maca-1a6e9f748221`: 37 cases and 151552 elements, zero mismatches/maximum absolute
 error, unchanged inputs, 37 native module loads, 37 kernel calls and zero
 compilation/fallback/timing calls. This closes
-[F-2026-09-27-001](../../../findings/2026-09-27-001-metax-native-scratch-abi.json).
+[F-2026-09-27-004](../../../findings/2026-09-27-004-metax-native-scratch-abi.json).
 The collected worker artifacts are at
 `open-cake-ir-evidence/metax-native-abi-request-875724d4/device-run/`; the case and
 counter audit is `device-verification.json` in its parent. This is registered
@@ -90,7 +90,7 @@ or full unroll remain refused by the streaming guard. No new DType or hidden
 memory access is introduced.
 
 Read the current [platform result](../../../docs/metax-c550.md) and
-[F-2026-09-27-002](../../../findings/2026-09-27-002-metax-fp8-streaming-lowering.json)
+[F-2026-09-27-005](../../../findings/2026-09-27-005-metax-fp8-streaming-lowering.json)
 for generated-source qualification at `c3be4379`: all 37 cases pass; quality-passed
 search and fresh confirmation repeat 26.880/155.904 us (5.80x on primary), with null
 A/A and a correct separate instrumented profile. The authored-source 6.84x result
@@ -250,7 +250,7 @@ The qualified bucketed recipe has 32 instances of
 `select(compare(x, 0, ge), x, mul(x, -1))` whose results are read only by numerical
 comparisons. A native-source probe replaces only those selects with `tl.abs`,
 retaining all masks, dot order, compensation and launch. Read
-[F-2026-09-27-003](../../../findings/2026-09-27-003-metax-comparison-magnitude-emission.json)
+[F-2026-09-27-006](../../../findings/2026-09-27-006-metax-comparison-magnitude-emission.json)
 before implementing or widening a Compiler spelling.
 
 All 37 cases pass with unchanged inputs, zero tolerance failures and maximum
@@ -293,7 +293,7 @@ Real Compiler-generated source passes all 37 frozen cases and independently repe
 10.496/11.520 us (1.0976x) in search and fresh confirmation, with quality-passed
 10/10 wins, close-null A/A and a correct separate profile. Profile reports 178
 registers/thread and 4096 dynamic shared bytes; missing counters and local-serialized
-allocation limits remain. Read the [closed Finding](../../../findings/2026-09-27-003-metax-comparison-magnitude-emission.json)
+allocation limits remain. Read the [closed Finding](../../../findings/2026-09-27-006-metax-comparison-magnitude-emission.json)
 and `/Users/haiyan-infiniai/open-cake-ir-evidence/metax-magnitude-generated-confirm-90739901/verification.json`
 for generated-source and special-value evidence. Keep the earlier native-source
 qualification separate.
