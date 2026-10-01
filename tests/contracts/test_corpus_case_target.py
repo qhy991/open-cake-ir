@@ -90,7 +90,8 @@ class CorpusCaseTarget(unittest.TestCase):
         # C550 adds three measured dot modes and two owned negative contracts,
         # then three FP8 storage/decoder cases and two conversion refusals.
         # Routing adds two measured compositions and two unqualified top-k forms.
-        self.assertEqual(report.case_count, 178)
+        # The C550 indexed-gather successor adds one exact ABI-bound positive case.
+        self.assertEqual(report.case_count, 179)
 
 
 if __name__ == "__main__":

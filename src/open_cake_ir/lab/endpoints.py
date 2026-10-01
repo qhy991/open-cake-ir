@@ -24,12 +24,14 @@ def analysis_without_endpoint_policy(analysis: Mapping[str, object]) -> dict[str
     return {key: value for key, value in analysis.items() if key != "endpoint_policy"}
 
 
-def matched_endpoint(*, checkpoint: CheckpointObservation, observations: Sequence[TurnObservation],
+def matched_endpoint(*, checkpoint: CheckpointObservation | None, observations: Sequence[TurnObservation],
                      terminal_provider_tokens: int, protocol_adherence: str,
                      terminal_reason: str | None, analysis: Mapping[str, object], confirmation=None,
                      budget_exceeded=()):
     """Only the single terminal confirmation can qualify an endpoint."""
     policy = endpoint_policy(analysis)
+    if checkpoint is None and policy is None:
+        raise ValueError('an endpoint without token checkpoints requires normal terminal observation')
     if protocol_adherence != 'adhered':
         return 'missing', None
     if terminal_reason not in _NORMAL_REASONS:
@@ -47,7 +49,8 @@ def matched_endpoint(*, checkpoint: CheckpointObservation, observations: Sequenc
             or confirmation.provider_tokens != terminal_provider_tokens):
             raise ValueError('terminal confirmation differs from the nominated search origin')
     qualified = (confirmation is not None and confirmation.qualified
-                 and terminal_provider_tokens <= checkpoint.provider_tokens and not budget_exceeded)
+                 and (checkpoint is None or terminal_provider_tokens <= checkpoint.provider_tokens)
+                 and not budget_exceeded)
     endpoint = {'qualified_by_budget': qualified,
                 'budget_exceeded':list(budget_exceeded),
                 'budget': terminal_provider_tokens if policy else checkpoint.provider_tokens}

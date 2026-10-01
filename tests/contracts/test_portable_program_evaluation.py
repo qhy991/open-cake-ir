@@ -103,12 +103,14 @@ class PortableProgramEvaluation(unittest.TestCase):
         workload, program = task_program(backend)
         if single:
             program = Program.from_schedule(program.document['stages'][0]['schedule'])
-        lowered = self.compiler.lower_program(program)
+        from open_cake_ir.lab.workload_binding import bind_program_workload
+        bound = bind_program_workload(program, workload.canonical_sha256)
+        lowered = self.compiler.lower_program(bound)
         compilation = NativeCompiler()
         builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=compilation)
         identity = sha256(program.document_bytes).hexdigest()
         children = {}
-        for stage, lowering in zip(program.stages, lowered.lowerings, strict=True):
+        for stage, lowering in zip(bound.stages, lowered.lowerings, strict=True):
             request = BuildRequest(identity, lowering.source.encode(), 'lowered_source', lowering.source_sha256,
                 lowering.target, lowering.route.entry_point, lowering.toolchain_requirements)
             children[stage.name] = builder.build_stage(request, stage_abi(stage))
@@ -286,7 +288,11 @@ class PortableProgramEvaluation(unittest.TestCase):
                                      reference_outputs(workload, case_id, case.inputs))
                 def evaluate(prepared_authority, result):
                     self.assertEqual(tuple(prepared_authority.prepared_cases), workload.case_ids)
-                    self.assertEqual(prepared_authority.manifest.program.document, program.document)
+                    bound = prepared_authority.manifest.program.document
+                    for stage in bound['stages']:
+                        self.assertEqual(stage['schedule']['metadata'].pop('workload_contract_sha256'),
+                                         workload.canonical_sha256)
+                    self.assertEqual(bound, program.document)
                     result['admitted'] = True
                 with patch.dict(os.environ, {}, clear=True), \
                      patch.object(worker, '_load_authority', return_value=authority), \

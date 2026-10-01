@@ -396,6 +396,7 @@ class LoadedCudaCandidate:
         if tensor_contract.target != self.candidate.target:
             raise ValueError("persistent candidate tensor Target differs")
         if (getattr(self.manifest, 'pointer_alignments', {})
+                and tensor_contract is not self.manifest
                 and getattr(tensor_contract, 'canonical_sha256', None) != self.manifest.canonical_sha256):
             raise ValueError('aligned kernel tensor contract differs from its sealed manifest')
         observed, pointers = _tensor_contract(arguments, tensor_contract)

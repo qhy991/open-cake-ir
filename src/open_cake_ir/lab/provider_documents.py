@@ -1,4 +1,4 @@
-"""Provider records and strict candidate-envelope byte admission."""
+"""Provider records and strict authored-file byte admission."""
 
 from __future__ import annotations
 
@@ -98,6 +98,21 @@ def _project_candidate_submission(
         or maximum_candidates_per_turn <= 0
     ):
         raise ValueError("provider maximum candidates per Turn differs")
+    if submission_contract == PYTHON_SOURCE_FILE_V1:
+        if (environment_kind != 'open_cake' or not isinstance(arm, str) or not arm
+            or maximum_candidates_per_turn != 1 or type(payload) is not bytes or not payload):
+            raise ValueError('Python source-file submission contract differs')
+        try:
+            source = payload.decode('utf-8')
+        except UnicodeDecodeError as error:
+            raise ValueError('provider Python source file is not UTF-8') from error
+        return (canonical_json_bytes({'python_source': source}),)
+    if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1:
+        if environment_kind != 'open_cake' or not isinstance(arm, str) or not arm:
+            raise ValueError('Python candidate-bundle submission contract differs')
+        from .python_candidate_bundle import project_python_candidate_bundle
+        return project_python_candidate_bundle(payload,
+            maximum_candidates_per_turn=maximum_candidates_per_turn)
     if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or not isinstance(arm, str) or not arm or environment_kind not in {
         "open_cake",
         "direct_cuda",
@@ -152,6 +167,8 @@ class ProviderInvocation:
     provider_revision: str
     removed_environment: tuple[str, ...]
     thread_id: str | None
+    codex_home: Path | None = None
+    system_skills_snapshot: tuple[tuple[str, int, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -172,7 +189,7 @@ class ProviderTurn:
 
     candidate_sha256s: tuple[str, ...]
     raw_submission: bytes
-    """Exact candidate envelope bytes from this Turn's no-follow file read."""
+    """Exact author file bytes from this Turn's no-follow read, before projection."""
 
     raw_events: bytes
     raw_events_sha256: str
@@ -248,6 +265,7 @@ class ProviderQualificationReceipt:
     usage_observed: bool
     qualified: bool
     scope: str
+    system_skills_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -265,6 +283,9 @@ class ProviderQualificationReceipt:
                 "live_two_turn_current_provider",
                 "live_two_turn_tool_rich_provider",
             }
+            or (self.system_skills_sha256 is not None and (
+                len(self.system_skills_sha256) != 64
+                or any(char not in '0123456789abcdef' for char in self.system_skills_sha256)))
         ):
             raise ValueError("provider qualification identity differs")
 
@@ -273,7 +294,7 @@ class ProviderQualificationReceipt:
         """Load the closed non-secret provider capability receipt."""
 
         document = json.loads(Path(path).read_text(encoding="utf-8"))
-        if not isinstance(document, Mapping) or set(document) != {
+        fields = {
             "schema_version",
             "provider_revision",
             "executable_sha256",
@@ -283,7 +304,10 @@ class ProviderQualificationReceipt:
             "usage_observed",
             "qualified",
             "scope",
-        } or document.get("schema_version") != 1:
+        }
+        version = document.get('schema_version') if isinstance(document, Mapping) else None
+        if (not isinstance(document, Mapping) or type(version) is not int or version not in {1, 2}
+            or set(document) != fields | ({'system_skills_sha256'} if version == 2 else set())):
             raise ValueError("provider qualification fields differ")
         return cls(
             provider_revision=str(document["provider_revision"]),
@@ -294,6 +318,7 @@ class ProviderQualificationReceipt:
             usage_observed=document["usage_observed"] is True,
             qualified=document["qualified"] is True,
             scope=str(document["scope"]),
+            system_skills_sha256=(str(document['system_skills_sha256']) if version == 2 else None),
         )
 
     @property
@@ -301,7 +326,7 @@ class ProviderQualificationReceipt:
         """Return the canonical non-secret receipt document."""
 
         return {
-            "schema_version": 1,
+            "schema_version": 2 if self.system_skills_sha256 is not None else 1,
             "provider_revision": self.provider_revision,
             "executable_sha256": self.executable_sha256,
             "configuration_sha256": self.configuration_sha256,
@@ -310,6 +335,8 @@ class ProviderQualificationReceipt:
             "usage_observed": self.usage_observed,
             "qualified": self.qualified,
             "scope": self.scope,
+            **({'system_skills_sha256': self.system_skills_sha256}
+               if self.system_skills_sha256 is not None else {}),
         }
 
     @property
@@ -326,6 +353,8 @@ _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
 
 
 CANDIDATE_SET_ENVELOPE_V1 = "candidate_set_envelope_v1"
+PYTHON_SOURCE_FILE_V1 = "python_source_file_v1"
+PYTHON_CANDIDATE_BUNDLE_V1 = "python_candidate_bundle_v1"
 
 
 CODEX_DISABLED_FEATURES = (

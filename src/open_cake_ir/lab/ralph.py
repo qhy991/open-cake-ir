@@ -10,7 +10,7 @@ from typing import Callable, Mapping, cast
 
 @dataclass(frozen=True)
 class RalphBudget:
-    provider_token_limit: int
+    provider_token_limit: int | None
     maximum_turns: int
     maximum_candidates_per_turn: int
     wall_time_seconds: float
@@ -49,7 +49,7 @@ class RalphBudget:
             return float(item)
 
         budget = cls(
-            provider_token_limit=positive_int(value, "limit"),
+            provider_token_limit=(None if value.get("limit") is None else positive_int(value, "limit")),
             maximum_turns=positive_int(value, "maximum_turns"),
             maximum_candidates_per_turn=positive_int(
                 value, "maximum_candidates_per_turn"
@@ -85,7 +85,7 @@ def derive_ralph_stop_reason(
 ) -> str | None:
     """Pure terminal decision shared by live control and semantic replay."""
 
-    if cumulative_provider_tokens >= budget.provider_token_limit:
+    if budget.provider_token_limit is not None and cumulative_provider_tokens >= budget.provider_token_limit:
         return "provider_token_limit"
     if turn > budget.maximum_turns:
         return "maximum_turns"
@@ -133,7 +133,8 @@ def exceeded_run_budgets(budget, *, search_state, terminal_state):
     # an overrun, while absence from this list never proves complete accounting.
     search = search_state['elapsed_wall_seconds'] if search_state is not None else terminal
     return tuple(name for name, exceeded in (
-        ('provider_tokens',terminal_state['cumulative_provider_tokens'] > budget.provider_token_limit),
+        ('provider_tokens',budget.provider_token_limit is not None
+         and terminal_state['cumulative_provider_tokens'] > budget.provider_token_limit),
         ('active_authoring_time',terminal_state['active_authoring_seconds'] > budget.active_authoring_time_seconds),
         ('search_wall_time',search > budget.search_wall_time_seconds),
         ('confirmation_wall_time',round(terminal-search,6) > budget.confirmation_wall_time_seconds),
@@ -255,7 +256,7 @@ class RalphController:
             "compilation_count": self._compilations,
             "remaining": {
                 "compilations": self.budget.maximum_compilations - self._compilations,
-                "provider_tokens": max(
+                "provider_tokens": None if self.budget.provider_token_limit is None else max(
                     0, self.budget.provider_token_limit - cumulative_provider_tokens
                 ),
                 "turns": max(0, self.budget.maximum_turns - turn + 1),

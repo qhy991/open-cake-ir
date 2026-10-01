@@ -51,13 +51,13 @@ AKA 是拿来提出问题的外部题库，不能直接当作编译器的正式�
 | 用 Ralph 多轮改进一个产物 | `artifact-optimization-ralph-template.json` |
 | 从头写程序时，参考材料是否没有泄露目标实现 | `matched-search-clean-start-reference-template.json` |
 | 已验证的专用方案能否覆盖事先声明的输入集合 | Historical replay at its pinned commit (ADR 0071) |
-| 在 B300 上用 Ralph 比较 Cake 与原生 Triton | `matched-search-triton-b300-optimization-template.json` |
+| 在 B300 上用 Ralph 比较 Cake 与原生 Triton | `matched-search-triton-b300-optimization-python-template.json` |
 
 这些名字只是找文件的线索，真正的约定是被固定的 Study 内容。`preflight` 把结果写入仓库外的新 CampaignLock。修改 provider、执行器、模型、推理强度、broker 命令、运行配置或文件保管规则时，需要明确的后继 Study，不能悄悄改正在跑的任务。
 
-`task_agents_ralph_v1` 给每个 Run 准备只读的 `TASK.md` 和 `AGENTS.md`。AI 交回 `candidate-set.json`，工作区只允许这三个文件。每轮还保存实际给 AI 的任务字节和 StateCard，便于以后复查。
+`task_agents_ralph_v1` 给每个 Run 准备只读的 `TASK.md` 和 `AGENTS.md`。新 Cake Python 实验交回 `candidate-set.py`；原生比较臂仍交回 `candidate-set.json`。每轮保存实际提交的文件原文、任务字节和 StateCard，便于以后复查。
 
-候选文件必须是合法的 UTF-8 JSON，空白和对象字段顺序可以不同。每一层的字段名都不能重复，数值必须有限，`schema_version` 必须是整数 `1`。每轮保留实际提交的文件原文。复查时从原文重新生成有序的规范候选，并核对归档身份；CUDA 源码字符串保留解码后的原始 UTF-8 字节。
+JSON 候选文件必须是合法的 UTF-8 JSON，空白和对象字段顺序可以不同。每一层的字段名都不能重复，数值必须有限，`schema_version` 必须是整数 `1`。Cake Python 候选文件按受限语法静态解析，不执行主机代码。复查时从每轮保留的原文重新生成有序候选，并核对归档身份；CUDA 源码字符串保留解码后的原始 UTF-8 字节。
 
 从头探索的两个参考要一起更新：Cake 只给尚未完成的计划接口，CUDA 只给空函数接口。这样检查的是“有没有偷看到实现”，还没有证明实验已经和论文条件一致。后继生成命令见[英文第 3 节](../RUNBOOK.md#3-select-and-freeze-a-study)。
 
@@ -75,7 +75,7 @@ Provider 是真正调用 AI 的程序。显示“已登录”不代表它能遵�
 
 失败也要封存，不能删掉后伪装成同一次成功。完成必要的环境处理后，另用新的 Run 身份。资格记录固定的推理强度没有隐含默认值，变更它需要对应的新资格和新 Study。通过这项检查，只证明 AI 工具的传输和交互边界；没有授予 GPU 运行资格，也没有科学结果。
 
-B300 的 Cake / 原生 Triton 对照使用 `contracts/providers/codex-triton-optimization-output-schema-v1.json` 作为资格验证的 `--output-schema`。工具从协议读取两端名称，并验证各自的首次提交和继续更新。
+B300 的 Cake / 原生 Triton 对照分别使用 `contracts/providers/run-turn-output-schema-v1.json` 验证：Cake 指定 `--environment-kind open_cake --submission-contract python_candidate_bundle_v1`，原生臂指定 `--environment-kind native_triton`。两次都传入 `--author-home-policy isolated_auth_only_v1` 和私有 `--auth-source`；运行配置的 `provider.auth_source` 供每个 Run 建立新作者 home。两份双轮 receipt 和 anchor 分别进入版本 3 的外部执行绑定。
 
 Ralph 的预算包括：token、检查点、最多轮数、每轮最多候选、总墙上时间、AI 实际写作时间，以及搜索、确认、分析瓶颈各自的评测次数。排队和评测不计入 AI 写作时间，但计入总时间。下一轮的最坏评测需求放不进剩余预算时，控制器不能开始它。
 

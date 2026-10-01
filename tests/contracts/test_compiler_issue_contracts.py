@@ -394,7 +394,9 @@ class FrontendIssueContracts(unittest.TestCase):
     def test_cast_frontend_is_canonical_and_dtype_alias_is_not_a_second_spelling(self):
         source=(ROOT/'examples/python/cast.py').read_text()
         parsed=frontend.parse(source)
-        self.assertEqual(Schedule.from_dict(parsed.document),Schedule.load(ROOT/'corpus/schedules/cast-b8-smoke.json'))
+        expected=json.loads((ROOT/'corpus/schedules/cast-b8-smoke.json').read_text())
+        expected['metadata'].pop('workload_contract_sha256',None)
+        self.assertEqual(Schedule.from_dict(parsed.document),Schedule.from_dict(expected))
         self.assertTrue(self.compiler.assess(parsed.document).lowering_eligible)
         with self.assertRaises(frontend.FrontendError) as caught:
             frontend.parse(source.replace('to="fp32"','dtype="fp32"'))

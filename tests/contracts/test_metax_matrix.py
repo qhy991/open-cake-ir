@@ -31,6 +31,20 @@ class MetaxMatrixAdmission(unittest.TestCase):
                 self.assertIn('tl.dot(', lowering.source)
                 self.assertNotIn('inline_asm_elementwise', lowering.source)
 
+    def test_maca_warp_count_above_canary_qualification_is_refused_before_device(self):
+        source = '''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="warp-canary", target="xcore1002", backend="triton", entry_point="kernel")
+def candidate(lm, x: cake.Tensor((72, 128), "fp32"), out: cake.Tensor((72, 128), "fp32", mode="output")):
+    compute = lm.role(execution_groups=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        value = lm.load(x[row, :], id="load")
+        lm.store(out[row, :], value, coalesced=False, id="store")
+'''
+        result = self.compiler.assess(frontend.parse(source).document)
+        self.assertIn('MACA_WARP_COUNT_UNQUALIFIED', [f.code for f in result.findings])
+        self.assertFalse(result.lowering_eligible)
+
     def test_failed_precision_hypothesis_and_mismatched_operand_dtype_are_owned_refusals(self):
         for name, code in (('tf32-unqualified', 'TARGET_INSTRUCTION_UNSUPPORTED'),
                            ('operand-dtype-drift', 'MMA_OPERAND_DTYPE_DIFFERS')):

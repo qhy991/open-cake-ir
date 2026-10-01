@@ -273,15 +273,16 @@ def _capture_hip_host(arguments: argparse.Namespace) -> dict[str, object]:
 
 
 def _check_maca_arguments(arguments: argparse.Namespace) -> None:
-    from open_cake_ir.lab.metax_host import PACKAGES
+    from open_cake_ir.lab.metax_host import PACKAGES, installed_triton_distribution
     if (any(_hip_arguments(arguments)) or arguments.hip_profiler
             or any(_cuda_arguments(arguments)) or any(v is not None for v in _metal_arguments(arguments))):
         raise ValueError("MACA capture must not receive another platform's host fields")
-    if arguments.package and set(arguments.package) != PACKAGES:
+    packages = PACKAGES | {installed_triton_distribution()}
+    if arguments.package and set(arguments.package) != packages:
         raise ValueError("MACA capture package set differs")
     if not arguments.maca_root.is_absolute() or not arguments.maca_build_environment:
         raise ValueError("MACA capture requires an absolute SDK root and declared build environment")
-    arguments.package = sorted(PACKAGES)
+    arguments.package = sorted(packages)
 
 
 def _capture_maca_host(arguments: argparse.Namespace) -> dict[str, object]:

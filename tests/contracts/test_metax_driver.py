@@ -4,7 +4,7 @@ from hashlib import sha256
 from types import SimpleNamespace
 import unittest
 
-from open_cake_ir.evaluation.metax_driver import LoadedMetaxCandidate
+from open_cake_ir.evaluation.metax_driver import LoadedMetaxCandidate, _call
 from tests.contracts.test_metax_binary import bundle
 
 
@@ -30,6 +30,16 @@ class API:
 
 
 class MetaxDriverTests(unittest.TestCase):
+    def test_recompile_status_names_the_runtime_boundary(self):
+        class RecompileApi:
+            def mcModuleLaunchKernel(self, *args):
+                return 1009
+
+        with self.assertRaisesRegex(
+                RuntimeError,
+                r"mcModuleLaunchKernel failed with status 1009 \(mcErrorRecompile\)"):
+            _call(RecompileApi(), "mcModuleLaunchKernel")
+
     def setUp(self):
         self.payload, self.native = bundle()
         self.api = API()

@@ -10,11 +10,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from open_cake_ir.evidence import EvidenceStore
+from open_cake_ir.compiler.diagnostics import BACKEND_LOWERING_GAP_CODES
 from open_cake_ir.lab.routing import DESTINATIONS
 from open_cake_ir.serialization import canonical_json_bytes
 
 
-def summarize(roots) -> dict[str, object]:
+def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
     """Archive integrity is checked; counts are archived decisions, not new findings.
 
     Semantic replay remains owned by each Campaign's pinned Executor. Custody is
@@ -22,6 +23,7 @@ def summarize(roots) -> dict[str, object]:
     """
     groups = {}
     runs = []
+    gaps = []
     seen = {}
     for root in sorted({Path(value).resolve(strict=True) for value in roots}):
         evidence = EvidenceStore.open(root)
@@ -60,25 +62,58 @@ def summarize(roots) -> dict[str, object]:
                 # Rejections and set-level collapse/ranking diagnoses are distinct
                 # occurrences. Preserve their kind rather than inventing a combined total.
                 counts[f"{event['kind']}:{destination}"] += 1
+                if compiler_gaps and event["kind"] == "candidate_rejected":
+                    feedback = payload.get("feedback", {})
+                    if not isinstance(feedback, dict):
+                        raise ValueError("retained Compiler gap feedback differs")
+                    findings = feedback.get("findings", [])
+                    if not isinstance(findings, list):
+                        raise ValueError("retained Compiler gap findings differ")
+                    known_backend = [item for item in findings if isinstance(item, dict)
+                                     and item.get("code") in BACKEND_LOWERING_GAP_CODES
+                                     and item.get("blocks_lowering") is True]
+                    if destination in {"backend_lowering", "backend_triage", "ir_vocabulary"} or known_backend:
+                        # A candidate may also violate an acceptance rule. Its backend
+                        # gap remains visible, but cannot justify implementing this
+                        # particular Schedule as if it had passed admission.
+                        relevant = (findings if destination != "candidate" else known_backend)
+                        gaps.append({
+                            "evidence_root": str(root), "run_id": audit.run_id,
+                            "event_sequence": event["sequence"], "destination": destination,
+                            "candidate_admission_blocked": any(
+                                isinstance(item, dict) and item.get("blocks_acceptance")
+                                for item in findings),
+                            "findings": [{"code": item.get("code"), "path": item.get("path")}
+                                         for item in relevant if isinstance(item, dict)],
+                        })
             group["counts"].update(counts)
             runs.append({"root": str(root), "run_id": audit.run_id,
                          "campaign_id": authority.get("campaign_id"),
                          "archive_integrity": True,
                          "filesystem_custody_verified": audit.filesystem_custody_verified,
                          "counts": dict(sorted(counts.items()))})
-    return {"schema_version": 1,
+    result = {"schema_version": 1,
             "domain": "archive-integrity-checked retained diagnosis counts; no semantic reclassification or promotion",
             "semantic_replay": "use each Campaign's pinned Executor audit",
             "groups": [{**groups[key], "counts": dict(sorted(groups[key]["counts"].items()))}
                        for key in sorted(groups)], "runs": runs}
+    if compiler_gaps:
+        result["compiler_gap_domain"] = (
+            "retained routes plus current Compiler code hints for co-occurring blocking gaps; "
+            "leads for agent curation, not a replay decision or capability claim"
+        )
+        result["compiler_gaps"] = gaps
+    return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("evidence_roots", nargs="+", type=Path)
+    parser.add_argument("--compiler-gaps", action="store_true",
+                        help="list retained Compiler gap event references for post-Run agent curation")
     args = parser.parse_args()
     try:
-        result = summarize(args.evidence_roots)
+        result = summarize(args.evidence_roots, compiler_gaps=args.compiler_gaps)
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.exit(1, f"diagnosis summary refused: {error}\n")
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))

@@ -183,8 +183,6 @@ class TritonToolchainBuilder:
     def build_stage(self, request: BuildRequest, tensor_abi):
         """Build a Program stage without inventing a stage Workload or oracle."""
         from dataclasses import replace
-        if self._pointer_alignment is not None:
-            raise ValueError('Program stages do not yet admit alignment dispatcher variants')
         return self.build(replace(request, tensor_abi=tuple(tensor_abi)))
 
 

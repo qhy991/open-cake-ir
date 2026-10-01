@@ -212,6 +212,8 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
                       if name == "gemm_nt_bias" else
                       {"source_rows": rows, "output_rows": rows, "columns": columns}
                       if name == "row_gather" else
+                      {"elements": rows, "bins": columns} if name == 'histogram' else
+                      {"batch": rows, "channels": columns} if name == 'max_pool1d' else
                       {"elements": rows * columns}
                       if name == "momentum_sgd" else {"rows": rows, "columns": columns})
         document = aka_v3_math.workload_document(name, backend=backend, **dimensions)

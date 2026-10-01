@@ -260,6 +260,20 @@ class RetainedScheduleTest(unittest.TestCase):
             Schedule.from_dict(document)
         self.assertTrue(list(Draft202012Validator(schedule_schema()).iter_errors(document)))
 
+    def test_parsed_metadata_is_immutable_even_for_legacy_source(self) -> None:
+        document = _document(B32)
+        document['metadata'] = {'legacy_source': {
+            'revision': 'historical', 'path': 'archive/schedule.json',
+            'canonical_json_sha256': 'a' * 64,
+        }}
+        schedule = Schedule.from_dict(document)
+        document['metadata']['legacy_source']['path'] = 'changed'
+        self.assertEqual(schedule.metadata['legacy_source']['path'], 'archive/schedule.json')
+        with self.assertRaises(TypeError):
+            schedule.metadata['workload_contract_sha256'] = 'b' * 64
+        with self.assertRaises(TypeError):
+            schedule.metadata['legacy_source']['path'] = 'changed'
+
     def test_grid_and_program_map_are_exclusive(self) -> None:
         b32 = Schedule.load(B32)
         self.assertIsNone(b32.grid)

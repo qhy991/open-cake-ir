@@ -38,7 +38,7 @@ def workload_for(program):
         tensor_abi=lambda case: abi)
 
 
-def replay_program_candidate(compiler,program,candidate,payloads):
+def replay_program_candidate(compiler,program,candidate,payloads,*,authored_bytes=None):
     from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
     from open_cake_ir.tasks.launch import parse_launch_manifest
     spec = parse_launch_manifest(json.loads(payloads['launch_manifest']))
@@ -50,7 +50,8 @@ def replay_program_candidate(compiler,program,candidate,payloads):
     evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
     return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
         arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:compiler,
-        authored_bytes=program.document_bytes)
+        authored_bytes=program.document_bytes if authored_bytes is None else authored_bytes,
+        workload_sha256=spec.workload_sha256)
 
 
 @dataclass
@@ -79,6 +80,37 @@ class ProgramEvaluationTests(unittest.TestCase):
         result = environment.build(CandidateSubmission.seal(environment.media_type, canonical_json_bytes(document)))
         self.assertEqual(result.disposition, 'launchable', result.feedback)
         return result.launchable, workload, fixture
+
+    def test_program_stages_receive_workload_binding_and_refuse_conflicting_pins(self):
+        document = epilogue_program()
+        for stage in document['stages']:
+            stage['schedule']['metadata'].pop('workload_contract_sha256', None)
+        program = Program.from_dict(document)
+        workload = workload_for(program)
+        builder = TritonToolchainBuilder(workload=workload, case_id='primary',
+                                        isolated_compiler=CompilationFixture())
+        environment = OpenCakeEnvironment(self.compiler, builder, workload=workload, case_id='primary',
+            authority_document={'lowering_route': {'backend': 'triton', 'entry_point': 'starter'},
+                                'input_format': 'schedule_or_python_v1'})
+        submission = CandidateSubmission.seal(environment.media_type, canonical_json_bytes(document))
+        with patch.object(self.compiler, 'lower_program', wraps=self.compiler.lower_program) as lower:
+            accepted = environment.build(submission)
+        self.assertEqual(accepted.disposition, 'launchable', accepted.feedback)
+        self.assertEqual(accepted.submission_sha256, submission.sha256)
+        self.assertEqual(accepted.launchable.candidate_sha256, submission.sha256)
+        bound_program = lower.call_args.args[0]
+        self.assertTrue(all(stage.schedule.metadata['workload_contract_sha256'] == workload.canonical_sha256
+                            for stage in bound_program.stages))
+        self.assertTrue(all('workload_contract_sha256' not in stage['schedule']['metadata']
+                            for stage in document['stages']))
+
+        conflicting = deepcopy(document)
+        conflicting['stages'][1]['schedule']['metadata']['workload_contract_sha256'] = '2' * 64
+        wrong = environment.build(CandidateSubmission.seal(environment.media_type,
+                                                            canonical_json_bytes(conflicting)))
+        self.assertEqual(wrong.disposition, 'rejected', wrong.feedback)
+        self.assertEqual(wrong.feedback['stage'], 'assessment')
+        self.assertIn('Workload binding', wrong.feedback['error'])
 
     def loaded(self, candidate, *, failing_stage=None):
         manifest, children, _ = program_components(candidate)
@@ -225,7 +257,7 @@ class ProgramEvaluationTests(unittest.TestCase):
                 self.assertEqual(requests[0].tensor_abi,
                     tuple((row.name,row.shape,row.dtype,row.mode) for row in workload.tensor_abi('primary')))
                 self.assertEqual(requests[0].target,program.target)
-                self.assertEqual(requests[0].source,self.compiler.lower_program(program).lowerings[0].source.encode())
+                self.assertEqual(requests[0].source,result.launchable.artifact_payloads['lowered_source'])
                 replayed = replay_program_candidate(self.compiler,program,result.launchable,result.launchable.artifact_payloads)
                 self.assertEqual(replayed.canonical_sha256,result.launchable.canonical_sha256)
 

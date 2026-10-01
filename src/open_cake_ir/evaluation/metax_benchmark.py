@@ -101,7 +101,17 @@ def dispatch_samples(activity: Mapping, *, kernel_name: str, grid, block,
             raise ValueError("MACA cache reset did not precede the matching sample on its stream")
         first = reset if reset is not None else candidate
         if previous is not None and previous > first["start_ns"]:
-            raise ValueError("MACA serialized samples overlap")
+            # Preserve the interval boundary in the worker-visible diagnostic. The
+            # activity is retained in the benchmark session, but the broker fault
+            # envelope otherwise reduced intermittent MCPTI overlap to one opaque
+            # string, making attribution impossible after the worker exited.
+            raise ValueError(
+                "MACA serialized samples overlap: "
+                f"sample={index} previous_end_ns={previous} "
+                f"next_start_ns={first['start_ns']} "
+                f"overlap_ns={previous - first['start_ns']} "
+                f"kernel={candidate['name']!r} stream={candidate['stream']}"
+            )
         previous = candidate["end_ns"]
         duration = (candidate["end_ns"] - candidate["start_ns"]) / 1e6
         if not math.isfinite(duration) or duration <= 0:

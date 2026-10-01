@@ -272,6 +272,30 @@ class ExperimentInputTests(unittest.TestCase):
         for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
             self.assertEqual(execute.call_args.kwargs["env"][key], node["http_proxy"])
 
+    def test_claude_response_aliases_survive_the_remote_bootstrap_as_separate_flags(self):
+        config = deepcopy(self.config)
+        config['provider'] = {'harness': 'claude-code', 'model': 'kimi-k3', 'effort': 'high',
+                              'response_model_aliases': ['moonshotai/kimi-k3']}
+        kernel_experiment.validate(config)
+        payload = {'cell': config['cells'][0], 'source_commit': COMMIT, 'scaffold': 'rules',
+                   'provider': config['provider'], 'budget': config['budget']}
+        import io
+        with patch('sys.stdin', io.StringIO(json.dumps(payload))), \
+             patch('subprocess.run', return_value=SimpleNamespace(returncode=0)) as execute:
+            with self.assertRaises(SystemExit) as result:
+                exec(kernel_experiment._NODE, {})
+        self.assertEqual(result.exception.code, 0)
+        command = execute.call_args.args[0]
+        self.assertEqual(command[command.index('--model')+1], 'kimi-k3')
+        self.assertEqual(command[command.index('--response-model-alias')+1], 'moonshotai/kimi-k3')
+        self.assertNotIn('--response-model-aliases', command)
+        for aliases in ('moonshotai/kimi-k3', ['kimi-k3'], ['alias', 'alias']):
+            config['provider']['response_model_aliases'] = aliases
+            with self.assertRaises(ValueError): kernel_experiment.validate(config)
+        config['provider']['response_model_aliases'] = ['moonshotai/kimi-k3']
+        config['provider']['harness'] = 'codex'
+        with self.assertRaisesRegex(ValueError, 'Claude provider'): kernel_experiment.validate(config)
+
     def test_proxy_credentials_and_non_http_routes_are_not_task_metadata(self):
         for proxy in ("http://user:secret@host:7890", "file:///tmp/proxy", "http://host", "http://host:7890/path"):
             config = deepcopy(self.config)

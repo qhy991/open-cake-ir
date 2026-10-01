@@ -69,6 +69,15 @@ class McptiMeasurements(unittest.TestCase):
         with self.assertRaises(ValueError):
             dispatch_samples(raw,kernel_name="cak",grid=(8,1,1),block=(64,1,1),repeats=2,reset_record=None)
 
+    def test_overlap_diagnostic_keeps_the_adjacent_interval_boundaries(self):
+        raw = capture(kernel("cake", 1, 1000), kernel("cake", 2, 2500))
+        raw["records"][1]["end_ns"] = 4000
+        with self.assertRaisesRegex(
+                ValueError,
+                r"sample=1 previous_end_ns=3048 next_start_ns=2500 overlap_ns=548"):
+            dispatch_samples(raw, kernel_name="cake", grid=(8, 1, 1),
+                             block=(64, 1, 1), repeats=2, reset_record=None)
+
     def test_device_drop_and_failed_launch_api_invalidate_attribution_too(self):
         for change in ({"api_version":19},{"dropped_records":True},{"dropped_records":2},
                        {"pending_buffers":1}):

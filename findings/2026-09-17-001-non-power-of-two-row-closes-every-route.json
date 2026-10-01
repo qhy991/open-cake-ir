@@ -38,11 +38,23 @@
       "run": "none",
       "event": 4,
       "note": "Both spellings written by hand and put through Compiler.assess at this commit, so the corner is walked rather than inferred. The tiled form reaches accepted=True with lowering_eligible=False and exactly one finding, TRITON_LOOP_NEST_UNSUPPORTED -- the Schedule is well-formed and the IR admits an arbitrary number of tile_loops; only the emitter refuses. Two diagnostics cost a repair round each on the way and are worth their own note: lm.range rejects an 'axis' keyword without saying it wants dimension and tile, and lm.reduce(across_loop=True) is refused as 'the historical omitted spelling' without saying that omitting it is the fix. Both name the violated contract; neither names the satisfying form."
+    },
+    {
+      "workspace": "GitHub Actions run 35957510904, triton-sibling-successor artifact",
+      "run": "35957510904",
+      "event": 0,
+      "note": "At source 5a0c916b, canonical Compiler.lower for the 7168-wide two-pass sm_103a fixture compiled offline under Triton 3.7.1 and produced CUBIN, PTX, TTIR, TTGIR and LLIR. This is compilation, not device execution."
+    },
+    {
+      "workspace": "B300-M3:/mnt/b300-shared/home/qinhaiyan/oci-sibling-5a0c916b-b300m3-20260924",
+      "run": "gpuq-3714ff48789b",
+      "event": 0,
+      "note": "Broker-managed shared correctness check of the fixed emitted two-pass slice: structured and random inputs at [32,512,7168] had zero mismatches to an independent PyTorch row-sum-times-input reference, finite outputs and unchanged inputs. It did not run the original RMSNorm workload or measure performance; no Executor Revision was instantiated."
     }
   ],
   "observation": "This is a lowering gap, not a vocabulary gap, and the distinction decides who owns it. The IR says the program fine: tile_loops is a list, a sibling pair parses, and the Schedule is accepted. What refuses is a backend's implemented shape in one case and a backend's declared capability set in the other. It also shows why a single task cannot find this. Read alone, 003's five refusals look like five candidates that failed; read beside 001 and 002 -- same operator, same ABI, eight accepted Schedules -- the row width is the only variable, and a shape-triggered route limit becomes visible. The corpus's value here was to put three widths of one operator side by side, not to supply a kernel worth copying.",
   "proposed_change": "Two separable changes, and the arange rule is not among them -- it is correct and must stay. (a) Widen the Triton emitter to admit sibling tile loops at the same depth, which is a slice shape it does not currently generate rather than a Triton limitation; the guard at backends/triton.py:476-486 encodes 'one outer with one inner' as the only multi-loop form. (b) Or declare and implement reduce in native_cuda's SUPPORTED_OPERATION_KINDS, which removes the arange constraint from the path entirely. Either one alone unblocks the operator; (a) is the narrower change and (b) closes a capability asymmetry that reduce_argmin's presence makes odd. Both are P7 changes: the emitter or the capability set moves together with the analyses that read it, and the Corpus Gate runs on the commit. Separately and smaller: give the two diagnostics above their satisfying form, since a refusal that does not say what would be accepted costs the author a round each time.",
-  "decision": "proposed",
-  "implemented_in": null,
+  "decision": "accepted",
+  "implemented_in": "c4c65187ab17a50b37ef70d927a0231349d5bc5b",
   "verified_by": null
 }

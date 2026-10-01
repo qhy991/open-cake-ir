@@ -1,12 +1,13 @@
 # open-cake-ir documentation and context map
 
-[中文阅读](docs/zh-CN/CONTEXT-MAP.md) · [Bilingual catalog](docs/README.md)
+[中文阅读](docs/zh-CN/CONTEXT-MAP.md) · [Bilingual catalog](docs/catalog.md)
 
 This is the navigation authority for repository documentation. Canonical term definitions
 live in [`docs/GLOSSARY.md`](docs/GLOSSARY.md); this file says which document owns each kind
 of information and where new material belongs.
 
-The [reading entry](docs/README.md) gives the short route, the [catalog](docs/catalog.md)
+The repository [README](README.md) owns the quick navigation and source-directory overview.
+The [report entry](docs/README.md) organizes chapters and citation, the [catalog](docs/catalog.md)
 retains detailed and historical reading links, and the [ADR index](docs/adr/README.md)
 is the single complete decision list. Language gateways link to these owners.
 

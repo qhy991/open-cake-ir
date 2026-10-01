@@ -137,7 +137,7 @@ def native_baseline(lowering) -> dict:
     return policy.adapter.baseline(source, requirements)
 
 
-def native_optimization_analysis_plan(comparison: str) -> dict:
+def native_optimization_analysis_plan(comparison: str, *, python_only: bool = False) -> dict:
     policy = native_backend(comparison)
     if policy is None:
         raise ValueError("native optimization analysis requires a native comparison")
@@ -147,7 +147,8 @@ def native_optimization_analysis_plan(comparison: str) -> dict:
         'contrast': f'two_part_open_cake_vs_{policy.arm}',
         'estimand': 'terminal-budget qualification-rate difference and conditional confirmed performance from the same known baseline',
         'treatment': {
-            'open_cake': f'Schedule_or_restricted_Python_IR_to_frozen_{policy.label}',
+            'open_cake': (f'restricted_Python_Cake_IR_to_frozen_{policy.label}' if python_only
+                          else f'Schedule_or_restricted_Python_IR_to_frozen_{policy.label}'),
             policy.arm: f'kernel_only_{policy.label}_same_frozen_backend',
             'reference_access': 'known_baseline_optimization',
             'baseline': 'same_Compiler_lowering_kernel_and_compile_launch_metadata',

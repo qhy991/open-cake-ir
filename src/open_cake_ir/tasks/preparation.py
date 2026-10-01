@@ -22,7 +22,8 @@ from .workloads import load_workload
 
 
 def prepare_task_run(project_root,inputs,*,compiler_reference,executor,qualification_path,
-                     qualification_anchor_path,runtime_config_path,baseline_path,baseline_selection):
+                     qualification_anchor_path,runtime_config_path,baseline_path,baseline_selection,
+                     baseline_source_path=None):
     """Return a fully admitted Run; no Study, evidence root or provider is created."""
     root = Path(project_root).resolve(strict=True)
     document = json.loads(canonical_json_bytes(inputs))
@@ -45,7 +46,13 @@ def prepare_task_run(project_root,inputs,*,compiler_reference,executor,qualifica
     workload = load_workload(workload_path)
     validate_backend_assay(route=authoring['lowering_route'],evaluation=document['evaluation_protocol'],workload=workload,
         attribution_evaluation=document['evaluation_protocol'].get('attribution_evaluation'))
-    _,skeleton = read_skeleton_reference(root,authoring['schedule_skeleton'])
+    if baseline_source_path is not None:
+        from open_cake_ir.compiler import frontend
+        skeleton = frontend.read_schedule(external_file(root, str(baseline_source_path), 'baseline source')).document
+    else:
+        if authoring['reference_access'] == 'clean_start':
+            raise ValueError('clean-start baseline preparation needs a private baseline source, outside author material')
+        _,skeleton = read_skeleton_reference(root,authoring['schedule_skeleton'])
     baseline = prepare_schedule(skeleton,workload,document['evaluation_protocol']['case_id'],authoring)
     compiler = Compiler.load(root,root/compiler_reference['path'])
     assessment = compiler.assess(baseline)

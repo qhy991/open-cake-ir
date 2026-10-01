@@ -88,7 +88,9 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         if not assessed.lowering_eligible:
             return refused('input_refused', ', '.join(f.code for f in assessed.findings
                 if f.blocks_lowering or f.blocks_acceptance))
-        s = Schedule.from_dict(copied)
+        s = assessed.typed_schedule
+        if s is None:
+            return refused('input_refused', 'Eligible assessment has no typed Schedule.')
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', str(error))
     if s.lowering.backend is not LoweringBackend.TRITON or s.target not in _WARP_SPECIALIZATION_EVIDENCE:
@@ -171,7 +173,9 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
                 return _refuse('input_refused', f'{label}: ' + ', '.join(
                     f.code for f in assessed.findings if f.blocks_lowering or f.blocks_acceptance))
             originals.append(copied)
-            typed.append(Schedule.from_dict(copied))
+            if assessed.typed_schedule is None:
+                return _refuse('input_refused', f'{label}: eligible assessment has no typed Schedule.')
+            typed.append(assessed.typed_schedule)
         except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
             return _refuse('input_refused', f'{label}: {error}')
     p, e = typed
@@ -320,7 +324,9 @@ def specialize_output_columns(compiler: Compiler, schedule: Mapping, *,
             return refused('input_refused', ', '.join(f.code for f in blockers))
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', f'{error}')
-    s = Schedule.from_dict(copied)
+    s = assessed.typed_schedule
+    if s is None:
+        return refused('input_refused', 'Eligible assessment has no typed Schedule.')
     if (not isinstance(schedule_id, str) or not schedule_id or schedule_id == s.schedule_id
             or not isinstance(entry_point, str) or not entry_point):
         return refused('result_identity', 'The candidate needs a new nonempty Schedule id and entry point.')

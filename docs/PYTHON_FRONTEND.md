@@ -25,15 +25,15 @@ Compiler 变更需通过完整 Corpus Gate；后继正式发布仍消费外部�
 
 ## 运行
 
-使用项目的 Python 3.10 或更新环境。在开发分支中，`compiler/revision.json` 指定当前待审草案；
-正式发布后使用 `compiler/revision.json`。已有发布锁不适用于改过绑定源码的开发分支。
+使用项目的 Python 3.10 或更新环境，在仓库根目录运行。作者无需填写 JSON 路径；
+编译器默认读取当前项目的目标与版本配置。需要检查另一份明确指定的版本时，仍可使用 `--revision`。
 
 ```bash
 PYTHONPATH=src python3 -m open_cake_ir.cli compiler assess \
-  --revision compiler/revision.json examples/python/fma.py --format text
+  examples/python/fma.py --format text
 
 PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
-  --revision compiler/revision.json examples/python/fma.py \
+  examples/python/fma.py \
   --output /tmp/cake-fma-generated.py --format text
 ```
 
@@ -46,7 +46,44 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 - [B300 起点](B300.md)：RMSNorm、GEMM+bias 与 indexed gather，对应各自 v2 Workload。
 
 例子沿用既有算子的固定形状。新例子的名称和元数据不继承旧实验的身份或正确性结论。
+Python 作者无需在 `@cake.schedule` 中填写 Workload 的内容 hash。独立使用 Compiler
+时可直接检查源码；进入 Lab 实验时，Lab 核对目标、生成路线和公开 tensor ABI 后，从已冻结
+的 Workload 补上绑定。显式写错 hash 仍会被拒绝。既有封存实验按原提交回放。
+新建的已知实现复现 Run 采用 `python_source_v1`，作者只能提交 `python_source`；
+原有 `schedule_or_python_v1` 继续用于按原合同回放的 Run。新 Clean-start 可预检一个
+由 Workload 公共 ABI 生成、仅含 `...` 占位的 Python 参考文件；当前 Provider 的文件读取
+隔离尚未合格，因此该处理尚不能执行实验。旧 JSON 参考材料仅保留历史合同。
+单候选、无 transform 的新 Run 可选择 `python_source_file_v1`，直接更新 `candidate.py`。
+默认多候选 Run 写 `candidate-set.py`：同一文件中的多个 `@cake.schedule` 函数以及获准的
+`cake.transform(...)` 静态声明按顺序投影，文件不会被执行。旧 `candidate-set.json` 只作
+冻结合同的传输与回放输入；新任务不要求手写 Schedule JSON。
 `id=` 仅用于显式命名操作、与既有计划对照；省略时由结果变量或目标 Buffer 推导。
+
+## 多阶段 Program
+
+同一 Python 文件可以声明多个完整 `@cake.schedule` 函数，再用静态的
+`cake.program(program_id=..., inputs=..., outputs=..., stages=(...))` 组合。
+每个 `cake.stage(name=..., schedule=<函数名>, bindings={...})` 显式绑定局部
+global Buffer 与 Program tensor；tensor 的形状和 dtype 从阶段推导，先写后读、
+唯一生产者、公开 ABI 和跨阶段形状由现有 `Program.from_dict` 检查。
+需要去掉 singleton 轴时，绑定值可写 `cake.singleton_view("tensor")`。
+如果某个 tensor 在所有阶段都只以这种视图出现，形状无法从阶段唯一推导，
+可在 `cake.program` 中补充 `tensors={"tensor": cake.Tensor((...), "dtype")}`；
+直接绑定的 tensor 不必重复声明。
+这些声明由 AST 读取，不导入或执行作者文件，也不引入 layout algebra。
+
+[两阶段 epilogue 示例](../examples/python/epilogue_program.py) 可以直接通过：
+
+```python
+from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.program_frontend import read_program
+
+program = read_program("examples/python/epilogue_program.py").program
+lowered = Compiler.load().lower_program(program)
+```
+
+在 `candidate-set.py` 中，一个被 Program 引用的阶段函数属于该 Program，不另算候选；
+一个 `cake.program(...)` 声明算一个完整候选。未被引用的完整 Schedule 函数仍是独立候选。
 
 ## 编写规则
 
@@ -90,7 +127,7 @@ load 的显式读取和依赖，重复使用同一个索引不会产生重复读
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import read_schedule
 
-compiler = Compiler.load(".", "compiler/revision.json")
+compiler = Compiler.load()
 authored = read_schedule("examples/python/fma.py")
 assessment = compiler.assess(authored.document)
 for finding in assessment.findings + assessment.guidance:

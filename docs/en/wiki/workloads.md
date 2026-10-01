@@ -16,6 +16,7 @@ These contracts turn existing Corpus examples into standalone operators with exp
 | [RMSNorm FP32 v2](../../../contracts/workloads/rmsnorm-fp32-v2.json) | Same mathematics and six cases, explicitly targeting B300 `sm_103a`. |
 | [GEMM+bias BF16/FP32 v2](../../../contracts/workloads/gemm-bias-bf16-fp32-v2.json) | Same mathematics and five cases, explicitly targeting B300 `sm_103a`. |
 | [Indexed gather BF16 v2](../../../contracts/workloads/indexed-gather-bf16-v2.json) | Same indexing semantics and four cases, explicitly targeting B300 `sm_103a`. |
+| [Indexed gather BF16 v3](../../../contracts/workloads/indexed-gather-bf16-v3.json) | Same indexing semantics and four cases, built separately for each case ABI and explicitly targeting C550 `xcore1002`. |
 
 See the [B300 guide](../B300.md) for Python starting points and separate experiment qualification.
 
