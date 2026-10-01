@@ -2345,6 +2345,19 @@
       }
     },
     {
+      "case_id": "xcore1002-fp8-compensated-simt-64",
+      "schedule": "examples/python/xcore1002_fp8_compensated.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "6a7d12cbde5b2648f12c60ba8b3d4f7fd300c839efd57032b416ad366ff1c2d8",
+        "lowering_source_sha256": "d7f8681e4d563b8bc88ab10fa5d226e6423b0ca5e4d093f2e01f27c1e9b9111b"
+      }
+    },
+    {
       "case_id": "xcore1002-fp8-encode-unqualified",
       "schedule": "corpus/schedules/xcore1002-fp8-encode-unqualified.py",
       "expected": {

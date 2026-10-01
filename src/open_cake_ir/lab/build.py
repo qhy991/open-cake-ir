@@ -94,7 +94,8 @@ def invoke_compiler(request, *, compiler, variant, operation):
     return request.compilation(request, compiler=compiler, variant=variant, operation=operation)
 
 
-def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> int:
+def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int, *, codegen_arch=None,
+                     kernel_name=None) -> int:
     """Pointers the kernel takes beyond the Workload's tensors, from the kernel itself."""
     if route.gpu_backend == "cuda":
         # Triton's two CUDA scratch pointers, the count every retained CUDA manifest
@@ -102,10 +103,14 @@ def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> i
         # relation on a path nothing has reported a problem with.
         return 2
     if route.gpu_backend == "maca":
-        from open_cake_ir.compiler.metax_toolchain import pointer_parameters
+        from open_cake_ir.compiler.metax_toolchain import pointer_parameters, native_pointer_parameters
         if pointer_parameters(stages[route.text_role]) != tensor_count:
             raise ValueError("MACA kernel arguments differ from the Workload tensors")
-        return 0
+        native = native_pointer_parameters(stages[route.binary_role], codegen_arch, kernel_name)
+        hidden = native - tensor_count
+        if hidden not in (0, 2):
+            raise ValueError("MACA native launcher scratch pointer count is unqualified")
+        return hidden
     if route.gpu_backend != "hip":
         raise ValueError(f"no kernel argument inspector is registered for {route.gpu_backend!r}")
     from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
@@ -216,7 +221,8 @@ def seal_triton_compilation(request,compilation,*,workload,case_id):
         # uninitialized kernarg memory. The CUDA route keeps its own literal, which
         # every retained CUDA manifest has replayed through.
         "hidden_null_pointer_parameters": _hidden_pointers(
-            route, stages, len(request.tensor_abi if request.tensor_abi is not None else workload.tensor_abi(case_id))),
+            route, stages, len(request.tensor_abi if request.tensor_abi is not None else workload.tensor_abi(case_id)),
+            codegen_arch=requirements.get('codegen_arch'), kernel_name=kernel_name),
     }
     if requirements.get('pointer_alignments'):
         launch['pointer_alignments'] = dict(requirements['pointer_alignments'])

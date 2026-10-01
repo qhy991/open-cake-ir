@@ -1,6 +1,7 @@
 """The captured MetaX compiler distribution must describe the installed runtime."""
 
 import importlib.metadata
+import copy
 import json
 from pathlib import Path
 import unittest
@@ -16,10 +17,12 @@ class MetaxHostPackagesTest(unittest.TestCase):
     def test_flagtree_and_triton_are_separate_valid_host_variants(self):
         host = json.loads((ROOT / "runtime/hosts/xcore1002.json").read_text())["host_environment"]
         validate_host(host)
-        host["packages"]["triton"] = "3.6.0+metax3.8.0.4.c600u"
-        del host["packages"]["flagtree"]
-        validate_host(host)
-        host["packages"]["flagtree"] = "0.5.1+metax3.1"
+        alternate = copy.deepcopy(host)
+        active = next(name for name in ("flagtree", "triton") if name in alternate["packages"])
+        del alternate["packages"][active]
+        alternate["packages"]["triton" if active == "flagtree" else "flagtree"] = "installed"
+        validate_host(alternate)
+        host["packages"]["flagtree" if active == "triton" else "triton"] = "installed"
         with self.assertRaisesRegex(ValueError, "MACA host package set differs"):
             validate_host(host)
 

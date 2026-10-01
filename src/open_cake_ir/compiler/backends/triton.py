@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .triton_selection import top_k_selection_structure
+from .metax import (emit_compensated_fp8_mma, streaming_compensated_loop,
+                    emit_streaming_compensated_state, emit_streaming_compensated_step,
+                    emit_streaming_compensated_finalize)
 from .common import PythonNamespace, emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
@@ -38,7 +41,7 @@ from ..ir import (
     Schedule,
     TileLoop,
 )
-from ..ir.instruction_contracts import ContractKind, contracts_of
+from ..ir.instruction_contracts import COMPENSATED_FP8_MMA, ContractKind, contracts_of
 from ..target import CodeObject, Target
 from ..diagnostics import Finding
 
@@ -177,7 +180,7 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 # and the Compiler refuses a Target whose code object is neither before preflight.
 PYTHON_NAMESPACE = PythonNamespace(
     reserved_names=frozenset({"tl", "torch", "triton"}),
-    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work"),
+    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_"),
 )
 
 
@@ -554,7 +557,9 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             add(
                 instruction is None
                 or instruction.contract not in target.instruction_contracts
-                or instruction.contract in _TRITON_MMA_CONTRACTS,
+                or instruction.contract in _TRITON_MMA_CONTRACTS
+                or (target.code_object is CodeObject.MCFATBIN
+                    and instruction.contract == COMPENSATED_FP8_MMA),
                 "TRITON_MMA_INSTRUCTION_UNSUPPORTED",
                 f"operations[{index}].parameters.instruction.contract",
                 "the Triton backend does not implement instruction contract "
@@ -1237,11 +1242,15 @@ class _TritonEmitter:
         self.line("import torch")
         self.line("import triton")
         self.line("import triton.language as tl")
+        from .metax import DIRECTED_FMA_FUNCTIONS
         if any(
             operation.kind is OperationKind.ELEMENTWISE
-            and operation.parameters.op is ElementwiseOp.TANH
             and operation.parameters.instruction is not None
-            and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
+            and (operation.parameters.op is ElementwiseOp.TANH
+                 and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
+                 or self.target.code_object is CodeObject.MCFATBIN
+                 and operation.parameters.op is ElementwiseOp.FMA
+                 and operation.parameters.instruction.contract in DIRECTED_FMA_FUNCTIONS)
             for operation in self.schedule.operations
         ):
             self.line("from triton.language.extra import libdevice")
@@ -1453,6 +1462,10 @@ class _TritonEmitter:
                 )
                 self.line()
             elif operation.kind is OperationKind.MMA and self.schedule.mma_accumulates_over(operation, loop):
+                if streaming_compensated_loop(self.schedule, operation) is not None:
+                    emit_streaming_compensated_state(self.line, pad=pad)
+                    self.line()
+                    continue
                 # A contraction summed across the loop needs its accumulator before the
                 # loop, for the same reason a fold does: the first iteration adds to it.
                 accumulator = self.schedule.buffer(operation.writes[0])
@@ -1488,6 +1501,16 @@ class _TritonEmitter:
         options = loop.range_options
         extent = self._loop_stop(loop)
         tile = self._tile(loop.name)
+        if self.target.code_object is CodeObject.MCFATBIN:
+            from .metax import loop_range
+            maca_range = loop_range(loop, self.schedule, extent, tile)
+            if maca_range is not None:
+                self.line(
+                    f"{pad}for {loop.iterator} in {maca_range}:",
+                    declares=(loop.iterator,),
+                )
+                self._emit_loop_body(loop, pad, tile)
+                return
         knobs = [f"num_stages={options.num_stages}"]
         if options.disallow_acc_multi_buffer:
             knobs.append("disallow_acc_multi_buffer=True")
@@ -1505,6 +1528,9 @@ class _TritonEmitter:
             + "):",
             declares=(loop.iterator,),
         )
+        self._emit_loop_body(loop, pad, tile)
+
+    def _emit_loop_body(self, loop: TileLoop, pad: str, tile: str) -> None:
         self.line(
             f"{pad}    {loop.iterator}_offsets = "
             f"{loop.iterator} + tl.arange(0, {tile})"
@@ -1519,6 +1545,8 @@ class _TritonEmitter:
             self._emit_operation(operation, pad + "    ", inside=True)
         for op_id in loop.body:
             operation = self.schedule.operation(op_id)
+            if operation is not None and streaming_compensated_loop(self.schedule, operation) is not None:
+                emit_streaming_compensated_finalize(self.line, output=operation.writes[0], pad=pad)
             if operation is not None and operation.kind is OperationKind.ONLINE_SOFTMAX:
                 self._emit_online_softmax_finalize(operation, pad)
             if (
@@ -1602,6 +1630,14 @@ class _TritonEmitter:
 
     def _emit_select(self, operation, pad):
         p = operation.parameters
+        if self.target.code_object is CodeObject.MCFATBIN:
+            from .metax import comparison_magnitude_input
+            source = comparison_magnitude_input(self.schedule, operation)
+            if source is not None:
+                dtype = self.schedule.buffer(operation.writes[0]).dtype
+                self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+                self.line(f"{pad}{operation.writes[0]} = tl.abs({source}).to({_TL_DTYPE[dtype]})", declares=(operation.writes[0],))
+                return
         false_value = ('float("-inf")' if p.false_value == "negative_infinity" else repr(p.false_value)) if p.false_value is not None else operation.reads[2]
         dtype = self.schedule.buffer(operation.writes[0]).dtype
         if p.false_value is not None and dtype is DType.INT32:
@@ -1624,12 +1660,20 @@ class _TritonEmitter:
             operands.append(repr(int(parameters.scalar) if integer else parameters.scalar))
         if parameters.op is ElementwiseOp.FMA:
             instruction = parameters.instruction
-            _require(
-                instruction is not None
-                and instruction.contract == "ptx.fma.rn.f32",
-                "the Triton fma body requires ptx.fma.rn.f32",
-            )
-        if parameters.op is ElementwiseOp.TANH:
+            contract = instruction.contract if instruction is not None else None
+            if contract == "ptx.fma.rn.f32" and self.target.code_object is CodeObject.CUBIN:
+                expression = self._ELEMENTWISE_TEXT[ElementwiseOp.FMA].format(
+                    a=operands[0], b=operands[1], c=operands[2]
+                )
+            elif contract == "maca.fma.f32" and self.target.code_object is CodeObject.MCFATBIN:
+                expression = f"tl.fma({operands[0]}, {operands[1]}, {operands[2]})"
+            else:
+                from .metax import DIRECTED_FMA_FUNCTIONS
+                function = DIRECTED_FMA_FUNCTIONS.get(contract)
+                if self.target.code_object is not CodeObject.MCFATBIN or function is None:
+                    raise EmitError("the Triton fma body requires its target's admitted FMA contract")
+                expression = f"libdevice.{function}({operands[0]}, {operands[1]}, {operands[2]})"
+        elif parameters.op is ElementwiseOp.TANH:
             instruction = parameters.instruction
             _require(
                 instruction is not None
@@ -1791,6 +1835,17 @@ class _TritonEmitter:
         instruction = operation.parameters.instruction
         contract = instruction.contract if instruction is not None else None
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if contract == COMPENSATED_FP8_MMA:
+            _require(self.target.code_object is CodeObject.MCFATBIN,
+                     "the compensated FP8 SIMT body requires a MACA code object")
+            _require(len(operation.reads) == 2 and len(tiles) == 2,
+                     "the compensated FP8 SIMT body takes two staged operands")
+            if streaming_compensated_loop(self.schedule, operation) is not None:
+                emit_streaming_compensated_step(self.line, left=tiles[0], right=tiles[1], pad=pad)
+            else:
+                emit_compensated_fp8_mma(self.line, left=tiles[0], right=tiles[1],
+                                         output=operation.writes[0], pad=pad)
+            return
         if contract == "triton.dot.fp8e4m3_block_scale_fp32":
             _require(
                 len(operation.reads) == 4 and len(tiles) == 4,

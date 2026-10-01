@@ -35,6 +35,7 @@ from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, task_run_inputs, _ROUTE_CALLS_PER_COHORT
 from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort_payload
 from open_cake_ir.tasks.aka_v3.workload import LAUNCHABLE_TASKS as AKA_TASKS
+from open_cake_ir.tasks.metax_fp8_gemm import TASK as METAX_FP8_GEMM_TASK
 from open_cake_ir.tasks.add_rmsnorm import TASK as ADD_RMSNORM_TASK
 from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
 from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
@@ -68,7 +69,7 @@ FIB_GEMM_TASKS = tuple(FIB_GEMM_SPECS)
 TASKS = ("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
          *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS, *OPTIMIZER_TASKS,
          *CONTRACTION_TASKS, *SOLX_FIB_TASKS, *FIB_GEMM_TASKS, "gemm_bias",
-         ADD_RMSNORM_TASK, *AKA_TASKS, TINYGEMM_TASK)
+         ADD_RMSNORM_TASK, *AKA_TASKS, TINYGEMM_TASK, METAX_FP8_GEMM_TASK)
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -507,6 +508,8 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     lane-owned storage bound must refuse (F-2026-09-10-014). The contraction contract's
     own extents keep that operand inside the bound; explicit flags still win.
     """
+    if task == METAX_FP8_GEMM_TASK:
+        return 64 if rows is None else rows, 64 if columns is None else columns
     if task in AKA_TASKS:
         if task == 'aka_histogram':
             return 1024 if rows is None else rows, 16 if columns is None else columns
