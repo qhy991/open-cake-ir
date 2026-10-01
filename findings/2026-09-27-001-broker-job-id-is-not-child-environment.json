@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-001",
+  "date": "2026-09-27",
+  "kind": "protocol",
+  "title": "B300 cost calibration required a broker job-id environment variable that the broker does not inject",
+  "backend": "triton",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@3af889e49538a659749cc2578c0968a65d65e11e",
+  "executor_revision": "sm_103a@3af889e49538a659749cc2578c0968a65d65e11e",
+  "tasks": [
+    "b300-gemm-mtile-cost-calibration-20260927-v3"
+  ],
+  "evidence": {
+    "host": "B300-M4",
+    "run": "/home/qinhaiyan/cake-cost-kernel-infra-state/runs/b300-gemm-mtile-cost-calibration-20260927-v3-15c3cbe0bb63",
+    "events": "events.jsonl lines 30-32: broker_started assigned gpuq-d5577450f13a to physical GPU 2; correctness then ended with infra_error",
+    "stage": "stages/correctness/stderr.log reports 'container calibration requires one broker-assigned GPU'; receipt.json records broker execution, exit 1, and physical GPU 2",
+    "source_boundary": "The broker child environment contains CUDA_VISIBLE_DEVICES but does not declare GPUQ_JOB_ID (agent-gpu-broker/src/agent_gpu_broker/broker.py::Broker._execute)."
+  },
+  "observation": "The local compile stage passed and retained 12 CUBINs and 24 CPU oracle files. After the broker assigned physical GPU 2, the host container wrapper rejected an absent GPUQ_JOB_ID before launching Docker. The run produced no device correctness, CUPTI timing, empirical model or GPU-savings evidence. The broker job ended; no task container or queued resubmission remained.",
+  "proposed_change": "Read the exact broker job id from the GPU Infra daemon's running stage state after broker_started, requiring the same run id, stage id and single physical GPU as the broker-provided CUDA_VISIBLE_DEVICES. Pass that identity to the pinned container and require the final stage receipt to match. Retain fail-closed refusal on any mismatch; keep the frozen v3 run unchanged.",
+  "decision": "accepted",
+  "implemented_in": "627d63bcc9aa7facec77d9193390df7bc05b08a6",
+  "verified_by": {
+    "kind": "original_event_replay",
+    "replay": "/home/qinhaiyan/cake-cost-f001-replay-627d63bc/replay.json",
+    "observed": "The successor resolved the original event at events.jsonl line 30 to gpuq-d5577450f13a on GPU 2. Replaying the same observation with the wrong stage or GPU was refused.",
+    "contracts": "38 relevant documentation and empirical-cost contract tests passed at 627d63bc in an isolated worktree.",
+    "limits": "This closes the software broker-identity failure only. A new frozen B300 campaign is required to verify device correctness, timing quality, model calibration and any saved GPU searches."
+  }
+}
