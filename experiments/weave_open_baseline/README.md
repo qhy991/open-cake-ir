@@ -1,0 +1,124 @@
+# Open EP4 MoE baselines for the Weave/Cake study
+
+These are **separate model-scale experiments**, not edits to the frozen
+`weave-ep4-bf16-moe-b300-v1`. The runnable complete-layer correctness
+baseline is [SGLang + DeepEP](README_SGLANG_DEEPEP.md) on the explicitly
+separate fan-in-scaled v2 synthetic contract; see [results](RESULTS.md).
+It is not the exact paper SGLang v0.5.9 configuration, and no qualified
+Cake-vs-baseline timing exists.
+
+The initially closest fusion candidate was the public
+[Triton-Distributed 3.4 branch](https://github.com/ByteDance-Seed/Triton-distributed/tree/triton-v3.4)
+at commit `63de69e48dde17f32b0ee80ba83901c6950404cd` (2026-09-18).
+There is no public `v3.4.0` Git tag in that repository. Its
+[`v0.0.2-rc` release](https://github.com/ByteDance-Seed/Triton-distributed/releases/tag/v0.0.2-rc)
+ships a wheel named `triton_dist-3.4.0`, but the release source predates the
+full `ep_moe_fused.py` entry. Thus this pinned 3.4-branch commit is a later,
+explicitly disclosed source baseline, not a byte-identical reconstruction of
+the paper's unspecified `v3.4.0` checkout.
+Its [forward implementation](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/function/nvidia/ep_moe_fused.py)
+calls `mega_dispatch_group_gemm`, `swiglu_forward`, then
+`mega_group_gemm_combine`. Its
+[upstream EP test](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/test/nvidia/test_ep_moe_fused.py)
+supports BF16 and four ranks. The test itself also runs backward and smaller
+cases, but its forward precision variable is hard-coded `True` with a TODO
+rather than compared to an oracle. `runner.py` invokes only the full forward
+path and checks saved outputs with an independent CPU calculation. The
+[tuning defaults](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/function/nvidia/common.py)
+are H800 oriented. Source comments mention Hopper/Blackwell, but B300-M4
+execution and accuracy remain **unverified** until a broker run succeeds.
+At this pinned commit, [the package setup](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/setup.py)
+declares CUDA 13 builds with `nvidia-nvshmem-cu13==3.6.5` and
+`nvshmem4py-cu13==0.3.0`; the 3.4 README's CUDA 12 install example is stale
+for B300. `prepare_cpu.sh` pins the source-owned CUDA 13 dependencies. Its
+no-GPU container does not expose `nvidia-smi`, so setup's platform-detection
+printout alone cannot establish device support.
+
+## Source audit against Weave §5.1
+
+The [paper](https://arxiv.org/html/2609.21483#S5.SS1) used 4×H100 and named
+five baselines. Their public source boundaries are:
+
+| Paper label | Checked public identity | Five-stage forward and B300 status |
+| --- | --- | --- |
+| SGLang v0.5.9 | [tag `bbe9c7e`](https://github.com/sgl-project/sglang/tree/v0.5.9) | Serving EP MoE path exists. It needs a model/runtime configuration; paper does not identify one. No B300-M4 run here. |
+| Triton-Distributed v3.4.0 | [3.4 branch `63de69e`](https://github.com/ByteDance-Seed/Triton-distributed/tree/63de69e48dde17f32b0ee80ba83901c6950404cd) | Public full forward entry above; initial candidate blocked at source build. The historical wheel has no corresponding full EP MoE entry; B300-M4 unverified. |
+| DeepEP v1.2.1 + DeepGEMM | [DeepEP tag `9af0e0d`](https://github.com/deepseek-ai/DeepEP/tree/v1.2.1) | DeepEP provides dispatch/combine, not expert FFN. The paper does not pin DeepGEMM or the exact BF16 composition. No complete DeepEP+DeepGEMM layer was assembled here; the runnable fallback uses SGLang BF16 expert computation. |
+| Comet/Flux v1.1.2 | [Flux tags](https://github.com/bytedance/flux/tags) | Public Flux has `v1.1.1`, but no `v1.1.2` tag; its `v1.1.1` tree does not include a named Comet/MoE runner. Exact paper source cannot be pinned. |
+| ParallelKittens `a8f63a9` | [ThunderKittens public MoE benchmark](https://github.com/HazyResearch/ThunderKittens/tree/main/kernels/parallel/moe_dispatch_gemm) | The public sample is dispatch + first expert GEMM, not a complete MoE layer. The cited short commit is not resolvable in the public repository. |
+
+The paper's §5.1 describes dispatch, two expert GEMMs, activation and combine.
+Its Table 1 gives Qwen3-30B `(E=128, top-k=8, H=2048, I=768)`, EP4, BF16.
+`contract.json` fixes that geometry with 2,048 total tokens (512 per rank),
+independent seeded synthetic routing and a CPU FP64 oracle. The paper samples
+ShareGPT and studies 2k/4k/8k; these inputs are **not** the paper's routes or
+its measured hardware. Model name here identifies geometry, not model weights
+or end-to-end serving.
+
+The frozen Cake development Workload has T7/T8, E8, top-k2, H16, I32 and
+distinct balanced/skew/local/remote/tail cases. The upstream TD fused kernels
+use 64-wide K tiles, 256-wide N tiles and the public test starts at 1,024
+tokens; that code provides no evidence for these tiny cases. The independent
+contract does not claim semantic equivalence. Cake's existing
+[`RESULTS.md`](/Users/haiyan/Documents/Infinity/Agent4Kernel/open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-ranked-ep4-b300-device-369b8cf3/RESULTS.md)
+records one passing plan for each frozen case and unresolved low-communication
+CTA / mixed-K timeouts. It contains neither CUPTI/L2-reset latency nor a
+matched open baseline. Do not compare its functional outcomes to this
+experiment's provisional times.
+
+| Boundary | Frozen Cake development Workload | This TD experiment | Paper §5.1 |
+| --- | --- | --- | --- |
+| Hardware | EP4 on B300 `sm_103a` | EP4 on B300 planned, unqualified | EP4 on H100 SXM |
+| Geometry | T7/T8, E8, K2, H16, I32 | 2,048 total tokens, E128, K8, H2048, I768 | Qwen3-30B at 2k/4k/8k among six models |
+| Routing | Five fixed balanced/skew/local/remote/tail cases | Seeded synthetic distinct top-k | ShareGPT-derived inputs |
+| Semantics | BF16 expert up × SiLU(gate), down, weighted combine | Same five mathematical stages; gate/up packed in TD order | Five-stage MoE layer |
+| Correctness | Independent FP64 CPU oracle; selected plans passed | Independent FP64 CPU oracle; device comparison pending | Paper results, not this oracle |
+| Timing | No qualified layer timing | Host monotonic diagnostic only, no L2 reset/CUPTI | H100 paper measurements |
+
+## Reproduction stages
+
+1. Clone the upstream 3.4 branch at the exact commit above into a **separate**
+   checkout, and initialize its `3rdparty/triton` submodule at
+   `f53694a72a1e4f464fa245df2c7305ccda7cb2a9`. On B300-M4, run
+   `prepare_cpu.sh init`, `prepare_cpu.sh deps`, `prepare_cpu.sh build`, then
+   `prepare_cpu.sh probe`, passing the upstream checkout and a new isolated
+   build directory to each command. This script launches a container with no
+   GPU devices, installs into a private venv and keeps upstream toolchain
+   downloads under `<build>/cache-home`. Keep the complete commands, logs and
+   `git status`. The selected source's Triton build fetches a 1.24 GB LLVM
+   archive; absence or slow access is a CPU build gate, not B300 device evidence.
+2. Run `python runner.py preflight --upstream /path/to/Triton-distributed`.
+   This checks the exact upstream and Triton submodule commits, clean tracked
+   source, all three forward stages and Python syntax. Run
+   `create_oracle_cpu.sh <build>
+   /path/to/new-cpu-oracle` in the same isolated Python/NumPy environment
+   used for the device job. Both are CPU only; the oracle writes four rank
+   input snapshots, every expected output and an observation record before
+   any lease.
+3. Create a new output directory and submit one `gpu-run --mode exclusive
+   --gpu-count 4 --receipt-out /path/to/new-output/admission.json` job through
+   the B300-M4 broker, with `run_under_broker.sh <upstream> <build>
+   <cpu-input-dir> <output>`
+   as its child command. The script checks the broker-owned allocation and
+   passes exactly those four physical devices into the GPU container.
+   JIT files stay under `<build>/runtime-cache` outside the source checkout.
+   Preserve broker stdout/stderr and the admission receipt. The broker sets
+   `CUDA_VISIBLE_DEVICES`; do not set it in the launcher.
+4. After the broker's lease has ended, run `check_after_release.sh <build>
+   <cpu-input-dir> <output>` on the CPU with the **same NumPy version** used for
+   input generation. Retain `rank*-output.npy`, `device-observation.json`,
+   `oracle-result.json`, commands and logs. A failing/missing oracle is not a
+   successful baseline.
+
+The observed function includes route preprocessing, dispatch, gate/up GEMM,
+SwiGLU, down GEMM and combine, ending only after each rank synchronizes. The
+diagnostic span is latest rank completion minus earliest rank start on the
+same host's monotonic clock. Input generation and the CPU oracle run
+before the lease. Loading retained inputs, device transfer and initialization
+occur inside the lease but outside the measured window.
+The `sm_103a` Host document declares CUPTI/FlashInfer timer inputs under
+`/mnt/b300-shared`, but a current read-only B300-M4 check reported ENODEV for
+those paths. The adapter therefore records raw diagnostic spans and an explicit
+measurement-coverage limitation, with `qualified_latency_ns: null`. It cannot
+support a Cake-vs-TD latency or overlap claim. A profiler trace and
+target-aligned device-state reset are still required for a comparable result.

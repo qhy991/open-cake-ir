@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "experiment_id": "weave-ep4-qwen3-30b-fanin-b300-v2",
+  "state": "independent_successor_unqualified",
+  "target": "sm_103a",
+  "geometry": {
+    "model": "Qwen3-30B",
+    "expert_parallel_size": 4,
+    "tokens_total": 2048,
+    "tokens_per_rank": 512,
+    "experts": 128,
+    "top_k": 8,
+    "hidden": 2048,
+    "intermediate": 768,
+    "dtype": "bfloat16"
+  },
+  "input": {
+    "kind": "deterministic_synthetic_fan_in_scaled",
+    "seed": 260921483,
+    "scaling": "fan_in_v2",
+    "hidden_stddev": 1.0,
+    "gate_up_weight_stddev": "1/sqrt(H)",
+    "down_weight_stddev": "1/sqrt(I)",
+    "route_ids": "distinct_uniform_topk_of_seeded_scores",
+    "route_weights": "positive_fp32_normalized_per_token",
+    "expert_placement": "contiguous_equal_ranges_by_rank",
+    "note": "Separate synthetic distribution with fan-in scaling. It is not ShareGPT routing or measured Qwen3 weights. Original fixed-scale input/oracle and failed device result are retained."
+  },
+  "operation": "dispatch -> BF16 expert gate/up projection -> SwiGLU -> BF16 expert down projection -> weighted combine to source rank",
+  "oracle": {
+    "kind": "independent_cpu_numpy_fp64",
+    "final_dtype": "bfloat16",
+    "atol": 0.01,
+    "rtol": 0.01,
+    "all_outputs_required": true
+  },
+  "relationship_to_v1": "New input distribution chosen for fan-in variance scaling; the v1 FP64 oracle failure is not reclassified or overwritten.",
+  "relationship_to_frozen_workload": "Still independent of frozen Cake T7/T8 E8 H16 I32 K2 cases."
+}

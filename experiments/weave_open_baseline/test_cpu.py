@@ -1,0 +1,171 @@
+"""CPU checks for the independent baseline input and oracle."""
+from __future__ import annotations
+
+import copy
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+from pathlib import Path
+
+import numpy as np
+
+from data import (compare_outputs, load_contract, make_rank, reference,
+                  reference_bf16_stages, round_bf16, load_fanin_contract)
+from runner import input_observation, load_rank_snapshot
+from runner_sglang_deepep import load_experiment
+from verify_broker_lease import verify
+
+
+def small_contract() -> dict:
+    document = copy.deepcopy(load_contract())
+    document["geometry"].update(tokens_total=8, tokens_per_rank=2,
+                                experts=4, top_k=2, hidden=4, intermediate=8)
+    return document
+
+
+class CpuOracleTest(unittest.TestCase):
+    def test_live_broker_receipt_must_match_all_four_devices(self):
+        receipt = {"schema": "gpuq.admission-receipt.v1", "job_id": "gpuq-test",
+                   "mode": "exclusive", "gpu_count": 4, "gpu_ids": [0, 2, 3, 4],
+                   "broker_instance_id": "instance", "owner": "researcher",
+                   "receipt_sha256": "saved-receipt-id"}
+        status = {"probe_error": None, "instance_id": "instance", "running": [{
+            "job_id": "gpuq-test", "mode": "exclusive", "gpu_count": 4,
+            "gpu_ids": [0, 2, 3, 4], "owner": "researcher",
+            "admission_receipt_sha256": "saved-receipt-id"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "admission.json"
+            path.write_text(json.dumps(receipt))
+            with (patch("verify_broker_lease.subprocess.check_output",
+                        side_effect=lambda *args, **kwargs: json.dumps(status)),
+                  patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "0,2,3,4"})):
+                self.assertEqual(verify(path), ("gpuq-test", "0,2,3,4"))
+                status["running"][0]["gpu_ids"] = [0, 1, 3, 4]
+                with self.assertRaisesRegex(RuntimeError, "differs"):
+                    verify(path)
+
+    def test_fallback_contract_reuses_exact_model_scale_input(self):
+        experiment, workload = load_experiment()
+        self.assertEqual(experiment["geometry"], workload["geometry"])
+        self.assertEqual(experiment["execution"]["chunk_tokens_per_rank"], 128)
+        self.assertEqual(experiment["execution"]["chunks_per_rank"], 4)
+
+    def test_fanin_successor_preserves_routes_and_changes_only_input_scale(self):
+        successor = load_fanin_contract(
+            Path(__file__).with_name("model_scale_inputs_fanin_v2.json"))
+        original = load_contract()
+        experiment, workload = load_experiment(
+            Path(__file__).with_name("contract_sglang_deepep_fanin_v2.json"))
+        self.assertEqual(workload["experiment_id"], successor["experiment_id"])
+        self.assertEqual(experiment["geometry"], original["geometry"])
+        old_rank = make_rank(original, 0)
+        new_rank = make_rank(successor, 0)
+        np.testing.assert_array_equal(old_rank["ids"], new_rank["ids"])
+        np.testing.assert_array_equal(old_rank["weights"], new_rank["weights"])
+        self.assertLess(float(np.abs(new_rank["gate"]).mean()),
+                        float(np.abs(old_rank["gate"]).mean()))
+
+    def test_fanin_model_width_oracle_rejects_zero_output(self):
+        document = load_fanin_contract(
+            Path(__file__).with_name("model_scale_inputs_fanin_v2.json"))
+        document["geometry"].update(tokens_total=32, tokens_per_rank=8,
+                                    experts=8, top_k=8)
+        ranks = [make_rank(document, rank) for rank in range(4)]
+        expected = reference(document, ranks)
+        tolerance = 0.01 + 0.01 * np.abs(expected)
+        self.assertGreater(float(np.abs(expected).mean()), 0.05)
+        self.assertGreater(float(np.mean(np.abs(expected) > tolerance)), 0.9)
+
+    def test_fallback_launcher_refuses_without_broker_lease(self):
+        directory = str(Path(__file__).parent)
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith("GPUQ_")}
+        result = subprocess.run([str(Path(directory) / "run_sglang_under_broker.sh"),
+                                 directory, directory], capture_output=True,
+                                text=True, check=False, env=environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("broker-issued exclusive", result.stderr)
+
+    def test_device_launcher_refuses_without_broker_lease(self):
+        directory = str(Path(__file__).parent)
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith("GPUQ_")}
+        result = subprocess.run([str(Path(directory) / "run_under_broker.sh"),
+                                 directory, directory, directory, directory],
+                                capture_output=True, text=True, check=False, env=environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("broker-issued exclusive", result.stderr)
+
+    def test_bf16_rounds_ties_to_even(self):
+        values = np.array([1.0 + 1.0 / 256.0, 1.0 + 3.0 / 256.0], dtype=np.float32)
+        np.testing.assert_array_equal(round_bf16(values), [1.0, 1.0 + 2.0 / 128.0])
+
+    def test_reference_uses_owner_weights_and_route_weights(self):
+        document = small_contract()
+        data = [make_rank(document, r) for r in range(4)]
+        expected = reference(document)
+        contribution = np.zeros(4, dtype=np.float64)
+        for slot in range(2):
+            expert = int(data[0]["ids"][0, slot])
+            owner = expert
+            x = data[0]["hidden"][0].astype(np.float64)
+            gate = data[owner]["gate"][0].astype(np.float64) @ x
+            up = data[owner]["up"][0].astype(np.float64) @ x
+            activated = up * gate / (1.0 + np.exp(-gate))
+            down = data[owner]["down"][0].astype(np.float64) @ activated
+            contribution += float(data[0]["weights"][0, slot]) * down
+        np.testing.assert_array_equal(expected[0, 0], round_bf16(contribution.astype(np.float32)))
+
+    def test_bf16_stage_oracle_preserves_shape_and_changes_arithmetic(self):
+        document = small_contract()
+        ranks = [make_rank(document, rank) for rank in range(4)]
+        staged = reference_bf16_stages(document, ranks)
+        self.assertEqual(staged.shape, (4, 2, 4))
+        self.assertTrue(np.all(np.isfinite(staged)))
+        self.assertFalse(np.array_equal(staged, reference(document, ranks)))
+
+    def test_output_gate_rejects_a_wrong_rank(self):
+        document = small_contract()
+        expected = reference(document)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            for rank in range(4):
+                np.save(path / f"rank{rank}-output.npy", expected[rank])
+            self.assertTrue(compare_outputs(document, path)["pass"])
+            corrupted = expected[2].copy()
+            corrupted[0, 0] += 1.0
+            np.save(path / "rank2-output.npy", corrupted)
+            result = compare_outputs(document, path)
+            self.assertFalse(result["pass"])
+            self.assertEqual(result["failing_elements"], 1)
+
+    def test_cpu_phase_retains_inputs_for_device_phase(self):
+        document = small_contract()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            contract_path = path / "contract.json"
+            contract_path.write_text(json.dumps(document))
+            input_path = path / "inputs"
+            subprocess.run([sys.executable, str(Path(__file__).with_name("runner.py")),
+                            "oracle", "--contract", str(contract_path),
+                            "--output", str(input_path)], check=True,
+                           stdout=subprocess.DEVNULL)
+            repeated = subprocess.run([sys.executable, str(Path(__file__).with_name("runner.py")),
+                                       "oracle", "--contract", str(contract_path),
+                                       "--output", str(input_path)], check=False,
+                                      capture_output=True, text=True)
+            self.assertNotEqual(repeated.returncode, 0)
+            self.assertIn("not empty", repeated.stderr)
+            self.assertEqual(input_observation(document, input_path)["shape"], [4, 2, 4])
+            for rank in range(4):
+                np.testing.assert_array_equal(load_rank_snapshot(document, input_path, rank)["ids"],
+                                              make_rank(document, rank)["ids"])
+            self.assertTrue(np.all(np.isfinite(np.load(input_path / "oracle-expected.npy"))))
+
+
+if __name__ == "__main__":
+    unittest.main()
