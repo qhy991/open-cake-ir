@@ -108,7 +108,7 @@ QSA evaluator 为已通过 Compiler 检查的节点保留局部 Finding，包括
 不再把对象当字符串。已有的 `ncu_estimates` 继续承载非未知指标，不增加平行兼容字段。
 
 输入 profile 若带有 `empirical_cost`，投影只保留 `kind`、`model_id`、
-`model_compiler_revision_id`、`model_compiler_revision_sha256`、`target`、`covered`、
+`model_compiler_revision_id`、`target`、`covered`、
 `predicted_kernel_us`、`empirical_range_us` 和 `reason`；缺失时不生成此字段。
 估算仍以供应方声明的环境为条件。完整的 `context` 和 `reported_evidence` 留在
 已有的源模型或报告中，通过模型及 Compiler 身份关联；它们允许供应方附带任意内容，
@@ -150,9 +150,9 @@ Python 接口使用 `EmpiricalCostModel.load(path)`，然后调用
 以及同时命中多条曲线都会返回未覆盖原因。已提供编译资源时，后端编译器版本
 与模型声明不一致也会拒绝估算。
 
-模型根对象为 schema_version=2，包含 `model_id`、`compiler_revision_id`、
-`compiler_revision_sha256`（来自 Assessment 的现有内容身份）、`target`、
-`context`、`reported_evidence` 和 `curves`。`context` 声明 `timer`、`cache_protocol`、
+模型根对象为 schema_version=3，包含 `model_id`、`compiler_revision_id`、`target`、
+`context`、`reported_evidence` 和 `curves`。`compiler_revision_id` 是
+`open-cake-ir@<干净提交>`；模型不另存一个 Revision 摘要字段。`context` 声明 `timer`、`cache_protocol`、
 `runtime`（至少有 `compiler_version`）及 `input_scope`。每条曲线包含 `template`、
 `varying_dimensions`（`buffer` 和零起始 `dimension`）、`extent_multiple`、按 extent
 严格递增的 `points`（`extent`、`kernel_us`）和 `relative_error_envelope`。
@@ -170,10 +170,50 @@ JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`
 终端同时显示条件估算的经验范围；未覆盖时保留具体拒绝原因，不用空白数值掩盖
 目标、Revision、模板或范围的差异。完整上下文和来源仍由 JSON 中的既有字段提供。
 
-校准必须在模型绑定的冻结 Compiler Revision 上完成。早期独立 FMA 原型的旧 schema
-与 v46 测量不能仅改写版本名称后充当新 Revision 的模型；需要新的采集或经过明确
+校准必须在模型绑定的冻结 Compiler 提交上完成。早期独立 FMA 原型的旧 schema
+与历史测量不能仅改写版本名称后充当当前提交的模型；需要新的采集或经过明确
 审查的兼容证据。本接口不内置未验证的系数。
 
-并行分支曾产生同名 v49 而内容不同的 Compiler；模型因此必须同时绑定编号和
-已有的内容身份。旧 schema 1 不会被默认为匹配，需要明确的兼容性验证和新模型
-交付。这个身份字段只解决实际的冻结 Revision 对应关系，不建立新的文件摘要目录。
+`tools/calibrate_empirical_cost.py` 的新校准计划进一步要求 `input_scope` 为紧凑、
+键排序的 JSON：声明 `independent_cpu_case_v1`、输入分布 `[0,1]`，并给每个算子
+声明全局 Buffer 的形状模式。只有明确变化的维度写 `null`；计划中的每个 Schedule
+都要匹配该模式。模型曲线仍负责目标 Schedule 模板、尺寸对齐与测量区间；范围外的
+新 tile、目标或尺寸返回未覆盖，不能从另一条曲线继承估算。
+
+### 独立 Run 的 GPU 前选择
+
+校准工具还提供一个独立工程 Run 的选择模式，不改变 Lab Study 的策略。在外部
+`candidate/plan.json` 中声明 `search_selection`：
+
+```json
+{
+  "kind": "external_empirical_top_k_v1",
+  "model_path": "prior-model.json",
+  "predictions_path": "prior-predictions.json",
+  "submitted_case_ids": ["candidate-a", "candidate-b", "candidate-c"],
+  "selected_case_ids": ["candidate-a", "candidate-b"],
+  "searches_per_workload": 2
+}
+```
+
+模型与预测文件都要在提交前放进同一个不可变候选快照。`check-plan` 重算每个候选的
+预测并检查：模型的 Compiler 提交、Target、timer、缓存协议、**完整**运行时和结构化
+`input_scope` 与计划相同；每组三个候选全部被覆盖；冻结的预测和选中顺序与模型一致。
+此外，至少一个入选候选的经验范围上界须严格低于所有跳过候选的范围下界；
+范围重叠时拒绝缩减，改用全量测量。这个保守条件只用于此独立工程 Run，
+经验范围不是概率保证，也不改变 Lab 的 Study 排序政策。
+不完整或不匹配就拒绝该选择 Run。CPU local 阶段仍编译全组并生成独立 oracle，
+broker 正确性与独占 profiler 阶段只加载选中的两个候选；GPU Infra 拥有设备租约。
+
+```bash
+python3 tools/calibrate_empirical_cost.py check-plan /external/candidate
+# GPU Infra 按冻结 task.json 执行 compile-container 与两个 collect-container 阶段。
+python3 tools/calibrate_empirical_cost.py audit-selected /external/run \
+  --output /external/new-selected-audit
+```
+
+`audit-selected` 在设备释放后重放原始 trace、编译产物和 broker receipt，报告提交数、
+设备实测数与跳过数。它**不**估计被跳过候选的实际耗时或性能损失；要检查选择质量，
+需在另一个预先冻结的全量审计 Run 测量它们。经验范围也不是置信保证。当前这条
+Kineto/CUPTI 加显式清零的独立路径与 Lab 的配对 FlashInfer CUPTI assay 不同，
+其模型不能直接绑定到 Lab 的 B300 GEMM Study。

@@ -20,7 +20,7 @@ An open research system for agent-driven GPU kernel and compiler co-evolution.</
 的问题再推动编译器改进。项目独立探索 [CAKE 论文](https://arxiv.org/abs/2608.12629v1)
 的研究思路，属于研究预览。
 
-[中文阅读入口](docs/zh-CN/README.md) · [项目当前状态](reports/current/STATUS.md)
+[中文阅读入口](docs/zh-CN/README.md) · [Wiki 阅读索引](docs/wiki/README.md) · [项目当前状态](reports/current/STATUS.md)
 
 ## 快速导航
 
