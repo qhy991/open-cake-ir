@@ -70,10 +70,18 @@ Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE �
 保持原有合同。新 Clean-start 的 Python 参考材料只含公开 ABI、目标、生成路线和 `...` 占位，
 精确字节由 Lab 检查；当前 Provider 尚无可验证的读取隔离，实际启动被拒绝，见
 [ADR 0077](adr/0077-python-clean-start-reference-and-read-isolation.md)。
-新单候选、无 transform 的 `python_source_file_v1` Run 让 Agent 直接写 `candidate.py`；
-Lab 保存原始 UTF-8 字节并确定性生成内部候选，见 [ADR 0078](adr/0078-python-source-file-provider-submission.md)。
-多候选和 transform Run 仍使用 `candidate-set.json`，它是传输合同而非 Cake IR；下一步
-需让多个源码文件及显式动作也有同等的顺序、监护和回放。Compiler 内部文档往返继续收敛。
+新单候选、无 transform 的 `python_source_file_v1` Run 可直接写 `candidate.py`，见
+[ADR 0078](adr/0078-python-source-file-provider-submission.md)。新默认多候选 Run 写一个
+`candidate-set.py`：多个完整 Schedule 函数和获准的静态 transform 声明按源码顺序形成候选，
+Lab 保存原始字节并确定性投影，见 [ADR 0079](adr/0079-ordered-python-candidate-bundles.md)。
+静态 `cake.program` 还可把同文件的完整 Schedule 组合为一个多阶段候选；公共 tensor
+及阶段读写由 typed Program 检查，不要求作者填写 Program JSON。
+`candidate-set.json` 留给冻结合同的回放，不再是新已知实现复现任务的默认作者输入。
+成对 Study 的 Cake 与原生臂分别固定 Python 和 JSON 提交及各自的 Provider 资格证明；
+共同的模型、预算与测量合同仍相等，见 [ADR 0080](adr/0080-paired-studies-bind-provider-transport-per-arm.md)。
+新 Codex Run 的作者 home 按 Run 隔离，只从外部私有凭据建立；该策略控制技能和会话材料，
+不替代 clean-start 的文件读取隔离，见 [ADR 0081](adr/0081-isolate-codex-author-home-per-run.md)。
+Compiler 内部文档往返继续收敛；每一步保留原提交，不原地改写历史证据。
 每一步采用后继 Run 合同并保留冻结实验的原提交，不原地改写历史证据。
 
 | 层级 | 表示与负责的决策 | 尚未决定的事情 |
@@ -291,6 +299,11 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 
 Compiler 演进由运行之外的维护 Agent 或研究者根据具体诊断实施。候选写法错误先修候选；
 缺少合法表达或 lowering 才进入对应能力改动，primitive、类型和分析共同验证后启动后继 Run。
+已被 Cake IR 接受、仅因所选后端缺少指令或访问实现而拒绝 lowering 的候选，反馈归为
+`backend_lowering`；缺少表达该物理决策的 IR 词汇才归为 `ir_vocabulary`。前者的维护 Agent
+可在后继提交补该后端的 emission、preflight 与反例测试，或把缺口连同原候选和 Finding
+留作待审议记录。尚未判断归属的 lowering-only 拒绝进入 `backend_triage`，不默认归罪于作者。
+这些路线都不能在冻结 Run 中热改 Compiler，也不能偷偷换目标或放宽 oracle。
 发现性能差距本身不要求新增 pass；每轮保留 promotion disposition，`No promotion` 是有效结论。
 
 待完成的边界包括各平台的完整 Program 测量、部分 dtype/指令及 profiler 指标、

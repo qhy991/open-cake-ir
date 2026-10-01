@@ -58,6 +58,11 @@ class Assessment:
     guidance: tuple[Finding, ...] = ()
     _schedule: Schedule | None = field(default=None, repr=False)
 
+    @property
+    def typed_schedule(self) -> Schedule | None:
+        """The immutable IR admitted by this assessment, if construction succeeded."""
+        return self._schedule
+
 
 @dataclass(frozen=True)
 class Lowering:

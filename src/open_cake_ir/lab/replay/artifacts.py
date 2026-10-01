@@ -94,7 +94,13 @@ def _replay_launchable_candidate(
         from open_cake_ir.compiler import Program
         from open_cake_ir.evaluation.program import program_tensor_abi, single_kernel_lowering
         from ..workload_binding import bind_program_workload
-        program = Program.from_dict(authored)
+        if isinstance(authored, Mapping) and set(authored) == {'python_program_source', 'program_id'}:
+            from open_cake_ir.compiler.program_frontend import parse_program
+            program = parse_program(authored['python_program_source'],
+                                    filename='projected-program.ir.py',
+                                    program_id=authored['program_id']).program
+        else:
+            program = Program.from_dict(authored)
         program = bind_program_workload(program, workload_sha256 or manifest.workload_sha256)
         lowered = compiler_factory().lower_program(program)
         if not candidate.is_program:

@@ -520,8 +520,8 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
             if operation["kind"] == "mma":
                 operation["parameters"].pop("instruction")
 
-    def test_a_gap_the_backend_has_reaches_the_router_as_the_vocabularys(self) -> None:
-        from open_cake_ir.lab.routing import IR_VOCABULARY, route_rejection
+    def test_a_gap_the_backend_has_reaches_the_lowering_owner(self) -> None:
+        from open_cake_ir.lab.routing import BACKEND_LOWERING, route_rejection
 
         result = self._rejection(self._rekind)
         self.assertEqual(result.disposition, "rejected")
@@ -531,7 +531,7 @@ class VocabularyRejectionRoutesAcrossTheSeamTest(unittest.TestCase):
             if row["blocks_lowering"]
         }
         self.assertIn("BACKEND_OPERATION_UNEMITTABLE", codes)
-        self.assertEqual(route_rejection(result.feedback).destination, IR_VOCABULARY)
+        self.assertEqual(route_rejection(result.feedback).destination, BACKEND_LOWERING)
 
     def test_an_argmin_dtype_violation_is_candidate_feedback(self) -> None:
         from open_cake_ir.lab.routing import CANDIDATE, route_rejection

@@ -31,6 +31,7 @@ from .process import (
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1, ProviderAuxiliaryActivity, ProviderInvocation,
     PYTHON_SOURCE_FILE_V1,
+    PYTHON_CANDIDATE_BUNDLE_V1,
     ProviderTurn, ProviderQualificationReceipt, QualifiedRunProvider, _project_candidate_submission,
 )
 
@@ -257,8 +258,12 @@ def _metadata(event: Mapping) -> bool:
             "reconstructible and the Turn is not comparable")
     elif kind == "system" and event.get("subtype") == "api_retry":
         if (set(event) != {"type", "subtype", "attempt", "max_retries", "retry_delay_ms", "error_status", "error", "uuid", "session_id"}
-                or any(type(event[key]) is not int for key in ("attempt", "max_retries", "retry_delay_ms"))
-                or not 1 <= event["attempt"] <= event["max_retries"] or event["retry_delay_ms"] < 0
+                or any(type(event[key]) is not int for key in ("attempt", "max_retries"))
+                or type(event["retry_delay_ms"]) not in (int, float)
+                or (type(event["retry_delay_ms"]) is float
+                    and not math.isfinite(event["retry_delay_ms"]))
+                or event["retry_delay_ms"] < 0
+                or not 1 <= event["attempt"] <= event["max_retries"]
                 or event["error_status"] is not None and (type(event["error_status"]) is not int or not 100 <= event["error_status"] <= 599)
                 or event["error"] not in ("authentication_failed", "oauth_org_not_allowed", "billing_error", "rate_limit",
                     "overloaded", "invalid_request", "model_not_found", "server_error", "max_output_tokens", "unknown")):
@@ -694,7 +699,8 @@ class ClaudeInvocationBuilder:
                  event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=(),
                  submission_contract: str = CANDIDATE_SET_ENVELOPE_V1) -> None:
         self.response_aliases = response_model_aliases(model, response_aliases)
-        if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}:
+        if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                       PYTHON_CANDIDATE_BUNDLE_V1}:
             raise ValueError('Claude builder submission contract differs')
         self._submission_contract = submission_contract
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
@@ -824,10 +830,12 @@ class ClaudeProviderAdapter:
                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
                 arm: str | None = None, environment_kind: str = "open_cake", maximum_candidates_per_turn: int = 1) -> ProviderTurn:
         if (invocation.sandbox != "none" or event_contract not in CLAUDE_EVENT_CONTRACTS or
-                submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}
+                submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                            PYTHON_CANDIDATE_BUNDLE_V1}
                 or expected_change not in {"add", "update"} or
                 candidate_path.absolute() != invocation.cwd.absolute() / (
-                    'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json')):
+                    'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                    'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else 'candidate-set.json')):
             raise ValueError("Claude invocation or candidate contract differs")
         try:
             if (invocation.argv.count("--json-schema") != 1

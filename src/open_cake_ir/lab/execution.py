@@ -33,6 +33,7 @@ from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, Tur
 from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .reference_access import require_qualified_clean_start_execution
+from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
 from .executor import ExecutorRevision
 from .pairing import comparison_arm, native_backend
 from .ralph import RalphBudget, RalphController
@@ -185,9 +186,9 @@ def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loa
     """Keep the external Campaign archive while assembling independent Run adapters."""
     lock = CampaignLock.from_dict(lock.document)
     root = admit_new_campaign_path(project_root,evidence_root,role='Campaign Evidence root')
-    from .execution_admission import campaign_provider_binding
+    from .execution_admission import campaign_provider_bindings
     from .bindings import source_reference_path
-    campaign_provider_binding(lock,project_root)
+    campaign_provider_bindings(lock,project_root)
     _,workload_path = source_reference_path(project_root,lock.document['workload']['path'],'Campaign Workload')
     validate_authoring(workload_loader(workload_path),lock.document['resolved_inputs']['arm_environments'])
     from .preflight import preflight_run
@@ -341,7 +342,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 environment_kind=kind, transformations=document['knowledge']['transformations'],
                 candidates=prior_candidates, baselines=baselines, compiler_factory=compiler_factory,
                 allow_python=document["authoring"].get("input_format") in {"schedule_or_python_v1", "python_source_v1"},
-                python_only=document["authoring"].get("input_format") == "python_source_v1")
+                python_only=document["authoring"].get("input_format") == "python_source_v1",
+                source_bundle=document['authoring'].get('provider', {}).get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1)
             action_rows = []
             resolved_candidates = {}
             for ordinal, resolution in enumerate(resolutions):

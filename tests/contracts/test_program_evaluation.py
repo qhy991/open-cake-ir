@@ -38,7 +38,7 @@ def workload_for(program):
         tensor_abi=lambda case: abi)
 
 
-def replay_program_candidate(compiler,program,candidate,payloads):
+def replay_program_candidate(compiler,program,candidate,payloads,*,authored_bytes=None):
     from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
     from open_cake_ir.tasks.launch import parse_launch_manifest
     spec = parse_launch_manifest(json.loads(payloads['launch_manifest']))
@@ -50,7 +50,8 @@ def replay_program_candidate(compiler,program,candidate,payloads):
     evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
     return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
         arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:compiler,
-        authored_bytes=program.document_bytes,workload_sha256=spec.workload_sha256)
+        authored_bytes=program.document_bytes if authored_bytes is None else authored_bytes,
+        workload_sha256=spec.workload_sha256)
 
 
 @dataclass

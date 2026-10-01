@@ -18,8 +18,8 @@ adapters use the same frozen file name and lifecycle. Old envelope-v1 Runs, mess
 providers, direct CUDA, native comparisons, multi-candidate Turns and transform actions
 keep their original contracts and replay at their pinned commits.
 
-The remaining migration is not a file rename. Multiple `.py` files need a witnessed
-ordering and complete custody record, and transform actions need a separate explicit
-author surface. Their successor contracts must preserve the current candidate and
-action ordering, raw bytes, rejection attribution and semantic replay before the
-envelope treatment can be retired for new work.
+The remaining multi-candidate migration was completed by the successor
+[ordered Python candidate bundle](0079-ordered-python-candidate-bundles.md): one
+source file preserves witnessed add/update custody, proposal order and explicit
+static transform requests. This single-candidate treatment remains available when
+that narrower budget and absence of transforms are the intended Run policy.

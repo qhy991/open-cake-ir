@@ -4,6 +4,15 @@ Append-only records between campaign evidence and Compiler/Executor changes. One
 per finding, named `YYYY-MM-DD-NNN-slug.json`. The evidence ledger already records what
 happened; a finding is the curated "so what" that a Revision decision can cite.
 
+A rejected Candidate routed to `backend_lowering` is evidence of a possible backend
+implementation gap, not an automatic approval to add an instruction. Curate its exact
+Schedule, Target, backend and localized Compiler Finding here; either implement emission
+with matching admission/analysis and counterexamples in a successor commit, or record
+why the capability is deferred. A missing Cake IR expression is separately routed to
+`ir_vocabulary`. A lowering-only Finding with unclear or mixed ownership is routed
+to `backend_triage` for explicit judgement; do not silently mark it an author error.
+Frozen Runs keep their original Compiler and measurement contract.
+
 ## Lifecycle
 
 `decision` moves `proposed -> accepted | rejected | deferred` through the normal review
@@ -34,6 +43,13 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-27-001 — B300 cost calibration assumed a broker job-id environment variable; the broker assigns a GPU but exposes the job id through GPU Infra run state. The successor binds run, stage and GPU to that state, replayed against the original failure (protocol, software verified; new device campaign pending).
+- F-2026-09-27-002 — the B300 correctness stage passed, but Torch profiler initialization in the numeric-UID container failed resolving its user for a cache path. Stage-local cache and account environment passes a no-GPU replay in the same pinned image (protocol, software verified; new profiler campaign pending).
+- F-2026-09-27-003 — an empirical model's free-text scope listed only calibration M values while a selected run submitted two new M values; the observed two-of-six GPU cut stands, but scope-qualified savings need a structured oracle domain. The successor refuses the original wording and checks each Schedule's global-buffer shape (protocol, software replayed; new campaign pending).
+
+- F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
+- F-2026-09-24-002 — gfx1151 paired HIP timing has repeatable task-dependent sample spikes sixteen dispatches apart across five tasks; the cause remains unproven, and a fixed A/A device probe must precede any timer or CV-policy change (protocol, proposed).
+
 - F-2026-09-23-001 — `bw1100-1` has a distinct gfx938 Executor host closure despite the same DTK package versions; its captured successor passed software admission and bounded five-case HIP device confirmation at gfx938@4c9f4cc0 (capacity, accepted for that Workload).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
@@ -55,7 +71,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - F-2026-09-20-001 — shape-preserving casts hide a loaded operand's K axis from MMA carry analysis; eight FP16-to-FP32 GEMM probes are refused by BUFFER_ESCAPES_LOOP. The query is shared by lifetime verification and emission, so both need the same coordinate proof (bug, software fix 5b452470 verified at 9696fc34 by 154 CPU contracts, 164 unchanged Corpus cases and replay of the eight probes; subsequent 967718ea B300 checks passed all 40 cases across the eight explicit-cast GEMM probes; no performance or full-shape claim).
 
-- F-2026-09-17-001 — a non-power-of-two row width closes every lowering route for RMSNorm on sm_103a: the whole row hits Triton's arange power-of-two rule, the tiled two-pass hits its loop-nest rule (siblings at depth [0,0] where it requires a [0,1] nest), and native_cuda declares reduce_argmin but not reduce; h2048 and h4096 produce eight accepted Schedules and h7168 produces five refusals (capacity, proposed; a lowering gap, not a vocabulary one -- the arange rule is faithful and stays)
+- F-2026-09-17-001 — a non-power-of-two row width originally closed every lowering route for RMSNorm on sm_103a: whole-row Triton arange requires a power of two, two sequential tiled passes were refused as non-nested, and native_cuda lacks reduce. The sibling Triton route is implemented at c4c65187; a 7168-wide two-pass slice compiled and passed bounded B300-M3 correctness, while the original RMSNorm task and native_cuda route remain unverified/open (capacity, accepted; the arange rule stays).
 - F-2026-09-16-013 — the eight FIB GEMM tasks are a dispatcher corpus: 699 of 707 kernel-plus-library candidates branch on M in code, and at n=6144/n=28672 the branch hides authored kernels measuring 0.35x/0.44x behind a library path reporting 1.14x/1.05x (behavior, proposed; contributes no IR requirement because its dominant pattern is correctly inexpressible)
 - F-2026-09-16-012 — a third of the audit's 1,839 GPU evaluations report only 'no trace produced' while the real nvcc error sits above that line in the same stderr (464 of 612); a quarter of those are the harness's own contract, including a hardcoded '::run' entry symbol that breaks exactly the three tasks declaring 'forward' (protocol, proposed)
 - F-2026-09-16-011 — RETRACTED: the 2-4x warp-specialization result was a regex matching 'producer' in comments; 4 of the 6 candidates behind it are explicitly not warp-specialized, and the 58x kernel's own header says its win is 'shape-only, math unchanged' (protocol, rejected; the expressibility fact from probing survives, the performance claim does not)

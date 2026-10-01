@@ -22,6 +22,7 @@ from . import selection
 from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected
 from .build import BuildRequest, ToolchainBuilder, TritonToolchainBuilder, _ptxas_finding_rows
+from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1, PYTHON_SOURCE_FILE_V1
 from .workload_binding import bind_program_workload
 
 
@@ -114,6 +115,13 @@ class OpenCakeEnvironment:
         self._case_id = case_id
         self._workload_sha256 = workload.canonical_sha256
         self._python_enabled = authority_document.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}
+        provider = authority_document.get('provider')
+        submission_contract = provider.get('submission_contract') if isinstance(provider, Mapping) else None
+        self._python_filename = (
+            'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
+            'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+            'candidate.ir.py')
+        self._python_program_enabled = submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
         self._target = workload.target
         self._explicit_abi = isinstance(workload.document["semantics"].get("candidate_abi"), Mapping)
         self._expected = {arg.name: ("global", arg.dtype, list(arg.shape), arg.mode)
@@ -228,8 +236,16 @@ class OpenCakeEnvironment:
             if isinstance(parsed, Mapping) and set(parsed) == {"python_source"}:
                 if not self._python_enabled or not isinstance(parsed["python_source"], str):
                     raise ValueError("Python IR submission is outside the admitted Authoring Environment")
-                source = parse_python_schedule(parsed["python_source"], filename="candidate.ir.py")
+                source = parse_python_schedule(parsed["python_source"], filename=self._python_filename)
                 parsed = source.document
+            if isinstance(parsed, Mapping) and set(parsed) == {'python_program_source', 'program_id'}:
+                if (not self._python_program_enabled
+                    or not isinstance(parsed['python_program_source'], str)
+                    or not isinstance(parsed['program_id'], str)):
+                    raise ValueError('Python Program source is outside the admitted Authoring Environment')
+                from open_cake_ir.compiler.program_frontend import parse_program
+                parsed = parse_program(parsed['python_program_source'], filename='projected-program.ir.py',
+                                       program_id=parsed['program_id']).document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")
             if "program_id" in parsed:

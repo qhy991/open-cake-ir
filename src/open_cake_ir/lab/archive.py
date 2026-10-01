@@ -18,7 +18,8 @@ from open_cake_ir.evidence.store import RunLedger
 
 from ._documents import _canonical_json_bytes
 from .faults import RunProtocolFault
-from .providers import CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1, ProviderTurn, _project_candidate_submission
+from .providers import (CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                        PYTHON_CANDIDATE_BUNDLE_V1, ProviderTurn, _project_candidate_submission)
 
 
 # The nvcc arm's products (D12). No execution platform row states them: the cubin row's
@@ -198,7 +199,7 @@ def _archive_provider_turn(
     turn_number: int,
 ) -> None:
     submission_contract = provider_document.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1)
-    source_file = submission_contract == PYTHON_SOURCE_FILE_V1
+    source_file = submission_contract in {PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1}
     reference_bundle = provider_turn.reference_bundle
     if reference_bundle is None:
         raise RunProtocolFault(

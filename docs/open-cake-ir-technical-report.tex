@@ -52,13 +52,14 @@
 \fancyhf{}
 \fancyhead[L]{\scriptsize\sffamily\bfseries\color{accent} OPEN-CAKE-IR \quad / \quad TECHNICAL REPORT}
 \fancyhead[R]{\scriptsize\sffamily\color{muted} 2026.09}
-\fancyfoot[L]{\scriptsize\sffamily\color{muted} 固定源码：677eb444}
+\fancyfoot[L]{\scriptsize\sffamily\color{muted} 主体快照：677eb444}
 \fancyfoot[R]{\small\sffamily\bfseries\color{ink}\thepage}
 \renewcommand{\headrulewidth}{0.45pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{hair}\leaders\hrule height \headrulewidth\hfill}}
 \renewcommand{\footrulewidth}{0pt}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/677eb444fec593294c470dcc5793262ae769fce2/#1}{#2}}
+\newcommand{\weaverepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/93d052021cc3b4b0d8a5580837f7d87bbbd2fc02/#1}{#2}}
 \newcommand{\scope}[1]{\textcolor{accent}{\textbf{#1}}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newtcolorbox{notebox}[1][]{enhanced,breakable,colback=mist,colframe=mist,boxrule=0pt,borderline west={2pt}{0pt}{accent},left=4mm,right=4mm,top=3mm,bottom=3mm,#1}
@@ -98,7 +99,8 @@
 {\small\color{muted}北京航空航天大学\par}
 \end{minipage}\hfill\begin{minipage}[t]{0.46\textwidth}
 \raggedleft{\sffamily\bfseries\color{ink}2026 年 9 月 23 日\par}
-{\small\color{muted}阅读快照 \quad / \quad 源码 677eb444\par}
+{\small\color{muted}MoE 案例增补：9 月 28 日\par}
+{\small\color{muted}主体快照 \quad / \quad 源码 677eb444\par}
 \end{minipage}
 \vspace{21mm}
 \begin{center}
@@ -115,9 +117,11 @@
 \end{center}
 \vfill
 \begin{notebox}
-\noindent\textbf{报告边界}\quad 正文所读源码固定为
-\code{677eb444fec593294c470dcc5793262ae769fce2}。历史设备实验仍绑定各自的源码、
-精确目标、Workload、oracle 和计时协议；文内引用指向所读的固定提交。
+\noindent\textbf{报告边界}\quad 主体章节所读源码固定为
+\code{677eb444fec593294c470dcc5793262ae769fce2}。第\ref{sec:weave-case}节是
+2026 年 9 月 28 日的 MoE 案例增补，其实验代码固定于尚未合入主线的
+\code{2c638aad}；主线本次只纳入案例记录，不将后续代码追认为主体快照。
+设备实验各自绑定精确目标、Workload、oracle 和计时协议。
 \end{notebox}
 \end{titlepage}
 
@@ -134,7 +138,9 @@
 和 MetaX 已有范围各异的设备结果；AMD 的设备计时仍在校准。同形状的 TinyGEMM2 对照
 通过了严格数值检查，也显示本地实现与 CAKE 导出产物之间仍有明显性能差距。已有证据说明
 系统能够承载这些任务和局部优化；经验材料能否帮助智能体在另一种硬件上更快找到好实现，
-还需要预先分组的实机实验。
+还需要预先分组的实机实验。后续增补的 B300 MoE 案例展示了事件流水、空间分工、
+有界偷取和 FFN 分块如何在同一 CUDA lowering 中联动；它通过了有界设备正确性检查，
+但尚未取得对开源基线的合格加速结论。
 \end{notebox}
 
 \noindent\textbf{关键词：}GPU 内核；中间表示；静态验证；智能体；实验可复查性；跨硬件优化
@@ -148,8 +154,9 @@ external oracles and target-specific measurements.\par\smallskip\noindent A corp
 between frozen optimization runs. The implementation declares eight exact targets across five vendors;
 device correctness and measurement coverage remain uneven. A same-shape TinyGEMM2 comparison passes
 strict numerical checks while exposing a substantial performance gap. Cross-hardware knowledge-transfer
-effects remain unmeasured. The software snapshot is commit \code{677eb444}; each historical measurement
-retains its own source and assay boundary.\par}
+effects remain unmeasured. A later B300 MoE case validates bounded event pipelining, spatial scheduling,
+and stealing, without a qualified speedup over its open baseline. The main software snapshot is commit
+\code{677eb444}; the MoE case pins its own successor and assay boundary.\par}
 
 \vspace{1.6em}
 \section*{阅读约定}
@@ -315,7 +322,7 @@ Study & 处理分配、估计量和缺失策略 & 限定研究问题的分析结
  {同一 Run 的可核对反馈} (l.south);
 \end{tikzpicture}
 \caption{一次运行中的候选路径。任务提供外部答案，实验系统管理候选，编译器生成源码，
-评测和证据模块把可核对的结果送回作者；上方的研究计划只在需要分组比较时使用。}
+评测和证据模块把可核对的结果送回智能体；上方的研究计划只在需要分组比较时使用。}
 \label{fig:architecture}
 \end{figure}
 
@@ -330,14 +337,14 @@ Study & 处理分配、估计量和缺失策略 & 限定研究问题的分析结
 由后面的模块处理\cite{architecture,irguide}。
 
 \subsection{实验系统：固定一次优化的条件}
-一次运行开始前，实验系统先核对任务、编译器、执行环境、基线和预算，然后才把材料交给
-作者。运行中，作者提交候选，控制器记录还可使用多少次编译与评测。搜索结束时，系统从
-已有候选中固定一个提名，用独立的新样本确认它的正确性与性能；确认结果出现后，提名
-不会临时换成另一份候选。
+一次运行开始前，实验系统先核对任务、编译器、执行环境、基线和预算，再向编写内核候选的
+智能体提供获准查看的任务材料。搜索中，智能体提交候选，控制器记录剩余的编译与评测次数。
+搜索结束时，系统从已有候选中固定一个提名，用独立的新样本确认其正确性与性能；确认结果
+出现后，提名不再改换。
 
 普通工程运行只需自己的运行规格。研究比较则由研究计划提前分配处理组，并让各组沿用
 同一执行与评测流程。旧实验使用的 CampaignLock 保留为输入适配层，历史数据仍按产生
-它的版本解释。这使作者能看什么、能调用什么工具、何时停止，都在结果出现前确定。
+它的版本解释。这使智能体能看什么、能调用什么工具、何时停止，都在结果出现前确定。
 
 \subsection{评测与证据：先判对，再解释速度}
 评测模块先用任务合同生成输入，与外部参考逐项核对输出。候选算对之后，才按目标设备的
@@ -345,14 +352,14 @@ Study & 处理分配、估计量和缺失策略 & 限定研究问题的分析结
 各有单独收据。若计时波动超过质量门，记录说明的是测量尚不足以判定快慢；候选的数值
 正确性仍按先前的检查结果保留。
 
-证据模块保存候选文件、事件顺序、评测收据和终态。独立审计可以在不再调用作者服务或
+证据模块保存候选文件、事件顺序、评测收据和终态。独立审计可以在不再调用智能体服务或
 GPU 的情况下重建运行过程；研究分析只使用通过审计的结果。对多阶段程序，评测还要
 核对每次启动的顺序与最终输出，并按实际程序区间计时。单内核的计时收据只能回答那次
 内核调用的问题\cite{acceptance}。
 
 \subsection{两个时钟：候选搜索与编译器演进}
 候选和编译器沿两条时间线变化。在一次运行里，任务、目标、编译器及测量规则保持固定；
-作者改变的是执行计划。检查与设备评测指出下一份候选该改哪里，也让不同候选的结果
+智能体改变的是执行计划。检查与设备评测指出下一份候选该改哪里，也让不同候选的结果
 可以在同一条件下比较。
 
 如果多次运行都遇到相同的表达或检查缺口，维护者才在运行之外修改编译器。新版本先经过
@@ -412,13 +419,16 @@ Schedule 把操作、缓冲区、执行组、访问坐标、循环和同步关�
 展示的是候选结构，而非计时结果。}
 \label{fig:softmax-schedule}
 \end{figure}
-\FloatBarrier
 
 \subsection{受限 Python 前端与同一规范 IR}
-作者可以用 Python 变量和表达式写计划：\code{lm.program} 选择行块，\code{lm.role}
-指定执行组，随后在角色作用域内描述读取、归约、广播和写回。前端读取受支持的 Python
-语法树，构造与 JSON 输入相同的规范 Schedule，并把源码位置附在诊断上。接收候选的
-入口只解析源码，不运行作者的导入语句或函数体\cite{irguide}。下面摘录的是
+示例把 Python 前端导入为 \code{cake}，用它声明 \code{@cake.schedule} 和张量参数；
+函数的第一个形参 \code{lm} 是 Schedule 上下文的语法名字：前端识别它的方法调用，
+不会执行一个运行时的 \code{lm} 对象。仓库没有为 \code{lm} 规定缩写含义；把形参
+及函数体中的引用一起改名为 \code{ctx}，仍会得到同一份规范 Schedule。\code{lm.program}
+选择行块，\code{lm.role} 指定
+执行组，角色作用域内的调用描述读取、归约、广播和写回。前端解析受支持的 Python
+语法树，并为诊断保留源码位置；它不会运行源文件的导入语句或函数体\cite{irguide}。
+下面摘录的是
 \repo{examples/python/softmax.py}{当前 Softmax 示例}中的实际操作：
 
 \Needspace{16\baselineskip}
@@ -445,6 +455,78 @@ Triton。\code{tile=64} 使每个实例负责 64 行；四个执行组完成同�
 进入实验系统后，系统先核对目标、生成路线和公开张量接口，再绑定这次运行冻结的任务。
 这样，任务身份由实验输入决定，作者只编辑实现方案。具体准入规则见
 \repo{docs/PYTHON_FRONTEND.md}{前端合同}。
+
+\subsection{从 Python Schedule 到 Triton：一次实际生成}
+对上面的 Softmax，固定源码 \code{677eb444} 的 Compiler 先把 Python 语法树转换为
+带类型的 Schedule，再检查形状、访问、操作依赖和目标约束。本例的结构检查通过，
+Triton 生成路线可用；报告另给出 \code{REGISTER\_PRESSURE} 与
+\code{RESIDENCY\_BOUND} 两条提示。随后执行 \code{lower}，得到下面的 Triton
+内核体节选；两处较长的地址表达式只按页宽重新折行。代码中的 \code{CAKE\_OP}
+注释保留了原计划的操作 ID，便于从生成代码
+找回 \code{load\_x}、\code{row\_max} 等编写位置。
+
+\noindent\textbf{对照速览：}\code{lm.program} 的 64 行块变成程序 ID 与行偏移；
+\code{lm.load} 的访问变成地址、边界掩码和 \code{tl.load}；行归约与广播变成
+\code{tl.max}/\code{tl.sum} 和 \code{[:, None]}。编译器还把四个执行组写入
+启动参数 \code{num\_warps=4}。
+
+\Needspace{28\baselineskip}
+\begin{lstlisting}[style=reportcode,language=Python]
+row_block = tl.program_id(0)
+batch = tl.program_id(1)
+row_block_offsets = row_block * BLOCK_ROW_BLOCK + tl.arange(0, BLOCK_ROW_BLOCK)
+x_d2_offsets = tl.arange(0, D_X_2)
+y_d2_offsets = tl.arange(0, D_Y_2)
+
+# CAKE_OP:load_x
+load_x_ptrs = (
+    x + batch * N_ROW_BLOCK * D_X_2
+    + row_block_offsets[:, None] * D_X_2
+    + x_d2_offsets[None, :]
+)
+x_tile = tl.load(
+    load_x_ptrs,
+    mask=row_block_offsets[:, None] < N_ROW_BLOCK,
+    other=0.0,
+    eviction_policy="evict_last",
+)
+# CAKE_OP:row_max
+rowmax = tl.max(x_tile.to(tl.float32), axis=1)
+# CAKE_OP:shift
+shifted = x_tile - rowmax[:, None]
+
+# CAKE_OP:exponentiate
+weights = tl.exp(shifted)
+
+# CAKE_OP:row_sum
+rowsum = tl.sum(weights.to(tl.float32), axis=1)
+# CAKE_OP:normalize
+y_tile = weights / rowsum[:, None]
+
+# CAKE_OP:store_y
+tl.store(
+    y + batch * D_Y_1 * D_Y_2
+      + row_block_offsets[:, None] * D_Y_2
+      + y_d2_offsets[None, :],
+    y_tile,
+    mask=row_block_offsets[:, None] < D_Y_1,
+)
+\end{lstlisting}
+
+摘录省略了函数签名和宿主启动包装。完整文件还核对输入的形状、dtype、设备和连续性，
+随后将 $512/64=8$ 个行块与 8 个 batch 组成 \code{(8, 8, 1)} 网格，传入
+\code{BLOCK\_ROW\_BLOCK=64}、\code{num\_warps=4} 和 \code{maxnreg=96}。
+其中的 \code{tl} 是实际导入的 \code{triton.language}；前面的 \code{lm} 只是
+Cake 前端识别的形参名。
+
+读者可在固定源码的根目录运行下列命令，查看包含函数签名、输入检查和启动包装的完整
+生成文件。这个步骤只生成 Python/Triton 源码，设备编译、正确性和速度另由评测确认。
+\begin{lstlisting}[style=reportcode]
+PYTHONPATH=src python3 -m open_cake_ir.cli compiler assess \
+  examples/python/softmax.py --format text
+PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
+  examples/python/softmax.py --output /tmp/cake-softmax-generated.py --format text
+\end{lstlisting}
 
 \subsection{一个数值反例：FMA 与乘加}
 FMA 说明为什么公式相同，还要写清计算语义。$a\times b+c$ 可以先乘后加、舍入两次；
@@ -490,11 +572,52 @@ FMA 说明为什么公式相同，还要写清计算语义。$a\times b+c$ 可�
 \FloatBarrier
 
 \subsection{完整 Program 的阶段与绑定}
-选择性注意力给出了多阶段程序的例子：它先池化并评分，再做 Top-$k$ 选择、索引展开和
-选中位置的注意力计算。一个 Program 将这些阶段的张量与执行顺序绑定起来；每个阶段
-仍由一份完整的 Schedule 描述。编译器检查阶段之间的数据关系，评测则核对最终输出，
-并在需要比较速度时测量整个程序的调用区间。第\ref{sec:results}节的历史 QSA 案例
-采用的正是这个范围。
+\repo{contracts/programs/qsa-prefill-t32768-v4.json}{QSA Program v4} 是一份可检查的
+多阶段实例。其任务在 $B=1,T=32768$ 时读入 $q,k,v$、索引查询与索引键，最终写出
+BF16 的 \code{output}，形状为 $[1,32768,32,128]$。Program 中的五个阶段各有一份
+\repo{corpus/schedules/qsa-score-topk-t32768.json}{独立 Schedule}；下表直接按合同中的
+张量绑定与阶段顺序展开，而不是只用“池化、选择、注意力”概括整个程序。
+
+\begin{table}[htbp]
+\centering\small\renewcommand{\arraystretch}{1.2}
+\caption{QSA Program v4 的实际五阶段数据流。形状来自固定 $B=1,T=32768$ 的任务与
+Program 合同；本表描述程序结构，不代表第\ref{sec:results}节历史候选的计时。}
+\label{tab:qsa-program}
+\begin{tabularx}{\textwidth}{@{}p{21mm}Y Y@{}}
+\toprule
+\rowcolor{mist}阶段 & 读取的张量 & 写出的张量及作用 \\
+\midrule
+\code{pool} & \code{index\_k} & \code{pooled}：FP32 $[8192,128]$，每 4 个索引键池化一次 \\
+\code{layernorm} & \code{pooled}, \code{k\_norm\_weight} & \code{normalized\_keys}：FP32 $[8192,128]$ \\
+\code{score\_topk} & \code{index\_q}, \code{normalized\_keys} & \code{block\_indices}：INT32 $[32768,512]$，每个查询选 512 个块 \\
+\code{expand} & \code{block\_indices} & \code{token\_indices}：INT32 $[32768,2048]$，展开为 token 位置 \\
+\code{attention} & $q,k,v$, \code{token\_indices} & \code{output}：BF16 $[1,32768,32,128]$，只读取选中位置 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+例如，合同中的 \code{expand} 节点把 \code{score\_topk} 产生的块索引接到自己的
+Schedule，再写出供 \code{attention} 消费的 token 索引。下面保留原 JSON 的数据流
+字段，省略身份校验字段：
+\Needspace{12\baselineskip}
+\begin{lstlisting}[style=reportcode]
+{
+  "id": "expand",
+  "schedule": "corpus/schedules/qsa-expand-t32768.json",
+  "inputs": ["block_indices"],
+  "outputs": ["token_indices"],
+  "views": {"block_indices": "identity", "token_indices": "identity"},
+  "depends_on": ["score_topk"]
+}
+\end{lstlisting}
+
+编译器逐阶段检查 Schedule，也检查 Program 的公共输入输出、中间张量形状与 dtype、
+生产者和依赖关系；例如 \code{block\_indices} 必须先由 \code{score\_topk} 产生，
+\code{expand} 才能读取。合同还声明了输入的 singleton 轴视图，使阶段局部 Buffer
+与公开张量对应。五个阶段分别生成目标源码，评测核对最终 \code{output}，计时覆盖
+完整调用序列。此处的 v4 是固定源码中的编译验证实例；第\ref{sec:results}节的
+127.8\,ms 历史 QSA 结果绑定它自己的旧版程序与设备收据。
 
 \subsection{精确目标文档}
 同一份执行计划语言要面对不同硬件，具体能力由目标文档（Target）说明。当前八个目标
@@ -822,6 +945,64 @@ CV 质量门，因此外部胜负仍未确定。任务 008 则把两阶段 Progr
 \repo{reports/current/STATUS.md}{状态页}也没有汇总全项目已验收的 Study Report；
 各项结果继续从自己的报告和收据追溯。
 
+\subsection{案例 C：B300 MoE 的事件流水与 native CUDA lowering}\label{sec:weave-case}
+\begin{notebox}
+\noindent\textbf{2026-09-28 后续案例 \quad B300-M4 \quad 最多四卡}\par
+\noindent\small 固定的四 rank BF16 MoE 层中，N128 候选在四路由 $\times$
+$K=4/2/1$ 的 12 个控制上有 \textbf{0/50,331,648} 个 FP64-oracle 失败、
+\textbf{960/960} 个 CPU/GPU tile-event 计数一致；12 个控制均记录到计算任务
+与下一事件生产重叠。此处是有界正确性和执行证据，不是对开源实现的加速声明。
+\end{notebox}
+
+这一增补的实验代码单独固定于尚未合入主线的 \code{2c638aad}，
+作业编号、外部证据根与结论边界见\weaverepo{docs/WEAVE_CASE_STUDY.md}{MoE 案例记录}。
+\code{RankedTileEffects.analyze}
+由 ProgramMap 推导各阶段的 CTA 工作单元与安全任务容量；
+\code{lower\_ranked\_tiles}
+把 up/gate、activation、down 的 Cake Schedule 与事件发布、前驱依赖和有界偷取
+绑定为一个完整的 B300 worker。一个 rank 的一层只启动一次持久 cooperative grid：
+前 $c$ 个 CTA 生产路由、Bin 和 tile，其余 CTA 消费就绪任务；生产者完成事件工作后
+可按预算领取剩余任务。时间重叠通过任务完成计数在下一事件生产期间增长来核对，
+并非仅依据两段时间窗口相交推断。
+
+优化不是一次性换掉后端，而是按失败证据修改 lowering。最初每事件一次 launch
+变成每层一次，样本中的 layer kernel 数由 92 降至 16，却未得到整体延迟收益。
+下一事件 lookahead 与双角色流水建立了实际任务重叠，早期完整层计时仍接近持平。
+随后把同 GPU 生产者 barrier 的 PTX acquire/release 收窄为 device scope，
+跨 GPU 发布仍保留 system scope；远端 BF16 payload 在对齐时使用 128-bit PTX
+加载/存储，非对齐子视图走标量路径。\code{emit\_tensor\_tile\_stage}
+进一步把 activation 从每 CTA 一行改为四行、六个 warp 各一行，并给最后的不足六行
+加掩码；N128 版本同时改变 TMA box、MMA 形状、TMEM 列数、共享内存位置与输出偏移。
+这些资源和任务容量随 Schedule 派生，不由 Evaluation 另行指定。
+
+\begin{table}[htbp]
+\centering\small\renewcommand{\arraystretch}{1.12}
+\caption{MoE 案例中逐步改变 lowering 的开发性观察。各行的工作负载或对照版本不同，
+比值不能相乘，也不构成对外部基线的速度比较。}
+\label{tab:weave-lowering}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{30mm}Y >{\raggedright\arraybackslash}p{39mm}@{}}
+\toprule
+\rowcolor{mist}改动 & lowering 中改变的承诺 & 有界观察 \\
+\midrule
+持久事件网格 & 每事件 launch $\rightarrow$ 每 rank 每层一个网格 & 92 $\rightarrow$ 16 个 layer kernel；未加速 \\
+作用域与通信 & GPU-scope 生产者 barrier；对齐时向量化 peer payload & 两次 barrier 对照 1.049--1.116 倍；通信较重路由 1.016--1.019 倍 \\
+activation 工作单位 & 每 CTA 一行 $\rightarrow$ 四行 $\rightarrow$ 六 warp 六行 & 一行到四行 1.294--1.379 倍；四行到六行 1.010--1.045 倍 \\
+N128 tensor tile & 每 tile 78 $\rightarrow$ 50 个阶段任务；TMEM 64 $\rightarrow$ 128 列 & 同租约 N64/N128 中位数 6.344/6.091\,ms，1.042 倍 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+N128 还通过六组空间/偷取控制：\textbf{0/25,165,824} 个 oracle 失败、
+\textbf{480/480} 个事件计数一致，零预算没有偷取，开放预算发生实际偷取且未越界；
+六组均记录到时间重叠。首个 N64/N128 ABBA 的末尾 N64 arm 曾异常达到
+27.082\,ms，因此其自动汇总比值没有被采纳；上述 1.042 倍来自独立反向顺序实验，
+仍只覆盖合成 fanin、$K=4,c=64$ 的开发性 CUPTI 比较。
+SGLang/DeepEP 开源基线已与 Cake 核对到完全相同的输入和 FP64 oracle，
+但两者单次 Nsight 记录分别为 2.149 和 7.335\,ms，来自不同租约与 profiler 版本。
+当前不能声称相对该基线加速；$c=95$ 的间歇性 route-location Finding 也仍开放
+\cite{weavecase}。
+
 \subsection{历史 B200 案例的放置方式}
 \href{https://github.com/qhy991/open-cake-ir/releases/tag/research-preview-2026-09-06}{2026 年 9 月旧版报告}
 还保存了两项 B200 案例。QSA 的 $T=32768$ 完整程序，历史确认候选和同次 CUDA
@@ -986,7 +1167,7 @@ tile、执行组和流水线深度，则要在目标卡上重新选择。可确�
 \code{bw1100-1} 具有空闲 BW1101，但宿主内核和环境与前者不同；因此先为该节点
 单独捕获 Executor，再在干净源码 \code{4c9f4cc0} 上运行相同合同。五类输入在
 计时前后均判对；新鲜 HIP 配对确认质量通过，同卡起点/来源 K=256 候选为
-517.9645/748.749\,$\mu$s，十对均是起点更快。故该机制\emph{能够正确执行，
+517.9645/748.749\,$\mu$s，十对均是起点更快。故该机制\textbf{能够正确执行，
 原参数却在此节点产生负迁移}。本地串行锁不能排除没有使用同一锁的外部任务；
 不同 CUPTI/HIP 计时器的绝对时延也不构成跨卡速度比。
 
@@ -996,6 +1177,11 @@ K=64 上卡。它相对 K=256 的生成源码仅改变分块值与调度身份�
 whole-K 起点及 HIP 配对协议下，新鲜独立确认全部判对并通过计时质量门，起点/候选
 为 518.524/189.586\,$\mu$s（2.735 倍），十对均是候选更快；K=128 没有设备计时。
 因此，\emph{K 维分块这一来源机制可以在目标卡重新选参后奏效，但来源参数不可照搬}。
+另在上卡前冻结一个未见的同算子形状 \code{R=1024,K=512,N=64}，只比较已选 K=64
+与该形状的 canonical whole-K 起点，不再试其他 tile。五类输入在首次及新鲜独立确认
+中均零不匹配、计时质量通过；确认中位数为 106.232/97.593\,$\mu$s（1.0885 倍），
+十对均为候选更快。第二个形状提供有限的 Hygon 本机形状泛化证据，但收益远小于
+K=1024 的 2.735 倍；B300 没有在新形状上的来源性能收据，也没有跨算子结论。
 这是一例限定形状的人工机制迁移和 Hygon 本机收益，并非控制作者与预算、随机分配
 材料 $E$ 或变换权限 $P$ 后得到的 Agent 处理效果。
 
@@ -1054,6 +1240,7 @@ Schedule & 单内核的操作、资源、执行组、访问与同步承诺 \\
 Program & 公共张量、多个叶子 Schedule 的阶段顺序和绑定 \\
 Target & 精确设备声明；事实未建模时不借相邻型号 \\
 Run & 一次冻结的作者环境、候选、预算与终态 \\
+作者 & 在一次 Run 中提交候选的人或智能体；可见材料与工具由运行规格限定 \\
 Study & 运行前固定研究处理、分配、估计量和分析规则 \\
 Finding & 可定位、可归属的结构、目标或后端诊断 \\
 \bottomrule
@@ -1102,6 +1289,7 @@ def softmax(lm, x: cake.Tensor((8, 512, 128), "fp32"),
 当前 Compiler & \repo{reports/current/STATUS.md}{状态页}、\repo{compiler/revision.json}{版本清单}与精确目标文档 \\
 B300 FlashInfer & \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{逐任务状态}；每行链接自己的 Finding 与收据 \\
 B300 TinyGEMM2 & \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{严格数值与成对计时报告} \\
+B300 MoE 增补 & \weaverepo{docs/WEAVE_CASE_STUDY.md}{持久事件流水、N128 与开源基线案例}；实验代码另固定于未合入主线的 \code{2c638aad} \\
 Apple、Hygon、AMD & 各平台 \repo{docs/RESULTS.md}{发布汇总}与原记录 \\
 MetaX C550 & \repo{docs/metax-c550.md}{平台专题}及 \repo{docs/ARCHITECTURE.md}{当前 Run 案例} \\
 迁移离线试点 & \repo{docs/OPTIMIZATION_TRANSFER.md}{机制与证据边界} \\
@@ -1129,10 +1317,11 @@ Assessment 与 lowering；设备结果则须在原任务的目标、工具链、
 的能力范围按正文当前源码重新核对，不用旧图中的版本值替代当前状态。
 
 \section*{阅读与引用说明}
-本文是作者维护的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
+本文是项目维护者撰写的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
 所读源码提交；引用性能时还需追溯案例自己的执行源码、精确目标、Workload、baseline、
-oracle、计时区间与质量门。以下文献中的仓库链接均固定到本文所读的 \code{677eb444}，
-而实验原始收据的身份由各专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
+oracle、计时区间与质量门。主体章节的仓库链接固定到 \code{677eb444}；MoE 增补
+的主线案例记录固定到 \code{93d05202}，实验代码另固定到未合入主线的 \code{2c638aad}，原始收据身份
+仍由该专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
 
 \section*{参考文献}
@@ -1154,6 +1343,7 @@ arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
 \bibitem{amdresults} H. Qin. \repo{docs/results/amd/README.md}{AMD 平台结果}. open-cake-ir@677eb444, 2026.
 \bibitem{metax} H. Qin. \repo{docs/metax-c550.md}{C550 专题与 M17 独立确认}. open-cake-ir@677eb444, 2026.
 \bibitem{cakecomparison} H. Qin. \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{B300 CAKE 重叠任务对照}. open-cake-ir@677eb444, 2026.
+\bibitem{weavecase} H. Qin. \weaverepo{docs/WEAVE_CASE_STUDY.md}{B300 MoE 持久事件流水与 N128 验证}. open-cake-ir@93d05202；实验源码 2c638aad 尚未合入主线，2026.
 \bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}. open-cake-ir@677eb444, 2026.
 \bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}. open-cake-ir@677eb444, 2026.
 \end{reportbibliography}

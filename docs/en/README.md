@@ -1,5 +1,9 @@
 # Open Cake Technical Report: English Reading Guide
 
+The [TeX-compiled PDF](../open-cake-ir-technical-report.pdf) is the technical report;
+this page is a companion reading guide. See the [TeX source](../open-cake-ir-technical-report.tex)
+and [citation guidance](../README.md#引用--citation).
+
 For native CUDA/PTX schedules and their exact compile boundary, see the [native backend guide](../NATIVE_CUDA.md).
 
 [中文](../zh-CN/README.md) · [Complete bilingual catalog](../catalog.md) · [Repository home](../../README.md)
@@ -16,7 +20,7 @@ A Workload defines the problem, a Schedule describes workers and data, the Compi
 |---|---|
 | Inspect results and external-reference gaps | [Hardware results](../RESULTS.md) · [FlashInfer experimental status and English summary](../results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550 evidence](../metax-c550.md) |
 | Choose a platform or experiment workflow | [Platform and method catalog](../catalog.md) · [Lab workflow](wiki/experiments.md) |
-| Read or cite the technical report | [Report chapters and citation](../README.md) · [Complete catalog](../catalog.md) |
+| Read or cite the technical report | [PDF report](../open-cake-ir-technical-report.pdf) · [TeX source](../open-cake-ir-technical-report.tex) · [Citation](../README.md#引用--citation) |
 | Locate implementation owners | [Source navigation](../../README.md#源码与文档结构) · [Development branches](../DEVELOPMENT_BRANCHES.md) |
 
 <details>
@@ -93,11 +97,10 @@ others.
 
 ## Citation
 
-These documents are the English reading edition of Haiyan Qin's open-cake-ir technical report.
-The [report entry point](../README.md) defines its scope and provides the recommended citation,
-BibTeX, and instructions for citing a fixed commit. Machine-readable metadata is maintained in
-[CITATION.cff](../../CITATION.cff). Language companions may summarize the original chapters;
-they do not define separate publications or independent experimental evidence.
+These documents are English companions to Haiyan Qin's [PDF technical report](../open-cake-ir-technical-report.pdf).
+The [report entry point](../README.md) provides the recommended citation, BibTeX, and instructions
+for citing a fixed commit. Machine-readable metadata is maintained in [CITATION.cff](../../CITATION.cff).
+Companion pages add navigation and explanations without defining independent experimental evidence.
 
 For experimental results, retain the experiment's own source commit, target, workload, and
-timing boundary in addition to the report chapter you cite.
+timing boundary in addition to the report page you cite.

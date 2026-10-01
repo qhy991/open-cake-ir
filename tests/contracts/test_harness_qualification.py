@@ -188,6 +188,21 @@ class HarnessQualificationTests(unittest.TestCase):
                              canonical_json_bytes({'python_source': raw.decode()}))
         self.assertTrue((self.root/'workspace'/'open_cake'/'candidate.py').is_file())
 
+    def test_claude_qualifies_ordered_python_candidate_bundle(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        self.provider()
+        self.assertEqual(self.run_qualification(self.argv() + [
+            '--submission-contract', PYTHON_CANDIDATE_BUNDLE_V1,
+            '--maximum-candidates-per-turn', '3']), 0)
+        evidence = EvidenceStore.open(self.root/'evidence')
+        observed = next(row['payload'] for row in evidence.replay_events('claude-qualification-fixture')
+                        if row['kind'] == 'provider_qualification_observed')
+        self.assertEqual(len(observed['arms']['open_cake']['initial_candidate_sha256s']), 3)
+        objects = {item['role']:item for item in observed['objects']}
+        raw = evidence.read_object(objects['open_cake_initial_source_file'])
+        self.assertEqual(raw.count(b'@cake.schedule('), 3)
+        self.assertTrue((self.root/'workspace'/'open_cake'/'candidate-set.py').is_file())
+
     def test_codex_single_arm_transports_the_same_python_member_contract(self):
         from tests.contracts.test_provider_qualification import ProviderQualificationContractTests
         fixture = ProviderQualificationContractTests("runTest")
