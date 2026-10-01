@@ -41,7 +41,7 @@ profiler or generic precision guarantee; resource queries are not performance pr
 ## Mixed-state and edge successor
 
 Read the [new platform record](../../../docs/metax-c550.md#定向-fma-后的混合算术与边界结果)
-and [F-2026-09-27-004](../../../findings/2026-09-27-004-metax-directed-fma-lowering.json).
+and [F-2026-09-27-007](../../../findings/2026-09-27-007-metax-directed-fma-lowering.json).
 Job maca-25874d0cb439 uses four sealed FMA mode kernels; each directed result feeds
 ordinary ADD and a tl.fma with a loaded multiplier. All12288positions pass:12228exact
 words and60NaN-class checks. Directed modes distinguish leaked state from restored

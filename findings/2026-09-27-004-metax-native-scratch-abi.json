@@ -1,6 +1,8 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-27-001",
+  "id": "F-2026-09-27-004",
+  "legacy_platform_ref": "metax@5f93bb6e",
+  "legacy_platform_id": "F-2026-09-27-001",
   "date": "2026-09-27",
   "kind": "bug",
   "backend": "triton",
