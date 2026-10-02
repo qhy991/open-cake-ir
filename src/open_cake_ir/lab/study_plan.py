@@ -120,9 +120,15 @@ class StudyPlan:
                 raise ValueError('test family membership differs from its declared generalization')
             run = template_run(task['run_template']).document
             author = run['authoring']
-            if (author['environment_kind'] != 'open_cake' or author['provider'].get('harness') != 'responses'
-                or run['execution']['sandbox'] != 'messages_only' or run['endpoint_policy'] != NORMAL_BUDGET_TERMINAL):
-                raise ValueError('E/P Runs require confined message authoring and normal budget endpoints')
+            provider = author['provider']
+            from .claude_isolation import CLAUDE_WORKSPACE_V1
+            confined = (provider.get('harness') == 'responses' and run['execution']['sandbox'] == 'messages_only')
+            isolated_cli = (provider.get('harness') == 'claude-code' and provider.get('isolation_policy') == CLAUDE_WORKSPACE_V1
+                            and provider.get('event_contract') == 'claude_stream_candidate_v3'
+                            and run['execution']['sandbox'] == 'none')
+            if (author['environment_kind'] != 'open_cake' or not (confined or isolated_cli)
+                or run['endpoint_policy'] != NORMAL_BUDGET_TERMINAL):
+                raise ValueError('E/P Runs require confined messages or qualified isolated Claude authoring and normal budget endpoints')
             shared = {key:run[key] for key in ('compiler_revision','budget','agent_interface','run_protocol','evidence_policy')}
             shared['authoring'] = {key:author.get(key) for key in
                 ('provider','scaffold','reference_access','environment_kind','input_format','tool_surface','feedback','toolchain_sha256')}

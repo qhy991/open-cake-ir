@@ -13,6 +13,7 @@ _COEFFICIENTS = {
     'experience':(-.5,.5,-.5,.5),
     'passes':(-.5,-.5,.5,.5),
     'interaction':(1.,-1.,-1.,1.),
+    'passes_given_experience':(0.,-1.,0.,1.),
 }
 _CELLS = ((False,False),(True,False),(False,True),(True,True))
 

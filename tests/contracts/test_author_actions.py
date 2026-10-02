@@ -397,7 +397,9 @@ class AuthorActionTests(SemanticLabTestCase):
             frozen = RunSpecification.from_dict(document)
             package = lab.task_package(frozen,frozen.run_id)
             self.assertEqual(unit['mechanism'] in package.task_markdown,explain)
-            self.assertEqual('## Frozen reference: `transformation-api.json`' in package.task_markdown,grant)
+            self.assertEqual('## Frozen reference: `transformation-api.json`' in package.task_markdown,grant or explain)
+            authority = package.task_markdown.split('## Frozen reference: `run-authority.json`')[1].split('```json\n')[1].split('\n```')[0]
+            self.assertEqual(json.loads(authority)['granted_transformations'],['fuse_pointwise_epilogue'] if grant else [])
             document['knowledge']['materials'].clear()
             self.assertEqual(bool(frozen.document['knowledge']['materials']),explain)
         bad = specification.document;bad['reference_inputs']['baseline_programs']={'p':program}
