@@ -38,7 +38,7 @@ def command(workspace, program):
     # stdin to the trusted inner Python shim instead; Claude receives DEVNULL.
     return args + ['--', '/usr/bin/python3', '-c',
         'import os,sys; os.environ["ANTHROPIC_AUTH_TOKEN"]=sys.stdin.readline().rstrip("\\n"); '
-        'fd=os.open("/dev/null",os.O_RDONLY); os.dup2(fd,0); os.close(fd); os.execv(sys.argv[1],sys.argv[1:])',
+        'os.environ["ANTHROPIC_API_KEY"]=os.environ["ANTHROPIC_AUTH_TOKEN"]; fd=os.open("/dev/null",os.O_RDONLY); os.dup2(fd,0); os.close(fd); os.execv(sys.argv[1],sys.argv[1:])',
         *program]
 
 def main():
