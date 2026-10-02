@@ -246,7 +246,9 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
         if route["backend"] == "triton":
             expected_hidden = _hidden_pointers(
                 triton_route(requirements), sealed_baseline.artifact_payloads,
-                len(workload.tensor_abi(str(evaluation['case_id']))))
+                len(workload.tensor_abi(str(evaluation['case_id']))),
+                codegen_arch=requirements.get('codegen_arch'),
+                kernel_name=requirements['kernel_entry_point'])
         else:
             expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
         if manifest.hidden_null_pointer_parameters != expected_hidden:

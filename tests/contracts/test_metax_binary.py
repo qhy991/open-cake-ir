@@ -61,6 +61,56 @@ def bundle(*, architecture="xcore1000", native=None, extra=None):
 
 
 class MetaxBinaryTests(unittest.TestCase):
+    def test_paired_baseline_admission_reads_declared_native_family_and_kernel(self):
+        from hashlib import sha256
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from open_cake_ir.compiler.backends.triton import target_route_facts
+        from open_cake_ir.compiler.target import Target
+        from open_cake_ir.evaluation.core import LaunchableCandidate, TensorLaunchManifest
+        from open_cake_ir.evaluation.paired import candidate_identity
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.lab.admission import validate_paired_baseline
+        from open_cake_ir.serialization import canonical_json_bytes as encoded
+        from open_cake_ir.tasks.workloads import create_task
+
+        root = Path(__file__).resolve().parents[2]
+        target = Target.load(root / 'compiler/targets/xcore1002.json')
+        document, _ = create_task('rmsnorm', backend='triton-metax', rows=2, columns=128)
+        workload = WorkloadContract(document)
+        source = b'import triton\nimport triton.language as tl\n@triton.jit\ndef kernel(x, gamma, y):\n    offsets = tl.arange(0, 128)\n    tl.store(y + offsets, tl.load(x + offsets))\n'
+        requirements = {'compiler': 'triton', 'target': target.target_id,
+            'kernel_entry_point': 'kernel', 'grid': [2, 1, 1], 'compile_options': {'num_warps': 1},
+            'signature': {name: '*fp32' for name in ('x', 'gamma', 'y')}, 'compile_constants': {},
+            **target_route_facts(target)}
+        lowering = SimpleNamespace(source=source.decode(), toolchain_requirements=requirements)
+
+        def check(pointer_count, hidden, native_name='kernel'):
+            manifest = TensorLaunchManifest.for_workload(workload, 'primary', target=target.target_id,
+                kernel_name='kernel', grid=requirements['grid'], block=[target.warp_size, 1, 1],
+                dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=hidden)
+            payloads = {'lowered_source': source, 'launch_manifest': encoded(manifest.as_dict()),
+                'ttgir': b'tt.func public @kernel(%x: !tt.ptr<f32>, %g: !tt.ptr<f32>, %y: !tt.ptr<f32>) attributes {}',
+                'mcfatbin': bundle(native=native_fixture(pointer_count, native_name))[0]}
+            candidate = LaunchableCandidate('a' * 64, target.target_id, 'kernel',
+                {key: sha256(value).hexdigest() for key, value in payloads.items()},
+                manifest.canonical_sha256, payloads)
+            with patch('open_cake_ir.lab.admission.load_baseline_bundle', return_value=candidate):
+                validate_paired_baseline(project_root=root, workload=workload,
+                    evaluation={'case_id': 'primary'}, route={'backend': 'triton'},
+                    execution={'fixed_baseline': {'bundle_path': 'fixture', 'candidate': candidate_identity(candidate)}},
+                    baseline_lowering=lowering, manifest_parser=TensorLaunchManifest.from_dict)
+
+        # Actual admission calls the native parser, not a mock of the inspected fields.
+        for pointers, hidden in ((3, 0), (5, 2)):
+            with self.subTest(pointers=pointers):
+                check(pointers, hidden)
+        with self.assertRaisesRegex(ValueError, 'hidden pointer commitments'):
+            check(5, 0)
+        with self.assertRaisesRegex(ValueError, 'kernel name'):
+            check(5, 2, 'another')
+
     def test_sealing_derives_scratch_from_native_metadata(self):
         from types import SimpleNamespace
         from open_cake_ir.lab.build import _hidden_pointers
