@@ -20,12 +20,13 @@ def command(workspace, program):
             '--cap-drop', 'ALL', '--new-session', '--clearenv']
     for path in ('/usr', '/bin', '/lib', '/lib64'):
         if pathlib.Path(path).exists(): args += ['--ro-bind', path, path]
+    home = workspace.parent/'.claude-homes'/workspace.name
     args += ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
              '--ro-bind', CONFIG['native_executable'], '/provider/claude',
-             '--bind', str(workspace), str(workspace), '--chdir', str(workspace)]
+             '--bind', str(workspace), str(workspace), '--bind', str(home), str(home), '--chdir', str(workspace)]
     for path in ('/etc/resolv.conf', '/etc/hosts', '/etc/ssl/certs'):
         if pathlib.Path(path).exists(): args += ['--ro-bind', path, path]
-    for name,value in {'HOME':str(workspace/'.claude-home'), 'PATH':'/usr/bin:/bin',
+    for name,value in {'HOME':str(home), 'PATH':'/usr/bin:/bin',
         'LANG':'C.UTF-8', 'CUDA_VISIBLE_DEVICES':'-1', 'MACA_VISIBLE_DEVICES':'-1',
         'HIP_VISIBLE_DEVICES':'-1'}.items(): args += ['--setenv', name, value]
     # Authentication is inherited from the trusted launcher environment, never
@@ -52,9 +53,15 @@ def main():
     os.environ.update(ANTHROPIC_AUTH_TOKEN=token, ANTHROPIC_BASE_URL=CONFIG['endpoint'],
         ANTHROPIC_MODEL=CONFIG['model'], ANTHROPIC_DEFAULT_OPUS_MODEL=CONFIG['model'],
         ANTHROPIC_DEFAULT_SONNET_MODEL=CONFIG['model'], ANTHROPIC_DEFAULT_HAIKU_MODEL=CONFIG['model'])
-    home = workspace/'.claude-home'
+    home = workspace.parent/'.claude-homes'/workspace.name
+    if home.parent.is_symlink(): raise ValueError('author home root must not be a symlink')
+    home.parent.mkdir(mode=0o700,exist_ok=True)
     if home.is_symlink(): raise ValueError('author home must not be a symlink')
+    if home.exists() and home.resolve()!=home: raise ValueError('author home path is not canonical')
     if sys.argv[1:] == ['--cake-isolation-probe']:
+        # A mount source must exist. The fresh private home is separate from
+        # the candidate workspace and carries only this Run's provider state.
+        home.mkdir(mode=0o700,exist_ok=True)
         probe = r"""import json, os, pathlib
 workspace=pathlib.Path.cwd()
 checks={}
@@ -63,7 +70,7 @@ for name,path in {'ambient_home':'/root/.claude', 'project':'/root/open-cake-ir'
     'gpu_nodes':'/dev/mxcd', 'escape':str(workspace/'.isolation-escape')}.items():
     try: os.stat(path); checks[name]=False
     except (FileNotFoundError,PermissionError): checks[name]=True
-checks['home_is_local']=pathlib.Path.home()==workspace/'.claude-home'
+checks['home_is_local']=pathlib.Path.home()==workspace.parent/'.claude-homes'/workspace.name
 checks['gpu_device_nodes_absent']=not any(p.name.startswith(('dri','mx','nvidia','kfd')) for p in pathlib.Path('/dev').iterdir())
 checks['workspace_writable']=os.access(workspace,os.W_OK)
 print(json.dumps({'policy':'linux_claude_workspace_v1','checks':checks}))
