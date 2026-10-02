@@ -117,12 +117,18 @@ class TransferStudyTests(SemanticLabTestCase):
             first = json.loads(seen[row['run_id']].requests[0]['input'][0]['content'])
             text = first['task_markdown']
             self.assertEqual('SOURCE_MECHANISM_SENTINEL' in text,condition['experience'])
-            self.assertEqual('## Frozen reference: `transformation-api.json`' in text,condition['passes'])
+            self.assertEqual('## Frozen reference: `transformation-api.json`' in text,condition['passes'] or condition['experience'])
             self.assertEqual(row['transforms_applied'],int(condition['passes']))
             self.assertEqual(row['transforms_refused'],int(not condition['passes']))
             self.assertIsNotNone(row['first_correct'])
             self.assertEqual(row['first_correct']['compilations'],1)
             self.assertEqual(len(seen[row['run_id']].requests[0]['input']),1)
+        api = {}
+        for row in report['runs']:
+            first = json.loads(seen[row['run_id']].requests[0]['input'][0]['content'])
+            if plan.document['conditions'][row['condition_id']]['experience']:
+                api[row['condition_id']] = first['task_markdown'].split('## Frozen reference: `transformation-api.json`')[1]
+        self.assertEqual(api['explanation'],api['both'])
         with self.assertRaisesRegex(ValueError,'already attempted'):
             lab.execute_study(study,runtime_factory=self.factory(lab,workload,program,qualification,{}))
 

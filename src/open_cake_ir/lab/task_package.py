@@ -126,6 +126,7 @@ def build_run_reference_documents(
         "run_protocol": resolved["run_protocol"],
         "evaluation_protocol": lock.document["evaluation_protocol"],
         "execution": lock.document["execution"],
+        "granted_transformations": lock.document["knowledge"]["transformations"],
     }
     documents: dict[str, bytes] = {
         "run-authority.json": _canonical_json(run_authority).encode(),
@@ -137,8 +138,12 @@ def build_run_reference_documents(
     knowledge = lock.document['knowledge']
     if knowledge['materials']:
         documents['optimization-knowledge.json'] = _canonical_json(knowledge['materials']).encode()
-    if knowledge['transformations']:
-        documents['transformation-api.json'] = _canonical_json(transformation_surface(knowledge['transformations'])).encode()
+    # E1 exposes the same semantic API contract with or without P. Permissions
+    # remain the Run's actual grants, enforced by action resolution.
+    visible = list(dict.fromkeys(knowledge['transformations'] +
+        [name for unit in knowledge['materials'] for name in unit['transformations']]))
+    if visible:
+        documents['transformation-api.json'] = _canonical_json(transformation_surface(visible)).encode()
     baselines = lock.document['reference_inputs'].get('baseline_programs', {})
     if baselines:
         documents['authorized-programs.json'] = _canonical_json(baselines).encode()
