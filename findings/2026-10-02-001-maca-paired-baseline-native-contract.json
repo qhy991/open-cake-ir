@@ -9,8 +9,14 @@
   "executor_revision": "xcore1002@080be989bfc6419e7a4137257066ccb48e346084",
   "title": "Paired baseline admission omitted the declared MACA native family and kernel identity",
   "decision": "accepted",
-  "implemented_in": null,
-  "verified_by": null,
+  "implemented_in": "8a1b51e35525b2c508d8a28b3ec4a3854dbfb2eb",
+  "verified_by": {
+    "source_commit": "8a1b51e35525b2c508d8a28b3ec4a3854dbfb2eb",
+    "retained_baseline_replay": "c550-2:/root/open-cake-experiments/claude-glm53-run-20261002/baseline-admission-replay.json",
+    "CPU_contracts": "95 passed, including the actual baseline-admission caller with native zero/two scratch pointers and wrong-count/wrong-kernel counterexamples",
+    "Corpus_Gate": "180 unchanged cases passed",
+    "scope": "Admission replay only; no GPU or performance qualification"
+  },
   "evidence": {
     "host": "c550-2",
     "preflight_failure": "/root/open-cake-experiments/claude-glm53-run-20261002/run-preflight.log",
