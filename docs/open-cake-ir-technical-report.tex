@@ -100,6 +100,7 @@
 \end{minipage}\hfill\begin{minipage}[t]{0.46\textwidth}
 \raggedleft{\sffamily\bfseries\color{ink}2026 年 9 月 23 日\par}
 {\small\color{muted}MoE 案例增补：9 月 28 日\par}
+{\small\color{muted}协同演进动机补充：10 月 2 日\par}
 {\small\color{muted}主体快照 \quad / \quad 源码 677eb444\par}
 \end{minipage}
 \vspace{21mm}
@@ -205,6 +206,17 @@ CAKE 论文提出了编译器与智能体协同改进内核的研究路线\cite{
 这些观察还决定改动应当留在哪个位置。某种分块在当前形状上更快，可以先保留为任务候选；
 换到另一目标时，需要重新选参数并验证；若同类改写在不同任务中反复有效，才有理由提炼
 带适用条件的编译器变换。报告将依次展示这三层工作所依据的程序、诊断和设备记录。
+
+\subsection{变化中的工具链与编译能力}
+固定 GPU 目标并不固定软件编译环境。NVIDIA 的 CUDA Toolkit 12.1 与 12.2 分别列出
+不同的 \code{nvcc} 组件版本，发布说明也记录了编译器诊断与 PTX 接口的变化
+\cite{cuda121,cuda122}。因此，算子候选的编译和评测需要连同工具链版本一起固定；
+硬件目标名本身不足以标识一次实现条件。
+
+智能体可以连续提出新的分块、存储与同步选择。多个任务若反复遇到同一类表达、合法性或
+后端生成缺口，修正单个候选无法消除共同的编译器限制。研究者或维护 Agent 依据留存的
+计划、诊断和设备观察确定责任层，再把修复、反例及相应分析一同送过语料门与审查。后继
+任务在新编译器版本上验收这项能力。
 
 \subsection{CAKE 论文提供的研究起点}
 CAKE 让智能体编写一份带类型的硬件执行计划。计划写明资源、线程角色、数据访问和同步；
@@ -365,6 +377,8 @@ GPU 的情况下重建运行过程；研究分析只使用通过审计的结果�
 如果多次运行都遇到相同的表达或检查缺口，维护者才在运行之外修改编译器。新版本先经过
 语料测试与代码审查，再用于下一轮任务。这样，旧运行的结果仍对应旧编译器，新运行才
 能检验编译器改动有没有解决原来的问题\cite{architecture,acceptance}。
+这一外环的迭代速度可以按缺口被定位到后继能力通过验收所需的时间衡量，同时记录修复在
+未见任务上的复用和回归情况；当前仓库尚无与人工维护流程匹配的迭代耗时对照。
 
 \section{程序表示：任务、完整程序与执行计划}
 
@@ -1330,6 +1344,10 @@ oracle、计时区间与质量门。主体章节的仓库链接固定到 \code{6
 \begin{reportbibliography}{99}
 \bibitem{cake} Z. Ye et al. \emph{CAKE: Compiler--Agent Co-Design for Frontier Kernel Evolution}.
 arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
+\bibitem{cuda121} NVIDIA. \emph{CUDA Toolkit 12.1 Release Notes}.
+\url{https://docs.nvidia.com/cuda/archive/12.1.0/cuda-toolkit-release-notes/}.
+\bibitem{cuda122} NVIDIA. \emph{CUDA Toolkit 12.2 Release Notes}.
+\url{https://docs.nvidia.com/cuda/archive/12.2.0/cuda-toolkit-release-notes/index.html}.
 \bibitem{architecture} H. Qin. \repo{docs/ARCHITECTURE.md}{系统架构与平台能力}. open-cake-ir@677eb444, 2026.
 \bibitem{irguide} H. Qin. \repo{docs/IR_GUIDE.md}{IR 指南}. open-cake-ir@677eb444, 2026.
 \bibitem{targets} H. Qin. \repo{compiler/revision.json}{Compiler 清单}与
