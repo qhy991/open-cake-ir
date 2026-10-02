@@ -42,6 +42,7 @@ class SquaredDifferenceTiling(unittest.TestCase):
     def test_counterexamples_are_owned_by_the_intended_guard(self):
         cases=[]
         d=copy.deepcopy(self.schedule);d['operations'][2]['parameters']['op']='add';cases.append((d,'arithmetic_domain'))
+        d=copy.deepcopy(self.schedule);d['operations'][2]['writes']=['missing'];d['operations'][3]['reads']=['missing'];cases.append((d,'storage_domain'))
         d=copy.deepcopy(self.schedule);d['buffers'][3]['dtype']='bf16';cases.append((d,'storage_domain'))
         d=copy.deepcopy(self.schedule);d['access_maps'][1]['indices'][1]['offset']=1;cases.append((d,'access_domain'))
         for d,reason in cases:

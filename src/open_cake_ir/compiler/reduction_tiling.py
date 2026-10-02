@@ -12,9 +12,10 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
     def refuse(reason, message):
         return SpecializationResult(None, reason, message)
     from .ir import Schedule
+    from .errors import CompilerError
     try:
         s = Schedule.from_dict(schedule)
-    except (ValueError, TypeError) as error:
+    except (CompilerError, ValueError, TypeError) as error:
         return refuse('input_refused', str(error))
     d = deepcopy(dict(schedule))
     if s.lowering.backend.value != 'triton':
@@ -43,9 +44,12 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
         or store['reads'] != fold['writes'] or len(x['reads']) != 1 or len(c['reads']) != 1):
         return refuse('arithmetic_domain', 'Require the canonical rounded difference then square and sum.')
     buffers = {b['name']:b for b in d['buffers']}
+    if any(name not in buffers for op in ops for name in op['reads']+op['writes']):
+        return refuse('storage_domain', 'Every operation operand must name a declared buffer.')
     xb,cb,ob = (buffers.get(op[key][0]) for op,key in ((x,'reads'),(c,'reads'),(store,'writes')))
     if (any(b is None for b in (xb,cb,ob)) or len(xb['shape']) != 2 or len(cb['shape']) != 2
         or ob['shape'] != [xb['shape'][0],cb['shape'][0]] or xb['shape'][1] != cb['shape'][1]
+        or len({xb['name'],cb['name'],ob['name']}) != 3
         or any(b['dtype'] != 'fp32' for b in d['buffers'])
         or any(b.space.value not in {'global','register'} or b.allocation is not None or b.byte_offset
                or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent for b in s.buffers)
@@ -86,6 +90,6 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
         if not result.lowering_eligible:
             return refuse('result_refused', ', '.join(f.code for f in result.findings if f.blocks_lowering or f.blocks_acceptance))
         compiler.lower(result)
-    except (ValueError, TypeError) as error:
+    except (CompilerError, ValueError, TypeError) as error:
         return refuse('result_refused', str(error))
     return SpecializationResult(result,'applied','Explicit K tiling preserves FP32 subtraction before square; measure reduction grouping, latency and resources independently.')
