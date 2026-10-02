@@ -30,6 +30,14 @@ class ClaudeIsolationTests(unittest.TestCase):
             shim=argv[argv.index('-c')+1]
             compile(shim,'shim','exec')
             self.assertIn('rstrip("\\n")',shim)
+            import subprocess
+            workspace=root/'qualification'/'arm';workspace.mkdir(parents=True)
+            with patch('sys.argv',['launcher','--cake-isolation-probe']), patch('pathlib.Path.cwd',return_value=workspace), patch('subprocess.run',return_value=subprocess.CompletedProcess([],0)):
+                self.assertEqual(namespace['main'](),0)
+            home=Path(config['home_root'])/workspace.relative_to('/')
+            self.assertTrue(home.is_dir())
+            self.assertEqual(list(workspace.iterdir()),[])
+            self.assertEqual(list((root/'qualification').iterdir()),[workspace])
 
     def test_probe_requires_every_boundary_and_rejects_partial_or_false_observations(self):
         checks={name:True for name in ('ambient_home','project','experiments','host_root','gpu_nodes','escape',

@@ -55,7 +55,8 @@ def main():
         ANTHROPIC_DEFAULT_SONNET_MODEL=CONFIG['model'], ANTHROPIC_DEFAULT_HAIKU_MODEL=CONFIG['model'])
     home = pathlib.Path(CONFIG['home_root'])/workspace.relative_to('/')
     if home.parent.is_symlink(): raise ValueError('author home root must not be a symlink')
-    home.parent.mkdir(mode=0o700,exist_ok=True)
+    if home.resolve()!=home: raise ValueError('author home path is not canonical')
+    home.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
     if home.is_symlink(): raise ValueError('author home must not be a symlink')
     if home.exists() and home.resolve()!=home: raise ValueError('author home path is not canonical')
     if sys.argv[1:] == ['--cake-isolation-probe']:
@@ -100,7 +101,7 @@ def publish_launcher(path, configuration):
         if not source.is_absolute() or not source.is_file() or source.is_symlink():
             raise ValueError(f'isolated Claude {name} must be a canonical regular file')
     home_root = Path(configuration['home_root'])
-    if not home_root.is_absolute() or not home_root.is_dir() or home_root.is_symlink():
+    if not home_root.is_absolute() or not home_root.is_dir() or home_root.resolve()!=home_root:
         raise ValueError('isolated Claude home root must be a canonical directory')
     path = Path(path)
     with path.open('x') as stream:
@@ -113,9 +114,9 @@ def probe_launcher(executable, workspace):
     import subprocess
     result = subprocess.run([str(executable),'--cake-isolation-probe'],cwd=workspace,
                             capture_output=True,timeout=30)
-    observation = json.loads(result.stdout)
     if result.returncode:
         raise ValueError('Claude OS workspace isolation probe failed: '+result.stderr.decode(errors='replace')[:512])
+    observation = json.loads(result.stdout)
     validate_probe_observation(observation)
     return observation
 
