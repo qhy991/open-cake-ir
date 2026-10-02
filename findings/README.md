@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-02-001 — paired MACA baseline admission omitted the lowering's native family and kernel name. Closed by the Lab caller fix at 8a1b51e3, 95 CPU contracts, the unchanged 180-case Corpus and C550-2 replay of the originally refused sealed baseline; no GPU performance claim.
+
 The 2026-10-01 integration assigns the four records first published on `metax@5f93bb6e` as local sequence 001–004 to repository-wide sequence 004–007, respectively. Their original names remain in that commit; the observations and implementation commits are unchanged.
 
 - F-2026-09-27-007 — accepted bounded MetaX FP32 FMA RZ/RD/RU lowering at aee427d9, generated-source validation at b5da553f and platform merge30d3895d/PR272 under user direction. Two native audits pass12228exact words/60NaN classes each, including disjoint initial outputs and restored ordinary RN; no performance claim. Shared main PR269 merged at 6ee0f4c7 after independent review.
