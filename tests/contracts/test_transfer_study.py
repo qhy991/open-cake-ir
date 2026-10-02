@@ -127,7 +127,7 @@ class TransferStudyTests(SemanticLabTestCase):
         for row in report['runs']:
             first = json.loads(seen[row['run_id']].requests[0]['input'][0]['content'])
             if plan.document['conditions'][row['condition_id']]['experience']:
-                api[row['condition_id']] = first['task_markdown'].split('## Frozen reference: `transformation-api.json`')[1]
+                api[row['condition_id']] = first['task_markdown'].split('## Frozen reference: `transformation-api.json`')[1].split('```json\n')[1].split('\n```')[0]
         self.assertEqual(api['explanation'],api['both'])
         with self.assertRaisesRegex(ValueError,'already attempted'):
             lab.execute_study(study,runtime_factory=self.factory(lab,workload,program,qualification,{}))
