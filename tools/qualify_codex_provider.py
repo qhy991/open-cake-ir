@@ -408,6 +408,8 @@ def main() -> int:
     parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1,))
     parser.add_argument('--auth-source', type=Path,
                         help='private external Codex credential for an isolated author home')
+    parser.add_argument('--claude-event-contract', choices=('claude_stream_candidate_v3','claude_stream_candidate_v4'), default=CLAUDE_EVENT_CONTRACT)
+    parser.add_argument('--claude-isolation-policy', choices=('linux_claude_workspace_v1',))
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
         "--maximum-candidates-per-turn",
@@ -435,6 +437,8 @@ def main() -> int:
     if aliases and args.harness != "claude-code":
         parser.error("response model aliases require Claude Code")
 
+    if args.claude_isolation_policy and args.harness != 'claude-code':
+        parser.error('Claude isolation requires the Claude harness')
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
     workspace = _new_path(args.workspace)
@@ -498,7 +502,7 @@ def main() -> int:
     qualification_arms = tuple(arms)
     if args.harness == "claude-code":
         disabled_features = ()
-        event_contract = CLAUDE_EVENT_CONTRACT
+        event_contract = args.claude_event_contract
         tool_instruction = ("Use Read for the task files and Write/Edit for candidate.py; only Read, Write, Edit, Glob and Grep are permitted."
                             if submission_contract == PYTHON_SOURCE_FILE_V1 else
                             "Use Read for the task files and Write/Edit for candidate-set.py; only Read, Write, Edit, Glob and Grep are permitted."
@@ -659,7 +663,8 @@ def main() -> int:
             if args.harness == "claude-code":
                 builder = ClaudeInvocationBuilder(
                     **common_builder_args, cli_options=advertised_options(executable),
-                    response_aliases=aliases, submission_contract=submission_contract)
+                    response_aliases=aliases, submission_contract=submission_contract,
+                    event_contract=event_contract, isolation_policy=args.claude_isolation_policy)
             else:
                 builder = CodexInvocationBuilder(**common_builder_args,
                     code_mode_host=code_mode_host, service_tier=args.service_tier,
@@ -668,6 +673,10 @@ def main() -> int:
                     cwd_policy="independent_task_workspace", reference_visibility="workspace_task_files",
                     author_home_policy=args.author_home_policy, codex_home=codex_homes.get(arm))
             configuration_sha256s.add(sha256(_canonical_json_bytes(builder.configuration)).hexdigest())
+            if args.claude_isolation_policy:
+                from open_cake_ir.lab.claude_isolation import probe_launcher
+                isolation = probe_launcher(executable, arm_workspace)
+                ledger.append('provider_read_isolation_observed', {'arm':arm, 'observation':isolation})
             initial_plan = _planned_turn(package, 1)
             verify_task_package(arm_workspace, package)
             initial_prompt, initial_projection = render_task_request(package, {"turn": 1})

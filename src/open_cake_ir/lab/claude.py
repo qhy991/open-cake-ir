@@ -697,11 +697,16 @@ class ClaudeInvocationBuilder:
                  reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...],
                  cli_options: frozenset[str] | set[str] | tuple[str, ...],
                  event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=(),
-                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1) -> None:
+                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
+                 isolation_policy: str | None = None) -> None:
         self.response_aliases = response_model_aliases(model, response_aliases)
         if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
                                        PYTHON_CANDIDATE_BUNDLE_V1}:
             raise ValueError('Claude builder submission contract differs')
+        from .claude_isolation import CLAUDE_WORKSPACE_V1
+        if isolation_policy not in {None, CLAUDE_WORKSPACE_V1}:
+            raise ValueError('Claude isolation policy differs')
+        self._isolation_policy = isolation_policy
         self._submission_contract = submission_contract
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
             raise ValueError("Claude builder event contract differs")
@@ -744,7 +749,8 @@ class ClaudeInvocationBuilder:
 
     @property
     def configuration(self) -> Mapping[str, object]:
-        return {**({"response_model_aliases": list(self.response_aliases)} if self.response_aliases else {}),
+        return {**({"isolation_policy": self._isolation_policy} if self._isolation_policy else {}),
+                **({"response_model_aliases": list(self.response_aliases)} if self.response_aliases else {}),
                 "harness": "claude-code", "model": self._model, "reasoning_effort": self._effort,
                 "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
