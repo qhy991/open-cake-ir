@@ -109,6 +109,10 @@ token，pass 调用与验证开销都计入该 Run；无法取得完整用量时
 - **原型入口**为 `Lab.prepare_study/execute_study/audit_study`，准备、执行与审计另有
   `tools/transfer_study.py` 入口。分组在运行前冻结；材料交付、pass 使用、确认与预算均可回放。
   科学研究要求 live 作者资格和本机配对基线，软件 fixture 不输出科学主估计量或总体区间。
-  执行通过共同的 `run_runtime_factory` 装配；真实作者与硬件迁移结果仍待验收。
+  执行通过共同的 `run_runtime_factory` 装配。Claude Code 的已隔离路径要求
+  `linux_claude_workspace_v1`、独立工作区和 home、实际 OS 读隔离探针、live 两轮
+  qualification，且使用拒绝会话压缩的 v3 事件合同；无隔离的 CLI 不能作为 E/P 作者。
+  `tile_squared_difference` 是显式的纯 FP32 求差平方 K 分块变换，保留输入/输出 ABI
+  和先求差再平方的顺序，不承诺设备收益。真实作者与硬件迁移结果仍待验收。
 - 正式运行前，先用轻量验收确认 E0 不泄漏材料、P0 的调用被实际拒绝、P1 可显式调用，
   且四组通过同一正确性与测量路径。该验收不证明迁移收益；收益由上述冻结实验给出。

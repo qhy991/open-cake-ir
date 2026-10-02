@@ -126,6 +126,20 @@ class TransferStudyTests(SemanticLabTestCase):
         with self.assertRaisesRegex(ValueError,'already attempted'):
             lab.execute_study(study,runtime_factory=self.factory(lab,workload,program,qualification,{}))
 
+    def test_cli_study_requires_os_isolation_and_refuses_context_compaction(self):
+        _,plan,_,_,_,_ = self.fixture()
+        document = plan.document
+        provider = document['tasks'][0]['run_template']['authoring']['provider']
+        provider.update(harness='claude-code',isolation_policy='linux_claude_workspace_v1',
+                        event_contract='claude_stream_candidate_v3')
+        document['tasks'][0]['run_template']['execution']['sandbox']='none'
+        StudyPlan.from_dict(document)
+        provider['event_contract']='claude_stream_candidate_v4'
+        with self.assertRaisesRegex(ValueError,'confined'):StudyPlan.from_dict(document)
+        provider['event_contract']='claude_stream_candidate_v3'
+        del provider['isolation_policy']
+        with self.assertRaisesRegex(ValueError,'confined'):StudyPlan.from_dict(document)
+
     def test_allocations_and_treatments_freeze_before_run_and_reject_posthoc_edits(self):
         lab,plan,_,_,_,root = self.fixture()
         self.assertEqual(plan.allocations(),StudyPlan.from_dict(plan.document).allocations())

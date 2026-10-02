@@ -54,7 +54,6 @@ def main():
         ANTHROPIC_DEFAULT_SONNET_MODEL=CONFIG['model'], ANTHROPIC_DEFAULT_HAIKU_MODEL=CONFIG['model'])
     home = workspace/'.claude-home'
     if home.is_symlink(): raise ValueError('author home must not be a symlink')
-    home.mkdir(mode=0o700,exist_ok=True)
     if sys.argv[1:] == ['--cake-isolation-probe']:
         probe = r"""import json, os, pathlib
 workspace=pathlib.Path.cwd()
@@ -77,6 +76,7 @@ raise SystemExit(0 if all(checks.values()) else 1)
             return subprocess.run(command(workspace,['/usr/bin/python3','-c',probe]),
                 input=(token+'\n').encode(),env=os.environ).returncode
         finally: escape.unlink()
+    home.mkdir(mode=0o700,exist_ok=True)
     return subprocess.run(command(workspace,['/provider/claude',*sys.argv[1:]]),
         input=(token+'\n').encode(),env=os.environ).returncode
 
