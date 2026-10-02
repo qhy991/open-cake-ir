@@ -77,7 +77,7 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
     for access in d['access_maps']:
         if access['operation'] in {x['id'],c['id']}:
             access['indices'][-1] = {'source':'loop_tile','name':iterator}
-    fold['parameters']['across_loop'] = True
+    del fold['parameters']['across_loop']
     d['tile_loops'] = [dict(name=iterator+'_loop',iterator=iterator,buffer=xb['name'],dimension=1,
         tile=k_tile,body=[op['id'] for op in ops[:-1]],range_options=dict(num_stages=1,
         loop_unroll_factor=1,disallow_acc_multi_buffer=False,flatten=False,warp_specialize=False,disable_licm=False))]

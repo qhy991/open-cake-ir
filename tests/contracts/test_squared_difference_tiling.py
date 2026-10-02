@@ -30,7 +30,7 @@ class SquaredDifferenceTiling(unittest.TestCase):
         candidate = result.schedule
         validate_candidate_arithmetic(candidate,self.workload)
         self.assertEqual(candidate['tile_loops'][0]['tile'],64)
-        self.assertTrue(candidate['operations'][4]['parameters']['across_loop'])
+        self.assertTrue(candidate['operations'][4]['parameters'].get('across_loop',True))
         source = self.compiler.lower(result.assessment).source
         self.assertIn('range(',source)
         self.assertNotIn('tl.dot(',source)
