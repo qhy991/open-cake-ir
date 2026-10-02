@@ -699,6 +699,10 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            ledger.append('provider_qualification_turn_observed', {
+                'arm':arm, 'phase':'initial', 'provider_tokens':initial.provider_tokens,
+                'objects':[evidence.put(initial.raw_events,media_type='application/x-ndjson').reference('initial_provider_events'),
+                           evidence.put(initial.raw_submission,media_type='text/plain').reference('initial_submission')]})
             initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
@@ -742,6 +746,10 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            ledger.append('provider_qualification_turn_observed', {
+                'arm':arm, 'phase':'resumed', 'provider_tokens':resumed.provider_tokens,
+                'objects':[evidence.put(resumed.raw_events,media_type='application/x-ndjson').reference('resumed_provider_events'),
+                           evidence.put(resumed.raw_submission,media_type='text/plain').reference('resumed_submission')]})
             resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(

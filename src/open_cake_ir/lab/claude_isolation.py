@@ -20,7 +20,7 @@ def command(workspace, program):
             '--cap-drop', 'ALL', '--new-session', '--clearenv']
     for path in ('/usr', '/bin', '/lib', '/lib64'):
         if pathlib.Path(path).exists(): args += ['--ro-bind', path, path]
-    home = workspace.parent/'.claude-homes'/workspace.name
+    home = pathlib.Path(CONFIG['home_root'])/workspace.relative_to('/')
     args += ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
              '--ro-bind', CONFIG['native_executable'], '/provider/claude',
              '--bind', str(workspace), str(workspace), '--bind', str(home), str(home), '--chdir', str(workspace)]
@@ -53,7 +53,7 @@ def main():
     os.environ.update(ANTHROPIC_AUTH_TOKEN=token, ANTHROPIC_BASE_URL=CONFIG['endpoint'],
         ANTHROPIC_MODEL=CONFIG['model'], ANTHROPIC_DEFAULT_OPUS_MODEL=CONFIG['model'],
         ANTHROPIC_DEFAULT_SONNET_MODEL=CONFIG['model'], ANTHROPIC_DEFAULT_HAIKU_MODEL=CONFIG['model'])
-    home = workspace.parent/'.claude-homes'/workspace.name
+    home = pathlib.Path(CONFIG['home_root'])/workspace.relative_to('/')
     if home.parent.is_symlink(): raise ValueError('author home root must not be a symlink')
     home.parent.mkdir(mode=0o700,exist_ok=True)
     if home.is_symlink(): raise ValueError('author home must not be a symlink')
@@ -70,7 +70,7 @@ for name,path in {'ambient_home':'/root/.claude', 'project':'/root/open-cake-ir'
     'gpu_nodes':'/dev/mxcd', 'escape':str(workspace/'.isolation-escape')}.items():
     try: os.stat(path); checks[name]=False
     except (FileNotFoundError,PermissionError): checks[name]=True
-checks['home_is_local']=pathlib.Path.home()==workspace.parent/'.claude-homes'/workspace.name
+checks['home_is_local']=pathlib.Path.home()==pathlib.Path(__import__('sys').argv[1])
 checks['gpu_device_nodes_absent']=not any(p.name.startswith(('dri','mx','nvidia','kfd')) for p in pathlib.Path('/dev').iterdir())
 checks['workspace_writable']=os.access(workspace,os.W_OK)
 print(json.dumps({'policy':'linux_claude_workspace_v1','checks':checks}))
@@ -80,7 +80,7 @@ raise SystemExit(0 if all(checks.values()) else 1)
         if escape.exists() or escape.is_symlink(): raise ValueError('probe path already exists')
         escape.symlink_to(CONFIG['credential_source'])
         try:
-            return subprocess.run(command(workspace,['/usr/bin/python3','-c',probe]),
+            return subprocess.run(command(workspace,['/usr/bin/python3','-c',probe,str(home)]),
                 input=(token+'\n').encode(),env=os.environ).returncode
         finally: escape.unlink()
     home.mkdir(mode=0o700,exist_ok=True)
@@ -92,13 +92,16 @@ if __name__=='__main__': raise SystemExit(main())
 
 
 def publish_launcher(path, configuration):
-    fields = {'bubblewrap','native_executable','credential_source','endpoint','model'}
+    fields = {'bubblewrap','native_executable','credential_source','endpoint','model','home_root'}
     if set(configuration) != fields or any(not isinstance(v,str) or not v for v in configuration.values()):
         raise ValueError('isolated Claude launcher configuration differs')
     for name in ('bubblewrap','native_executable','credential_source'):
         source = Path(configuration[name])
         if not source.is_absolute() or not source.is_file() or source.is_symlink():
             raise ValueError(f'isolated Claude {name} must be a canonical regular file')
+    home_root = Path(configuration['home_root'])
+    if not home_root.is_absolute() or not home_root.is_dir() or home_root.is_symlink():
+        raise ValueError('isolated Claude home root must be a canonical directory')
     path = Path(path)
     with path.open('x') as stream:
         stream.write('#!/usr/bin/python3\nCONFIG = '+repr(dict(configuration))+'\n'+LAUNCHER)

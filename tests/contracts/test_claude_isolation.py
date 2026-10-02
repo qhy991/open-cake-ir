@@ -12,7 +12,8 @@ class ClaudeIsolationTests(unittest.TestCase):
             root=Path(directory).resolve()
             config={name:str(root/name) for name in ('bubblewrap','native_executable','credential_source')}
             for path in config.values():Path(path).write_text('never-execute-test-secret')
-            config.update(endpoint='https://example.invalid',model='glm-5.3')
+            (root/'homes').mkdir()
+            config.update(endpoint='https://example.invalid',model='glm-5.3',home_root=str(root/'homes'))
             path=publish_launcher(root/'launcher',config)
             source=path.read_text();compile(source,str(path),'exec')
             self.assertNotIn('never-execute-test-secret',source)
