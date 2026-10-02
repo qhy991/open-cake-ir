@@ -105,6 +105,7 @@ def _read_outcome(study,allocation, *, audit_run):
            'pipeline_verified':False,'confirmed_speedup':None,'performance_eligible':False,
            'first_correct':None,'first_correct_status':'unknown',
            'transform_requests':None,'transforms_applied':None,'transforms_refused':None,
+           'context_compactions':None,
            'delivered_materials':None,'allocated_transformations':spec.document['knowledge']['transformations']}
     failure_path = directory/'failure.json'
     failure = None
@@ -131,7 +132,8 @@ def _read_outcome(study,allocation, *, audit_run):
     if failure is not None:
         raise ValueError('a sealed audited Run cannot also be a failed allocation')
     row.update(pipeline_verified=True,run_endpoint=audit.endpoint_observation,
-               protocol_adherence=audit.protocol_adherence,transform_requests=0,transforms_applied=0,transforms_refused=0)
+               protocol_adherence=audit.protocol_adherence,transform_requests=0,transforms_applied=0,transforms_refused=0,
+               context_compactions=[])
     evidence = EvidenceStore.open(directory/'evidence')
     events = evidence.replay_events(allocation.run_id)
     if any(event['kind']=='provider_turn_completed' for event in events):
@@ -146,7 +148,13 @@ def _read_outcome(study,allocation, *, audit_run):
     tokens,compilations,evaluations = {},0,0
     for event in events:
         payload = event['payload']
-        if event['kind']=='provider_turn_completed': tokens[payload['turn']] = payload['cumulative_provider_tokens']
+        if event['kind']=='provider_turn_completed':
+            tokens[payload['turn']] = payload['cumulative_provider_tokens']
+            # The raw provider stream owns the compressed context. These are
+            # descriptive lifecycle observations, never additive token counts.
+            row['context_compactions'].extend({'turn':payload['turn'], 'phase':activity['status']}
+                for activity in payload.get('auxiliary_activity',[])
+                if activity['item_type']=='context_compaction')
         if event['kind']=='compilation_started': compilations += 1
         if event['kind']=='evaluation_attempt_started': evaluations += 1
         if event['kind']=='candidate_evaluated' and row['first_correct'] is None:

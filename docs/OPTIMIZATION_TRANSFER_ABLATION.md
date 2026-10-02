@@ -115,7 +115,12 @@ token，pass 调用与验证开销都计入该 Run；无法取得完整用量时
   科学研究要求 live 作者资格和本机配对基线，软件 fixture 不输出科学主估计量或总体区间。
   执行通过共同的 `run_runtime_factory` 装配。Claude Code 的已隔离路径要求
   `linux_claude_workspace_v1`、独立工作区和 home、实际 OS 读隔离探针、live 两轮
-  qualification，且使用拒绝会话压缩的 v3 事件合同；无隔离的 CLI 不能作为 E/P 作者。
+  qualification，压缩政策在运行前冻结：v3 拒绝压缩，v4 接受完整、有效的压缩生命周期并保留
+  原始流、候选和用量。四组共用同一合同及相同 CLI 压缩设置；压缩由组别之外的
+  provider 机制执行，作为该作者环境的一部分。v4 的比较回答实际压缩政策下的
+  总处理效果，不要求不同组具有相同压缩次数或摘要。各 Run 报告压缩阶段；
+  摘要 tokens 不重复加到 native modelUsage。压缩失败或缺失事件仍拒绝。
+  无隔离的 CLI 不能作为 E/P 作者；已冻结 v3 Run 不按 v4 重新判定。
   `tile_squared_difference` 是显式的纯 FP32 求差平方 K 分块变换，保留输入/输出 ABI
   和先求差再平方的顺序，不承诺设备收益。真实作者与硬件迁移结果仍待验收。
 - 正式运行前，先用轻量验收确认 E0 不泄漏材料、P0 的调用被实际拒绝、P1 可显式调用，

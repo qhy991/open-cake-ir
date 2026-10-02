@@ -132,7 +132,7 @@ class TransferStudyTests(SemanticLabTestCase):
         with self.assertRaisesRegex(ValueError,'already attempted'):
             lab.execute_study(study,runtime_factory=self.factory(lab,workload,program,qualification,{}))
 
-    def test_cli_study_requires_os_isolation_and_refuses_context_compaction(self):
+    def test_cli_study_requires_isolation_and_frozen_compaction_contract(self):
         _,plan,_,_,_,_ = self.fixture()
         document = plan.document
         provider = document['tasks'][0]['run_template']['authoring']['provider']
@@ -141,8 +141,10 @@ class TransferStudyTests(SemanticLabTestCase):
         document['tasks'][0]['run_template']['execution']['sandbox']='none'
         StudyPlan.from_dict(document)
         provider['event_contract']='claude_stream_candidate_v4'
+        StudyPlan.from_dict(document)
+        provider['event_contract']='unobserved_compaction_contract'
         with self.assertRaisesRegex(ValueError,'confined'):StudyPlan.from_dict(document)
-        provider['event_contract']='claude_stream_candidate_v3'
+        provider['event_contract']='claude_stream_candidate_v4'
         del provider['isolation_policy']
         with self.assertRaisesRegex(ValueError,'confined'):StudyPlan.from_dict(document)
 
