@@ -228,7 +228,7 @@ class TransferStudyTests(SemanticLabTestCase):
         with self.assertRaisesRegex(ValueError,'scientific'):StudyPlan.from_dict(document)
         with self.assertRaisesRegex(ValueError,'one-task'):task_bootstrap([[0.,1.,0.,1.]],draws=1000,seed=1)
         self.assertEqual(task_bootstrap([[0.,0.,0.,0.],[1.,1.,1.,1.]],draws=1000,seed=7),
-                         {name:[0.,0.] for name in ('experience','passes','interaction')})
+                         {name:[0.,0.] for name in ('experience','passes','interaction','passes_given_experience')})
 
     def test_prepare_and_audit_cli_create_reviewable_inputs_without_running_providers(self):
         from tools.transfer_study import main
@@ -263,9 +263,9 @@ class TransferStudyTests(SemanticLabTestCase):
         summary = summarize_cells(model,rows)
         values = summary['strata']['unseen_family']
         self.assertEqual(set(values['cell_rates'].values()),{.5})
-        self.assertEqual(values['effects'],{'experience':0.,'passes':0.,'interaction':0.})
+        self.assertEqual(values['effects'],{'experience':0.,'passes':0.,'interaction':0.,'passes_given_experience':0.})
         rows[0]['status']='missing'
         changed = summarize_cells(model,rows)['strata']['unseen_family']
         self.assertEqual(changed['missingness_rate_bounds']['control'],[.5,1.])
         self.assertEqual(changed['observed_subset_sensitivity']['tasks'],1)
-        self.assertEqual(factorial_effects([0.,.2,.3,.9]),{'experience':.4,'passes':.5,'interaction':.4})
+        self.assertEqual(factorial_effects([0.,.2,.3,.9]),{'experience':.4,'passes':.5,'interaction':.4,'passes_given_experience':.7})
