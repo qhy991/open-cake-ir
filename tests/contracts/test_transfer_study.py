@@ -120,6 +120,7 @@ class TransferStudyTests(SemanticLabTestCase):
             self.assertEqual('## Frozen reference: `transformation-api.json`' in text,condition['passes'] or condition['experience'])
             self.assertEqual(row['transforms_applied'],int(condition['passes']))
             self.assertEqual(row['transforms_refused'],int(not condition['passes']))
+            self.assertEqual(row['context_compactions'],[])
             self.assertIsNotNone(row['first_correct'])
             self.assertEqual(row['first_correct']['compilations'],1)
             self.assertEqual(len(seen[row['run_id']].requests[0]['input']),1)
