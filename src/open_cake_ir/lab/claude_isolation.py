@@ -59,7 +59,7 @@ def main():
 workspace=pathlib.Path.cwd()
 checks={}
 for name,path in {'ambient_home':'/root/.claude', 'project':'/root/open-cake-ir',
-    'experiments':'/root/open-cake-experiments/sources', 'host_root':'/proc/1/root/root',
+    'experiments':'/root/open-cake-experiments/sources', 'host_root':'/proc/1/root/root/.config/infini-ai',
     'gpu_nodes':'/dev/mxcd', 'escape':str(workspace/'.isolation-escape')}.items():
     try: os.stat(path); checks[name]=False
     except (FileNotFoundError,PermissionError): checks[name]=True
