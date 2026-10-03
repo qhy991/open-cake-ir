@@ -102,6 +102,11 @@
       "kind": "device_observation",
       "source": "Cake-generated cast and BF16 GEMM+bias on bw1100-1, Triton 3.6.0 hcu backend",
       "locator": "/data3/testuser01/experiments/bw1100-cake-dcu-qualification-20261003/results/cast-bf16-001/device-result.json, Compiler d6a8872d: three exact cast checks (bf16/fp32 in both directions and int32/fp32), four GEMM shapes with FP32 output and bias, each at ordinary and reciprocal 2^40 input scales, all eleven checks passed. Native assembly emits v_mmac_f32_16x16x16_bf16; no FP16 narrowing. N=96 tail included. Source uses 64x64x64 tiles and one pipeline stage; this bounded observation does not qualify all tilings or operator workloads. Observed 2026-10-03 on gfx938."
+    },
+    {
+      "kind": "device_observation",
+      "source": "Cake-generated INT32 atomic fetch-add on BW1100-1, DTK Triton 3.6.0 hcu backend",
+      "locator": "/data3/testuser01/experiments/bw1100-cake-atomic-successor-20261003/results/atomic-001/device-result.json at Compiler d7d37fa4. Three shapes [8,8],[256,8],[2048,8], five input scenarios and ten rounds each pass150/150: returned-old-value uniqueness under contention, signed initial counters, unchanged indices, invalid-index zero and exact final counts. Actual native assembly emits buffer_atomic_add with returned value. Scope is INT32 relaxed device-scope fetch-add with bounded indices, not general scatter, int32 scan or complete stable sort. Job bw-03df593adfc7 completed/released; observed2026-10-03."
     }
   ]
 }
