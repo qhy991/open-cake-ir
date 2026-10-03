@@ -2492,6 +2492,48 @@
         "schedule_sha256": "fbf1815a9c78a6c3f25929c5109e2f1a7e06c9d1db7c3e90ec0ae59e4bdc44cd",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "gfx938-atomic-reservation-b8-smoke",
+      "schedule": "corpus/schedules/gfx938-atomic-reservation-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "45e6801fffc02cbd5139275c1743757eb5da2c37d811a2edf76ee4b510823904",
+        "lowering_source_sha256": "542df586cbda32a5ccf3238dcf8a170da622957a0dc5ccf016bbabe05035f027"
+      }
+    },
+    {
+      "case_id": "gfx938-atomic-target-fp32-refusal",
+      "schedule": "corpus/schedules/gfx938-atomic-target-fp32-refusal.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ATOMIC_TARGET_DTYPE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "dfd32cc644da2b66fedbb3336c86b5483b316a8faf287f513c9564976031cb4f",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "gfx938-atomic-result-fp32-refusal",
+      "schedule": "corpus/schedules/gfx938-atomic-result-fp32-refusal.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ATOMIC_RESULT_DTYPE",
+          "STORE_DTYPE_UNSUPPORTED",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "35f224b34ca369a71cf8bfe95acb348560357e4a323f2313b9ed531841aa304d",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

@@ -185,5 +185,8 @@
   "lowering": {
     "backend": "triton",
     "entry_point": "cake_gfx938_atomic_reservation_b8_smoke"
+  },
+  "metadata": {
+    "workload_contract_sha256": "0632fcdaf91a85d87e6be60bac569c79579c477e803719a59362b439e26dd731"
   }
 }

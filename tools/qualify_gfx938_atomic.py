@@ -11,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 sys.path.insert(0, str(ROOT / 'tools'))
 
+QUALIFICATION_CONTRACT = {
+    'operator': 'int32_atomic_fetch_add_reservation', 'target': 'gfx938',
+    'shapes': [[8, 8], [256, 8], [2048, 8]], 'counter_shape': [4],
+    'order': 'relaxed', 'scope': 'device', 'increment': 1,
+    'inputs': 'immutable INT32 expert indices; mutable INT32 counter state',
+    'outputs': 'per-expert permutation of consecutive returned old values; invalid indices return zero',
+    'state_effect': 'counter increment equals number of valid reservations per expert',
+    'numeric_domain': 'bounded counters avoid INT32 overflow',
+    'oracle': 'tools/kernel_oracles.py::_measure_atomic_reservation',
+}
+
 def write(path, document):
     with path.open('x') as stream:
         json.dump(document, stream, indent=2)
@@ -22,6 +33,7 @@ def emit(destination):
     if engine.commit is None:
         raise ValueError('clean source required')
     destination.mkdir(parents=True, exist_ok=False)
+    write(destination / 'qualification-contract.json', QUALIFICATION_CONTRACT)
     base = json.loads((ROOT / 'corpus/schedules/gfx938-atomic-reservation-b8-smoke.json').read_text())
     entries = []
     for rows in (8, 256, 2048):
