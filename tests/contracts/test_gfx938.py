@@ -587,7 +587,7 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         # oracle at 64x64x64, the tanh across its saturating tails.
         self.assertEqual(
             sorted(target.instruction_contracts),
-            ["ocml.tanh.f32", "triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
+            ["ocml.tanh.f32", "triton.atomic_add.i32.relaxed.gpu", "triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
              "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"])
 
     def test_gfx938_admits_no_other_vendors_spelling_of_the_same_function(self) -> None:
@@ -632,28 +632,10 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         test_instruction_contracts.py::DeclaredContractsTheGateCannotSpeakFor rather than
         left to be inferred from this one's silence.
         """
-        import json
-        manifest = json.loads((ROOT / "corpus/manifest.json").read_text())
+        from tests.contracts.test_instruction_contracts import DeclaredContractsTheGateCannotSpeakFor
         declared = set(Target.load(ROOT / "compiler/targets/gfx938.json").instruction_contracts)
-        used = set()
-        for case in manifest["cases"]:
-            path = ROOT / case["schedule"]
-            # Twelve manifest entries are Python schedules under examples/; they declare
-            # their target in the decorator rather than in a readable document, and none
-            # of them is a gfx938 case.
-            if path.suffix != ".json":
-                continue
-            document = json.loads(path.read_text())
-            if document.get("target") != "gfx938":
-                continue
-            for operation in document["operations"]:
-                instruction = (operation.get("parameters") or {}).get("instruction") or {}
-                if instruction.get("contract"):
-                    used.add(instruction["contract"])
-        self.assertEqual(
-            sorted(declared - used), [],
-            "gfx938 declares contracts no Corpus case exercises, so the Gate passes "
-            "whether or not they are true")
+        used = DeclaredContractsTheGateCannotSpeakFor()._reached().get("gfx938", set())
+        self.assertEqual(declared - used, set())
 
     def test_a_triton_target_admits_no_contract_its_route_cannot_emit(self) -> None:
         """Otherwise the Target admits by name what the only backend then refuses.

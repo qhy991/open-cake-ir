@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-03-004 — exact gfx938 INT32 relaxed device-scope fetch-add is device-qualified150/150 with native buffer_atomic_add; original malformed histogram still refuses its edge/output guards. No scan, scatter or stable-sort performance claim.
+
 - F-2026-10-03-001 — gfx938 target admission omits existing cast and BF16/FP32 dot. Successor component qualification passes eleven device checks with native BF16 v_mmac; full operator campaign and independent integration review remain pending.
 
 - F-2026-10-02-002 — isolated Claude E/P admission excluded the existing v4 native compaction contract. Closed by the Study admission successor at 36e346b5 and diagnostic replay of nine retained complete C550 traces; old v3 outcomes remain unchanged.

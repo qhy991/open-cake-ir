@@ -93,7 +93,7 @@ class CorpusCaseTarget(unittest.TestCase):
         # The C550 indexed-gather successor adds one exact ABI-bound positive case.
         # The fixed compensated FP8 SIMT route adds one independently device-checked case.
         # DCU adds two typed cast cases, BF16 contraction and its wrong-contract refusal.
-        self.assertEqual(report.case_count, 184)
+        self.assertEqual(report.case_count, 187)
 
 
 if __name__ == "__main__":
