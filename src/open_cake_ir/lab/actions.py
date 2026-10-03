@@ -67,6 +67,10 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
             return ActionResolution(action_sha256, 'submit', payload)
         return ActionResolution(action_sha256, 'submit', None, reason='author_format',
                                 message='Author must submit Python source in a python_source member.')
+    if (source_bundle and environment_kind=='open_cake' and isinstance(document,Mapping)
+        and set(document)=={'python_bundle_error'} and isinstance(document['python_bundle_error'],str)):
+        return ActionResolution(action_sha256,'submit',None,reason='author_format',
+                                message=document['python_bundle_error'])
     if not isinstance(document, Mapping) or 'action' not in document:
         program_source = (source_bundle and isinstance(document, Mapping)
                           and set(document) == {'python_program_source', 'program_id'}

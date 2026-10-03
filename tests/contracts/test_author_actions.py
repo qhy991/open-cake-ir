@@ -424,3 +424,48 @@ class AuthorActionTests(SemanticLabTestCase):
         resolution=resolve_action_set((encoded(rewrite('other-run',stage='seed')),),environment_kind='open_cake',
             transformations=[PASS],candidates={},baselines={},compiler_factory=lambda:self.fail('unauthorized compiler call'))[0]
         self.assertEqual(resolution.reason,'parent_not_authorized')
+
+    def test_invalid_python_bundle_is_rejected_then_repaired_in_same_run_and_replayed(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1, _project_candidate_submission
+        lab,spec,workload,program=self.fixture([],python_only=True)
+        document=spec.document
+        document['authoring']['provider']['submission_contract']=PYTHON_CANDIDATE_BUNDLE_V1
+        document['authoring']['tool_surface']=['submit_python_bundle']
+        document['evaluation_protocol']['searches_per_turn']=1
+        spec=RunSpecification.from_dict(document)
+        source=Path(document['authoring']['schedule_skeleton']['path']).read_text()
+        import ast
+        tree=ast.parse(source)
+        start=tree.body[1].decorator_list[0].lineno-1
+        body='\n'.join(source.splitlines()[start:])
+        invalid=('from open_cake_ir.compiler import frontend as cake\n\n'
+                 +'\n\n'.join(body.replace('def ',f'def extra_{i}_',1) for i in range(3)))
+        owner=self
+        class Provider(RalphFakeProvider):
+            def turn(self,request):
+                base=super().turn(request)
+                payload=(invalid if request.turn==1 else source).encode()
+                candidates=_project_candidate_submission(payload,submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm=request.arm,environment_kind=request.environment_kind,maximum_candidates_per_turn=2)
+                if request.turn==2:
+                    owner.assertEqual(request.feedback['author_actions'][0]['reason'],'author_format')
+                    owner.assertIn('exceeds the Turn budget',request.feedback['author_actions'][0]['message'])
+                return replace(base,candidates=candidates,candidate_sha256s=tuple(sha256(p).hexdigest() for p in candidates),raw_submission=payload)
+        provider=Provider({spec.run_id:lab.task_package(spec,spec.run_id)})
+        provider.configuration=execution_configuration(document['authoring']['provider'])
+        provider.qualification_sha256=document['authoring']['provider']['qualification']['canonical_sha256']
+        compilation=CompilationFixture()
+        environment=OpenCakeEnvironment(Compiler.load(ROOT,ROOT/'compiler/revision.json'),
+            TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=compilation),
+            authority_document=document['authoring'],workload=workload,case_id='primary')
+        evaluator=ProgramEvaluator(document['evaluation_protocol'],sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+        with tempfile.TemporaryDirectory() as directory:
+            run=lab.execute_run(spec,Path(directory)/'evidence',provider=provider,environment=environment,evaluator=evaluator)
+            audit,replay=lab.audit_run(run)
+            self.assertEqual(audit.protocol_adherence,'adhered')
+            self.assertTrue(replay,replay.refusals)
+            events=EvidenceStore.open(run.evidence_root).replay_events(spec.run_id)
+            starts=[e['payload']['turn'] for e in events if e['kind']=='compilation_started']
+            self.assertEqual(starts,[2])
+            turns=[e for e in events if e['kind']=='provider_turn_completed']
+            self.assertEqual(len(turns),2)
