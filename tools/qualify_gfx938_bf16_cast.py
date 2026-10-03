@@ -108,6 +108,9 @@ def check(destination: Path) -> None:
             continue
         if entry["operand_dtype"] != "bf16": continue
         m, n, k = entry["shape"]
+        fp32_name = entry["name"].replace("bf16", "fp32")
+        old = modules[fp32_name][1]
+        def widened(x, y, z): return old(x.float(), y.float(), z)
         for scale in (1.0, 2.0**40):
             a = (torch.randn((m, k), device="cuda") * scale).to(torch.bfloat16)
             b = (torch.randn((n, k), device="cuda") / scale).to(torch.bfloat16)
@@ -117,6 +120,7 @@ def check(destination: Path) -> None:
             actual = run(a, b, bias)
             torch.cuda.synchronize()
             torch.testing.assert_close(actual, expected, rtol=2e-5, atol=2e-4)
+            torch.testing.assert_close(widened(a, b, bias), expected, rtol=2e-5, atol=2e-4)
             if not all(torch.equal(t, s) for t, s in zip((a, b, bias), snapshots)):
                 raise ValueError("GEMM mutated input")
             checks.append({"name": entry["name"], "scale": scale, "passed": True,
@@ -130,9 +134,8 @@ def check(destination: Path) -> None:
         assembly = compiled.asm["amdgcn"]
         (destination / (entry["name"] + ".amdgcn")).write_text(assembly)
         native = sorted(set(line.strip() for line in assembly.splitlines() if "v_mmac" in line or "v_mfma" in line))
-        fp32_name = entry["name"].replace("bf16", "fp32")
-        old = modules[fp32_name][1]
-        def widened(x, y, z): return old(x.float(), y.float(), z)
+        if not any("bf16" in line for line in native):
+            raise ValueError("BF16 matrix instruction missing in actual native assembly")
         for _ in range(10): run(a,b,bias); widened(a,b,bias)
         samples = {key: [] for key in ("nf", "of", "nr", "orr", "aa1", "aa2")}
         def timed(fn):
@@ -145,9 +148,14 @@ def check(destination: Path) -> None:
         timings.append({"shape": [m,n,k], "bf16_direct_us": statistics.median(samples["nf"]+samples["nr"]),
                         "fp32_widening_us": statistics.median(samples["of"]+samples["orr"]),
                         "forward_speedup": med["of"]/med["nf"], "reverse_speedup": med["orr"]/med["nr"],
-                        "aa_abs_drift_us": abs(med["aa1"]-med["aa2"]), "native_matrix_instructions": native})
+                        "aa_abs_drift_us": abs(med["aa1"]-med["aa2"]), "native_matrix_instructions": native,
+                        "samples_us": samples})
     write(destination / "device-result.json", {"compiler_commit": manifest["compiler_commit"], "arch": arch,
           "status": "passed", "checks": checks, "paired_component_timings": timings,
+          "measurement": {"timer": "host perf_counter with device synchronization before and after each callable",
+                          "boundary": "allocations, explicit widening and kernel dispatch included",
+                          "cache_policy": "warm cache; no explicit cache flush", "warmup_pairs": 10,
+                          "samples_per_arm_per_order": 30, "external_gpu_activity": "not_excluded"},
           "performance_scope": "BF16 generated GEMM+bias versus same-geometry FP32 widening route; not community-SOTA or serving speedup"})
     print(json.dumps({"status":"passed", "checks":len(checks), "component_pairs":len(timings)}))
 
