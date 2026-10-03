@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-03",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@5b588ceca20ee33f9a8bec3304af64fc069477c0",
+  "executor_revision": "xcore1002@5b588ceca20ee33f9a8bec3304af64fc069477c0",
+  "decision": "accepted",
+  "id": "F-2026-10-03-001",
+  "kind": "protocol",
+  "title": "Failed paired native cohorts lost their complete activity before broker handoff",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-experiments/c550-compaction-successor-20261002/study-v1/",
+    "runs": [
+      "c550-sqdiff-transfer-compaction-20261002-t1-r3-c2",
+      "c550-sqdiff-transfer-compaction-20261002-t2-r1-c2",
+      "c550-sqdiff-transfer-compaction-20261002-t2-r2-c3",
+      "c550-sqdiff-transfer-compaction-20261002-t2-r3-c1",
+      "c550-sqdiff-transfer-compaction-20261002-t2-r3-c2",
+      "c550-sqdiff-transfer-compaction-20261002-t3-r2-c1"
+    ],
+    "locator": "Each run_fault and preceding evaluation_attempt_completed stderr/broker_record; overlapped timestamps or reset-before-sample refusal."
+  },
+  "observation": "Native paired timing raised ValueError after kernel work, leaving receipt=null and only a short stderr plus counters. The assay had last_activity, but the paired caller did not attach it to the error and the closed worker/broker envelope could not transfer failed-cohort artifacts. A later investigator cannot recover the missing raw interval/correlation sequence from these old records.",
+  "proposed_change": "Retain a failed paired snapshot with current arm/position, completed pairs, manifests, correctness observations and native activity. Transfer it in a version-2 failed-worker envelope, archive it through the existing BrokerAttempt and validate exact diagnostic-role coverage at replay. Preserve receipt=null and all timing checks.",
+  "implemented_in": "3e59a764",
+  "verified_by": null,
+  "software_verification": {
+    "commit": "bc7b4dee",
+    "tests": "actual strict-overlap guard, actual worker exit, actual command broker temporary-directory handoff and missing-artifact replay refusal; included in 214 focused CPU contracts"
+  },
+  "promotion_disposition": "The diagnostic transport is implemented. Original failures remain missing. Fresh C550 reproduction and timing-cause diagnosis remain required before closing this Finding; no interval tolerance or timer acceptance change."
+}
