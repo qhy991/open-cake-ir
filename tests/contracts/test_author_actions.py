@@ -406,3 +406,21 @@ class AuthorActionTests(SemanticLabTestCase):
         bad['authoring']['reference_access']='clean_start'
         with self.assertRaisesRegex(ValueError,'known-kernel'):
             RunSpecification.from_dict(bad)
+
+    def test_parent_choices_project_only_run_local_programs_with_exact_stage_and_fresh_name(self):
+        from open_cake_ir.lab.actions import author_parent_choices
+        _,spec,_,program=self.fixture([])
+        source=Path(spec.document['authoring']['schedule_skeleton']['path']).read_text()
+        parents=author_parent_choices(candidates={'own-python':encoded({'python_source':source}),
+            'invalid':b'not a program'},baselines={'seed':encoded(program)},turn=2,allow_python=True)
+        self.assertEqual([p['parent'] for p in parents],['baseline:seed','own-python'])
+        self.assertEqual(parents[0]['stages'][0]['name'],'seed')
+        self.assertEqual(parents[1]['stages'][0]['name'],frontend.parse(source).document['schedule_id'])
+        for parent in parents:
+            self.assertNotEqual(parent['suggested_schedule_id'],parent['stages'][0]['schedule_id'])
+        next_turn=author_parent_choices(candidates={},baselines={'seed':encoded(program)},turn=3,allow_python=True)
+        self.assertNotEqual(next_turn[0]['suggested_schedule_id'],parents[0]['suggested_schedule_id'])
+        # The projection cannot grant a transformation or reference another Run.
+        resolution=resolve_action_set((encoded(rewrite('other-run',stage='seed')),),environment_kind='open_cake',
+            transformations=[PASS],candidates={},baselines={},compiler_factory=lambda:self.fail('unauthorized compiler call'))[0]
+        self.assertEqual(resolution.reason,'parent_not_authorized')

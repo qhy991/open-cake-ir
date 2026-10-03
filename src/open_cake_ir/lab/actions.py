@@ -114,3 +114,25 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
 def resolve_action_set(payloads, **context):
     """All parents come from earlier turns; same-turn proposal ordering grants nothing."""
     return tuple(resolve_action(payload, **context) for payload in payloads)
+
+
+def author_parent_choices(*, candidates, baselines, turn, allow_python):
+    """Derive usable parent names and stage contracts from this Run's own bytes.
+
+    This is a Turn projection, not an alias registry or another source of authority.
+    All Cake authors receive it; transformation permission remains in Run knowledge.
+    """
+    sources = [(f'baseline:{name}', source) for name, source in baselines.items()]
+    sources.extend(candidates.items())
+    choices = []
+    for parent, source in sources:
+        try:
+            program = candidate_program(source, allow_python=allow_python)
+        except (TypeError, ValueError):
+            continue
+        choices.append({'parent': parent,
+            'stages': [{'name': stage.name, 'schedule_id': stage.schedule.schedule_id,
+                        'entry_point': stage.schedule.lowering.entry_point}
+                       for stage in program.stages],
+            'suggested_schedule_id': f'rewrite_turn_{turn}_parent_{len(choices)+1}'})
+    return choices
