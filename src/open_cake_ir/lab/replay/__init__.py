@@ -212,6 +212,7 @@ def _replay_matched_run(
             context=_empirical_context(
                 executor, workload_sha256=lock.document["workload"]["canonical_sha256"],
                 case_id=lock.document["evaluation_protocol"]["case_id"],
+                target=lock.document["execution"]["target"],
             ),
             compiler_revision_id=compiler_ref["revision_id"],
             target=lock.document["execution"]["target"],

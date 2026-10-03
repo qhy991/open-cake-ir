@@ -414,12 +414,19 @@ def profile_envelope(
         structures = {index: top_k_merge_structure(schedule, operation)
                       for index, operation in enumerate(schedule.operations)
                       if operation.kind is OperationKind.TOP_K}
+        # Bounds use only this Target's declarations. A missing timing calibration
+        # does not erase declared thread/shared capacities, and these upper bounds
+        # are neither achieved occupancy nor a latency prediction.
+        residency = residency_upper_bound(schedule, target)
+        pressure = logical_register_pressure_per_thread(schedule, target, top_k_structures=structures)
         return ProfileEnvelope(
             schedule.schedule_id, target.target_id, _work_document(work_bound(schedule)),
-            None, _lowering_document(schedule, lowered_source, _top_k_features(schedule, structures),
+            _residency_document(residency, pressure), _lowering_document(schedule, lowered_source, _top_k_features(schedule, structures),
                                      _runtime_indexed_buffers(schedule)), (),
-            ("This target has no calibrated performance model or occupancy facts; "
-             "NVIDIA NCU metrics and CUDA compiled-resource feedback do not apply.",),
+            ("No calibrated latency or achieved occupancy is reported. Residency bounds "
+             "use this Target's declarations only; undeclared capacities and implicit "
+             "backend allocations are not examined. NVIDIA NCU metrics and CUDA "
+             "compiled-resource feedback do not apply.",),
             None,
         )
     if compiled_resources is not None:

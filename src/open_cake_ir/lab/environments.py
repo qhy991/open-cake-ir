@@ -146,7 +146,10 @@ class OpenCakeEnvironment:
         self._empirical_selection = None
         selection_binding = self.authority_document.get("candidate_selection")
         if selection_binding is not None:
-            if self._python_enabled or self._explicit_abi:
+            from open_cake_ir.evaluation.platforms import platform_for
+            from open_cake_ir.compiler.target import CodeObject
+            native_mcpti = platform_for(self._target).code_object is CodeObject.MCFATBIN
+            if (self._python_enabled or self._explicit_abi) and not native_mcpti:
                 raise ValueError("empirical selection requires the complete-Schedule/direct-CUDA assay")
             if executor is None:
                 raise ValueError("empirical selection requires the bound Executor")
@@ -154,7 +157,7 @@ class OpenCakeEnvironment:
             self._empirical_selection = selection._EmpiricalSelection(
                 selection_binding,
                 context=selection._empirical_context(
-                    executor, workload_sha256=workload.canonical_sha256, case_id=case_id,
+                    executor, workload_sha256=workload.canonical_sha256, case_id=case_id, target=self._target,
                 ),
                 compiler_revision_id=compiler_ref["revision_id"],
                 target=self._target,
@@ -213,7 +216,11 @@ class OpenCakeEnvironment:
                 case_id=self._case_id, compilation=compilation)
             return EnvironmentResult('launchable', submission.sha256, launchable,
                 {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
-                 'cost_model_coverage': 'whole_program_unmodeled'})
+                 'cost_model_coverage': 'whole_program_unmodeled',
+                 'static_profiles': {stage['name']: self._compiler.profile(
+                     self._compiler.assess(stage['schedule'])).as_dict() for stage in program.document['stages']}},
+                empirical_cost=(self._empirical_selection.estimate(program.document)
+                                if self._empirical_selection is not None else None))
         except CandidateCompileRejected as error:
             return EnvironmentResult('rejected', submission.sha256, None,
                 {'stage': 'compile', 'diagnostic': error.diagnostic}, artifact_payloads=error.artifact_payloads)
