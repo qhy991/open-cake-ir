@@ -56,7 +56,7 @@ def emit(destination: Path) -> None:
         next(o for o in d["operations"] if o["kind"] == "cast")["parameters"]["to"] = target
         lower(d, d["schedule_id"], "cast", source_dtype=source, target_dtype=target)
 
-    for m, n, k in ((64, 64, 64), (128, 128, 128), (512, 256, 256), (128, 96, 192)):
+    for m, n, k in ((64, 64, 128), (128, 128, 128), (512, 256, 256), (128, 96, 192)):
         for dtype in ("bf16", "fp32"):
             d = json.loads((ROOT / "corpus/schedules/gfx938-gemm-bias-bf16-b1-smoke.json").read_text())
             d["schedule_id"] = f"qualify-gemm-{dtype}-{m}-{n}-{k}"
