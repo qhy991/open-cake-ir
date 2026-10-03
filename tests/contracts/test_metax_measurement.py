@@ -377,5 +377,5 @@ class MonotonicActivityTimestamps(unittest.TestCase):
                 self.assertTrue(collector._ready)
                 self.assertEqual(calls,['mcptiGetVersion','mcptiActivityRegisterCallbacks','mcptiActivityRegisterTimestampCallback'])
                 self.assertIs(api.functions['mcptiActivityRegisterTimestampCallback'].callback,collector._timestamp_callback)
-                self.assertEqual(collector._timestamp_source,'monotonic_ns_since_collector_creation')
+                self.assertEqual(collector._timestamp_source,'monotonic_ns')
                 with self.assertRaisesRegex(RuntimeError,'process owner'):activity.McptiActivity(str(library))

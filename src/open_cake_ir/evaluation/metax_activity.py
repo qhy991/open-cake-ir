@@ -90,13 +90,12 @@ class McptiActivity:
         self._enabled = []
         self._active = False
         self._owner_thread = None
-        # The installed MCPTI SDK documents CLOCK_REALTIME as its Linux
-        # default. Epoch nanoseconds are too large for nanosecond precision if
-        # SDK device-clock correlation passes through binary64. A fixed local
-        # monotonic origin retains ns units and avoids wall-clock adjustments.
-        # Register before any activity kind; never switch clocks in a session.
-        self._timestamp_origin_ns = time.monotonic_ns()
-        self._timestamp_source = 'monotonic_ns_since_collector_creation'
+        # Use the monotonic clock's native origin. The fixed-origin diagnostic
+        # produced zero-width device records on MCPTI3.8; this successor tests
+        # whether the SDK requires an absolute clock domain for its mapping.
+        # Register before enabling any activity kind and never switch mid-session.
+        self._timestamp_origin_ns = 0
+        self._timestamp_source = 'monotonic_ns'
         self._timestamp_callback = _Timestamp(self._timestamp)
         self._requested_callback = _Request(self._requested)
         self._completed_callback = _Complete(self._completed)
