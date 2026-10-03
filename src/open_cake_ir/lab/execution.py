@@ -292,9 +292,9 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             )
             if kind == 'open_cake':
                 from .actions import author_parent_choices
-                state_card['author_parents'] = author_parent_choices(
+                state_card = {**state_card, 'author_parents':author_parent_choices(
                     candidates=prior_candidates, baselines=baselines, turn=turn_number,
-                    allow_python=document['authoring'].get('input_format') in {'schedule_or_python_v1','python_source_v1'})
+                    allow_python=document['authoring'].get('input_format') in {'schedule_or_python_v1','python_source_v1'})}
             live_stage = "provider"
             provider_usage_accounted = False
             provider_turn = None

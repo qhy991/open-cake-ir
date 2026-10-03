@@ -10,7 +10,7 @@ from hashlib import sha256
 import json
 from collections.abc import Mapping
 
-from open_cake_ir.compiler import Program
+from open_cake_ir.compiler import Program, CompilerError
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.serialization import canonical_json_bytes
 
@@ -128,7 +128,7 @@ def author_parent_choices(*, candidates, baselines, turn, allow_python):
     for parent, source in sources:
         try:
             program = candidate_program(source, allow_python=allow_python)
-        except (TypeError, ValueError):
+        except (CompilerError, TypeError, ValueError):
             continue
         choices.append({'parent': parent,
             'stages': [{'name': stage.name, 'schedule_id': stage.schedule.schedule_id,
