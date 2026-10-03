@@ -336,3 +336,29 @@ class MonotonicActivityTimestamps(unittest.TestCase):
         with patch('open_cake_ir.evaluation.metax_activity.time.monotonic_ns',side_effect=RuntimeError('clock fault')):
             self.assertEqual(collector._timestamp(),0)
         self.assertIn('clock fault',collector._errors[-1])
+
+    def test_timestamp_is_registered_once_before_any_activity_enable(self):
+        import open_cake_ir.evaluation.metax_activity as activity
+        calls=[]
+        class Function:
+            def __init__(self,name):self.name=name
+            def __call__(self,*args):
+                calls.append(self.name)
+                if self.name=='mcptiGetVersion':args[0]._obj.value=18
+                if self.name=='mcptiActivityRegisterTimestampCallback':
+                    self.callback=args[0]
+                    if self.callback()<=0:raise AssertionError('invalid registered time')
+                return 0
+        class API:
+            def __init__(self):self.functions={}
+            def __getattr__(self,name):return self.functions.setdefault(name,Function(name))
+        with tempfile.TemporaryDirectory() as directory:
+            library=Path(directory).resolve()/'libmcpti.so';library.write_bytes(b'CPU fixture only')
+            api=API()
+            with patch.object(activity,'_COLLECTOR',None),patch.object(activity.C,'CDLL',return_value=api):
+                collector=activity.McptiActivity(str(library))
+                self.assertTrue(collector._ready)
+                self.assertEqual(calls,['mcptiGetVersion','mcptiActivityRegisterCallbacks','mcptiActivityRegisterTimestampCallback'])
+                self.assertIs(api.functions['mcptiActivityRegisterTimestampCallback'].callback,collector._timestamp_callback)
+                self.assertEqual(collector._timestamp_source,'monotonic_ns_since_collector_creation')
+                with self.assertRaisesRegex(RuntimeError,'process owner'):activity.McptiActivity(str(library))

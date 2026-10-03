@@ -104,6 +104,8 @@ class McptiActivity:
         _COLLECTOR = self
         self._call("mcptiActivityRegisterCallbacks", self._requested_callback, self._completed_callback)
         self._call("mcptiActivityRegisterTimestampCallback", self._timestamp_callback)
+        if self._errors:
+            raise ValueError(f'MCPTI timestamp registration failed: {self._errors}')
         self._ready = True
 
     def _call(self, name, *args):
