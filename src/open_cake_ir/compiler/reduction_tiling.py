@@ -1,16 +1,29 @@
-"""Bounded explicit K tiling of an FP32 squared-difference reduction.
+"""Guarded explicit tiling of a pure FP32 squared-difference reduction.
 
-The rewrite changes residency and reduction grouping, retaining subtraction before
-square. It adds no instruction, target fact or performance qualification.
+Both rewrites share graph, arithmetic, storage and access admission. Neither adds
+an instruction, target fact, physical register guarantee or performance claim.
 """
 from copy import deepcopy
-
+from dataclasses import dataclass
 from .passes import SpecializationResult
+from .errors import CompilerError
 
 
-def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_point):
-    def refuse(reason, message):
-        return SpecializationResult(None, reason, message)
+def _refuse(reason,message):
+    return SpecializationResult(None,reason,message)
+
+
+@dataclass
+class _SquaredDifferenceInput:
+    document: dict
+    schedule: object
+    point: dict
+    centroids: dict
+    output: dict
+
+
+def _guard_squared_difference(schedule):
+    refuse = _refuse
     from .ir import Schedule
     from .errors import CompilerError
     try:
@@ -20,11 +33,6 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
     d = deepcopy(dict(schedule))
     if s.lowering.backend.value != 'triton':
         return refuse('target_route', 'This rewrite emits an explicit Triton reduction loop.')
-    if (type(k_tile) is not int or k_tile <= 0 or k_tile & (k_tile-1)):
-        return refuse('tile_extent', 'k_tile must be a positive power of two.')
-    if (not isinstance(schedule_id, str) or not schedule_id or schedule_id == s.schedule_id
-        or not isinstance(entry_point, str) or not entry_point.isidentifier()):
-        return refuse('result_identity', 'Choose a fresh Schedule identity and valid entry point.')
     if (s.tile_loops or s.allocations or s.pipelines or s.barriers or s.residency
         or len(s.roles) != 1 or s.roles[0].registers_per_thread is not None
         or s.program_map is None or s.program_map.persistent
@@ -57,8 +65,6 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
         or xb['mode'] != 'input' or cb['mode'] != 'input' or ob['mode'] != 'output'):
         return refuse('storage_domain', 'Require ordinary FP32 x[R,K], c[N,K], out[R,N].')
     K,N = xb['shape'][1],cb['shape'][0]
-    if k_tile >= K:
-        return refuse('tile_extent', 'k_tile must be smaller than the contracted extent.')
     axis = d['program_map']['axes'][0]
     row = {'source':'program','name':axis['name']}
     dim = lambda n: {'source':'dimension','dimension':n}
@@ -71,6 +77,41 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
         or any(buffers[op['writes'][0]]['shape'] != shape for op,shape in
                ((x,[K]),(c,[N,K]),(sub,[N,K]),(square,[N,K]),(fold,[N])))):
         return refuse('access_domain', 'Require a whole-row load, whole centroid load and whole-row output.')
+    return _SquaredDifferenceInput(d,s,xb,cb,ob)
+
+
+def _result_identity(input,schedule_id,entry_point):
+    if (not isinstance(schedule_id,str) or not schedule_id or schedule_id==input.schedule.schedule_id
+        or not isinstance(entry_point,str) or not entry_point.isidentifier()):
+        return _refuse('result_identity','Choose a fresh Schedule identity and valid entry point.')
+    return None
+
+
+def _assess_result(compiler,document,message):
+    try:
+        assessment=compiler.assess(document)
+        if not assessment.lowering_eligible:
+            return _refuse('result_refused',', '.join(f.code for f in assessment.findings if f.blocks_lowering or f.blocks_acceptance))
+        compiler.lower(assessment)
+    except (CompilerError,ValueError,TypeError) as error:
+        return _refuse('result_refused',str(error))
+    return SpecializationResult(assessment,'applied',message)
+
+
+def tile_squared_difference(compiler,schedule,*,k_tile,schedule_id,entry_point):
+    if type(k_tile) is not int or k_tile<=0 or k_tile & (k_tile-1):
+        return _refuse('tile_extent','k_tile must be a positive power of two.')
+    input=_guard_squared_difference(schedule)
+    if isinstance(input,SpecializationResult):return input
+    identity=_result_identity(input,schedule_id,entry_point)
+    if identity is not None:return identity
+    d,s=input.document,input.schedule
+    xb=input.point
+    if k_tile>=xb['shape'][1]:
+        return _refuse('tile_extent','k_tile must be smaller than the contracted extent.')
+    ops=d['operations'];x,c,sub,square,fold,store=ops
+    buffers={b['name']:b for b in d['buffers']}
+    axis=d['program_map']['axes'][0]
     names = {b.name for b in s.buffers} | {op.op_id for op in s.operations} | {axis['name']}
     iterator = 'contracted_tile'
     while iterator in names: iterator += '_'
@@ -85,40 +126,22 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
     d['tile_loops'] = [dict(name=iterator+'_loop',iterator=iterator,buffer=xb['name'],dimension=1,
         tile=k_tile,body=[op['id'] for op in ops[:-1]],range_options=dict(num_stages=1,
         loop_unroll_factor=1,disallow_acc_multi_buffer=False,flatten=False,warp_specialize=False,disable_licm=False))]
-    try:
-        result = compiler.assess(d)
-        if not result.lowering_eligible:
-            return refuse('result_refused', ', '.join(f.code for f in result.findings if f.blocks_lowering or f.blocks_acceptance))
-        compiler.lower(result)
-    except (CompilerError, ValueError, TypeError) as error:
-        return refuse('result_refused', str(error))
-    return SpecializationResult(result,'applied','Explicit K tiling preserves FP32 subtraction before square; measure reduction grouping, latency and resources independently.')
+    return _assess_result(compiler,d,'Explicit K tiling preserves FP32 subtraction before square; measure reduction grouping, latency and resources independently.')
 
 
 def tile_squared_difference_outputs(compiler,schedule,*,output_tile,schedule_id,entry_point):
-    """Partition independent outputs while retaining the complete K contraction.
-
-    The K rewrite already owns the shared pure squared-difference input guard.
-    This rewrite admits that same input, but changes only N tile/program ownership.
-    It never supplies or promises a physical register cap.
-    """
-    from .errors import CompilerError
-    def refuse(reason,message):return SpecializationResult(None,reason,message)
+    """Partition independent N outputs while retaining the complete K contraction."""
     if type(output_tile) is not int or output_tile<=0 or output_tile & (output_tile-1):
-        return refuse('output_extent','output_tile must be a positive power of two.')
-    # Validate the common exact graph/access/storage domain using the existing
-    # deterministic rewrite. Its temporary result is not returned or executed.
-    try:
-        K=schedule['buffers'][0]['shape'][1]
-    except (KeyError,TypeError,IndexError):
-        return refuse('input_refused','Require the canonical row squared-difference input.')
-    checked=tile_squared_difference(compiler,schedule,k_tile=1,schedule_id=schedule_id,entry_point=entry_point)
-    if not checked.applied:return checked
-    d=deepcopy(dict(schedule))
+        return _refuse('output_extent','output_tile must be a positive power of two.')
+    input=_guard_squared_difference(schedule)
+    if isinstance(input,SpecializationResult):return input
+    identity=_result_identity(input,schedule_id,entry_point)
+    if identity is not None:return identity
+    d=input.document
     x,c,sub,square,fold,store=d['operations']
     buffers={b['name']:b for b in d['buffers']}
-    global_c=buffers[c['reads'][0]];N=global_c['shape'][0]
-    if output_tile>=N:return refuse('output_extent','output_tile must be smaller than the output-column extent.')
+    global_c=input.centroids;N=global_c['shape'][0]
+    if output_tile>=N:return _refuse('output_extent','output_tile must be smaller than the output-column extent.')
     d['schedule_id']=schedule_id;d['lowering']['entry_point']=entry_point
     old_axis=d['program_map']['axes'][0]
     column='output_columns'
@@ -130,10 +153,4 @@ def tile_squared_difference_outputs(compiler,schedule,*,output_tile,schedule_id,
     for access in d['access_maps']:
         if access['operation']==c['id']:access['indices'][0]={'source':'program_tile','name':column}
         elif access['operation']==store['id']:access['indices'][1]={'source':'program_tile','name':column}
-    try:
-        assessed=compiler.assess(d)
-        if not assessed.lowering_eligible:
-            return refuse('result_refused',', '.join(f.code for f in assessed.findings if f.blocks_lowering or f.blocks_acceptance))
-        compiler.lower(assessed)
-    except (CompilerError,ValueError,TypeError) as error:return refuse('result_refused',str(error))
-    return SpecializationResult(assessed,'applied','Explicit output-column partitioning preserves rounded FP32 subtraction, square and the full K sum. Actual resource allocation and speed require target measurement.')
+    return _assess_result(compiler,d,'Explicit output-column partitioning preserves rounded FP32 subtraction, square and the full K sum. Actual resource allocation and speed require target measurement.')
