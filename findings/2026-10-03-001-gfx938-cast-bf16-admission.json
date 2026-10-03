@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-10-03-001",
+  "kind": "capacity",
+  "date": "2026-10-03",
+  "title": "gfx938 omits existing cast and BF16 contraction admission",
+  "backend": "triton",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@f09a3e859859e848f33a21b63412a306eea8738f",
+  "executor_revision": "bw1100-bench@77a2848f95bd2a13fea0ce69dcc1147ccac39a93; local HCU gateway, not a canonical Lab Executor",
+  "evidence": {
+    "workspace": "bw1100-1:/data3/testuser01/experiments/bw1100-cake-dcu-qualification-20261003",
+    "record": "results/cast-bf16-001/manifest.json and device-result.json",
+    "run_id": "bw-f84f0ffb8f9b",
+    "receipt": "results/cast-bf16-001-admission-terminal.json"
+  },
+  "observation": "The exact gfx938 Target lacks cast and triton.dot.bf16_fp32 although the shared registry, dtype checks and Triton emitter already own them. Retargeted public Schedules are refused before emission. This is target admission, not a missing primitive or a request to weaken the dtype contract. The successor generated three cast routes and four BF16 GEMM+bias shapes; all eleven device checks passed, including reciprocal 2^40 scaling and N=96 tails. Actual native assembly contains the BF16 v_mmac form. A mismatched FP16 contract still refuses BF16 operands.",
+  "proposed_change": "Declare the existing cast operation and BF16/FP32 contraction on gfx938, add positive and dtype-refusal Corpus cases, and retain a reproducible external-output qualification tool. Preserve the original 180 Corpus expectations and the frozen Ralph Compiler.",
+  "principles": "P1/P3: existing canonical primitives only. P2/P8: exact target, native instruction and bounded device evidence. P4/P5/P7: reuse registry-owned dtype admission and counterexample. P6: full Corpus Gate and affected contracts.",
+  "decision": "proposed",
+  "implemented_in": "291c2aff",
+  "partial_verification": {
+    "source_commit": "d6a8872d30f2236663e8467c0005cb5c9552c303",
+    "kind": "bounded component device qualification, not a Lab Campaign",
+    "correctness_checks": 11,
+    "affected_contracts_passed": 47,
+    "corpus_cases": 184,
+    "historical_expectations_changed": false,
+    "cleanup": "terminal receipt completed, HCU6 VRAM0, container absent, KFD not visible",
+    "scope": "Four component comparisons against the same-geometry explicit FP32 widening route, with reversed order and A/A controls. Not a community SOTA, GQA, serving, full-workload or authoring-budget result. Physical exclusivity is not established."
+  },
+  "verified_by": null,
+  "remaining_acceptance": "Independent integration review and a successor operator campaign against its frozen strong community baseline; capability Finding remains proposed until that campaign qualifies."
+}

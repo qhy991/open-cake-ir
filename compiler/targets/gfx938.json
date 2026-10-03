@@ -95,6 +95,11 @@
       "kind": "device_observation",
       "source": "triton 3.6.0 tl.dot with fp32 operands against torch matmul, on BW1101",
       "locator": "fp32 operands reach this ISA's matrix unit rather than falling back to v_fma: input_precision=ieee emits v_mmac_16x16x8_f32 and input_precision=tf32 emits v_mmac_f32_16x16x8_tf32, with zero v_fma or v_pk_fma_f32 in either. 64x64x64 against a torch fp32 matmul: ieee max_abs_error 0 exactly, tf32 relative error 7.177e-04, which is the reduced mantissa and is why the two are separate contracts rather than one. Checked because a contract naming a matrix instruction the hardware does not run for this dtype would be worse than none (F-2026-09-17-011); observed 2026-09-18 on bw1100"
+    },
+    {
+      "kind": "device_observation",
+      "source": "Cake-generated cast and BF16 GEMM+bias on bw1100-1, Triton 3.6.0 hcu backend",
+      "locator": "/data3/testuser01/experiments/bw1100-cake-dcu-qualification-20261003/results/cast-bf16-001/device-result.json, Compiler d6a8872d: three exact cast checks (bf16/fp32 in both directions and int32/fp32), four GEMM shapes with FP32 output and bias, each at ordinary and reciprocal 2^40 input scales, all eleven checks passed. Native assembly emits v_mmac_f32_16x16x16_bf16; no FP16 narrowing. N=96 tail included. Source uses 64x64x64 tiles and one pipeline stage; this bounded observation does not qualify all tilings or operator workloads. Observed 2026-10-03 on gfx938."
     }
   ]
 }
