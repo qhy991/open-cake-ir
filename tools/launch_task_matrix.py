@@ -21,24 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 from tools import launch_task  # noqa: E402
+from open_cake_ir.tasks.catalog import task_names, matrix_depth as _depth
 from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
-ALL_TASKS = (
-    "rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
-    *launch_task.ACTIVATION_TASKS, *launch_task.ROWWISE_TASKS,
-    *launch_task.REDUCTION_TASKS, *launch_task.OPTIMIZER_TASKS,
-    *launch_task.CONTRACTION_TASKS, "gemm_bias",
-)
-DEPTH_TASKS = frozenset((*launch_task.CONTRACTION_TASKS, "gemm_bias", "aka_gemm_nt_bias", launch_task.TINYGEMM_TASK))
-
-
-def _depth(task, requested):
-    if task not in DEPTH_TASKS:
-        return None
-    if requested is not None or task == launch_task.TINYGEMM_TASK:
-        return requested  # TinyGEMM's factory owns its default K.
-    return 256  # Retain the existing portable-matrix contraction default.
-
-
+ALL_TASKS = task_names(suite="portable")
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

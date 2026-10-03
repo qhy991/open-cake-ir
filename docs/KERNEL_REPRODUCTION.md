@@ -100,8 +100,9 @@ CUDA 工程、注册新 Workload 或将外部源码编译为测量基线。管�
 
 ## 每轮如何获得规范
 
-现有链路是：`--agents-md` → Study 的 `arm.scaffold` → CampaignLock → 任务包
-`AGENTS.md` → 每轮 provider 请求及其保留的 evidence bundle。
+普通复现的链路是：`--agents-md` → Run 的 authoring scaffold → 任务包 `AGENTS.md`
+→ 每轮 provider 请求及其保留的 evidence bundle。独立 Run 无需 Study 或 CampaignLock；
+旧配对 Study 由适配边界绑定 scaffold 后投影到同一 Run。
 任务包从已绑定的 scaffold 渲染规范，不从机器上任意位置查找 `AGENTS.md`。
 `TASK.md` 保留任务与其他参考材料，指向 `AGENTS.md` 中的规范；规范正文只出现一次。
 运行中修改原始文件会触发现有输入绑定检查，不会静默更新已冻结任务。

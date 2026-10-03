@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.tasks.devices import BACKENDS
 from open_cake_ir.tasks.workloads import create_task
+from open_cake_ir.tasks.catalog import task_entry
 
 POLICY = ROOT / "contracts/scaffolds/kernel-reproduction/AGENTS.md"
 
@@ -82,6 +83,7 @@ def validate(config):
                 or cell["id"] in ids or cell["backend"] not in BACKENDS):
             raise ValueError("unique cell ids and declared backends are required")
         ids.add(cell["id"])
+        task_entry(cell["task"])
         # Each Workload factory owns its actual supported target/shape domain.
         create_task(cell["task"], backend=cell["backend"], rows=cell["rows"],
                     columns=cell["columns"], depth=cell.get("depth"))
