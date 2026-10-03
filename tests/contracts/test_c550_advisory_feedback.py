@@ -95,3 +95,12 @@ class C550AdvisoryFeedback(unittest.TestCase):
         rejected=environment.build(CandidateSubmission.seal(environment.media_type,canonical_json_bytes(bad)))
         self.assertEqual(rejected.disposition,'rejected')
         self.assertIsNone(rejected.empirical_cost)
+        # A Program cannot take its Compiler identity from the supplied model.
+        wrong=deepcopy(authority)
+        wrong['compiler_revision']['revision_id']='different'
+        environment=TaskOpenCakeEnvironment(self.compiler,builder,authority_document=wrong,
+                            workload=self.workload,case_id='primary',executor=self.executor)
+        rejected=environment.build(CandidateSubmission.seal(environment.media_type,self.program.document_bytes))
+        self.assertEqual(rejected.disposition,'rejected')
+        self.assertIn('Compiler Revision',rejected.feedback['error'])
+        self.assertIsNone(rejected.empirical_cost)

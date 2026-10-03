@@ -206,6 +206,11 @@ class OpenCakeEnvironment:
                 raise ValueError('Program stage backend is outside the authoring environment')
             program = bind_program_workload(program, self._workload_sha256)
             lowered = self._compiler.lower_program(program)
+            if self._empirical_selection is not None and (
+                lowered.compiler_revision_id != self._empirical_selection._compiler_revision_id
+                or program.target != self._empirical_selection._target
+            ):
+                raise ValueError('Program Compiler Revision or target differs from the bound Environment')
             single = single_kernel_lowering(lowered)
             if single is None:
                 # Optimization environments must support their full measurement
@@ -216,7 +221,8 @@ class OpenCakeEnvironment:
                 case_id=self._case_id, compilation=compilation)
             return EnvironmentResult('launchable', submission.sha256, launchable,
                 {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
-                 'cost_model_coverage': 'whole_program_unmodeled',
+                 'cost_model_coverage': ('single_stage_only' if self._empirical_selection is not None
+                                         and single is not None else 'whole_program_unmodeled'),
                  'static_profiles': {stage['name']: self._compiler.profile(
                      self._compiler.assess(stage['schedule'])).as_dict() for stage in program.document['stages']}},
                 empirical_cost=(self._empirical_selection.estimate(program.document)
