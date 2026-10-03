@@ -221,6 +221,33 @@ def native_pointer_parameters(payload: bytes, architecture: str, kernel_name: st
     return pointers
 
 
+def native_allocation(payload: bytes, architecture: str, kernel_name: str) -> dict:
+    """Report native allocation fields without inventing CUDA equivalents.
+
+    These are the exact ELF metadata names. Private storage is not dynamic spill
+    traffic, scalar registers are not per-lane registers, and static shared storage
+    excludes the launch's dynamic shared allocation. No residency or latency model
+    is inferred from these fields.
+    """
+    kernel = native_kernel_metadata(payload, architecture, kernel_name)
+    fields = ('.mtreg_count', '.streg_count', '.private_memory_size',
+              '.share_memory_size', '.max_block_size')
+    facts, missing = {}, []
+    for name in fields:
+        if name not in kernel:
+            missing.append(name)
+            continue
+        value = kernel[name]
+        if type(value) is not int or value < 0:
+            raise ValueError(f'MACA native allocation {name} must be a nonnegative integer')
+        facts[name] = value
+    return {'kind': 'maca_native_allocation', 'native_family': architecture,
+            'kernel_name': kernel_name, 'facts': facts, 'missing_metadata': missing,
+            'unmodeled': ['stack bytes', 'dynamic spill traffic',
+                          'register allocation granularity', 'achieved occupancy',
+                          'latency prediction']}
+
+
 @dataclass(frozen=True)
 class MetaxRoute:
     """The observed MACA Triton compilation interface.
