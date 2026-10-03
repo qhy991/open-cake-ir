@@ -2438,6 +2438,60 @@
         "schedule_sha256": "81475c550772f32f8c000f1b241de016dc0fc0f5811140247298592bf60292e5",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "gfx938-cast-bf16-fp32-b8-smoke",
+      "schedule": "corpus/schedules/gfx938-cast-bf16-fp32-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "a22aaa6db494c826478555ed0050bed198217dccd0a0a16bada72395c9d67952",
+        "lowering_source_sha256": "9feb707e6ca6326e6690aab4a3a2af00417a78fdb7d09dbc6f8e1f5bc5c76fc8"
+      }
+    },
+    {
+      "case_id": "gfx938-cast-i32-fp32-b8-smoke",
+      "schedule": "corpus/schedules/gfx938-cast-i32-fp32-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "559dcba1ce275bd83b0af561cf6ec77097688375743e2a21906e29fdbaba18e0",
+        "lowering_source_sha256": "0fc13ded3c227dbb39741bbf94613a617b26f8d3ae972928085cca8158a61ba6"
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bias-bf16-b1-smoke",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-bf16-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "e79b1a7f4c7710b54d4e30b5fbd2a13cde6417dbeebcb3ce84f9dfbace4c8e91",
+        "lowering_source_sha256": "a94cd7f99487ff31a9a6754f11f996c0c07db37e4c7fd2b86991ed6a916721d1"
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bf16-fp16-contract-refusal",
+      "schedule": "corpus/schedules/gfx938-gemm-bf16-fp16-contract-refusal.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "fbf1815a9c78a6c3f25929c5109e2f1a7e06c9d1db7c3e90ec0ae59e4bdc44cd",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }
