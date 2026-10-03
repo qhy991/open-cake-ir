@@ -177,6 +177,21 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
             != sha256(_canonical_json_bytes(anchor)).hexdigest()
         ):
             raise ValueError("provider qualification anchor evidence differs")
+    if provider.get('isolation_policy') is not None:
+        if qualification.scope == 'zero_gpu_contract_fixture_only':
+            raise ValueError('isolated Claude scientific authoring requires live isolation evidence')
+        from open_cake_ir.evidence import EvidenceStore
+        retained = EvidenceStore.open(anchor['evidence_root'])
+        audit = retained.audit_run(anchor['run_id'])
+        if (not audit.archive_integrity or not audit.filesystem_custody_verified
+            or audit.terminal_seal_sha256 != anchor['terminal_seal_sha256']):
+            raise ValueError('Claude isolation qualification evidence is unverified')
+        probes = [e['payload']['observation'] for e in retained.replay_events(anchor['run_id'])
+                  if e['kind'] == 'provider_read_isolation_observed']
+        from .claude_isolation import validate_probe_observation
+        if not probes:
+            raise ValueError('Claude isolation qualification lacks its actual OS probe')
+        for observation in probes: validate_probe_observation(observation)
     for field in (("output_schema",) if provider_harness(provider) == "codex" else ()):
         reference = _object(provider.get(field), f"study.arms.provider.{field}")
         if set(reference) != {"path", "sha256"}:
@@ -246,7 +261,9 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
         if route["backend"] == "triton":
             expected_hidden = _hidden_pointers(
                 triton_route(requirements), sealed_baseline.artifact_payloads,
-                len(workload.tensor_abi(str(evaluation['case_id']))))
+                len(workload.tensor_abi(str(evaluation['case_id']))),
+                codegen_arch=requirements.get('codegen_arch'),
+                kernel_name=requirements['kernel_entry_point'])
         else:
             expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
         if manifest.hidden_null_pointer_parameters != expected_hidden:

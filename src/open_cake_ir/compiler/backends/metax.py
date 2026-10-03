@@ -1,7 +1,8 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
 from types import MappingProxyType
 from ..diagnostics import Finding
-from ..ir import DType, OperationKind, Schedule
+from ..ir import AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement, MemorySpace, OperationKind, Schedule, TileLoop
+from ..ir.instruction_contracts import COMPENSATED_FP8_MMA
 from ..target import Target
 from .common import refusal
 
@@ -17,8 +18,213 @@ DIRECTED_FMA_FUNCTIONS = MappingProxyType({
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
 
 
+def comparison_magnitude_input(schedule: Schedule, operation) -> str | None:
+    """Recognize a magnitude whose sign/payload cannot escape numeric comparisons.
+
+    select(x >= 0, x, x * -1) preserves negative zero; abs does not. Only
+    comparison readers make that difference unobservable. Keep the original
+    producers: their other readers and effects still belong to the Schedule.
+    This bounded spelling does not rewrite carried state or physical storage.
+    """
+    if (operation.kind is not OperationKind.SELECT or len(operation.reads) != 3
+            or len(operation.writes) != 1 or operation.parameters.false_value is not None
+            or schedule.tile_loops or schedule.pipelines):
+        return None
+    predicate, value, negative = operation.reads
+    result = operation.writes[0]
+    buffers = [schedule.buffer(name) for name in (value, negative, result, predicate)]
+    if any(buffer is None or buffer.space is not MemorySpace.REGISTER
+           or buffer.allocation is not None or buffer.stages != 1 for buffer in buffers):
+        return None
+    source, negated, selected, condition = buffers
+    if (source.dtype not in (DType.FP16, DType.FP32) or source.is_scalar
+            or negated.dtype is not source.dtype or selected.dtype is not source.dtype
+            or condition.dtype is not DType.INT32
+            or any(buffer.shape != source.shape for buffer in buffers)
+            or selected.mode is not BufferMode.SCRATCH or result in schedule.outputs
+            or any(buffer.scale_of is not None or buffer.valid_extent is not None
+                   for buffer in schedule.buffers)):
+        return None
+
+    def producer(name):
+        writers = [op for op in schedule.operations if name in op.writes]
+        return writers[0] if len(writers) == 1 else None
+
+    sign, negation = producer(predicate), producer(negative)
+    if (producer(result) is not operation or producer(value) is None
+            or sign is None or sign.kind is not OperationKind.COMPARE
+            or sign.reads != (value,) or sign.parameters.op != "ge"
+            or sign.parameters.scalar != 0
+            or negation is None or negation.kind is not OperationKind.ELEMENTWISE
+            or negation.reads != (value,) or negation.parameters.op is not ElementwiseOp.MUL
+            or negation.parameters.scalar != -1 or negation.parameters.broadcast_axis is not None
+            or negation.parameters.instruction is not None
+            or sign.role != operation.role or negation.role != operation.role):
+        return None
+    if any(index.name == result and index.source in (AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER)
+           for access in schedule.access_maps for index in access.indices):
+        return None
+    readers = [op for op in schedule.operations if result in op.reads]
+    if not readers or any(op.kind is not OperationKind.COMPARE for op in readers):
+        return None
+    return value
+
+
+def emit_compensated_fp8_mma(line, *, left: str, right: str, output: str, pad: str) -> None:
+    """Emit the measured 2x64x64 SIMT body; no native FP8 dot is implied."""
+    line(f"{pad}_maca_fp8_ks = tl.arange(0, 64)")
+    line(f"{pad}_maca_fp8_left_values = {left}.to(tl.float32)")
+    line(f"{pad}_maca_fp8_right_tile = {right}.to(tl.float32)")
+    line(f"{pad}_maca_fp8_total = tl.zeros((2, 64), tl.float32)")
+    line(f"{pad}_maca_fp8_correction = tl.zeros((2, 64), tl.float32)")
+    line(f"{pad}for _maca_fp8_k in tl.range(0, 64):")
+    body = pad + "    "
+    line(f"{body}_maca_fp8_left = tl.sum(tl.where("
+         "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_left_values, 0.0), axis=1)")
+    line(f"{body}_maca_fp8_right = tl.sum(tl.where("
+         "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_right_tile, 0.0), axis=1)")
+    line(f"{body}_maca_fp8_product = _maca_fp8_left[:, None] * _maca_fp8_right[None, :]")
+    line(f"{body}_maca_fp8_updated = _maca_fp8_total + _maca_fp8_product")
+    line(f"{body}_maca_fp8_error = tl.where("
+         "tl.abs(_maca_fp8_total) >= tl.abs(_maca_fp8_product), "
+         "(_maca_fp8_total - _maca_fp8_updated) + _maca_fp8_product, "
+         "(_maca_fp8_product - _maca_fp8_updated) + _maca_fp8_total)")
+    line(f"{body}_maca_fp8_correction = _maca_fp8_correction + _maca_fp8_error")
+    line(f"{body}_maca_fp8_total = _maca_fp8_updated")
+    line(f"{pad}{output} = _maca_fp8_total + _maca_fp8_correction", declares=(output,))
+
+
+def streaming_compensated_loop(schedule: Schedule, operation) -> TileLoop | None:
+    """Select the K1 form; preflight owns its complete qualified domain."""
+    loops = schedule.enclosing_loops(operation)
+    if (operation.kind is OperationKind.MMA and operation.parameters.instruction is not None
+            and operation.parameters.instruction.contract == COMPENSATED_FP8_MMA
+            and len(operation.reads) == 2 and len(operation.writes) == 1
+            and operation.parameters.tile_shape == (2, 64, 1) and len(loops) == 1
+            and schedule.mma_accumulates_over(operation, loops[0])):
+        return loops[0]
+    return None
+
+
+def emit_streaming_compensated_state(line, *, pad: str) -> None:
+    line(f"{pad}_maca_fp8_stream_total = tl.zeros((2, 64), tl.float32)")
+    line(f"{pad}_maca_fp8_stream_correction = tl.zeros((2, 64), tl.float32)")
+
+
+def emit_streaming_compensated_step(line, *, left: str, right: str, pad: str) -> None:
+    """Consume the explicit A[M,1], B[N,1] loads without inserting memory effects."""
+    line(f"{pad}_maca_fp8_stream_left = {left}.to(tl.float32)")
+    line(f"{pad}_maca_fp8_stream_right = tl.trans({right}.to(tl.float32))")
+    line(f"{pad}_maca_fp8_stream_product = _maca_fp8_stream_left * _maca_fp8_stream_right")
+    line(f"{pad}_maca_fp8_stream_updated = _maca_fp8_stream_total + _maca_fp8_stream_product")
+    line(f"{pad}_maca_fp8_stream_error = tl.where("
+         "tl.abs(_maca_fp8_stream_total) >= tl.abs(_maca_fp8_stream_product), "
+         "(_maca_fp8_stream_total - _maca_fp8_stream_updated) + _maca_fp8_stream_product, "
+         "(_maca_fp8_stream_product - _maca_fp8_stream_updated) + _maca_fp8_stream_total)")
+    line(f"{pad}_maca_fp8_stream_correction = _maca_fp8_stream_correction + _maca_fp8_stream_error")
+    line(f"{pad}_maca_fp8_stream_total = _maca_fp8_stream_updated")
+
+
+def emit_streaming_compensated_finalize(line, *, output: str, pad: str) -> None:
+    line(f"{pad}{output} = _maca_fp8_stream_total + _maca_fp8_stream_correction", declares=(output,))
+
+
+def _streaming_compensated_domain(schedule: Schedule, operation) -> bool:
+    loop = streaming_compensated_loop(schedule, operation)
+    if loop is None or len(schedule.tile_loops) != 1 or schedule.pipelines or len(schedule.operations) != 4:
+        return False
+    options = loop.range_options
+    if (loop.dimension != 1 or loop.tile != 1 or loop.stop is not None
+            or options.num_stages != 1 or options.loop_unroll_factor != 1
+            or options.flatten or options.warp_specialize or options.disallow_acc_multi_buffer
+            or options.disable_licm or operation.parameters.k_ranges is not None):
+        return False
+    left, right = (schedule.buffer(name) for name in operation.reads)
+    result = schedule.buffer(operation.writes[0])
+    if (left is None or right is None or result is None
+            or left.shape != (2, 1) or right.shape != (64, 1) or result.shape != (2, 64)
+            or left.dtype is not DType.FP8_E4M3 or right.dtype is not DType.FP8_E4M3
+            or result.dtype is not DType.FP32
+            or any(buffer.space is not MemorySpace.REGISTER for buffer in (left, right, result))):
+        return False
+    loads = [next((op for op in schedule.operations if op.writes == (buffer.name,)), None)
+             for buffer in (left, right)]
+    if any(op is None or op.kind is not OperationKind.LOAD or len(op.reads) != 1
+           or op.parameters.movement is not LoadMovement.GLOBAL or op.parameters.reuse is not None for op in loads):
+        return False
+    a, b = (schedule.buffer(op.reads[0]) for op in loads)
+    globals_ = [buffer for buffer in schedule.buffers if buffer.space is MemorySpace.GLOBAL]
+    outputs = [buffer for buffer in globals_ if buffer.mode is BufferMode.OUTPUT]
+    if (a is None or b is None or a.name == b.name or len(globals_) != 3 or len(outputs) != 1
+            or any(buffer.shape != (64, 64) or buffer.dtype is not DType.FP8_E4M3
+                   or buffer.mode is not BufferMode.INPUT or buffer.space is not MemorySpace.GLOBAL for buffer in (a, b))
+            or outputs[0].shape != (64, 64) or outputs[0].dtype is not DType.FP32
+            or loop.buffer != a.name or schedule.program_map is None or schedule.program_map.persistent
+            or len(schedule.program_map.axes) != 1 or len(schedule.roles) != 1
+            or schedule.roles[0].execution_groups != (0, 1, 2, 3)):
+        return False
+    if any(op.role != schedule.roles[0].name for op in schedule.operations):
+        return False
+    axis = schedule.program_map.axes[0]
+    if (axis.axis, axis.dimension, axis.tile, axis.buffer) != (0, 0, 2, a.name):
+        return False
+    if loop.body != (loads[0].op_id, loads[1].op_id, operation.op_id):
+        return False
+    store = next((op for op in schedule.operations if op.op_id not in loop.body), None)
+    if (store is None or store.kind is not OperationKind.STORE or store.reads != (result.name,)
+            or store.writes != (outputs[0].name,)):
+        return False
+    expected = (
+        ((AccessIndexKind.PROGRAM_TILE, axis.name, None), (AccessIndexKind.LOOP_TILE, loop.iterator, None)),
+        ((AccessIndexKind.DIMENSION, None, 0), (AccessIndexKind.LOOP_TILE, loop.iterator, None)),
+        ((AccessIndexKind.PROGRAM_TILE, axis.name, None), (AccessIndexKind.DIMENSION, None, 1)),
+    )
+    for op, buffer, indices in zip((*loads, store), (a, b, outputs[0]), expected, strict=True):
+        access = schedule.access_map(op.op_id, buffer.name)
+        if (access is None or tuple((index.source, index.name, index.dimension) for index in access.indices) != indices
+                or any(index.offset != 0 or index.extent is not None for index in access.indices)):
+            return False
+    return True
+
+
+def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
+    """Only a fixed loop can carry an exact full-unroll commitment."""
+    buffer = schedule.buffer(loop.buffer)
+    if buffer is None or loop.stop is not None or loop.dimension >= len(buffer.shape):
+        return None
+    return (buffer.shape[loop.dimension] + loop.tile - 1) // loop.tile
+
+
+def _full_unroll_admitted(loop: TileLoop, schedule: Schedule) -> bool:
+    return (loop.range_options.num_stages == 1
+            and _full_unroll_trip_count(loop, schedule)
+            == loop.range_options.loop_unroll_factor)
+
+
+def loop_range(loop: TileLoop, schedule: Schedule, extent: str, tile: str) -> str | None:
+    """Use the MACA 3.1 static iterator for an explicitly full-unrolled loop.
+
+    None leaves the shared tl.range spelling in control. Preflight refuses every
+    other non-default unroll request before this function is called by emission.
+    """
+    factor = loop.range_options.loop_unroll_factor
+    if factor == 1:
+        return None
+    if not _full_unroll_admitted(loop, schedule):
+        return None
+    return f"tl.static_range(0, {extent}, {tile})"
+
+
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     findings = []
+    compensated = [op for op in schedule.operations
+                   if op.kind is OperationKind.MMA and op.parameters.instruction is not None
+                   and op.parameters.instruction.contract == COMPENSATED_FP8_MMA]
+    if len(compensated) > 1:
+        findings.append(refusal(
+            "MACA_FP8_COMPENSATED_COUNT", "operations",
+            "the bounded MACA compensated FP8 route emits one contraction per program",
+        ))
     for index, buffer in enumerate(schedule.buffers):
         if buffer.dtype not in _BUFFER_DTYPES:
             findings.append(refusal(
@@ -58,6 +264,50 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                     "the captured MACA compiler asserts on scalar FP8 conversion; "
                     "this route requires a non-scalar FP8 tile before casting",
                 ))
+        elif (operation.kind is OperationKind.MMA
+              and operation.parameters.instruction is not None
+              and operation.parameters.instruction.contract == COMPENSATED_FP8_MMA):
+            left = schedule.buffer(operation.reads[0]) if len(operation.reads) == 2 else None
+            right = schedule.buffer(operation.reads[1]) if len(operation.reads) == 2 else None
+            result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
+            global_inputs = [buffer for buffer in schedule.buffers
+                             if buffer.space is MemorySpace.GLOBAL
+                             and buffer.mode is BufferMode.INPUT]
+            global_outputs = [buffer for buffer in schedule.buffers
+                              if buffer.space is MemorySpace.GLOBAL
+                              and buffer.mode is BufferMode.OUTPUT]
+            axes = schedule.program_map.axes if schedule.program_map is not None else ()
+            resident = (left is not None and right is not None and result is not None
+                    and left.dtype is DType.FP8_E4M3 and right.dtype is DType.FP8_E4M3
+                    and result.dtype is DType.FP32
+                    and left.shape == (2, 64) and right.shape == (64, 64)
+                    and result.shape == (2, 64)
+                    and operation.parameters.tile_shape == (2, 64, 64)
+                    and operation.parameters.k_ranges is None
+                    and not schedule.tile_loops and not schedule.pipelines
+                    and len(global_inputs) == 2 and len(global_outputs) == 1
+                    and len([buffer for buffer in schedule.buffers
+                             if buffer.space is MemorySpace.GLOBAL]) == 3
+                    and all(buffer.shape == (64, 64) and buffer.dtype is DType.FP8_E4M3
+                            for buffer in global_inputs)
+                    and global_outputs[0].shape == (64, 64)
+                    and global_outputs[0].dtype is DType.FP32
+                    and schedule.program_map is not None
+                    and not schedule.program_map.persistent
+                    and len(axes) == 1 and axes[0].axis == 0
+                    and axes[0].dimension == 0 and axes[0].tile == 2
+                    and axes[0].buffer in {buffer.name for buffer in global_inputs}
+                    and len(schedule.roles) == 1
+                    and len(schedule.roles[0].execution_groups) == 4)
+            if not resident and not _streaming_compensated_domain(schedule, operation):
+                findings.append(refusal(
+                    ("MACA_FP8_COMPENSATED_STREAM_UNQUALIFIED" if schedule.enclosing_loops(operation)
+                     else "MACA_FP8_COMPENSATED_DOMAIN_UNQUALIFIED"), path,
+                    "the measured SIMT compensated FP8 route takes one 64x64 input/output "
+                    "case, resident 2x64 by 64x64 tiles, one FP32 result, a two-row "
+                    "program map and four execution groups, or an explicit single K64 loop "
+                    "with A[2,1]/B[64,1] loads and a sole final result store; other domains require qualification",
+                ))
         elif operation.kind not in (OperationKind.LOAD, OperationKind.STORE):
             findings.append(refusal(
                 "MACA_FP8_OPERATION_UNQUALIFIED", path,
@@ -74,12 +324,21 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             "MACA_WARP_SPECIALIZATION_UNSUPPORTED", "tile_loops",
             "the admitted MACA Triton version has no qualified warp-specialization route",
         ))
-    # The captured MACA Triton 3.1 range accepts num_stages only. These options
-    # would otherwise reach its JIT as unknown keywords; dropping them would
-    # silently change the authored Schedule's performance commitments.
+    # The captured MACA Triton 3.1 range accepts num_stages only. A fixed,
+    # single-stage full unroll has its own static_range spelling; partial or
+    # dynamic unrolls cannot be silently weakened to that spelling.
     for index, loop in enumerate(schedule.tile_loops):
-        for name, default in (("loop_unroll_factor", 1), ("flatten", False),
-                              ("disallow_acc_multi_buffer", False), ("disable_licm", False)):
+        factor = loop.range_options.loop_unroll_factor
+        if factor != 1 and not _full_unroll_admitted(loop, schedule):
+            findings.append(refusal(
+                "MACA_LOOP_UNROLL_UNSUPPORTED",
+                f"tile_loops[{index}].range_options.loop_unroll_factor",
+                "MACA lowering admits a non-default unroll factor only when it equals "
+                "the trip count of a fixed, single-stage loop; partial, query-bounded "
+                "or pipelined unrolls have no faithful spelling",
+            ))
+        for name, default in (("flatten", False), ("disallow_acc_multi_buffer", False),
+                              ("disable_licm", False)):
             if getattr(loop.range_options, name) != default:
                 findings.append(refusal(
                     "MACA_LOOP_OPTION_UNSUPPORTED", f"tile_loops[{index}].range_options.{name}",

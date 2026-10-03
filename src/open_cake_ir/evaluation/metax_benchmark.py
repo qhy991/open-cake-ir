@@ -212,7 +212,7 @@ def validate_cohort(record, manifest, *, sample_count: int) -> None:
     from open_cake_ir.compiler.target import CodeObject, declared_target
     target = declared_target(manifest.target)
     native = record.get('native_activity')
-    if (target.code_object is not CodeObject.MCFATBIN or manifest.hidden_null_pointer_parameters != 0
+    if (target.code_object is not CodeObject.MCFATBIN or manifest.hidden_null_pointer_parameters not in (0, 2)
             or manifest.aligned_variant or not isinstance(native, Mapping)
             or target.l2_cache_bytes is None or native.get('timer') != TIMER
             or native.get('cache_policy') != RESET or native.get('l2_cache_bytes') != target.l2_cache_bytes

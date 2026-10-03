@@ -43,10 +43,29 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-27-001 — B300 cost calibration assumed a broker job-id environment variable; the broker assigns a GPU but exposes the job id through GPU Infra run state. The successor binds run, stage and GPU to that state, replayed against the original failure (protocol, software verified; new device campaign pending).
-- F-2026-09-27-002 — the B300 correctness stage passed, but Torch profiler initialization in the numeric-UID container failed resolving its user for a cache path. Stage-local cache and account environment passes a no-GPU replay in the same pinned image (protocol, software verified; new profiler campaign pending).
+- F-2026-10-02-002 — isolated Claude E/P admission excluded the existing v4 native compaction contract. Closed by the Study admission successor at 36e346b5 and diagnostic replay of nine retained complete C550 traces; old v3 outcomes remain unchanged.
+
+- F-2026-10-02-001 — paired MACA baseline admission omitted the lowering's native family and kernel name. Closed by the Lab caller fix at 8a1b51e3, 95 CPU contracts, the unchanged 180-case Corpus and C550-2 replay of the originally refused sealed baseline; no GPU performance claim.
+
+The 2026-10-01 integration assigns the four records first published on `metax@5f93bb6e` as local sequence 001–004 to repository-wide sequence 004–007, respectively. Their original names remain in that commit; the observations and implementation commits are unchanged.
+
+- F-2026-09-27-007 — accepted bounded MetaX FP32 FMA RZ/RD/RU lowering at aee427d9, generated-source validation at b5da553f and platform merge30d3895d/PR272 under user direction. Two native audits pass12228exact words/60NaN classes each, including disjoint initial outputs and restored ordinary RN; no performance claim. Shared main PR269 merged at 6ee0f4c7 after independent review.
+
+- F-2026-09-27-006 — closed by guarded MACA comparison-only magnitude emission at 2f44686e and generated-source qualification at 90739901: all 37 cases pass; search/confirmation repeat 1.0976x, close-null A/A and correct profile; FP16 all-encoding/FP32 boundary device audit preserves comparisons and stored negative zero. Stored/arithmetic magnitudes retain SELECT; native-source evidence remains separate.
+
+- F-2026-09-27-005 — sealed NT K-streaming FP8 compensation passes all 37 cases and repeats 22.784/155.904 us against resident source with quality-passed reversed pairs, null A/A and bounded profiles. Public K1 Schedule is legal but outside resident admission; explicit loop-state lowering and generated-source requalification remain proposed. Closed by explicit loop-owned Cake lowering: generated-source all-case replay plus 26.880/155.904 us confirmation (5.80x), null A/A and instrumented resources; authored-source 6.84x evidence remains separate.
+
+- F-2026-09-27-004 — C550-2 Triton 3.6 native ELF declares two launcher scratch pointers absent from the public TTGIR signature; the three-pointer manifest crashes at launch, while a same-artifact five-pointer primary-case control passes. Native metadata inspection and all-case Executor replay are required; no performance claim. Closed by artifact-derived pointer sealing/loader checks at 875724d4 and broker job maca-1a6e9f748221: all 37 NT v2 cases pass with unchanged inputs and no timing.
+
 - F-2026-09-27-003 — an empirical model's free-text scope listed only calibration M values while a selected run submitted two new M values; the observed two-of-six GPU cut stands, but scope-qualified savings need a structured oracle domain. The successor refuses the original wording and checks each Schedule's global-buffer shape (protocol, software replayed; new campaign pending).
 
+- F-2026-09-27-002 — the B300 correctness stage passed, but Torch profiler initialization in the numeric-UID container failed resolving its user for a cache path. Stage-local cache and account environment passes a no-GPU replay in the same pinned image (protocol, software verified; new profiler campaign pending).
+
+- F-2026-09-27-001 — B300 cost calibration assumed a broker job-id environment variable; the broker assigns a GPU but exposes the job id through GPU Infra run state. The successor binds run, stage and GPU to that state, replayed against the original failure (protocol, software verified; new device campaign pending).
+
+- F-2026-09-26-002 — one-row FP64 K reduction for the fixed C550 FP8 matrix compiles on Triton 3.1/3.6, passes bounded bitwise device checks and has a quality-passed directional MCPTI successor after one retained quality failure. Cake cannot name FP64 accumulation today; a formal Workload and reviewed precision owner are required before a Compiler or performance promotion.
+
+- F-2026-09-26-001 — a bounded C550-2 MCPTI screen favors one-row compensated FP8 over two rows, but Cake's rank-two MMA tile cannot express the one-row input. A faster one-row plain-sum composition passes the frozen cases yet fails additional finite-input precision checks, so neither timing screen qualifies a general replacement; the IR capacity question remains proposed.
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 - F-2026-09-24-002 — gfx1151 paired HIP timing has repeatable task-dependent sample spikes sixteen dispatches apart across five tasks; the cause remains unproven, and a fixed A/A device probe must precede any timer or CV-policy change (protocol, proposed).
 

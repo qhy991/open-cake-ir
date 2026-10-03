@@ -84,8 +84,8 @@ def candidate(lm, x: cake.Tensor((72, 128), "fp32"), out: cake.Tensor((72, 128),
         self.assertTrue(self.compiler.assess(document).lowering_eligible)
         source = triton.emit(Schedule.from_dict(document), declared_target('xcore1002')).source
         self.assertIn('num_stages=2', source)
-        for name, value in (('loop_unroll_factor', 2), ('flatten', True),
-                            ('disallow_acc_multi_buffer', True), ('disable_licm', True)):
+        for name, value in (('flatten', True), ('disallow_acc_multi_buffer', True),
+                            ('disable_licm', True)):
             with self.subTest(option=name):
                 candidate = copy.deepcopy(document)
                 candidate['tile_loops'][0]['range_options'][name] = value
@@ -100,3 +100,41 @@ def candidate(lm, x: cake.Tensor((72, 128), "fp32"), out: cake.Tensor((72, 128),
                 candidate['target'] = 'sm_103a'
                 self.assertFalse(any(f.blocks_lowering for f in triton.preflight(
                     Schedule.from_dict(candidate), declared_target('sm_103a'))))
+
+    def test_maca_fixed_full_unroll_has_a_distinct_source_spelling(self):
+        document = frontend.read_schedule(ROOT / 'examples/python/b300_gemm_bias.py').document
+        document['target'] = 'xcore1002'
+        document.pop('residency')
+        options = document['tile_loops'][0]['range_options']
+        options.update(num_stages=1, disallow_acc_multi_buffer=False, loop_unroll_factor=4)
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        source = self.compiler.lower(assessment).source
+        self.assertIn('for k in tl.static_range(0, N_K_LOOP, BLOCK_K_LOOP):', source)
+        self.assertNotIn('loop_unroll_factor=', source)
+        self.assertEqual(source.count('tl.dot('), 1)
+
+        # An identical Schedule on NVIDIA retains its own range option.
+        document['target'] = 'sm_103a'
+        nvidia = self.compiler.assess(document)
+        self.assertTrue(nvidia.lowering_eligible, nvidia.findings)
+        self.assertIn('loop_unroll_factor=4', self.compiler.lower(nvidia).source)
+
+    def test_maca_partial_or_pipelined_unroll_is_refused_by_its_owner(self):
+        document = frontend.read_schedule(ROOT / 'examples/python/b300_gemm_bias.py').document
+        document['target'] = 'xcore1002'
+        document.pop('residency')
+        options = document['tile_loops'][0]['range_options']
+        options['disallow_acc_multi_buffer'] = False
+        for factor, stages in ((2, 1), (4, 2)):
+            with self.subTest(factor=factor, stages=stages):
+                options.update(loop_unroll_factor=factor, num_stages=stages)
+                assessment = self.compiler.assess(document)
+                self.assertFalse(assessment.lowering_eligible)
+                owned = [f for f in assessment.findings
+                         if f.code == 'MACA_LOOP_UNROLL_UNSUPPORTED']
+                self.assertEqual(len(owned), 1)
+                self.assertEqual(owned[0].path,
+                                 'tile_loops[0].range_options.loop_unroll_factor')
+                with self.assertRaises(EmitError):
+                    triton.emit(Schedule.from_dict(document), declared_target('xcore1002'))

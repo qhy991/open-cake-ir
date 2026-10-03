@@ -183,6 +183,9 @@ class OpenCakeEnvironment:
             for item in assessment.findings + assessment.guidance
         ]
 
+    def validate_candidate_semantics(self, document):
+        """Optional Workload-owned semantic admission, before compiling a candidate."""
+
     def _build_program(self, submission, parsed, *, compilation=None):
         from open_cake_ir.compiler.ir import Program
         from open_cake_ir.evaluation.program import (
@@ -248,6 +251,7 @@ class OpenCakeEnvironment:
                                        program_id=parsed['program_id']).document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")
+            self.validate_candidate_semantics(parsed)
             if "program_id" in parsed:
                 return self._build_program(submission, parsed, compilation=compilation)
             metadata = parsed.get("metadata")

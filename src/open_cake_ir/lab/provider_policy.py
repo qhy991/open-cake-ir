@@ -54,7 +54,11 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
     if harness == "claude-code":
         fields = (_CLAUDE
                   | ({"response_model_aliases"} if "response_model_aliases" in provider else set())
-                  | ({"submission_contract"} if "submission_contract" in provider else set()))
+                  | ({"submission_contract"} if "submission_contract" in provider else set())
+                  | ({"isolation_policy"} if "isolation_policy" in provider else set()))
+        from .claude_isolation import CLAUDE_WORKSPACE_V1
+        if provider.get('isolation_policy') not in {None, CLAUDE_WORKSPACE_V1}:
+            raise ValueError('Claude isolation policy differs')
         aliases = provider.get("response_model_aliases", ())
         response_model_aliases(provider["model"], aliases)
         if "response_model_aliases" in provider and (not isinstance(aliases, list) or not aliases):

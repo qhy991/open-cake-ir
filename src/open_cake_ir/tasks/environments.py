@@ -16,3 +16,7 @@ class TaskOpenCakeEnvironment(OpenCakeEnvironment):
             raise ValueError("Open Cake Authoring Environment lowering route differs")
         super().__init__(compiler, toolchain, authority_document=authority_document,
                          workload=workload, case_id=case_id, executor=executor)
+
+    def validate_candidate_semantics(self, document):
+        from .contraction.arithmetic import validate_candidate_arithmetic
+        validate_candidate_arithmetic(document, self._workload)

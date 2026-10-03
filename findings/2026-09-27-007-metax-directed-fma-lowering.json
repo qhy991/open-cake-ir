@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-007",
+  "legacy_platform_ref": "metax@5f93bb6e",
+  "legacy_platform_id": "F-2026-09-27-004",
+  "date": "2026-09-27",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@7451c2bc3f33524b5055a1a4151e1ebb9039d49f",
+  "executor_revision": "xcore1002@66ca6c83aebd0eea8b0760fdb4090732bc266bc8",
+  "title": "MACA directed FP32 FMA realizes distinct rounding and restores ordinary arithmetic, but Cake has no admitted contract",
+  "decision": "accepted",
+  "implemented_in": "aee427d9e67a0aecb6f7d48c82c3ab9977d466bf",
+  "verified_by": {
+    "source_commit": "b5da553f329ef31f16d6fcdc9ea16ea44ee3863b",
+    "generated_job": "maca-aa65c27211f0",
+    "output_write_control_job": "maca-dcaa8af7c7af",
+    "generated_verification": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-directed-fma-sentinel-b5da553f/verification.json",
+    "software_verification": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-directed-fma-d2cc61a3-software.json",
+    "accepted_head": "95c7b6cd3987455492bad185a974cc670e773a55",
+    "all_five_platform_PR_CI_checks": "passed",
+    "platform_merge_commit": "30d3895de5d8ac7afa158a6b3b7ba9ec2293f38d",
+    "platform_PR": "https://github.com/qhy991/open-cake-ir/pull/272"
+  },
+  "evidence": {
+    "original_intrinsics": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-device-v2-20260927/verification.json",
+    "mixed_state_and_edges": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-mixed-20260927/verification.json",
+    "current_schedule_and_source_refusals": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-directed-fma-admission-7451c2bc/result.json",
+    "installed_linked_implementation": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-offline-20260927/linked-bodies.json",
+    "selector_interpretation": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-offline-20260927/hardware-state-selector.json"
+  },
+  "observation": "Eight standalone add/FMA RN/RZ/RD/RU interfaces compile to native xcore1000 artifacts and job maca-0a696d72a07a matches8192 finite nonzero-result words. Complete linked functions save/set/restore hardware state through get/sethwreg selector2049; physical register/bitfield decoding is unknown. Mixed job maca-25874d0cb439 loads four sealed FMA mode kernels and executes four calls. Directed output plus result-dependent ordinary ADD and ordinary FMA checks12288positions:12228 exact words and60 NaN-class comparisons, zero mismatches, inputs unchanged, modules closed, zero fallback/device-phase compilation. Directed RZ/RD/RU inputs distinguish leaked mode from restored RN on508/510/506rows. Edge inputs include exact cancellation, signed zero, subnormal underflow, overflow, fused overflow cancellation, infinity and NaN. Each kernel reports63registers/thread and0shared/local bytes. Timing null; local_serialized does not exclude external activity. These are standalone native diagnostics, not a Cake-generated successor or performance qualification.",
+  "first_divergence": "At7451c2bc complete existing FMA Schedules with maca.fma.rz.f32, maca.fma.rd.f32 or maca.fma.ru.f32 are refused by TARGET_INSTRUCTION_UNSUPPORTED. Manually spelling the measured library functions in the otherwise accepted kernel projection is independently refused by native source admission. Merely extending a Target document leaves registry, emission and source validation gaps.",
+  "proposed_change": "Reuse existing typed ternary ElementwiseOp.FMA. Register three explicit result-rounding names (RZ/RD/RU), keep Target admission explicit, and place only their library spelling in the MACA emitter. Keep existing nearest-route contract and ordinary arithmetic unchanged; add no global mode, hidden register mutation, layout algebra or new operation. Shared registry/source admission goes through main before MetaX target/emission integration. The source boundary admits only direct three-positional-argument calls of the three spellings on declared mcfatbin, refusing aliases, splats, keyword arguments and other code objects. Require actual Cake-generated native artifacts with mixed arithmetic and edge cases before capability promotion.",
+  "principles": "P1 reuses lm.fma and explicit instruction names; P2 exposes rounding in the authored contract and generated source; P3 keeps the existing FMA form and adds no second primitive or nearest alias; P4 retains three same-shaped FP32 register operands; P5/P7 keep existing FMA typing/effects and require observable state restoration; P6 requires intended-guard counterexamples, unchanged Target admission snapshots and Corpus expectations, fixed-commit software gates and generated-source successor evidence; P8 binds measured numerics and linked state handling to the captured C550-2 installation.",
+  "semantic_boundary": "NaN payloads, floating exception flags, exhaustive FP32 inputs and arbitrary runtime versions remain unqualified. State-restoration evidence is observable result equality for the tested compositions, not a proof of every hidden hardware-state bit. Resource queries and instruction API names establish no performance improvement.",
+  "promotion_disposition": "Accepted bounded explicit MetaX FP32 FMA RZ/RD/RU lowering into metax through PR272 at30d3895d, following the user explicit 2026-09-28 instruction to push and merge current commits into metax. Existing nearest arithmetic remains unchanged. Generated native mixed-state, edge and disjoint-output initializer evidence plus software/CI gates qualify the recorded C550-2 scope. No performance, arbitrary-shape/runtime, NaN-payload or exception-flag claim. Main PR269 remains open for independent review; that main review has not occurred.",
+  "prototype_implementation": {
+    "source_commit": "b5da553f329ef31f16d6fcdc9ea16ea44ee3863b",
+    "source_role": "lowered_source",
+    "shared_pr": "https://github.com/qhy991/open-cake-ir/pull/269",
+    "shared_review": "pending",
+    "generated_job": "maca-aa65c27211f0",
+    "disjoint_output_initializer_job": "maca-dcaa8af7c7af",
+    "generated_verification": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-directed-fma-sentinel-b5da553f/verification.json",
+    "software_gates": "MetaX integrated prototype atd2cc61a3:2533contracts/26skips/9090subtests; focused26/118; Corpus matches inherited reviewed main expectations, no refresh performed in this task. Shared at16b407f5:2504contracts/26skips/8968subtests and five CI checks; five extra CPU oracle checks pass in existing Torch environment.",
+    "observation": "Four actual Cake-generated tiled RN/RZ/RD/RU candidates seal and load as native artifacts. Each of two broker audits checks12288positions (12228exact words/60NaN classes), zero mismatches, inputs unchanged, modules closed, four calls, zero fallback/device-phase compilation. Second audit initializes every output differently from its reference, with NaN positions initialized finite. Result-dependent ordinary ADD/FMA remain RN at508/510/506 distinguishing rows for RZ/RD/RU. RN queries14registers/thread, directed modes58; no timing or causal resource claim. Shapes16x64/grid16/block256, no arbitrary-shape/runtime proof.",
+    "remaining_acceptance": "MetaX platform acceptance completed at30d3895d under explicit user direction. Shared main PR269 still requires independent review before main integration.",
+    "preserved_FP8_handoff": {
+      "boundary": "integrated b5da553f versus qualified public66ca6c83 recipe",
+      "evidence": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-sync-handoff-b5da553f/handoff.json",
+      "exact_byte_relations": "lowered source, launch manifest, mcfatbin and native image all equal",
+      "device_remeasured": false,
+      "scope": "same-artifact qualification reuse, not new timing or whole-Compiler equivalence"
+    }
+  },
+  "platform_acceptance": {
+    "date": "2026-09-28",
+    "authority": "user explicit instruction: first push and merge current commits into metax",
+    "merge_commit": "30d3895de5d8ac7afa158a6b3b7ba9ec2293f38d",
+    "main_independent_review": "pending; no claim of completed main review"
+  },
+  "main_shared_contract_integration": {
+    "merge_commit": "6ee0f4c7ec1eb0b720bfa54abbe415621de5832b",
+    "review": "Independent source and contract-boundary review found no blocking issue at task/core-metax-directed-fma-admission@3bb0a4db.",
+    "verification": "At clean 3bb0a4db, 48 focused contracts and the unchanged 179-case Corpus Gate passed; all five PR269 CI checks passed."
+  }
+}
