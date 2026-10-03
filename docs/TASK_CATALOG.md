@@ -49,7 +49,7 @@ assessment，并尝试生成源码。它不编译设备二进制、不启动作�
 
 普通 contraction 和 `gemm_bias` 的单任务入口要求显式 K；目录不会替作者猜测它。
 默认批量入口保留原有的 K=256 选择，JSON 目录的 `matrix_depth_argument` 单列这项参数；
-`tasks check` 默认检查单任务形状，缺少必需的 K 时会明确拒绝。
+`tasks check` 默认检查单任务形状，缺少必需的 K 时显示“待指定 K”，不记为 Compiler 拒绝。
 FIB GEMM 的 N/K 仍是上游常量；其 batch 默认值与 BF16 normalization 的默认值来自各自
 task owner。实际限制由 factory 和 Compiler 检查，目录不复制一份硬件能力表。
 
@@ -57,6 +57,7 @@ task owner。实际限制由 factory 和 Compiler 检查，目录不复制一份
 | --- | --- | --- |
 | 已注册 / 作者入口已接通 | 任务选择、参考包接线 | 指定目标和形状的可生成性 |
 | 源码已生成 | 本次形状的构造、类型、Verifier、lowering | 设备工具链、provider、资源准入、正确性、测量与确认 |
+| 待指定 K | 任务注册与所需的形状参数 | 绑定 K 后再检查 factory 和 Compiler |
 | 拒绝 | 具体构造阶段或 Compiler Finding | 根据原诊断修候选或整理系统缺口 |
 | 未接通 | 参考集合自己的接入记录 | 补完整 Workload、oracle 或 authoring 路径 |
 | host `present` / `missing` | 当前树中是否有该精确 Target 的采集文件 | 文件存在不证明当前节点环境、租约或测量资格 |

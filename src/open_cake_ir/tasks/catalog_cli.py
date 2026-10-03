@@ -32,6 +32,10 @@ def check_cell(compiler: Compiler, row: dict, backend: str, *,
     resolved_columns = shape["columns"] if columns is None else columns
     resolved_depth = shape.get("depth") if depth is None else depth
     result["shape"] = {"rows": resolved_rows, "columns": resolved_columns, "depth": resolved_depth}
+    if shape.get("depth_required") and resolved_depth is None:
+        result.update(source_status="needs_shape", refused_at="shape_binding",
+                      reason="--depth is required for this task's single-task launch")
+        return result
     stage = "workload"
     try:
         document, source = create_task(row["task"], backend=backend, rows=resolved_rows,
@@ -125,6 +129,7 @@ def render(document: dict, output_format: str) -> str:
     if document["source_commit"]:
         lines.append(f"源码提交：{document['source_commit']}")
     labels = {"registered": "已注册", "not_integrated": "未接通",
+              "needs_shape": "待指定 K",
               "source_generated": "源码已生成", "refused": "拒绝",
               "ready": "作者入口已接通", "skipped": "作者入口未接通", "blocked": "接入受阻"}
     if output_format == "markdown":

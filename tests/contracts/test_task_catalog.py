@@ -97,6 +97,18 @@ class TaskCatalogTests(unittest.TestCase):
         self.assertEqual(result["source_status"], "refused")
         self.assertIn("requires triton-metax", result["reason"])
 
+    def test_unbound_depth_is_an_input_requirement_not_a_compiler_refusal(self):
+        code, output, errors = self.command("check", "--task", "gemm", "--backend", "triton-b300", "--format", "json")
+        self.assertEqual(code, 1, errors)
+        row = json.loads(output)["tasks"][0]
+        self.assertEqual(row["source_status"], "needs_shape")
+        self.assertEqual(row["refused_at"], "shape_binding")
+        self.assertFalse(row["findings"])
+        code, output, errors = self.command("check", "--task", "gemm", "--backend", "triton-b300",
+                                           "--depth", "256", "--format", "json")
+        self.assertEqual(code, 0, errors)
+        self.assertEqual(json.loads(output)["tasks"][0]["shape"]["depth"], 256)
+
     def test_invalid_selection_fails_without_an_empty_success_or_traceback(self):
         for arguments in (("show", "not-a-task"),
                           ("check", "--task", "not-a-task", "--backend", "triton-b300"),
