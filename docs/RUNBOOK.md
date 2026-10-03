@@ -13,6 +13,10 @@ provider Campaign and makes no performance claim. Terms in this runbook are defi
 
 ## Independent Runs and transfer Studies
 
+Select tasks through the [unified task catalog](TASK_CATALOG.md):
+`open-cake-ir tasks list` reads registration, while `tasks check --task TASK --backend BACKEND`
+checks one exact source cell without a provider or GPU. Neither command establishes runtime qualification.
+
 Ordinary optimization prepares `run.json` directly through `tools/launch_task.py` and
 `tasks.preparation.prepare_task_run`; it needs no Study or CampaignLock. A Run freezes
 execution inputs, permissions, budget and confirmation policy. Its CLI is:
