@@ -315,3 +315,24 @@ class MacaProfileRepresentation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'aggregate'):receipt()
         correctness.pop('instrumented')
         with self.assertRaisesRegex(ValueError,'instrumented output'):receipt()
+
+class MonotonicActivityTimestamps(unittest.TestCase):
+    def test_callback_uses_fixed_monotonic_origin_without_epoch_rounding(self):
+        collector=object.__new__(McptiActivity)
+        collector._timestamp_origin_ns=1000000000000000
+        collector._errors=[]
+        with patch('open_cake_ir.evaluation.metax_activity.time.monotonic_ns',
+                   side_effect=[1000000000000001,1000000000000002,1000000000000257]):
+            self.assertEqual([collector._timestamp() for _ in range(3)],[2,3,258])
+        self.assertEqual(collector._errors,[])
+
+    def test_invalid_clock_refuses_session_instead_of_falling_back(self):
+        collector=object.__new__(McptiActivity)
+        collector._timestamp_origin_ns=100
+        collector._errors=[]
+        with patch('open_cake_ir.evaluation.metax_activity.time.monotonic_ns',return_value=99):
+            self.assertEqual(collector._timestamp(),0)
+        self.assertIn('outside uint64',collector._errors[0])
+        with patch('open_cake_ir.evaluation.metax_activity.time.monotonic_ns',side_effect=RuntimeError('clock fault')):
+            self.assertEqual(collector._timestamp(),0)
+        self.assertIn('clock fault',collector._errors[-1])

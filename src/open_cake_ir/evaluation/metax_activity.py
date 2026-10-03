@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes as C
 from pathlib import Path
 import threading
+import time
 
 
 _API_VERSION = 18
@@ -43,6 +44,7 @@ class _ApiActivity(C.Structure):
 
 
 _Request = C.CFUNCTYPE(None, C.POINTER(C.c_void_p), C.POINTER(C.c_size_t), C.POINTER(C.c_size_t))
+_Timestamp = C.CFUNCTYPE(C.c_uint64)
 _Complete = C.CFUNCTYPE(None, C.c_void_p, C.c_uint32, C.c_void_p, C.c_size_t, C.c_size_t)
 
 
@@ -70,6 +72,7 @@ class McptiActivity:
             "mcptiActivityGetNumDroppedRecords": [C.c_void_p, C.c_uint32, C.POINTER(C.c_size_t)],
             "mcptiActivityGetNextRecord": [C.c_void_p, C.c_size_t, C.POINTER(C.c_void_p)],
             "mcptiActivityRegisterCallbacks": [_Request, _Complete],
+            "mcptiActivityRegisterTimestampCallback": [_Timestamp],
         }
         for name, args in signatures.items():
             function = getattr(self.api, name)
@@ -87,17 +90,36 @@ class McptiActivity:
         self._enabled = []
         self._active = False
         self._owner_thread = None
+        # The installed MCPTI SDK documents CLOCK_REALTIME as its Linux
+        # default. Epoch nanoseconds are too large for nanosecond precision if
+        # SDK device-clock correlation passes through binary64. A fixed local
+        # monotonic origin retains ns units and avoids wall-clock adjustments.
+        # Register before any activity kind; never switch clocks in a session.
+        self._timestamp_origin_ns = time.monotonic_ns()
+        self._timestamp_source = 'monotonic_ns_since_collector_creation'
+        self._timestamp_callback = _Timestamp(self._timestamp)
         self._requested_callback = _Request(self._requested)
         self._completed_callback = _Complete(self._completed)
         # Keep callbacks alive even if registration reports an ambiguous failure.
         _COLLECTOR = self
         self._call("mcptiActivityRegisterCallbacks", self._requested_callback, self._completed_callback)
+        self._call("mcptiActivityRegisterTimestampCallback", self._timestamp_callback)
         self._ready = True
 
     def _call(self, name, *args):
         status = getattr(self.api, name)(*args)
         if status != 0:
             raise RuntimeError(f"MCPTI {name} failed with status {status}")
+
+    def _timestamp(self):
+        try:
+            stamp = time.monotonic_ns() - self._timestamp_origin_ns + 1
+            if not 0 < stamp < 2**64:
+                raise ValueError('MCPTI monotonic timestamp is outside uint64')
+            return stamp
+        except BaseException as error:
+            self._errors.append(str(error))
+            return 0  # The session is refused; never substitute a wall timestamp.
 
     def _requested(self, pointer, size, count):
         # ctypes callback exceptions cannot propagate to the caller. Preserve them and
@@ -211,7 +233,8 @@ class McptiActivity:
             # begin() may replace the collector's rows immediately after release.
             snapshot = {"source": "mcpti_activity", "api_version": self.version,
                         "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
-                        "records": list(self._rows)}
+                        "records": list(self._rows),
+                        "timestamp_source": getattr(self, '_timestamp_source', None)}
             if failure is not None:
                 snapshot['collection_errors'] = [*self._errors, str(failure)]
             self._active = False

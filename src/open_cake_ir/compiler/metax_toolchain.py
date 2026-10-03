@@ -150,12 +150,11 @@ def _metadata_object(payload: bytes):
     return result
 
 
-def native_pointer_parameters(payload: bytes, architecture: str, kernel_name: str | None = None) -> int:
-    """Read public and launcher scratch pointers from the native ELF, not TTGIR.
+def native_kernel_metadata(payload: bytes, architecture: str, kernel_name: str | None = None) -> dict:
+    """Read the exact kernel's native metadata without a runtime or GPU handle.
 
-    The C550-2 Triton 3.6 ELF has two additional global_buffer slots even though
-    its TTGIR contains only tensor arguments. Runtime-populated hidden dispatch
-    entries are a different class and are never counted as launcher arguments.
+    The offload directory, native family and sole kernel identity are admitted
+    together. Argument and allocation readers share this one metadata owner.
     """
     image = device_image(payload, architecture)
     offset = struct.unpack_from("<Q", image, 40)[0]
@@ -192,6 +191,12 @@ def native_pointer_parameters(payload: bytes, architecture: str, kernel_name: st
     if (not isinstance(kernel.get(".name"), str)
             or kernel_name is not None and kernel[".name"] != kernel_name):
         raise ValueError("MACA native kernel name differs")
+    return kernel
+
+
+def native_pointer_parameters(payload: bytes, architecture: str, kernel_name: str | None = None) -> int:
+    """Read public and launcher scratch pointers from the native ELF, not TTGIR."""
+    kernel = native_kernel_metadata(payload,architecture,kernel_name)
     args = kernel.get(".args")
     if not isinstance(args, list) or not args:
         raise ValueError("MACA native kernel has no argument metadata")
