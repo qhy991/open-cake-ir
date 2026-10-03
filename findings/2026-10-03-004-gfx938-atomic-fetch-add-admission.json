@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-10-03-002",
+  "id": "F-2026-10-03-004",
   "kind": "capacity",
   "date": "2026-10-03",
   "title": "gfx938 omits the existing bounded INT32 atomic fetch-add contract",
