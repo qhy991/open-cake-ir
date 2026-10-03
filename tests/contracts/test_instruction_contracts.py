@@ -89,7 +89,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                           "mma": ["maca.simt.fp8e4m3_compensated_fp32", "triton.dot.bf16_fp32",
                                   "triton.dot.fp16_fp32", "triton.dot.fp32_ieee"]},
             "gfx938": {"elementwise": ["ocml.tanh.f32"],
-                       "mma": ["triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
+                       "mma": ["triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
                                "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"]},
             "sm_100a": {"atomic": ["triton.atomic_add.i32.relaxed.gpu"],
                         "elementwise": ["libdevice.tanh.f32", "ptx.fma.rn.f32"],

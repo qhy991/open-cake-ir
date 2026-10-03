@@ -14,6 +14,7 @@
   ],
   "operation_kinds": [
     "load",
+    "cast",
     "elementwise",
     "mma",
     "reduce",
@@ -32,6 +33,7 @@
   "instruction_contracts": [
     "ocml.tanh.f32",
     "triton.dot.fp16_fp32",
+    "triton.dot.bf16_fp32",
     "triton.dot.fp32_ieee",
     "triton.dot.fp32_tf32",
     "triton.dot.fp8e4m3_fp32"
