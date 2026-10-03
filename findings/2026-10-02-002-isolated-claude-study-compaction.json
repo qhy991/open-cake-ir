@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-10-02-002",
+  "date": "2026-10-02",
+  "kind": "protocol",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@5012176085496a592028d6e92a539a77b4ad33d8",
+  "executor_revision": "xcore1002@5012176085496a592028d6e92a539a77b4ad33d8",
+  "title": "Isolated Claude E/P Study admission excluded the already observed native compaction contract",
+  "decision": "accepted",
+  "implemented_in": "36e346b5",
+  "verified_by": {
+    "source_commit": "36e346b5",
+    "retained_replay": "/Users/haiyan/.codex/visualizations/2026/10/01/01a0f724-5277-7381-9850-2908be179c27/c550-compaction-successor/retained-trace-replay.json",
+    "scope": "All nine retained complete native Turn traces are refused by v3 and accepted by v4, preserving modelUsage and complete started/completed/boundary observations. This is diagnostic replay, not reclassification of old Runs or device qualification.",
+    "CPU_contracts": "66 provider/Study contracts passed in an owned fixed-commit worktree at 36e346b5"
+  },
+  "evidence": {
+    "root": "c550-2:/root/open-cake-experiments/c550-controlled-study-20261002/study-v1/",
+    "runs": "t1-r1-c1 through t1-r3-c1 in c550-sqdiff-transfer-pilot-20261002",
+    "locator": "Each retained Run's run_fault event and provider_stdout object, copied read-only to compaction-review/ under the same experiment root",
+    "stop_record": "c550-2:/root/open-cake-experiments/c550-controlled-study-20261002/superseded-stop-result.json"
+  },
+  "observation": "Nine completed Run records reached provider_fault at Turn 7 or 8 solely because the frozen v3 provider contract refuses context compaction. Their actual CLI result subtype is success and each raw stream contains a complete valid native compaction lifecycle. The existing v4 parser and replay already admit and charge these observations. E/P StudyPlan additionally required v3, preventing a new isolated Study from selecting v4 even when every condition shares the same policy.",
+  "proposed_change": "Admit either frozen supported Claude event contract for isolated E/P Studies. A successor may select v4 for every cell, retain actual raw streams and native use accounting, and report per-Run compaction phases. Do not demand identical realized summaries or compaction counts across conditions, modify a frozen Run, relax incomplete-event rejection, or turn historical search timings into confirmation results.",
+  "principles": "No IR, Compiler pass, Target, Workload, oracle or measurement change. Source commits and immutable Study assignments remain the execution boundary; Run owns native provider observations and Study owns treatment policy.",
+  "promotion_disposition": "Promote the Study admission protocol repair and descriptive compaction projection. Old v3 Runs retain missing endpoints; all old candidates and measurements remain development evidence. No candidate promotion or claimed transfer gain."
+}

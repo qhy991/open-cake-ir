@@ -124,7 +124,7 @@ class StudyPlan:
             from .claude_isolation import CLAUDE_WORKSPACE_V1
             confined = (provider.get('harness') == 'responses' and run['execution']['sandbox'] == 'messages_only')
             isolated_cli = (provider.get('harness') == 'claude-code' and provider.get('isolation_policy') == CLAUDE_WORKSPACE_V1
-                            and provider.get('event_contract') == 'claude_stream_candidate_v3'
+                            and provider.get('event_contract') in {'claude_stream_candidate_v3','claude_stream_candidate_v4'}
                             and run['execution']['sandbox'] == 'none')
             if (author['environment_kind'] != 'open_cake' or not (confined or isolated_cli)
                 or run['endpoint_policy'] != NORMAL_BUDGET_TERMINAL):
