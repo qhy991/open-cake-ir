@@ -7,6 +7,9 @@
 
 [返回 Wiki](README.md) · [结果解释](results.md)
 
+选择任务和检查精确目标/形状，先看[统一任务目录](../TASK_CATALOG.md)。
+`open-cake-ir tasks list` 汇总已注册入口与参考集合；`tasks check` 明确区分源码检查和未验收的运行条件。
+
 ## 按任务目的选择入口
 
 核心架构区分任务数学、完整实现、单次执行和研究设计：Workload 拥有语义与 oracle，
