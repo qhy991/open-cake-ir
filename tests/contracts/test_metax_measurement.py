@@ -317,6 +317,23 @@ class MacaProfileRepresentation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'instrumented output'):receipt()
 
 class MonotonicActivityTimestamps(unittest.TestCase):
+    def test_invalid_reset_capture_remains_available_to_failed_pair_handoff(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        # Same strict refusal as the native reset failure, before any cohort exists.
+        raw=capture(kernel('fill',1,1000))
+        raw['records'][0]['start_ns']=0
+        assay=object.__new__(McptiDispatchBenchmark)
+        assay._reset=None;assay.l2_cache_bytes=8388608;assay.last_activity=None
+        assay.manifest=SimpleNamespace(kernel_name='cake')
+        tensor=SimpleNamespace(fill_=lambda value:None)
+        torch=SimpleNamespace(cuda=SimpleNamespace(get_device_properties=lambda index:
+            SimpleNamespace(L2_cache_size=8388608)),float32='fixture',empty=lambda *a,**k:tensor)
+        with patch.dict('sys.modules',{'torch':torch}),patch.object(assay,'_collect',return_value=raw):
+            with self.assertRaisesRegex(ValueError,'kernel timestamps'):assay._prepare_reset()
+        self.assertEqual(assay.last_activity['phase'],'reset_calibration')
+        self.assertEqual(assay.last_activity['activity'],raw)
+
     def test_callback_uses_fixed_monotonic_origin_without_epoch_rounding(self):
         collector=object.__new__(McptiActivity)
         collector._timestamp_origin_ns=1000000000000000
