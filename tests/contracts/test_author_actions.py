@@ -432,6 +432,16 @@ class AuthorActionTests(SemanticLabTestCase):
         document['authoring']['provider']['submission_contract']=PYTHON_CANDIDATE_BUNDLE_V1
         document['authoring']['tool_surface']=['submit_python_bundle']
         document['evaluation_protocol']['searches_per_turn']=1
+        # This is a newly declared CPU transport fixture, not a live receipt repair.
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        provider_document=document['authoring']['provider']
+        configuration=execution_configuration(provider_document)
+        fixture=ProviderQualificationReceipt.load(ROOT/provider_document['qualification']['path'])
+        fixture=replace(fixture,configuration_sha256=sha256(encoded(configuration)).hexdigest())
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        receipt=Path(temporary.name).resolve()/'qualification.json'
+        receipt.write_bytes(encoded(fixture.document))
+        provider_document['qualification']={'path':str(receipt),'canonical_sha256':fixture.canonical_sha256}
         spec=RunSpecification.from_dict(document)
         source=Path(document['authoring']['schedule_skeleton']['path']).read_text()
         import ast
@@ -450,7 +460,9 @@ class AuthorActionTests(SemanticLabTestCase):
                 if request.turn==2:
                     owner.assertEqual(request.feedback['author_actions'][0]['reason'],'author_format')
                     owner.assertIn('exceeds the Turn budget',request.feedback['author_actions'][0]['message'])
-                return replace(base,candidates=candidates,candidate_sha256s=tuple(sha256(p).hexdigest() for p in candidates),raw_submission=payload)
+                events=base.raw_events.replace(b'candidate-set.json',b'candidate-set.py')
+                return replace(base,candidates=candidates,candidate_sha256s=tuple(sha256(p).hexdigest() for p in candidates),
+                               raw_submission=payload,raw_events=events,raw_events_sha256=sha256(events).hexdigest())
         provider=Provider({spec.run_id:lab.task_package(spec,spec.run_id)})
         provider.configuration=execution_configuration(document['authoring']['provider'])
         provider.qualification_sha256=document['authoring']['provider']['qualification']['canonical_sha256']

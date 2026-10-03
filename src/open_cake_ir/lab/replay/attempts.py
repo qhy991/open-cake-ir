@@ -54,16 +54,6 @@ def _replay_broker_attempt_ledger(
         "receipt_sha256",
         "artifact_payload_sha256",
     }
-    result_fields = {
-        "schema_version",
-        "job_id",
-        "mode",
-        "admitted",
-        "error",
-        "failure_class",
-        "counters",
-        "receipt",
-    }
     receipt_fields = {
         "correctness_passed",
         "correctness",
