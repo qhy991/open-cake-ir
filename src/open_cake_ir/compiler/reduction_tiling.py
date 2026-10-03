@@ -93,3 +93,47 @@ def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_po
     except (CompilerError, ValueError, TypeError) as error:
         return refuse('result_refused', str(error))
     return SpecializationResult(result,'applied','Explicit K tiling preserves FP32 subtraction before square; measure reduction grouping, latency and resources independently.')
+
+
+def tile_squared_difference_outputs(compiler,schedule,*,output_tile,schedule_id,entry_point):
+    """Partition independent outputs while retaining the complete K contraction.
+
+    The K rewrite already owns the shared pure squared-difference input guard.
+    This rewrite admits that same input, but changes only N tile/program ownership.
+    It never supplies or promises a physical register cap.
+    """
+    from .errors import CompilerError
+    def refuse(reason,message):return SpecializationResult(None,reason,message)
+    if type(output_tile) is not int or output_tile<=0 or output_tile & (output_tile-1):
+        return refuse('output_extent','output_tile must be a positive power of two.')
+    # Validate the common exact graph/access/storage domain using the existing
+    # deterministic rewrite. Its temporary result is not returned or executed.
+    try:
+        K=schedule['buffers'][0]['shape'][1]
+    except (KeyError,TypeError,IndexError):
+        return refuse('input_refused','Require the canonical row squared-difference input.')
+    checked=tile_squared_difference(compiler,schedule,k_tile=1,schedule_id=schedule_id,entry_point=entry_point)
+    if not checked.applied:return checked
+    d=deepcopy(dict(schedule))
+    x,c,sub,square,fold,store=d['operations']
+    buffers={b['name']:b for b in d['buffers']}
+    global_c=buffers[c['reads'][0]];N=global_c['shape'][0]
+    if output_tile>=N:return refuse('output_extent','output_tile must be smaller than the output-column extent.')
+    d['schedule_id']=schedule_id;d['lowering']['entry_point']=entry_point
+    old_axis=d['program_map']['axes'][0]
+    column='output_columns'
+    names={b['name'] for b in d['buffers']} | {op['id'] for op in d['operations']} | {old_axis['name']}
+    while column in names:column+='_' 
+    old_axis['axis']=1
+    d['program_map']['axes'].insert(0,dict(name=column,axis=0,buffer=global_c['name'],dimension=0,tile=output_tile))
+    for op in (c,sub,square,fold):buffers[op['writes'][0]]['shape'][0]=output_tile
+    for access in d['access_maps']:
+        if access['operation']==c['id']:access['indices'][0]={'source':'program_tile','name':column}
+        elif access['operation']==store['id']:access['indices'][1]={'source':'program_tile','name':column}
+    try:
+        assessed=compiler.assess(d)
+        if not assessed.lowering_eligible:
+            return refuse('result_refused',', '.join(f.code for f in assessed.findings if f.blocks_lowering or f.blocks_acceptance))
+        compiler.lower(assessed)
+    except (CompilerError,ValueError,TypeError) as error:return refuse('result_refused',str(error))
+    return SpecializationResult(assessed,'applied','Explicit output-column partitioning preserves rounded FP32 subtraction, square and the full K sum. Actual resource allocation and speed require target measurement.')
