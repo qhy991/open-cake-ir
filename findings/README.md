@@ -43,6 +43,10 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport implemented, fresh C550 diagnosis pending.
+- F-2026-10-03-002 — Python source normalization, exact parent/stage feedback and malformed-bundle recovery implemented and software-verified; old Run classifications remain fixed.
+- F-2026-10-03-003 — measured N output partitioning encoded as an explicit guarded squared-distance rewrite; fresh pass-generated C550 qualification pending.
+
 - F-2026-10-02-002 — isolated Claude E/P admission excluded the existing v4 native compaction contract. Closed by the Study admission successor at 36e346b5 and diagnostic replay of nine retained complete C550 traces; old v3 outcomes remain unchanged.
 
 - F-2026-10-02-001 — paired MACA baseline admission omitted the lowering's native family and kernel name. Closed by the Lab caller fix at 8a1b51e3, 95 CPU contracts, the unchanged 180-case Corpus and C550-2 replay of the originally refused sealed baseline; no GPU performance claim.

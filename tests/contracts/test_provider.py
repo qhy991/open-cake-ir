@@ -90,25 +90,35 @@ class ProviderContractTests(unittest.TestCase):
                          raw.decode().split('\n').index(second.split('\n')[0]))
         for invalid in (raw, (import_line + 'print("host effect")\n' + first).encode()):
             maximum = 2 if invalid is raw else 3
+            from open_cake_ir.lab.python_candidate_bundle import project_python_candidate_bundle
             with self.assertRaises(ValueError):
-                _project_candidate_submission(invalid, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
-                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=maximum)
+                project_python_candidate_bundle(invalid,maximum_candidates_per_turn=maximum)
+            rejected, = _project_candidate_submission(invalid,submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                arm='open_cake',environment_kind='open_cake',maximum_candidates_per_turn=maximum)
+            self.assertEqual(set(json.loads(rejected)),{'python_bundle_error'})
+            from open_cake_ir.lab.actions import resolve_action
+            result=resolve_action(rejected,environment_kind='open_cake',transformations=[],candidates={},baselines={},
+                compiler_factory=lambda:self.fail('invalid author bundle reached the Compiler'),
+                allow_python=True,python_only=True,source_bundle=True)
+            self.assertIsNone(result.candidate)
+            self.assertEqual(result.reason,'author_format')
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory)/'executed'
             hostile = (import_line +
                 f'cake.transform(parent="prior", transformation="unsafe", '
                 f'parameters={{"x": open({str(marker)!r}, "w").write("bad")}})\n').encode()
-            with self.assertRaisesRegex(ValueError, 'static literals'):
-                _project_candidate_submission(hostile, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
-                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
+            rejected, = _project_candidate_submission(hostile,submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                arm='open_cake',environment_kind='open_cake',maximum_candidates_per_turn=3)
+            self.assertIn('static literals',json.loads(rejected)['python_bundle_error'])
             self.assertFalse(marker.exists())
         for parameters in ('{"tile": 32, "tile": 64}',
                            '{"nested": {"tile": 32, "tile": 64}}'):
             duplicate = (import_line + f'cake.transform(parent="prior", transformation="specialize", '
                          f'parameters={parameters})\n').encode()
-            with self.subTest(parameters=parameters), self.assertRaisesRegex(ValueError, 'unique strings'):
-                _project_candidate_submission(duplicate, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
-                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
+            with self.subTest(parameters=parameters):
+                rejected, = _project_candidate_submission(duplicate,submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm='open_cake',environment_kind='open_cake',maximum_candidates_per_turn=3)
+                self.assertIn('unique strings',json.loads(rejected)['python_bundle_error'])
         unicode_comment = (import_line + '# separator \u2028 marker\n' + first).encode()
         projected_comment, = _project_candidate_submission(unicode_comment,
             submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',

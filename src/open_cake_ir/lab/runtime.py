@@ -359,17 +359,13 @@ class CommandBrokerSubmitter:
             try:
                 worker_result = json.loads(worker_result_bytes)
                 result = worker_result
-                if not isinstance(result, Mapping) or set(result) != {
-                    "schema_version",
-                    "job_id",
-                    "mode",
-                    "admitted",
-                    "error",
-                    "failure_class",
-                    "counters",
-                    "receipt",
-                } or result.get("schema_version") != 1:
-                    raise ValueError("evaluator command result fields differ")
+                from open_cake_ir.evaluation.failures import failure_artifacts
+                diagnostic_paths = failure_artifacts(result)
+                diagnostic_payloads = {}
+                for role,path in diagnostic_paths.items():
+                    payload = self._read_output_artifact(root,path,role)
+                    diagnostic_payloads[f'failure_{role}'] = payload
+                    fault_artifacts[f'failure_{role}'] = payload
                 job_observations = _BROKER_JOB_OBSERVATION.findall(completed.stderr)
                 if len(job_observations) != 1:
                     raise ValueError("broker job observation coverage differs")
@@ -470,6 +466,7 @@ class CommandBrokerSubmitter:
                         "evaluator_result": worker_result_bytes,
                         "stdout": completed.stdout,
                         "stderr": completed.stderr,
+                        **diagnostic_payloads,
                     },
                 )
             except (ValueError, TypeError, KeyError, OSError) as error:

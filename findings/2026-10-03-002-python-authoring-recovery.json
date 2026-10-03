@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-03",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@5b588ceca20ee33f9a8bec3304af64fc069477c0",
+  "executor_revision": "xcore1002@5b588ceca20ee33f9a8bec3304af64fc069477c0",
+  "decision": "accepted",
+  "id": "F-2026-10-03-002",
+  "kind": "protocol",
+  "title": "Repeated Python authoring friction and malformed bundles consumed valid provider Turns as faults",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-experiments/c550-compaction-successor-20261002/study-v1/",
+    "analysis": "/Users/haiyan/.codex/visualizations/2026/10/01/01a0f724-5277-7381-9850-2908be179c27/c550-compaction-successor/interim-analysis-20261003.json",
+    "locator": "candidate_rejected source diagnostics, author_actions_resolved refusals and provider_fault records for over-budget or missing-import Python bundles"
+  },
+  "observation": "The inspected snapshot has 53 explicit across_loop=True refusals, 19 reduction-axis refusals, 17 unauthorized-parent transform calls and 11 result-identity refusals. Valid native CLI Turns with malformed source bundles ended the Run as provider_fault rather than giving the author a no-build refusal to repair.",
+  "proposed_change": "Canonicalize the explicit Python reduction default and valid negative axes without changing canonical IR admission. Project actual prior Run-local parent identities, exact stage names and fresh output-name suggestions into the author StateCard. Reject an invalid whole source bundle without truncation or compilation, retain raw source and native usage, and allow a later bounded Turn to repair it. Preserve foreign-parent and transformation-grant refusals.",
+  "implemented_in": "b69a0028",
+  "verified_by": {
+    "commit": "bc7b4dee",
+    "CPU_contracts": "214 focused tests passed, including actual invalid-then-repaired independent Run and semantic replay, positive/negative default-axis tests and foreign-parent refusal",
+    "Corpus_Gate": "180 unchanged cases passed",
+    "independent_Compiler_review": "Frontend normalization reviewed at fdfee88f, including explicit out=, bool/float/axis boundaries; no blocker",
+    "scope": "Software protocol repair, not provider/hardware optimization qualification"
+  },
+  "promotion_disposition": "Promote after successor integration gates. Old frozen Runs remain classified by their own source; future author errors receive explicit repair feedback and consume their Turn. No numerical, device, model, material or budget relaxation."
+}

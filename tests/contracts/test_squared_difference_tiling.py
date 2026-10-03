@@ -58,3 +58,23 @@ class SquaredDifferenceTiling(unittest.TestCase):
         d=copy.deepcopy(self.schedule);d['buffers'][3]['dtype']='bf16'
         with self.assertRaisesRegex(ValueError,'remain FP32'):validate_candidate_arithmetic(d,self.workload)
         validate_candidate_arithmetic(self.schedule,self.workload)
+
+    def test_output_tile_changes_program_ownership_and_keeps_full_difference_sum(self):
+        from open_cake_ir.compiler.reduction_tiling import tile_squared_difference_outputs
+        original=copy.deepcopy(self.schedule)
+        result=tile_squared_difference_outputs(self.compiler,self.schedule,output_tile=4,schedule_id='output_tiled',
+                                               entry_point='cake_contraction_pairwise_sqdist_fp32')
+        self.assertTrue(result.applied,result.message)
+        self.assertEqual(self.schedule,original)
+        candidate=result.schedule
+        self.assertEqual(candidate['tile_loops'],[])
+        self.assertEqual(candidate['operations'],original['operations'])
+        self.assertEqual(candidate['program_map']['axes'][0]['tile'],4)
+        validate_candidate_arithmetic(candidate,self.workload)
+        source=self.compiler.lower(result.assessment).source
+        self.assertIn('tl.program_id(1)',source)
+        self.assertNotIn('tl.dot(',source)
+        self.assertNotIn('for contracted',source)
+        for tile in (True,0,3,32,64):
+            invalid=tile_squared_difference_outputs(self.compiler,self.schedule,output_tile=tile,schedule_id='new',entry_point='new')
+            self.assertFalse(invalid.applied)
