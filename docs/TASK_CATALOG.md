@@ -68,6 +68,13 @@ task owner。实际限制由 factory 和 Compiler 检查，目录不复制一份
 
 ## 导出与启动
 
+多卡主机上的 MACA 本地运行须显式绑定分配设备，例如给单任务或批量 launcher
+传入 `--local-device 0 --local-queue-seconds 120`。设备选择由现有本地 broker 在获取共享锁后
+执行；CPU 准备和排队不持有 GPU lease。MACA 运行会在作者调用前，通过同一映射和锁检查
+精确设备准入并保留 `local-device-admission.json`。该检查不执行 kernel，不产生性能结果。
+有限等待到期、软件环境或设备准入失败均停止作者调用，不能绕过锁或放宽单设备要求。
+原来冻结的 Run 与非显式选择的旧接口按原提交保留。
+
 ```sh
 open-cake-ir tasks list --format json
 open-cake-ir tasks list --suite flashinfer-rewrites --format markdown
