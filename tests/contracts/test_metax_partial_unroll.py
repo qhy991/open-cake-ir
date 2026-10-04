@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import unittest
 
 from open_cake_ir.compiler import Compiler, frontend
-from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.backends import metax
 from open_cake_ir.compiler.target import declared_target
@@ -35,7 +34,7 @@ def traced_iterations(source, extent, tile):
     Replace tensor operations with a visit, not loop bounds or iterator math.
     This is a CPU semantic check of grouping; it makes no JIT/device claim.
     """
-    kernel = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == 'kernel')
+    kernel = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == '_kernel_kernel')
     outer = copy.deepcopy(next(n for n in kernel.body if isinstance(n, ast.For)))
     inner = next((n for n in outer.body if isinstance(n, ast.For)), None)
     visit = ast.Expr(ast.Call(ast.Name('visit', ast.Load()), [ast.Name('k', ast.Load())], []))
@@ -78,7 +77,7 @@ class MetaxPartialUnroll(unittest.TestCase):
                 # and the original tail mask is still used in its load.
                 assigned_before = [n for n in kernel.body[:kernel.body.index(next(n for n in kernel.body if isinstance(n, ast.For)))] if isinstance(n, ast.Assign)]
                 self.assertTrue(any(any(isinstance(t, ast.Name) and t.id == 'result' for t in n.targets) for n in assigned_before))
-                self.assertIn('k_offsets < N_X_D1', source)
+                self.assertIn('k_offsets < N_DEPTH_LOOP', source)
                 self.assertIsInstance(outer.body[0], ast.For)
 
     def test_full_unroll_and_other_targets_keep_their_original_routes(self):
@@ -111,5 +110,6 @@ class MetaxPartialUnroll(unittest.TestCase):
         for op in d['operations']:
             for key in ('reads','writes'):
                 op[key] = ['_maca_unroll_k_base' if v == 'value' else v for v in op[key]]
-        with self.assertRaisesRegex(EmitError, 'compiler-owned binding'):
-            self.compiler.lower(self.compiler.assess(d))
+        assessment = self.compiler.assess(d)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertIn('BACKEND_IDENTIFIER_COLLISION', [f.code for f in assessment.findings])
