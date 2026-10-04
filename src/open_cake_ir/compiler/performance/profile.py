@@ -423,7 +423,7 @@ def profile_envelope(
             schedule.schedule_id, target.target_id, _work_document(work_bound(schedule)),
             _residency_document(residency, pressure), _lowering_document(schedule, lowered_source, _top_k_features(schedule, structures),
                                      _runtime_indexed_buffers(schedule)), (),
-            ("No calibrated latency or achieved occupancy is reported. Residency bounds "
+            ("This Target declares no calibrated performance model for latency or achieved occupancy. Residency bounds "
              "use this Target's declarations only; undeclared capacities and implicit "
              "backend allocations are not examined. NVIDIA NCU metrics and CUDA "
              "compiled-resource feedback do not apply.",),
