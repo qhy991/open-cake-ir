@@ -17,10 +17,20 @@
   "observation": "The R128 K256 N32 confirmed candidate keeps full K resident but partitions N into groups of four, preserving FP32 difference-before-square. Its fresh paired medians are 15.36/4.608 us against the fixed K64 loop, speedup 3.3333x. The callable tactic only tiled K, leaving this independent-output mechanism to manual construction.",
   "proposed_change": "Expose explicit guarded tile_squared_difference_outputs using the same exact graph/storage/access domain as K tiling. Modify N program ownership, matching centroid/load and output/store slices, and register shapes together. Keep full K reduction, public ABI, dtypes and primitive analyses unchanged. Caller still chooses parameters; there is no physical maxnreg guarantee or implicit lowering rewrite.",
   "implemented_in": "1cb4aa01",
-  "verified_by": null,
+  "verified_by": {
+    "source_commit": "bc7b4dee5e1e3e58ca04d360d75dd5a0cea766ed",
+    "evidence_root": "c550-2:/root/open-cake-experiments/c550-repair-diag-20261003/",
+    "locators": [
+      "fresh-confirmation/result.json",
+      "fresh-confirmation/timing_samples",
+      "fresh-confirmation/correctness_output",
+      "profile/result.json"
+    ],
+    "scope": "Fresh Compiler-generated output_tile=4, R128 K256 N32, all five original validation distributions; unchanged oracle and fixed K64 baseline, 250 samples per arm, ten pairs, 10/10 wins, 15.36/4.608 us medians; separate profiler passed. Local-serialized GPU0, external activity not excluded. No E/P, held-out shape or generalization claim."
+  },
   "software_verification": {
     "commit": "bc7b4dee",
     "tests": "4 rewrite tests plus shared Compiler gates, independent review of input guards, output masks/ownership, renamed buffers, declaration order and K=1; 180 unchanged Corpus cases passed"
   },
-  "promotion_disposition": "Software rewrite ready for successor qualification; fresh Compiler-generated C550 correctness, measurement and resource observations still required. Existing manual evidence does not qualify the new pass automatically."
+  "promotion_disposition": "Promoted to explicit Compiler rewrite with exact graph/storage/access guards. Fresh pass-generated single-shape C550 correctness, paired measurement and profiler qualification passed; caller selects output_tile. Physical maxnreg enforcement and cross-shape transfer remain unqualified."
 }

@@ -47,7 +47,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport and reset-calibration retention verified through a fresh native rejection; old missing observations stay missing.
 - F-2026-10-03-002 — Python source normalization, exact parent/stage feedback and malformed-bundle recovery implemented and software-verified; old Run classifications remain fixed.
-- F-2026-10-03-003 — measured N output partitioning encoded as an explicit guarded squared-distance rewrite; fresh pass-generated C550 qualification pending.
+- F-2026-10-03-003 — explicit guarded N output partitioning qualified by fresh C550 pass-generated correctness, paired timing (3.33x, 10/10 wins) and profiler at bc7b4dee; limited to R128 K256 N32.
 
 - F-2026-10-02-002 — isolated Claude E/P admission excluded the existing v4 native compaction contract. Closed by the Study admission successor at 36e346b5 and diagnostic replay of nine retained complete C550 traces; old v3 outcomes remain unchanged.
 
