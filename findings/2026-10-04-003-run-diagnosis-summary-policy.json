@@ -19,7 +19,20 @@
   },
   "observation": "The sealed RMSNorm Run has archive integrity and custody, but the pinned --compiler-gaps tool refuses with diagnosis summary requires retained Executor and evidence policy. Its authority is a RunSpecification with top-level evidence_policy; the script reads only resolved_inputs.evidence_policy from historical Campaign authorities. The failure prevents curation without proving any Compiler gap.",
   "proposed_change": "Read the RunSpecification-owned policy for its declared schema and matching Run id; retain historical Campaign handling, exact retained Executor grouping, integrity gates and no semantic reclassification. Never substitute a Campaign policy for a malformed Run authority or change frozen evidence.",
-  "implemented_in": null,
-  "verified_by": null,
-  "promotion_disposition": "Shared diagnosis tooling repair proposed. No IR, lowering, Verifier, timing or optimization promotion."
+  "implemented_in": "4eb4604a0039c6efaf328f2ad711032c8b90750a",
+  "verified_by": {
+    "source_commit": "351c793da8e55f537e2cc074c7fdbbcfa5f588ee",
+    "evidence_root": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/",
+    "locators": [
+      "sealed-predecessor-diagnoses-successor.json",
+      "sealed-predecessor-diagnoses-successor.stderr",
+      "predecessor-rmsnorm-compiler-gaps.stderr"
+    ],
+    "scope": "Pure host-side successor reader reprocessed the original sealed RMSNorm and LayerNorm roots without changing their source, authority, events, custody or outcomes. Exit0, two retained Runs and one exact Executor/policy group. Gap references remain curation leads, not admissibility or performance claims. No provider call, GPU acquisition or measurement."
+  },
+  "promotion_disposition": "Shared diagnostic reader protocol repaired and replay-verified. No Compiler, IR, lowering, Verifier, timing or optimization promotion; original failed summary and Run outcomes remain retained.",
+  "software_verification": {
+    "source_commit": "351c793da8e55f537e2cc074c7fdbbcfa5f588ee",
+    "tests": "11 diagnosis contracts in an independent committed worktree: actual engineering and Study-assigned Run engine authorities, historical Campaigns, deduplication, integrity refusal, privacy/read-only evidence, malformed policy/identity/schema refusal; F821 and Finding record checks passed."
+  }
 }
