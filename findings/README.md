@@ -43,6 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+
 - F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.
 
 - F-2026-10-04-002 — local MACA authoring began before shared-lock and single-device admission; broker-owned explicit selection, bounded waiting and pre-authoring device probe prepared for successor verification. Original failed batch remains unchanged.
@@ -187,3 +188,7 @@ The 2026-10-01 integration assigns the four records first published on `metax@5f
 - F-2026-09-20-010 — seven fixed-shape external comparisons and six three-way NCU profiles separate starter gains from reference gaps: 003 remains 4.73x slower despite a 1.54x starter gain; 022 row packing reduces observed concurrency, while its starter beats the supplied reference. Six external timing edges retain CV failures. Existing width/load-reuse mechanisms should be isolated before new IR; no promotion (behavior, proposed).
 
 - F-2026-09-20-011 — three retained normalization kernels compile to scalar b16 memory operations without pointer attributes; a CPU-only 16-byte-alignment hypothesis switches them to v4.b32 vector operations. The ABI does not yet guarantee this assumption, so it is not launched or promoted; align compile facts with launch checks before GPU qualification (capacity, proposed). Software implementation: PR #108; GPU verification pending.
+
+- F-2026-10-04-003 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded qualification passed; review and integration status are owned by the canonical Finding.
+
+The output-prefix pruning record first published as F-2026-10-04-002 on task/core-valid-extent-work-pruning-20261004 is assigned global sequence003 here. Original record and evidence remain at751ead87; main sequence002 belongs to the separate local-device admission observation.
