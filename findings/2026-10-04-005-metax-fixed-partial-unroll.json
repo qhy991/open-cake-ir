@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-04",
-  "id": "F-2026-10-04-003",
+  "id": "F-2026-10-04-005",
   "kind": "capacity",
   "backend": "triton",
   "target": "xcore1002",
@@ -79,5 +79,11 @@
     "hypothesis": "Captured Triton3.6 realizes partial factor2 with stages2 or4 using its native range option, while the cross-version Cake route retains its refusal.",
     "result": "Both variants compile, pass all five cases and separate attribution, and pass strict fresh paired quality at R256/K256/N64. Native stages2:31.488/34.048us,0.9248x; native stages4:31.488/34.304us,0.9179x; baseline wins10/10pairs in both. A/A is1.0close_null. These are native results, not Cake results.",
     "promotion_disposition": "No promotion of pipelined native variants: no validated performance advantage at this fixed shape, and a compatible Compiler route/minimum-toolchain contract remains separate work. No IR expressibility gap is established."
+  },
+  "renumbering": {
+    "previous_platform_id": "F-2026-10-04-003",
+    "reason": "The main branch accepted the independent runtime-prefix work Finding under003 before this platform integration. Preserve both histories and use the next free005 for MetaX unroll curation.",
+    "original_platform_path": "findings/2026-10-04-003-metax-fixed-partial-unroll.json",
+    "original_platform_commit": "2a269cf4d0c84a8b0d0c598e33056a91541c1f1f"
   }
 }
