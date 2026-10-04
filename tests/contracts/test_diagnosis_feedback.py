@@ -271,7 +271,7 @@ class DiagnosisSummaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for index, authority in enumerate(documents):
                 with self.subTest(index=index):
-                    store = EvidenceStore.create(Path(directory)/str(index))
+                    store = EvidenceStore.create(Path(directory).resolve()/str(index))
                     run = store.start_run('fixture-run', authority=authority,
                         authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
                     run.seal(protocol_adherence='adhered', endpoint_observation='observed', endpoint={'kind':'fixture'})
