@@ -126,6 +126,7 @@ def build_run_reference_documents(
         "run_protocol": resolved["run_protocol"],
         "evaluation_protocol": lock.document["evaluation_protocol"],
         "execution": lock.document["execution"],
+        "granted_transformations": lock.document["knowledge"]["transformations"],
     }
     documents: dict[str, bytes] = {
         "run-authority.json": _canonical_json(run_authority).encode(),
@@ -137,8 +138,12 @@ def build_run_reference_documents(
     knowledge = lock.document['knowledge']
     if knowledge['materials']:
         documents['optimization-knowledge.json'] = _canonical_json(knowledge['materials']).encode()
-    if knowledge['transformations']:
-        documents['transformation-api.json'] = _canonical_json(transformation_surface(knowledge['transformations'])).encode()
+    # E1 exposes the same semantic API contract with or without P. Permissions
+    # remain the Run's actual grants, enforced by action resolution.
+    visible = list(dict.fromkeys(knowledge['transformations'] +
+        [name for unit in knowledge['materials'] for name in unit['transformations']]))
+    if visible:
+        documents['transformation-api.json'] = _canonical_json(transformation_surface(visible)).encode()
     baselines = lock.document['reference_inputs'].get('baseline_programs', {})
     if baselines:
         documents['authorized-programs.json'] = _canonical_json(baselines).encode()
@@ -382,6 +387,15 @@ the ordered candidates. Submit between one and {budget['maximum_candidates_per_t
 proposals per Turn. The first Turn adds the file; later Turns update it. Do not
 write a Schedule JSON or `candidate-set.json` envelope.
 
+For a transform, copy a `parent` and its exact stage name from the StateCard's
+`author_parents`. Only earlier Turns and authorized `baseline:name` entries are
+parents; a function defined in this Turn does not create a parent reference.
+Use a new `schedule_id`, for example the provided `suggested_schedule_id`, and the
+parent stage's entry point. The API document describes the operation; the Run's
+`granted_transformations` decides whether it can be executed. Each transform is
+one proposal, even if refused. Do not append old candidates to a new Turn: the
+whole file, including transforms, must fit the proposal limit.
+
 '''
     else:
         output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'
@@ -405,7 +419,7 @@ A granted rewrite uses `{{"action":"transform","parent":<prior candidate id or b
 "transformation":<granted name>,"parameters":<object>}}`.
 Use the exact candidate ids returned in feedback. A transform produces a new complete
 candidate or an explicit refusal; it does not confer correctness or performance.
-Only the APIs in `transformation-api.json`, when present, are granted. Every request
+The Run's `granted_transformations` controls execution; an API document alone grants nothing. Every request
 counts toward the per-turn proposal limit, including refused requests. Material tokens
 are part of native provider usage; transform/build work consumes the Run wall budget.
 

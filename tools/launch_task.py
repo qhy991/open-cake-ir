@@ -37,14 +37,7 @@ from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort
 from open_cake_ir.tasks.aka_v3.workload import LAUNCHABLE_TASKS as AKA_TASKS
 from open_cake_ir.tasks.metax_fp8_gemm import TASK as METAX_FP8_GEMM_TASK
 from open_cake_ir.tasks.add_rmsnorm import TASK as ADD_RMSNORM_TASK
-from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
-from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
-from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
-from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
-from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
-from open_cake_ir.tasks.solx_fib.gemm import SPECS as FIB_GEMM_SPECS
-from open_cake_ir.tasks.solx_fib.workload import (
-    SPECS as _SOLX_FIB_SPECS, default_rows as _solx_fib_rows, launchable_tasks as _solx_fib_launchable)
+from open_cake_ir.tasks.catalog import task_names, default_shape as _default_shape
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.reporting import primary_summary
@@ -52,24 +45,15 @@ from open_cake_ir.tasks.workloads import create_task, load_workload
 from open_cake_ir.tasks.tinygemm.reproduction import TASK as TINYGEMM_TASK
 from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
 
-# The launcher offers whatever the activation family registers, so a migrated AKA
-# parent becomes launchable by being added to that one table.
-ACTIVATION_TASKS = tuple(_ACTIVATION_TASKS)
-ROWWISE_TASKS = tuple(_ROWWISE_TASKS)
-REDUCTION_TASKS = tuple(_REDUCTION_TASKS)
-OPTIMIZER_TASKS = tuple(_OPTIMIZER_TASKS)
-# The arithmetic-bound family declares a K extent, as the legacy GEMM task does.
-CONTRACTION_TASKS = tuple(_CONTRACTION_TASKS)
-# SoL-ExecBench tasks carry their upstream definition's constant axis in their own name,
-# so only the batch extent is a flag here. The launcher offers the tasks some registered
-# backend admits; normalization starters partition non-power-of-two rows explicitly.
-SOLX_FIB_TASKS = _solx_fib_launchable()
-FIB_GEMM_TASKS = tuple(FIB_GEMM_SPECS)
-# The single-task and explicit matrix selectors expose the same completed factories.
-TASKS = ("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
-         *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS, *OPTIMIZER_TASKS,
-         *CONTRACTION_TASKS, *SOLX_FIB_TASKS, *FIB_GEMM_TASKS, "gemm_bias",
-         ADD_RMSNORM_TASK, *AKA_TASKS, TINYGEMM_TASK, METAX_FP8_GEMM_TASK)
+# All authoring selectors and absent shape flags use the task catalog.
+ACTIVATION_TASKS = task_names(family="activation")
+ROWWISE_TASKS = task_names(family="rowwise")
+REDUCTION_TASKS = task_names(family="reductions")
+OPTIMIZER_TASKS = task_names(family="optimizers")
+CONTRACTION_TASKS = task_names(family="contraction")
+SOLX_FIB_TASKS = task_names(family="solx_fib_normalization")
+FIB_GEMM_TASKS = task_names(family="solx_fib_gemm")
+TASKS = task_names()
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -498,40 +482,6 @@ def _report_provider_limitations(receipt: Path) -> None:
           f"{document.get('consequence')}", file=sys.stderr, flush=True)
     print(f"[provider] recorded at {report}", file=sys.stderr, flush=True)
 
-
-
-def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[int, int]:
-    """Resolve absent shape flags; the contraction family carries its own defaults.
-
-    The elementwise tile this launcher otherwise uses (128 x 1024) hands every
-    contraction task a starter that materializes a second operand the Metal backend's
-    lane-owned storage bound must refuse (F-2026-09-10-014). The contraction contract's
-    own extents keep that operand inside the bound; explicit flags still win.
-    """
-    if task == METAX_FP8_GEMM_TASK:
-        return 64 if rows is None else rows, 64 if columns is None else columns
-    if task in AKA_TASKS:
-        if task == 'aka_histogram':
-            return 1024 if rows is None else rows, 16 if columns is None else columns
-        if task == 'aka_max_pool1d':
-            return 2 if rows is None else rows, 8 if columns is None else columns
-        return 8 if rows is None else rows, 256 if columns is None else columns
-    if task == ADD_RMSNORM_TASK:
-        return 128 if rows is None else rows, 2560 if columns is None else columns
-    if task == TINYGEMM_TASK:
-        return 1 if rows is None else rows, 128 if columns is None else columns
-    if task in CONTRACTION_TASKS:
-        return 1024 if rows is None else rows, 64 if columns is None else columns
-    if task in FIB_GEMM_SPECS:
-        return (min(FIB_GEMM_SPECS[task]["batches"]) if rows is None else rows,
-                FIB_GEMM_SPECS[task]["N"] if columns is None else columns)
-    if task in SOLX_FIB_TASKS:
-        # The hidden size is the upstream task's constant, not a default: passing another
-        # one is refused by name rather than silently authoring a different task. The
-        # batch default is bounded by the independent CPU oracle, not upstream latency.
-        return (_solx_fib_rows(task) if rows is None else rows,
-                _SOLX_FIB_SPECS[task]["hidden"] if columns is None else columns)
-    return 128 if rows is None else rows, 1024 if columns is None else columns
 
 
 def _run_exit_code(report) -> int:

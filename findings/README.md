@@ -43,6 +43,16 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-04-001 — C550 native controls preserve wall-clock intervals but reject both monotonic domains; no monotonic-clock promotion. SDK-default timing and all strict gates retained.
+
+- F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport and reset-calibration retention verified through a fresh native rejection; old missing observations stay missing.
+- F-2026-10-03-002 — Python source normalization, exact parent/stage feedback and malformed-bundle recovery implemented and software-verified; old Run classifications remain fixed.
+- F-2026-10-03-003 — measured N output partitioning encoded as an explicit guarded squared-distance rewrite; fresh pass-generated C550 qualification pending.
+
+- F-2026-10-02-002 — isolated Claude E/P admission excluded the existing v4 native compaction contract. Closed by the Study admission successor at 36e346b5 and diagnostic replay of nine retained complete C550 traces; old v3 outcomes remain unchanged.
+
+- F-2026-10-02-001 — paired MACA baseline admission omitted the lowering's native family and kernel name. Closed by the Lab caller fix at 8a1b51e3, 95 CPU contracts, the unchanged 180-case Corpus and C550-2 replay of the originally refused sealed baseline; no GPU performance claim.
+
 The 2026-10-01 integration assigns the four records first published on `metax@5f93bb6e` as local sequence 001–004 to repository-wide sequence 004–007, respectively. Their original names remain in that commit; the observations and implementation commits are unchanged.
 
 - F-2026-09-27-007 — accepted bounded MetaX FP32 FMA RZ/RD/RU lowering at aee427d9, generated-source validation at b5da553f and platform merge30d3895d/PR272 under user direction. Two native audits pass12228exact words/60NaN classes each, including disjoint initial outputs and restored ordinary RN; no performance claim. Shared main PR269 merged at 6ee0f4c7 after independent review.
@@ -64,6 +74,8 @@ The 2026-10-01 integration assigns the four records first published on `metax@5f
 - F-2026-09-26-001 — a bounded C550-2 MCPTI screen favors one-row compensated FP8 over two rows, but Cake's rank-two MMA tile cannot express the one-row input. A faster one-row plain-sum composition passes the frozen cases yet fails additional finite-input precision checks, so neither timing screen qualifies a general replacement; the IR capacity question remains proposed.
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 - F-2026-09-24-002 — gfx1151 paired HIP timing has repeatable task-dependent sample spikes sixteen dispatches apart across five tasks; the cause remains unproven, and a fixed A/A device probe must precede any timer or CV-policy change (protocol, proposed).
+
+- F-2026-09-23-001 — `bw1100-1` has a distinct gfx938 Executor host closure despite the same DTK package versions; its captured successor passed software admission and bounded five-case HIP device confirmation at gfx938@4c9f4cc0 (capacity, accepted for that Workload).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.

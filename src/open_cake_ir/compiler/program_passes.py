@@ -103,6 +103,10 @@ class Transformation:
 # The callable surface, shared by authoring grants and tools. Hardware legality is
 # deliberately absent: the owning pass and Compiler assess each concrete request.
 TRANSFORMATIONS = (
+    Transformation('tile_squared_difference_outputs', ('stage', 'output_tile', 'schedule_id', 'entry_point'),
+                   'Partition independent FP32 squared-distance output columns while retaining the full K sum. output_tile is a power of two below N; same pure loop-free row/centroid domain as K tiling.'),
+    Transformation('tile_squared_difference', ('stage', 'k_tile', 'schedule_id', 'entry_point'),
+                   'Tile a pure FP32 row squared-difference sum over K; retain subtraction before square. k_tile is a power of two below K. Requires loop-free ordinary row/centroid loads and one output store.'),
     Transformation('fuse_pointwise_epilogue', ('producer', 'epilogue', 'schedule_id', 'entry_point'),
                    'Fuse a private rounded row intermediate into its only pointwise consumer.'),
     Transformation('specialize_triton_warps', ('stage', 'num_warps', 'schedule_id', 'entry_point'),
@@ -120,7 +124,7 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
     if not isinstance(parameters, Mapping) or set(parameters) != set(declaration.parameters):
         return _refuse('transform_parameters', f'Required parameters: {declaration.parameters}.')
     if any(not isinstance(parameters[key], str) or not parameters[key]
-           for key in declaration.parameters if key != 'num_warps'):
+           for key in declaration.parameters if key not in {'num_warps', 'k_tile', 'output_tile'}):
         return _refuse('transform_parameters', 'Stage names and result identity must be nonempty strings.')
     try:
         program = Program.from_dict(program.document)
@@ -137,7 +141,10 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
         if transformation == 'fuse_pointwise_epilogue':
             return _fuse(compiler, program, **parameters)
         from .passes import specialize_triton_warps, specialize_output_columns
-        transform = (specialize_triton_warps if transformation == 'specialize_triton_warps'
+        from .reduction_tiling import tile_squared_difference, tile_squared_difference_outputs
+        transform = (tile_squared_difference_outputs if transformation == 'tile_squared_difference_outputs' else
+                     tile_squared_difference if transformation == 'tile_squared_difference' else
+                     specialize_triton_warps if transformation == 'specialize_triton_warps'
                      else specialize_output_columns)
         return _specialize(compiler, program, transform=transform, **parameters)
     except (CompilerError, ScheduleParseError, ValueError, TypeError) as error:

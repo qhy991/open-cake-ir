@@ -235,8 +235,12 @@ def run_runtime_factory(project_root, runtime_config_path):
                 model=declared_provider['model'],reasoning_effort=declared_provider['reasoning_effort'],
                 workspace=author_workspace,removed_environment=tuple(declared_provider['removed_environment']))
             if harness=='claude-code':
+                if declared_provider.get('isolation_policy') is not None:
+                    from open_cake_ir.lab.claude_isolation import probe_launcher
+                    probe_launcher(executable, author_workspace)
                 invocation = ClaudeInvocationBuilder(**common,cli_options=advertised_options(executable),
                     event_contract=declared_provider['event_contract'],
+                    isolation_policy=declared_provider.get('isolation_policy'),
                     submission_contract=declared_provider.get('submission_contract', 'candidate_set_envelope_v1'),
                     response_aliases=declared_provider.get('response_model_aliases', ()))
                 provider = ClaudeRunProvider(qualification=qualification,builders={specification.run_id:invocation},
