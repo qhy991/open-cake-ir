@@ -156,6 +156,71 @@ class CollectorOwnership(unittest.TestCase):
         self.assertIn("drain failed",str(result.exception))
 
 
+class DispatchCompletionBoundary(unittest.TestCase):
+    def test_cold_sample_requires_reset_and_sample_completion_before_reuse(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        trace = []
+        reset = kernel('fill', 1, 1000)
+        raw = capture(reset, kernel('cake', 2, 4000),
+                      kernel('fill', 3, 7000), kernel('cake', 4, 10000))
+        assay = object.__new__(McptiDispatchBenchmark)
+        assay.manifest = SimpleNamespace(kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1))
+        assay.l2_cache_bytes = 4
+        assay._reset_record = reset
+        assay._reset_activity = capture(reset)
+        assay._prepare_reset = lambda: None
+        assay._reset = SimpleNamespace(fill_=lambda value: trace.append('reset'))
+        assay._collector = SimpleNamespace(
+            begin=lambda: trace.clear(), finish=lambda: raw)
+        torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: trace.append('complete')))
+        with patch.dict('sys.modules', {'torch': torch}):
+            samples = assay(lambda: trace.append('sample'), dry_run_iters=1,
+                            repeat_iters=2, cold_l2_cache=True, use_cuda_graph=False)
+        # Read actual submission boundaries, rather than trusting stream ordering
+        # to survive the captured SDK's device-to-epoch timestamp mapping.
+        for index, operation in enumerate(trace):
+            if operation == 'sample':
+                self.assertEqual(trace[index - 1], 'complete', 'reset must complete before its sample')
+            if operation == 'reset' and index:
+                self.assertEqual(trace[index - 1], 'complete', 'sample must complete before the next reset')
+        self.assertEqual(samples, [0.002048, 0.002048])
+
+    def test_warm_samples_also_complete_before_next_submission(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        trace = []
+        assay = object.__new__(McptiDispatchBenchmark)
+        assay.manifest = SimpleNamespace(kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1))
+        assay.l2_cache_bytes = 4
+        assay._reset_activity = assay._reset_record = None
+        assay._collector = SimpleNamespace(begin=lambda: trace.clear(),
+            finish=lambda: capture(kernel('cake', 1, 1000), kernel('cake', 2, 4000)))
+        torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: trace.append('complete')))
+        with patch.dict('sys.modules', {'torch': torch}):
+            assay(lambda: trace.append('sample'), dry_run_iters=1,
+                  repeat_iters=2, cold_l2_cache=False, use_cuda_graph=False)
+        indices = [i for i, value in enumerate(trace) if value == 'sample']
+        self.assertIn('complete', trace[indices[0] + 1:indices[1]])
+
+    def test_epoch_quantum_overlap_remains_invalid_for_both_boundaries(self):
+        epoch = 1791107372284255488
+        reset = kernel('fill', 1, epoch)
+        candidate = kernel('cake', 2, epoch + 2048)
+        next_reset = kernel('fill', 3, epoch + 4096)
+        second = kernel('cake', 4, epoch + 6144)
+        raw = capture(reset, candidate, next_reset, second)
+        raw['records'][2]['start_ns'] -= 256
+        with self.assertRaisesRegex(ValueError, 'serialized samples overlap'):
+            dispatch_samples(raw, kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1),
+                             repeats=2, reset_record=reset)
+        raw = capture(reset, candidate, next_reset, second)
+        raw['records'][1]['start_ns'] -= 256
+        with self.assertRaisesRegex(ValueError, 'cache reset did not precede'):
+            dispatch_samples(raw, kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1),
+                             repeats=2, reset_record=reset)
+
+
 class RejectedCaptureEvidence(unittest.TestCase):
     def test_a_rejected_cohort_retains_its_actual_activity_not_the_previous_success(self):
         from types import SimpleNamespace
