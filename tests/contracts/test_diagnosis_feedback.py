@@ -251,6 +251,33 @@ class RunDiagnosisSummaryTests(SemanticLabTestCase):
 
 
 class DiagnosisSummaryTests(unittest.TestCase):
+    def test_malformed_run_policy_is_refused_without_campaign_fallback(self):
+        import tempfile
+        from copy import deepcopy
+        from hashlib import sha256
+        from open_cake_ir.evidence import EvidenceStore
+        from open_cake_ir.serialization import canonical_json_bytes
+        from tools.summarize_diagnoses import summarize
+        baseline = {'schema_version': 1, 'run_id': 'fixture-run',
+                    'execution': {'executor_revision': {'executor_id': 'fixture'}},
+                    'evidence_policy': {'event_vocabulary': 'fixture'}}
+        documents = []
+        missing = deepcopy(baseline); del missing['evidence_policy']; documents.append(missing)
+        mixed = deepcopy(missing)
+        mixed['resolved_inputs'] = {'evidence_policy': baseline['evidence_policy']}
+        documents.append(mixed)
+        renamed = deepcopy(baseline); renamed['run_id'] = 'another-run'; documents.append(renamed)
+        unsupported = deepcopy(baseline); unsupported['schema_version'] = 2; documents.append(unsupported)
+        with tempfile.TemporaryDirectory() as directory:
+            for index, authority in enumerate(documents):
+                with self.subTest(index=index):
+                    store = EvidenceStore.create(Path(directory)/str(index))
+                    run = store.start_run('fixture-run', authority=authority,
+                        authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
+                    run.seal(protocol_adherence='adhered', endpoint_observation='observed', endpoint={'kind':'fixture'})
+                    with self.assertRaisesRegex(ValueError, 'diagnosis summary'):
+                        summarize([store.root])
+
     def test_cross_root_counts_are_read_only_deduplicated_and_policy_scoped(self):
         import os
         import shutil

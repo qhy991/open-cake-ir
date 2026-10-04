@@ -43,7 +43,7 @@ def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
             execution = authority.get("execution", {})
             resolved = authority.get("resolved_inputs", {})
             if not isinstance(execution, dict) or not isinstance(resolved, dict):
-                raise ValueError("diagnosis summary Campaign authority differs")
+                raise ValueError("diagnosis summary authority provenance differs")
             if "run_id" in authority:
                 # RunSpecification owns its policy directly, whether engineering or
                 # Study-assigned. Do not fall back to a Campaign field when it is absent.
