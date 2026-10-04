@@ -113,3 +113,35 @@ class MetaxPartialUnroll(unittest.TestCase):
         assessment = self.compiler.assess(d)
         self.assertFalse(assessment.lowering_eligible)
         self.assertIn('BACKEND_IDENTIFIER_COLLISION', [f.code for f in assessment.findings])
+
+    def test_nested_partial_groups_preserve_arithmetic_reset_and_single_store(self):
+        from test_triton_loop_scopes import _reduction, _execute
+        from open_cake_ir.compiler.backends.triton import emit
+        for op in ('sum', 'max'):
+            for features in (15, 16):
+                for outer_factor, inner_factor in ((1, 1), (1, 2), (2, 1), (2, 2)):
+                    with self.subTest(op=op, features=features, outer=outer_factor, inner=inner_factor):
+                        d = _reduction(op)
+                        d['target'] = 'xcore1002'
+                        d.pop('residency', None)
+                        for b in d['buffers']:
+                            if b['name'] == 'x': b['shape'] = [2, 7, features]
+                            if b['name'] == 'y': b['shape'] = [2, 7]
+                        for loop, factor in zip(d['tile_loops'], (outer_factor, inner_factor)):
+                            loop['range_options'] = copy.deepcopy(loop['range_options'])
+                            loop['range_options'].update(num_stages=1, loop_unroll_factor=factor,
+                                                         disallow_acc_multi_buffer=False)
+                        assessed = self.compiler.assess(d)
+                        self.assertTrue(assessed.lowering_eligible, assessed.findings)
+                        emission = emit(Schedule.from_dict(d), declared_target('xcore1002'))
+                        values = [-1 - i % 13 for i in range(2 * 7 * features)]
+                        memories = {'x': values, 'y': [None] * 14}
+                        observed = _execute(emission, memories)
+                        fold = sum if op == 'sum' else max
+                        # ADR 0032 gives masked loads zero-fill semantics. This is
+                        # deliberately different from max ignoring padded lanes.
+                        padding = (4 - features % 4) % 4
+                        expected = [fold(values[i*features:(i+1)*features] + [0]*padding)
+                                    for i in range(14)]
+                        self.assertEqual(memories['y'], expected)
+                        self.assertEqual(set(observed.stores.values()), {1})
