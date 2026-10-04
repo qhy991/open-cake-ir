@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-10-04-002",
+  "date": "2026-10-04",
+  "kind": "capacity",
+  "title": "A valid-prefix output can prove an entire program tile has no observable writes",
+  "backend": "triton",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@f0f465f69015b5f60ee93c371721b203f6e5faf3",
+  "executor_revision": "bw1100-bench frozen wave2 controls; self-contained HCU gateway, not canonical Lab Executor",
+  "evidence": {
+    "workspace": "bw1100-1:/data3/testuser01/experiments/bw1100-bench-cake-wave2-moe-20261003",
+    "locators": [
+      "campaign/EVOLUTION.md",
+      "campaign/generated/moe-dual-swiglu-m192-w4/schedule.json",
+      "campaign/generated/moe-dual-swiglu-m192-w4/source.py",
+      "campaign/generated/moe-down-weighted-m384-bn128r/source.py",
+      "campaign/evaluations/moe-grouped-cake-v3/outcome.json"
+    ]
+  },
+  "observation": "The frozen grouped MoE Schedule masks activation loads by device lengths but still executes the full fixed-grid IEEE dot. Its dense private outputs do not currently authorize pruning: masked input alone cannot erase observable output stores. The adapter only consumes valid routed rows, so a successor may declare the existing valid_extent relation on these private outputs, retain the same full operator contract and test whether empty program tiles can be removed.",
+  "proposed_change": "Reuse valid_extent without new syntax. Derive one common scalar-indexed output prefix for ordinary output stores; guard a program only when every global effect is behind that same prefix. Keep dense outputs, atomic/state effects, mismatched output domains and persistent walks unchanged. Partial tiles retain their masks. Mark operation repetitions runtime-dependent so static work is not presented as exact. Device qualification must compare unchanged adapter composition, same IEEE precision, full original correctness and paired parent/community timing.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "Pending bounded successor validation; padding counts and static proof do not establish performance."
+}
