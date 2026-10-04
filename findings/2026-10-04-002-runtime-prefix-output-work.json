@@ -21,7 +21,29 @@
   "observation": "The frozen grouped MoE Schedule masks activation loads by device lengths but still executes the full fixed-grid IEEE dot. Its dense private outputs do not currently authorize pruning: masked input alone cannot erase observable output stores. The adapter only consumes valid routed rows, so a successor may declare the existing valid_extent relation on these private outputs, retain the same full operator contract and test whether empty program tiles can be removed.",
   "proposed_change": "Reuse valid_extent without new syntax. Derive one common scalar-indexed output prefix for ordinary output stores; guard a program only when every global effect is behind that same prefix. Keep dense outputs, atomic/state effects, mismatched output domains and persistent walks unchanged. Partial tiles retain their masks. Mark operation repetitions runtime-dependent so static work is not presented as exact. Device qualification must compare unchanged adapter composition, same IEEE precision, full original correctness and paired parent/community timing.",
   "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
-  "promotion_disposition": "Pending bounded successor validation; padding counts and static proof do not establish performance."
+  "implemented_in": "2abc51e1",
+  "verified_by": {
+    "source_commit": "7180cbf08fc27ff53f7298b3c0ce424f8807af4a",
+    "workspace": "bw1100-1:/data3/testuser01/experiments/bw1100-cake-moe-output-prefix-probe-20261004-v2",
+    "outcome": "campaign/evaluations/prefix-v1/outcome.json",
+    "correctness": "campaign/evaluations/prefix-v1/correctness.json",
+    "community_timing": "campaign/evaluations/prefix-v1/latency.json",
+    "parent_timing": "campaign/evaluations/prefix-v1/parent-latency.json",
+    "profiles": [
+      ".local/profile/output-prefix-control/report-validation.json",
+      ".local/profile/output-prefix-prefix/report-validation.json"
+    ],
+    "checks": 160,
+    "parent_relative_conservative_geomean": 1.027379670933539,
+    "community_relative_conservative_geomean": 3.4916880108379496,
+    "padding_shape_parent_speedups": {
+      "num_tokens_3803": 1.4964,
+      "num_tokens_8192": 1.1358
+    },
+    "small_shape_effect": "about 0.7 percent slower, within the unchanged per-cell materiality gate",
+    "counter_scope": "T3803, four forwards per route, same seed and six-counter group; combined matched FETCH_SIZE drops about25.7 percent; Wavefronts unchanged. No duration or hardware ceiling claim.",
+    "release": "all six admitted stages terminal exit0, VRAM0, no KFD or live container; canonical community and parent validation passed",
+    "scope": "Bounded engineering qualification with original16 workloads x10 rounds and same FP32 chain; separate from Ralph search. Gateway serializes this user only and does not prove physical exclusivity."
+  },
+  "promotion_disposition": "Software and bounded DCU operator qualification passed. Independent review and core-to-main-to-dcu integration pending; no global optimality or other-target device claim."
 }
