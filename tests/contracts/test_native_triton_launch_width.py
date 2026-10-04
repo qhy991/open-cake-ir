@@ -21,7 +21,7 @@ class RejectingCompiler:
     def __init__(self):self.requests=[]
     def build(self,request):
         self.requests.append(request)
-        raise CandidateCompileRejected('CPU fixture: source reached the builder; no compilation or device work')
+        raise CandidateCompileRejected('CPU fixture: source reached the builder; no compilation or device work', artifact_payloads={})
 
 
 class NativeTritonLaunchWidth(unittest.TestCase):
