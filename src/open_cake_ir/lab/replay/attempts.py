@@ -54,16 +54,6 @@ def _replay_broker_attempt_ledger(
         "receipt_sha256",
         "artifact_payload_sha256",
     }
-    result_fields = {
-        "schema_version",
-        "job_id",
-        "mode",
-        "admitted",
-        "error",
-        "failure_class",
-        "counters",
-        "receipt",
-    }
     receipt_fields = {
         "correctness_passed",
         "correctness",
@@ -129,13 +119,16 @@ def _replay_broker_attempt_ledger(
             receipt_attempts.append(index)
         if (
             not isinstance(artifact_digests, Mapping)
-            or set(artifact_digests) != expected_artifact_roles
+            or not expected_artifact_roles <= set(artifact_digests)
+            or any(not isinstance(role,str) or not role.startswith('failure_')
+                   for role in set(artifact_digests)-expected_artifact_roles)
         ):
             refuse(f"{row}.artifact_payload_sha256", "broker attempt raw artifact roles differ",
                    observed=set(artifact_digests) if isinstance(artifact_digests, Mapping) else artifact_digests,
                    expected=expected_artifact_roles)
         raw_payloads: dict[str, bytes] = {}
-        for artifact_role in sorted(expected_artifact_roles):
+        all_artifact_roles = set(artifact_digests)
+        for artifact_role in sorted(all_artifact_roles):
             role = f"attempt_{index}_{artifact_role}"
             expected_reference_roles.add(role)
             reference = by_role.get(role)
@@ -176,9 +169,13 @@ def _replay_broker_attempt_ledger(
         except (UnicodeError, json.JSONDecodeError) as error:
             refuse(f"{raw}_broker_record", f"broker attempt raw result is not JSON: {error}")
         result = _object(broker_result, "broker_record")
-        if set(result) != result_fields or result.get("schema_version") != 1:
-            refuse(f"{raw}_broker_record", "broker attempt raw result fields differ",
-                   observed=set(result), expected=result_fields)
+        from open_cake_ir.evaluation.failures import failure_artifacts
+        try:
+            diagnostic_paths = failure_artifacts(result)
+        except ValueError as error:
+            refuse(f"{raw}_broker_record", str(error))
+        if all_artifact_roles != expected_artifact_roles | {f'failure_{role}' for role in diagnostic_paths}:
+            refuse(f"{raw}_broker_record", 'failure diagnostic artifact coverage differs')
         counters = _object(result.get("counters"), "broker_record.counters")
         if set(counters) != set(counter_fields) or any(
             not isinstance(counters.get(field), int)

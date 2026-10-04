@@ -92,8 +92,8 @@ class CorpusCaseTarget(unittest.TestCase):
         # Routing adds two measured compositions and two unqualified top-k forms.
         # The C550 indexed-gather successor adds one exact ABI-bound positive case.
         # The fixed compensated FP8 SIMT route adds one independently device-checked case.
-        # DCU adds two typed cast cases, BF16 contraction and its wrong-contract refusal.
-        self.assertEqual(report.case_count, 187)
+        # Seven retained DCU admissions/refusals and one output-prefix GEMM extend the180-case shared corpus.
+        self.assertEqual(report.case_count, 188)
 
 
 if __name__ == "__main__":

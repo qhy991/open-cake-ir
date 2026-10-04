@@ -169,7 +169,20 @@ class McptiDispatchBenchmark:
             # Bytes = four times the declared L2, elements = bytes / sizeof(FP32).
             self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device="cuda:0")
             self._reset.fill_(1.0)
-            activity = self._collect(lambda: self._reset.fill_(1.0))
+            try:
+                activity = self._collect(lambda: self._reset.fill_(1.0))
+            except Exception as error:
+                activity = getattr(error, 'activity_snapshot', None)
+                if activity is not None:
+                    self.last_activity = {'phase':'reset_calibration','timer':TIMER,
+                        'l2_cache_bytes':self.l2_cache_bytes,'reset_bytes':4*self.l2_cache_bytes,
+                        'activity':activity}
+                raise
+            # Calibration can fail before the first timed cohort. Preserve its raw
+            # capture before admission so the ordinary failed-pair handoff retains it.
+            self.last_activity = {'phase':'reset_calibration','timer':TIMER,
+                'l2_cache_bytes':self.l2_cache_bytes,'reset_bytes':4*self.l2_cache_bytes,
+                'activity':activity}
             records = kernel_records(activity)
             if len(records) != 1 or records[0]["name"] == self.manifest.kernel_name:
                 raise ValueError("MACA reset is not one independently identified device fill")

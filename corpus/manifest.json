@@ -2534,6 +2534,19 @@
         "schedule_sha256": "35f224b34ca369a71cf8bfe95acb348560357e4a323f2313b9ed531841aa304d",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "ragged-prefix-output-gemm-accepted",
+      "schedule": "corpus/schedules/ragged-prefix-output-gemm-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "018c77a5e706e4babf9c30761ef113f071f1c7334c39639f364df0711a354dd0",
+        "lowering_source_sha256": "53a0c717bdeed9e10b67580db96c286ee887e893b0a7dfd730b90f508114d08b"
+      }
     }
   ]
 }

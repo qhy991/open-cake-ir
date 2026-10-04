@@ -34,14 +34,45 @@ class _EmpiricalSelection:
         ) + (("fields",) if set(binding["model"]["context"]) != set(context) else ())
         self._compiler_revision_id = compiler_revision_id
         self._target = target
+        try:
+            self._workload_sha256 = json.loads(context['input_scope']).get('workload_contract_sha256')
+        except (ValueError, AttributeError):
+            self._workload_sha256 = None
 
     def estimate(self, schedule: dict) -> dict[str, object]:
+        # Author syntax is projected to the same typed Schedule during execution
+        # and independent replay. The model never evaluates Python source.
+        from open_cake_ir.compiler import Program
+        from .workload_binding import bind_program_workload
+        if set(schedule) == {'python_source'}:
+            from open_cake_ir.compiler.frontend import parse
+            schedule = parse(schedule['python_source']).document
+        elif set(schedule) == {'python_program_source', 'program_id'}:
+            from open_cake_ir.compiler.program_frontend import parse_program
+            schedule = parse_program(schedule['python_program_source'],
+                                     program_id=schedule['program_id']).document
+        multi_stage = False
+        if 'program_id' in schedule:
+            program = Program.from_dict(schedule)
+            if self._workload_sha256 is None:
+                raise ValueError('Program empirical selection requires its exact Workload context')
+            program = bind_program_workload(program, self._workload_sha256)
+            multi_stage = len(program.stages) != 1
+            schedule = program.document['stages'][0]['schedule']
+        elif self._workload_sha256 is not None and schedule.get('target') == self._target:
+            # The authoring environment admits this same Workload binding before
+            # estimating. Add an omitted binding, but never replace another one.
+            schedule = json.loads(json.dumps(schedule))
+            metadata = schedule['metadata']
+            metadata.setdefault('workload_contract_sha256', self._workload_sha256)
         result = self.model.estimate(
             schedule, compiler_revision_id=self._compiler_revision_id,
             target=self._target,
         )
         reason = None
-        if self._context_differences:
+        if multi_stage:
+            reason = 'whole Program latency is unmodeled; leaf estimates are not summed'
+        elif self._context_differences:
             reason = "model context differs in " + ", ".join(self._context_differences) + "; exact Workload/case/assay/Executor binding required"
         elif result["covered"] and (
             not math.isfinite(result["predicted_kernel_us"])
@@ -60,7 +91,7 @@ class _EmpiricalSelection:
 
 
 def _empirical_context(
-    executor: ExecutorRevision, *, workload_sha256: str, case_id: str
+    executor: ExecutorRevision, *, workload_sha256: str, case_id: str, target: str | None = None
 ) -> dict[str, object]:
     """Reference the shared CUPTI assay and its admitted, frozen runtime owner.
 
@@ -69,9 +100,20 @@ def _empirical_context(
     contexts.
     """
     packages = executor.document["host_environment"]["packages"]
+    timer = "flashinfer.testing.utils.bench_gpu_time_with_cupti;use_cuda_graph=false"
+    cache = "cold_l2_cache=true"
+    if target is not None:
+        from open_cake_ir.evaluation.platforms import platform_for
+        from open_cake_ir.compiler.target import CodeObject
+        row = platform_for(target)
+        if row.code_object is CodeObject.MCFATBIN:
+            from open_cake_ir.evaluation.metax_benchmark import TIMER, RESET
+            timer, cache = TIMER, RESET
+        elif row.code_object is not CodeObject.CUBIN:
+            raise ValueError(f'empirical selection has no qualified context for {row.code_object.value}')
     return {
-        "timer": "flashinfer.testing.utils.bench_gpu_time_with_cupti;use_cuda_graph=false",
-        "cache_protocol": "cold_l2_cache=true",
+        "timer": timer,
+        "cache_protocol": cache,
         "runtime": {
             "compiler_version": packages.get("triton"),
             "executor_revision": executor.executor_id,

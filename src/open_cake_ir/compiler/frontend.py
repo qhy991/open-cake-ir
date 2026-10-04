@@ -535,6 +535,17 @@ class _Builder:
                         index = self.symbols[item["name"]]
                         if index not in reads:
                             reads.append(index)
+        if kind == "reduce":
+            # Python exposes the familiar explicit default and negative-axis
+            # spellings. The IR still records only its positive canonical axis
+            # and the exceptional across_loop=False commitment.
+            if parameters.get("across_loop") is True:
+                del parameters["across_loop"]
+            axis = parameters.get("axis")
+            if reads and type(axis) is int and axis < 0:
+                rank = len(self.buffer(reads[0], node).shape)
+                if -rank <= axis:
+                    parameters["axis"] = axis + rank
         outputs = controls.pop("out", None)
         if outputs is None:
             if not reads and kind != "coordinate":
