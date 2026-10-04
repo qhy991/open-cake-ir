@@ -346,12 +346,26 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     for index, loop in enumerate(schedule.tile_loops):
         factor = loop.range_options.loop_unroll_factor
         if factor != 1 and not _fixed_unroll_admitted(loop, schedule):
+            trips = _fixed_trip_count(loop, schedule)
+            stages = loop.range_options.num_stages
+            if stages != 1:
+                reason = (
+                    f"unroll factor {factor} with num_stages={stages} has no qualified "
+                    "MACA pipelined-unroll spelling; explicitly choose factor=1 to retain "
+                    "the requested pipeline, or num_stages=1 for a fixed divisible unroll; "
+                    "the backend does not change either commitment"
+                )
+            elif trips is None:
+                reason = "MACA unroll requires a fixed buffer-derived trip count; query stops remain unsupported"
+            else:
+                reason = (
+                    f"unroll factor {factor} must divide the fixed trip count {trips} "
+                    "without adding iterations; choose a divisor or factor=1"
+                )
             findings.append(refusal(
                 "MACA_LOOP_UNROLL_UNSUPPORTED",
                 f"tile_loops[{index}].range_options.loop_unroll_factor",
-                "MACA lowering requires a non-default unroll factor to divide the trip "
-                "count of a fixed, single-stage loop exactly; non-dividing, "
-                "query-bounded or pipelined unrolls have no faithful spelling",
+                reason,
             ))
         for name, default in (("flatten", False), ("disallow_acc_multi_buffer", False),
                               ("disable_licm", False)):

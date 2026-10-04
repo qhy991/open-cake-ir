@@ -145,3 +145,15 @@ class MetaxPartialUnroll(unittest.TestCase):
                                     for i in range(14)]
                         self.assertEqual(memories['y'], expected)
                         self.assertEqual(set(observed.stores.values()), {1})
+
+    def test_pipelined_refusal_names_both_requested_commitments(self):
+        for stages in (2, 4):
+            d = reduction_document(1024, 2)
+            d['tile_loops'][0]['range_options']['num_stages'] = stages
+            assessed = self.compiler.assess(d)
+            findings = [f for f in assessed.findings if f.code == 'MACA_LOOP_UNROLL_UNSUPPORTED']
+            self.assertEqual(len(findings), 1)
+            self.assertIn(f'num_stages={stages}', findings[0].message)
+            self.assertIn('unroll factor 2', findings[0].message)
+            self.assertFalse(assessed.lowering_eligible)
+            self.assertEqual(d['tile_loops'][0]['range_options']['num_stages'], stages)
