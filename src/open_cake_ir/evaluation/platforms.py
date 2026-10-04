@@ -59,6 +59,9 @@ class ExecutionPlatform:
     # platform's own activity taken inside evaluate (Metal's observer, HIP's roctracer).
     attribution: str
     profiled_child: bool
+    # Runtime selection API names, not hardware facts. The local broker owns these
+    # masks after admission. An empty tuple means no ordinal-selection API.
+    local_visibility_environment: tuple[str, ...] = ()
 
 
 _ROWS = (
@@ -79,6 +82,7 @@ _ROWS = (
         local_job_prefix="cuda",
         attribution="separate",
         profiled_child=True,
+        local_visibility_environment=("CUDA_VISIBLE_DEVICES",),
     ),
     ExecutionPlatform(
         code_object=CodeObject.METAL_BINARY_ARCHIVE,
@@ -115,6 +119,7 @@ _ROWS = (
         local_job_prefix="hip",
         attribution="inside_evaluate",
         profiled_child=False,
+        local_visibility_environment=("HIP_VISIBLE_DEVICES",),
     ),
     ExecutionPlatform(
         code_object=CodeObject.MCFATBIN,
@@ -134,6 +139,7 @@ _ROWS = (
         local_job_prefix="maca",
         attribution="inside_evaluate",
         profiled_child=False,
+        local_visibility_environment=("MACA_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"),
     ),
 )
 
