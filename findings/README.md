@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-04-002 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded full-operator successor qualification is pending.
+
 - F-2026-10-04-001 — C550 native controls preserve wall-clock intervals but reject both monotonic domains; no monotonic-clock promotion. SDK-default timing and all strict gates retained.
 
 - F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport and reset-calibration retention verified through a fresh native rejection; old missing observations stay missing.

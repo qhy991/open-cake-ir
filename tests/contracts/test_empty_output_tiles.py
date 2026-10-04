@@ -28,6 +28,13 @@ def prefix_document():
 
 
 class EmptyOutputTileContract(unittest.TestCase):
+    def test_other_backend_retains_declared_work(self):
+        d = prefix_document()
+        d['lowering']['backend'] = 'native_cuda'
+        s = Schedule.from_dict(d)
+        self.assertIsNone(output_tile_domain(s))
+        self.assertTrue(work_bound(s).flops_exact)
+
     def test_dense_result_is_observable_even_with_masked_inputs(self):
         s = Schedule.from_dict(document())
         self.assertIsNone(output_tile_domain(s))
