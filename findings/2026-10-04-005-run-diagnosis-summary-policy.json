@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-04",
-  "id": "F-2026-10-04-003",
+  "id": "F-2026-10-04-005",
   "kind": "protocol",
   "decision": "accepted",
   "title": "Diagnosis summary reads only the historical Campaign evidence-policy location",
@@ -34,5 +34,10 @@
   "software_verification": {
     "source_commit": "351c793da8e55f537e2cc074c7fdbbcfa5f588ee",
     "tests": "11 diagnosis contracts in an independent committed worktree: actual engineering and Study-assigned Run engine authorities, historical Campaigns, deduplication, integrity refusal, privacy/read-only evidence, malformed policy/identity/schema refusal; F821 and Finding record checks passed."
+  },
+  "record_history": {
+    "provisional_id": "F-2026-10-04-003",
+    "retained_in_commit": "3aaa7fcc390b3f1c4dbc3c3987c13ac4df24f117",
+    "reason": "Parallel main integration allocated global003 to runtime-prefix-output-work and004 to native-triton-launch-width before PR302 merged. Preserve both records; this unmerged diagnosis repair takes next free005."
   }
 }
