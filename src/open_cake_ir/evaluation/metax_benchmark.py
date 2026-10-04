@@ -5,6 +5,9 @@ explicit preceding reset. Each cold sample follows a streamed FP32 fill of four 
 the Target's L2 size, on the same stream. This is a declared reset protocol, not an
 assertion that all caches are physically empty. Every device operation is accounted
 for; a second kernel or an unobserved reset invalidates the entire cohort.
+
+Host completion fences separate adjacent dispatches. They are outside the measured
+kernel interval; raw SDK timestamps must still prove reset and sample ordering.
 """
 from __future__ import annotations
 
@@ -205,7 +208,12 @@ class McptiDispatchBenchmark:
             for _ in range(repeat_iters):
                 if cold_l2_cache:
                     self._reset.fill_(1.0)
+                    torch.cuda.synchronize()
                 function()
+                # Back-to-back dispatches produced overlapping SDK epoch intervals
+                # on the captured route. Complete device work before reuse instead
+                # of accepting overlap or substituting host/event timing.
+                torch.cuda.synchronize()
         activity = self._collect(cohort)
         reset = self._reset_record if cold_l2_cache else None
         self.last_activity = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
