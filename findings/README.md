@@ -44,6 +44,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 ## Index
 
 - F-2026-10-04-003 — fixed single-stage MACA partial-unroll implementation under independent qualification; the three retained multi-stage requests remain refused and are not reclassified.
+- F-2026-10-04-002 — local MACA authoring began before shared-lock and single-device admission; broker-owned explicit selection, bounded waiting and pre-authoring device probe prepared for successor verification. Original failed batch remains unchanged.
 
 - F-2026-10-04-001 — C550 native controls preserve wall-clock intervals but reject both monotonic domains; no monotonic-clock promotion. SDK-default timing and all strict gates retained.
 
