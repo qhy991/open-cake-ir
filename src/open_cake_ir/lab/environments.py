@@ -21,7 +21,8 @@ from .pairing import backend_policy
 from . import selection
 from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected
-from .build import BuildRequest, ToolchainBuilder, TritonToolchainBuilder, _ptxas_finding_rows
+from .build import (BuildRequest, ToolchainBuilder, TritonToolchainBuilder, _ptxas_finding_rows,
+                    compiled_allocation_feedback)
 from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1, PYTHON_SOURCE_FILE_V1
 from .workload_binding import bind_program_workload
 
@@ -221,6 +222,7 @@ class OpenCakeEnvironment:
                 case_id=self._case_id, compilation=compilation)
             return EnvironmentResult('launchable', submission.sha256, launchable,
                 {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
+                 **compiled_allocation_feedback(launchable),
                  'cost_model_coverage': ('single_stage_only' if self._empirical_selection is not None
                                          and single is not None else 'whole_program_unmodeled'),
                  'static_profiles': {stage['name']: self._compiler.profile(
@@ -395,7 +397,8 @@ class OpenCakeEnvironment:
             submission.sha256,
             launchable,
             MappingProxyType(
-                {"stage": "built", "findings": self._finding_rows(assessment, source)}
+                {"stage": "built", "findings": self._finding_rows(assessment, source),
+                 **compiled_allocation_feedback(launchable)}
             ),
             semantic_sha256=(
                 digest
@@ -494,7 +497,8 @@ class NativeTritonEnvironment:
         if launchable.artifact_roles.get('authored_source') != digest:
             raise ValueError('native Triton builder lost source custody')
         return EnvironmentResult('launchable', submission.sha256, launchable,
-            {'stage': 'built', 'source_contract': 'triton_kernel_only_v1'})
+            {'stage': 'built', 'source_contract': 'triton_kernel_only_v1',
+             **compiled_allocation_feedback(launchable)})
 
 
 class NativeCuTeEnvironment:

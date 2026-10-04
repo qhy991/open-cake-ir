@@ -123,6 +123,7 @@ _ROWS = (
         allowed_artifact_roles=frozenset({
             "authored_source", "lowered_source", "compiler_expanded_source", "ttir", "ttgir",
             "mcfatbin", "launch_manifest", "kernel_bundle", "stage_compilation",
+            "toolchain_resource_report",
         }),
         launch_abi="workload_tensors_v1",
         measurement_source="mcpti_dispatch",

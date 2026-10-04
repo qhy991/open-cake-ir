@@ -19,6 +19,53 @@ from tests.contracts.test_native_program_tensors import McaCompilationFixture
 ROOT=Path(__file__).resolve().parents[2]
 
 class C550AdvisoryFeedback(unittest.TestCase):
+    def test_native_allocation_reaches_author_and_cannot_be_replaced_at_replay(self):
+        from dataclasses import replace
+        from hashlib import sha256
+        from open_cake_ir.lab.build import compiled_allocation_feedback
+        from tests.contracts.test_metax_binary import bundle,native_fixture
+        from tests.contracts.test_program_evaluation import replay_program_candidate
+        fields={'.mtreg_count':96,'.streg_count':22,'.private_memory_size':0,'.share_memory_size':0}
+        class NativeFacts(McaCompilationFixture):
+            def compile(self,source,requirements):
+                original=super().compile(source,requirements)
+                artifacts={**original.artifacts,'mcfatbin':bundle(native=native_fixture(
+                    len(requirements['signature']),requirements['kernel_entry_point'],allocation=fields))[0]}
+                return replace(original,artifacts=artifacts,dynamic_shared_bytes=16)
+        builder=TritonToolchainBuilder(workload=self.workload,case_id='primary',isolated_compiler=NativeFacts())
+        environment=TaskOpenCakeEnvironment(self.compiler,builder,authority_document={
+            'lowering_route':self.schedule['lowering'],'input_format':'python_source_v1'},
+            workload=self.workload,case_id='primary')
+        result=environment.build(CandidateSubmission.seal(environment.media_type,self.program.document_bytes))
+        self.assertEqual(result.disposition,'launchable',result.feedback)
+        report=result.feedback['compiled_allocation']
+        self.assertEqual(report['facts'],fields)
+        self.assertEqual(report['launch'],{'threads_per_cta':64,'dynamic_shared_bytes':16})
+        self.assertIn('stack bytes',report['unmodeled'])
+        self.assertIn('.max_block_size',report['missing_metadata'])
+        candidate=result.launchable
+        replay_program_candidate(self.compiler,self.program,candidate,candidate.artifact_payloads)
+        forged=deepcopy(report);forged['facts']['.mtreg_count']=0
+        payload=canonical_json_bytes(forged)
+        tampered=replace(candidate,artifact_payloads={**candidate.artifact_payloads,'toolchain_resource_report':payload},
+                         artifact_roles={**candidate.artifact_roles,'toolchain_resource_report':sha256(payload).hexdigest()})
+        # A consistent artifact seal does not prove these resource facts.
+        with self.assertRaisesRegex(ValueError,'binary or launch'):compiled_allocation_feedback(tampered)
+        with self.assertRaisesRegex(ValueError,'binary or launch'):
+            replay_program_candidate(self.compiler,self.program,tampered,tampered.artifact_payloads)
+        # Binary and report agreeing with each other cannot change the Target's family.
+        family='xcore1001'
+        wrong_binary=bundle(architecture=family,native=native_fixture(3,candidate.entry_point,allocation=fields))[0]
+        wrong_report={**report,'native_family':family}
+        wrong_payload=canonical_json_bytes(wrong_report)
+        forged=replace(candidate,artifact_payloads={**candidate.artifact_payloads,
+            'mcfatbin':wrong_binary,'toolchain_resource_report':wrong_payload},
+            artifact_roles={**candidate.artifact_roles,'mcfatbin':sha256(wrong_binary).hexdigest(),
+                            'toolchain_resource_report':sha256(wrong_payload).hexdigest()})
+        with self.assertRaisesRegex(ValueError,'only.*xcore1000'):compiled_allocation_feedback(forged)
+        with self.assertRaisesRegex(ValueError,'only.*xcore1000'):
+            replay_program_candidate(self.compiler,self.program,forged,forged.artifact_payloads)
+
     @classmethod
     def setUpClass(cls):
         cls.compiler=Compiler.load(ROOT)
