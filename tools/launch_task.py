@@ -6,6 +6,7 @@ import argparse
 from dataclasses import asdict, dataclass
 import grp
 import json
+import math
 import os
 import platform
 from pathlib import Path
@@ -307,7 +308,7 @@ def _admit_allocator(runtime) -> None:
     broker = runtime["broker"]
     command = list(broker["command"])
     if "--" not in command:
-        return  # the local broker takes no lease and needs no probe
+        return  # MACA's device/lock admission is checked separately before authoring.
     probe = command[: command.index("--") + 1] + ["/bin/true"]
     try:
         completed = subprocess.run(probe, cwd=broker["cwd"], capture_output=True,
@@ -324,7 +325,8 @@ def _admit_allocator(runtime) -> None:
 
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
-                    kernelctl=None, infra_socket=None, auth_source=None):
+                    kernelctl=None, infra_socket=None, auth_source=None,
+                    local_device=None, local_queue_seconds=0):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -333,6 +335,8 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     refused every DCU launch for lacking a CUDA cluster allocator it has no use for.
     """
     from open_cake_ir.evaluation.source_bootstrap import module_command
+    if (local_device is not None or local_queue_seconds != 0) and (allocation != 'local_broker' or kernelctl is not None):
+        raise ValueError('local device selection and queue require the local broker allocation')
     python = executor.document["host_environment"]["python"]["invocation_path"]
     if kernelctl is not None:
         if gpu_run is not None or broker_socket is not None or infra_socket is None:
@@ -366,7 +370,15 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             command = module_command(python, "open_cake_ir.evaluation.local_broker",
                                      "--kind", local_kind,
                                      "--worker-module", "open_cake_ir.tasks.evaluate")
-        timeout = 1800
+        from open_cake_ir.evaluation.local_broker import _selection_environment
+        _selection_environment(local_kind, local_device)
+        if local_device is not None:
+            command.extend(('--local-device', str(local_device)))
+        if local_queue_seconds != 0:
+            if local_queue_seconds < 0 or not math.isfinite(local_queue_seconds):
+                raise ValueError('local queue seconds must be finite and nonnegative')
+            command.extend(('--local-queue-seconds', str(local_queue_seconds)))
+        timeout = 1800 + math.ceil(local_queue_seconds)
     elif allocation == "gpu_run":
         discovered = shutil.which(str(gpu_run) if gpu_run is not None else "gpu-run")
         if discovered is None:
@@ -394,6 +406,37 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             "broker": {"command": command, "cwd": str(ROOT), "timeout_seconds": timeout,
                        "service_user": pwd.getpwuid(os.getuid()).pw_name,
                        "service_group": grp.getgrgid(os.getgid()).gr_name}}
+
+
+def _admit_local_allocator(runtime, executor, target, workspace):
+    """Probe the same MACA selection and lock before any provider work."""
+    from open_cake_ir.compiler.target import CodeObject
+    from open_cake_ir.evaluation.platforms import platform_for
+    from open_cake_ir.evaluation.source_bootstrap import module_command
+    if platform_for(target).code_object is not CodeObject.MCFATBIN:
+        return
+    host = executor.admit_host()
+    broker = runtime['broker']
+    if '--local-kind' not in broker['command']:
+        return  # A GPU Infra deployment has its own admission owner.
+    output = workspace / 'local-device-admission.json'
+    command = module_command(executor.document['host_environment']['python']['invocation_path'],
+        'open_cake_ir.evaluation.local_broker', '--kind', 'maca', '--probe-target', target,
+        '--runtime-library', host['runtime_library'], '--output', str(output))
+    wait = 0.0
+    for flag in ('--local-device', '--local-queue-seconds'):
+        if flag in broker['command']:
+            value = broker['command'][broker['command'].index(flag) + 1]
+            command.extend((flag, value))
+            if flag == '--local-queue-seconds':
+                wait = float(value)
+    completed = subprocess.run(command, cwd=broker['cwd'], capture_output=True, timeout=wait + 120)
+    _write(workspace / 'local-device-admission.stdout', completed.stdout)
+    _write(workspace / 'local-device-admission.stderr', completed.stderr)
+    result = json.loads(output.read_text()) if output.is_file() else {}
+    if completed.returncode != 0 or result.get('admitted') is not True:
+        raise ValueError('local device admission failed before provider qualification: '
+                         + str(result.get('error', completed.stderr.decode(errors='replace')[-600:])))
 
 
 def _prepare_baseline(root, workspace, compiler, executor, host, workload, authoring, source,
@@ -509,6 +552,8 @@ def main(argv=None) -> int:
                         help='clean_start is reserved until provider read isolation is qualified')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
+    parser.add_argument('--local-device', type=int, help='physical device ordinal selected by the existing local broker')
+    parser.add_argument('--local-queue-seconds', type=float, default=0, help='bounded wait for the existing local lock; no lease held while waiting')
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int,
@@ -557,6 +602,10 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if args.local_device is not None and args.local_device < 0:
+        parser.error('--local-device must be nonnegative')
+    if args.local_queue_seconds < 0 or not math.isfinite(args.local_queue_seconds):
+        parser.error('--local-queue-seconds must be finite and nonnegative')
     if (args.kernelctl is None) != (args.infra_socket is None):
         parser.error("--kernelctl and --infra-socket must be supplied together")
     if args.kernelctl is not None and (args.gpu_run is not None or args.broker_socket is not None):
@@ -624,7 +673,8 @@ def main(argv=None) -> int:
                                local_kind=_local_kind_of(args.backend),
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
                                kernelctl=args.kernelctl, infra_socket=args.infra_socket,
-                               auth_source=auth_source))
+                               auth_source=auth_source, local_device=args.local_device,
+                               local_queue_seconds=args.local_queue_seconds))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for
@@ -731,6 +781,7 @@ def main(argv=None) -> int:
         }))
         print(baseline_path)
         return 0
+    _admit_local_allocator(runtime, executor, workload.target, workspace)
     receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":

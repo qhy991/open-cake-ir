@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-04",
+  "id": "F-2026-10-04-002",
+  "kind": "protocol",
+  "decision": "accepted",
+  "title": "Local MACA authoring started before single-device and shared-lock admission",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@59a492d3155e9d9af860fa280782721a049c9912",
+  "executor_revision": "xcore1002@59a492d3155e9d9af860fa280782721a049c9912",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-experiments/cake-c550-coevolution-20261003-59a492d3/",
+    "locators": [
+      "matrix-v1/rmsnorm/run-evidence/runs/open_cake-1/events/000000000011.json",
+      "matrix-v1/layernorm/run-evidence: evaluation_attempt_completed retained evaluator stderr",
+      "startup-diagnosis.json",
+      "cancellation-intent.json",
+      "cancellation-observation.json"
+    ]
+  },
+  "observation": "All 54 selected baselines compiled and sealed before authoring. The first RMSNorm Run authored candidates then failed with maca_broker_busy. A later LayerNorm evaluation reported that MACA admission requires a MACA PyTorch and one visible device. The local allocator had no explicit device-selection input and the outer launcher removed inherited masks. Its pre-authoring allocator check returned without testing local deployment. These are deployment faults, not evidence of an IR limit or incorrect kernel.",
+  "proposed_change": "Let the existing local broker select an explicitly supplied physical ordinal only after acquiring the same shared user lock. Keep runtime selection API names with the execution platform. Add bounded waiting without holding a lease or a second queue. Probe exact MACA device admission before provider qualification using the same mapping and lock. Preserve CPU input/oracle preparation before device acquisition, worker lifetime ownership, exact target and existing measurement gates.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "Executor admission successor proposed for verification. No Compiler primitive or optimization pass promotion; original Run outcomes remain unchanged."
+}
