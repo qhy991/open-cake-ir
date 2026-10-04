@@ -98,10 +98,10 @@ class CudaKernelSpec:
 
     @classmethod
     def from_dict(cls, value: object) -> "CudaKernelSpec":
-        document = _object(value, "CUDA kernel specification")
+        document = _object(value, "kernel specification")
         fields = _BASE_FIELDS - {"schema_version", "abi"}
         if set(document) not in (fields, fields | {"hidden_null_pointer_parameters"}):
-            raise ValueError("CUDA kernel specification fields differ")
+            raise ValueError("kernel specification fields differ")
         target = _launch_target(document.get("target"))
         limits = target.resource_limits
         spec = cls(
@@ -117,7 +117,7 @@ class CudaKernelSpec:
                 "manifest.hidden_null_pointer_parameters", 0, 2),
         )
         if _KERNEL_NAME.fullmatch(spec.kernel_name) is None or spec.block_threads > limits.maximum_threads_per_cta:
-            raise ValueError("CUDA kernel name or block differs")
+            raise ValueError("kernel name or block differs")
         return spec
 
     @property
