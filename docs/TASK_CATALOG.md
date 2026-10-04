@@ -89,6 +89,19 @@ open-cake-ir tasks check --task silu --backend triton-metax --format json
 这些组织入口最终共用冻结的 Run、共同 Evaluation 和审计，没有新增运行模式或判分规则。
 科学比较另由 Study 预分配处理条件，不能把目录导出或工程 Run 事后重标成研究分组。
 
+批量入口默认仍为单任务执行；`--parallel-tasks 3` 同时运行最多三个独立任务进程，
+也将 CPU 基线准备限制在同一并发上限。全部基线封存完成后，先用单任务入口
+`--preflight-only` 验证一次 provider，再将原 receipt/anchor 交给各任务；也可显式传入
+`--qualification` 与 `--qualification-anchor`，每个单任务仍会验证它们。
+每项任务保留自己的工作区、20 轮/8 小时等所选预算和 Evidence，不共享作者文件。
+并发模式的 `task-results.jsonl` 按完成顺序追加，`position` 保留输入顺序。
+
+这只是 host 任务并发，GPU 分配、设备映射和测量边界仍由既有 broker 负责。
+使用本地 broker 时，并发模式必须显式给出正的 `--local-queue-seconds`；例如 C550
+已有单设备准入时，可选 `--parallel-tasks 3 --local-device 0 --local-queue-seconds 1200`。
+排队不持有 lease，排队耗时计入各 Run 的 wall budget；该值是部署参数，不保证分配，
+也不把本地协作锁升级为整机独占。不能靠增加并发绕过测量质量检查。
+
 ## 添加与维护
 
 1. 在任务 owner 完成 Workload、独立 oracle、starter 和实际支持域。
