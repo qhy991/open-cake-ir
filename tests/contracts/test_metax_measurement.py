@@ -316,7 +316,7 @@ class MacaProfileRepresentation(unittest.TestCase):
         correctness.pop('instrumented')
         with self.assertRaisesRegex(ValueError,'instrumented output'):receipt()
 
-class MonotonicActivityTimestamps(unittest.TestCase):
+class ExplicitActivityClocks(unittest.TestCase):
     def test_invalid_reset_capture_remains_available_to_failed_pair_handoff(self):
         from types import SimpleNamespace
         from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
@@ -333,26 +333,6 @@ class MonotonicActivityTimestamps(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'kernel timestamps'):assay._prepare_reset()
         self.assertEqual(assay.last_activity['phase'],'reset_calibration')
         self.assertEqual(assay.last_activity['activity'],raw)
-
-    def test_callback_uses_fixed_monotonic_origin_without_epoch_rounding(self):
-        collector=object.__new__(McptiActivity)
-        collector._timestamp_origin_ns=1000000000000000
-        collector._errors=[]
-        with patch('open_cake_ir.evaluation.metax_activity.time.monotonic_ns',
-                   side_effect=[1000000000000001,1000000000000002,1000000000000257]):
-            self.assertEqual([collector._timestamp() for _ in range(3)],[2,3,258])
-        self.assertEqual(collector._errors,[])
-
-    def test_invalid_clock_refuses_session_instead_of_falling_back(self):
-        collector=object.__new__(McptiActivity)
-        collector._timestamp_origin_ns=100
-        collector._errors=[]
-        with patch('open_cake_ir.evaluation.metax_activity.time.monotonic_ns',return_value=99):
-            self.assertEqual(collector._timestamp(),0)
-        self.assertIn('outside uint64',collector._errors[0])
-        with patch('open_cake_ir.evaluation.metax_activity.time.monotonic_ns',side_effect=RuntimeError('clock fault')):
-            self.assertEqual(collector._timestamp(),0)
-        self.assertIn('clock fault',collector._errors[-1])
 
     def test_timestamp_is_registered_once_before_any_activity_enable(self):
         import open_cake_ir.evaluation.metax_activity as activity
@@ -373,9 +353,10 @@ class MonotonicActivityTimestamps(unittest.TestCase):
             library=Path(directory).resolve()/'libmcpti.so';library.write_bytes(b'CPU fixture only')
             api=API()
             with patch.object(activity,'_COLLECTOR',None),patch.object(activity.C,'CDLL',return_value=api):
-                collector=activity.McptiActivity(str(library))
+                callback=activity._Timestamp(lambda:1)
+                collector=activity.McptiActivity(str(library),timestamp_callback=callback,timestamp_source='CPU fixture clock')
                 self.assertTrue(collector._ready)
                 self.assertEqual(calls,['mcptiGetVersion','mcptiActivityRegisterCallbacks','mcptiActivityRegisterTimestampCallback'])
                 self.assertIs(api.functions['mcptiActivityRegisterTimestampCallback'].callback,collector._timestamp_callback)
-                self.assertEqual(collector._timestamp_source,'monotonic_ns')
+                self.assertEqual(collector._timestamp_source,'CPU fixture clock')
                 with self.assertRaisesRegex(RuntimeError,'process owner'):activity.McptiActivity(str(library))

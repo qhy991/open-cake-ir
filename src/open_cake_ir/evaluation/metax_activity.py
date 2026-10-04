@@ -10,7 +10,6 @@ from __future__ import annotations
 import ctypes as C
 from pathlib import Path
 import threading
-import time
 
 
 _API_VERSION = 18
@@ -51,13 +50,13 @@ _Complete = C.CFUNCTYPE(None, C.c_void_p, C.c_uint32, C.c_void_p, C.c_size_t, C.
 class McptiActivity:
     """One process-owned callback collector bound to an admitted absolute library."""
 
-    def __init__(self, library: str):
+    def __init__(self, library: str, *, timestamp_callback=None, timestamp_source=None):
         with _CREATION:
             if _COLLECTOR is not None:
                 raise RuntimeError("MCPTI callbacks already have a process owner; use activity_collector")
-            self._initialize(library)
+            self._initialize(library, timestamp_callback=timestamp_callback, timestamp_source=timestamp_source)
 
-    def _initialize(self, library: str):
+    def _initialize(self, library: str, *, timestamp_callback=None, timestamp_source=None):
         global _COLLECTOR
         self._ready = False
         path = Path(library)
@@ -72,8 +71,14 @@ class McptiActivity:
             "mcptiActivityGetNumDroppedRecords": [C.c_void_p, C.c_uint32, C.POINTER(C.c_size_t)],
             "mcptiActivityGetNextRecord": [C.c_void_p, C.c_size_t, C.POINTER(C.c_void_p)],
             "mcptiActivityRegisterCallbacks": [_Request, _Complete],
-            "mcptiActivityRegisterTimestampCallback": [_Timestamp],
         }
+        if timestamp_callback is not None:
+            if (not isinstance(timestamp_callback, _Timestamp) or not bool(timestamp_callback)
+                    or not isinstance(timestamp_source, str) or not timestamp_source.strip()):
+                raise ValueError('MCPTI custom clock requires a nonnull uint64(void) callback and source')
+            signatures['mcptiActivityRegisterTimestampCallback'] = [_Timestamp]
+        elif timestamp_source is not None:
+            raise ValueError('MCPTI clock source requires its explicit callback')
         for name, args in signatures.items():
             function = getattr(self.api, name)
             function.argtypes, function.restype = args, C.c_int
@@ -90,19 +95,17 @@ class McptiActivity:
         self._enabled = []
         self._active = False
         self._owner_thread = None
-        # Use the monotonic clock's native origin. The fixed-origin diagnostic
-        # produced zero-width device records on MCPTI3.8; this successor tests
-        # whether the SDK requires an absolute clock domain for its mapping.
-        # Register before enabling any activity kind and never switch mid-session.
-        self._timestamp_origin_ns = 0
-        self._timestamp_source = 'monotonic_ns'
-        self._timestamp_callback = _Timestamp(self._timestamp)
+        # The SDK clock remains the default. Custom clocks are explicit diagnostics,
+        # registered before any activity and kept alive for the process lifetime.
+        self._timestamp_source = timestamp_source or 'sdk_default'
+        self._timestamp_callback = timestamp_callback
         self._requested_callback = _Request(self._requested)
         self._completed_callback = _Complete(self._completed)
         # Keep callbacks alive even if registration reports an ambiguous failure.
         _COLLECTOR = self
         self._call("mcptiActivityRegisterCallbacks", self._requested_callback, self._completed_callback)
-        self._call("mcptiActivityRegisterTimestampCallback", self._timestamp_callback)
+        if self._timestamp_callback is not None:
+            self._call('mcptiActivityRegisterTimestampCallback', self._timestamp_callback)
         if self._errors:
             raise ValueError(f'MCPTI timestamp registration failed: {self._errors}')
         self._ready = True
@@ -111,16 +114,6 @@ class McptiActivity:
         status = getattr(self.api, name)(*args)
         if status != 0:
             raise RuntimeError(f"MCPTI {name} failed with status {status}")
-
-    def _timestamp(self):
-        try:
-            stamp = time.monotonic_ns() - self._timestamp_origin_ns + 1
-            if not 0 < stamp < 2**64:
-                raise ValueError('MCPTI monotonic timestamp is outside uint64')
-            return stamp
-        except BaseException as error:
-            self._errors.append(str(error))
-            return 0  # The session is refused; never substitute a wall timestamp.
 
     def _requested(self, pointer, size, count):
         # ctypes callback exceptions cannot propagate to the caller. Preserve them and
