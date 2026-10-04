@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-04",
+  "id": "F-2026-10-04-003",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@5b588ceca20ee33f9a8bec3304af64fc069477c0",
+  "executor_revision": "xcore1002@5b588ceca20ee33f9a8bec3304af64fc069477c0",
+  "title": "MACA loop-unroll refusal combines an implementable fixed grouping with an unqualified pipeline combination",
+  "decision": "proposed",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-experiments/c550-compaction-successor-20261002/study-v1/",
+    "rejections": [
+      {
+        "run": "c550-sqdiff-transfer-compaction-20261002-t4-r1-c4",
+        "event_sequence": 61,
+        "candidate_event_sequence": 56,
+        "factor": 2,
+        "num_stages": 2,
+        "tile": 64
+      },
+      {
+        "run": "c550-sqdiff-transfer-compaction-20261002-t4-r3-c1",
+        "event_sequence": 35,
+        "candidate_event_sequence": 30,
+        "factor": 2,
+        "num_stages": 2,
+        "tile": 32
+      },
+      {
+        "run": "c550-sqdiff-transfer-compaction-20261002-t4-r5-c2",
+        "event_sequence": 47,
+        "candidate_event_sequence": 42,
+        "factor": 2,
+        "num_stages": 4,
+        "tile": 32
+      }
+    ],
+    "retained_sources": "c550-2:/root/open-cake-experiments/c550-partial-unroll-20261004/retained-unroll-events/",
+    "fresh_cpu_probes": "/Users/haiyan/.codex/visualizations/2026/10/01/01a0f724-5277-7381-9850-2908be179c27/c550-support-successor-20261004/{before,after}/result.json",
+    "independent_review": "/tmp/cake-c550-unroll-review-20261004/REVIEW.md"
+  },
+  "observation": "The three retained candidates are valid Cake IR but request partial unroll together with two or four stages; they remain unsupported by this successor. Fresh valid single-stage squared-distance Programs at R128/K256/N32 and R1024/K1024/N64 expose the separate fixed-partial-group gap: factors2/4 that divide the trip count are refused at c72acbd5 despite needing only the existing MACA tl.range and tl.static_range operations. This is a curated exact-source distinction, not a Finding inferred from rejection counts. The captured Triton3.6 range signature accepts loop_unroll_factor, but API keyword availability alone does not qualify the pipelined route.",
+  "proposed_change": "Implement explicit single-stage fixed partial grouping with an outer range stepping tile*factor and an inner static range, preserving each original iterator value, tail mask, state initialization and once-per-owning-loop finalization. Require the factor to divide the fixed trip count exactly. Preserve full unroll and non-MCFATBIN routes. Keep dynamic/nondividing/pipelined combinations refused, naming the actual factor, stage and trip commitments and requiring an explicit author choice.",
+  "implemented_in": "83afd36ab120c9fb276f54140282a3488693d6c6",
+  "verified_by": null,
+  "software_verification": {
+    "commit": "c0b09a376038c6f18857fe980f956e3102d4aa8c",
+    "focused_contracts": 75,
+    "Corpus_Gate": "180 unchanged cases at 83afd36a; successor device preparation at c0b09a37 passed the unchanged Corpus again",
+    "scope": "CPU loop-control traces and actual emitted nested loads/reductions/stores, tail masks, single stores, namespace collision and intended-owner refusals; actual isolated MACA3.6 offline compilation of four sealed independent candidates. Device qualification remains pending."
+  },
+  "promotion_disposition": "No device-capability or performance promotion yet. Frozen Study outcomes and all strict measurement gates remain unchanged. Pipelined partial unroll remains deferred."
+}
