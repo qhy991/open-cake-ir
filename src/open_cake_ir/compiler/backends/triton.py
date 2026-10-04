@@ -1511,7 +1511,18 @@ class _TritonEmitter:
         extent = self._loop_stop(loop)
         tile = self._tile(loop.name)
         if self.target.code_object is CodeObject.MCFATBIN:
-            from .metax import loop_range
+            from .metax import loop_range, partial_unroll_factor
+            factor = partial_unroll_factor(loop, self.schedule)
+            if factor is not None:
+                base = f"_maca_unroll_{loop.iterator}_base"
+                lane = f"_maca_unroll_{loop.iterator}_lane"
+                self.line(f"{pad}for {base} in tl.range(0, {extent}, {tile} * {factor}, num_stages=1):")
+                self.line(f"{pad}    for {lane} in tl.static_range(0, {factor}):")
+                self.line(f"{pad}        {loop.iterator} = {base} + {lane} * {tile}",
+                          declares=(loop.iterator,))
+                self._emit_loop_body(loop, pad + "    ", tile, finalize=False)
+                self._emit_loop_finalize(loop, pad)
+                return
             maca_range = loop_range(loop, self.schedule, extent, tile)
             if maca_range is not None:
                 self.line(
@@ -1539,7 +1550,7 @@ class _TritonEmitter:
         )
         self._emit_loop_body(loop, pad, tile)
 
-    def _emit_loop_body(self, loop: TileLoop, pad: str, tile: str) -> None:
+    def _emit_loop_body(self, loop: TileLoop, pad: str, tile: str, *, finalize: bool = True) -> None:
         self.line(
             f"{pad}    {loop.iterator}_offsets = "
             f"{loop.iterator} + tl.arange(0, {tile})"
@@ -1552,6 +1563,10 @@ class _TritonEmitter:
             operation = self.schedule.operation(op_id)
             _require(operation is not None, f"loop body names unknown operation {op_id!r}")
             self._emit_operation(operation, pad + "    ", inside=True)
+        if finalize:
+            self._emit_loop_finalize(loop, pad)
+
+    def _emit_loop_finalize(self, loop: TileLoop, pad: str) -> None:
         for op_id in loop.body:
             operation = self.schedule.operation(op_id)
             if operation is not None and streaming_compensated_loop(self.schedule, operation) is not None:
