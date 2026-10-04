@@ -9,9 +9,9 @@
     "gfx938",
     "sm_103a"
   ],
-  "compiler_revision_id": "open-cake-ir@634e1ebf",
+  "compiler_revision_id": "open-cake-ir@634e1ebfa5180be23aa0bf3b2d0a87d0a533eac3",
   "executor_revision": "no device execution; native-source admission only",
-  "title": "Native Triton source admission computes every launch at32lanes despite emitted route facts",
+  "title": "Native Triton source admission uses32-lane launch checks for every target",
   "decision": "accepted",
   "evidence": {
     "pinned_before": "a2d0f1ca",
