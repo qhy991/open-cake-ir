@@ -69,6 +69,12 @@ names the padded axis, `buffer` names the global INT32 input that owns the lengt
 coordinate authority, so every access derives `coordinate < length` rather than
 restating a predicate. The first Triton subset lowers one length axis indexed by one
 scalar program axis and refuses wider mappings explicitly.
+When every global write is an output store with the same scalar-indexed valid prefix,
+Triton skips a program tile whose first coordinate is outside that prefix. Partial tiles
+retain the original access masks. Dense outputs, atomic/state effects, and persistent
+walks keep their original execution. A masked input alone never authorizes this pruning.
+The launch grid stays fixed; work analysis reports runtime-dependent repetitions rather
+than charging the full grid as exact executed arithmetic.
 An AccessMap index with `source: buffer` names a rank-one register INT32 Buffer that the
 operation also reads. Multiple such coordinates share one shape and are zipped into one
 runtime-index domain; they are not a Cartesian product. `mask_tiled_axes` bounds both

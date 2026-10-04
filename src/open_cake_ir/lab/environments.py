@@ -420,6 +420,10 @@ class NativeTritonEnvironment:
                  authority_document: Mapping[str, object], workload: WorkloadContract, case_id: str):
         self._toolchain = toolchain
         self._requirements = json.loads(json.dumps(dict(toolchain_requirements)))
+        from open_cake_ir.compiler.toolchain import triton_route
+        self._compile_route = triton_route(self._requirements)
+        if 'num_warps' not in self._requirements.get('compile_options', {}):
+            raise ValueError('native Triton compile contract must declare num_warps')
         self._abi = workload.tensor_abi(case_id)
         self._target = workload.document['semantics']['target']
         # The frozen Compiler owns backend spelling (for example int32 -> *i32).
@@ -473,7 +477,7 @@ class NativeTritonEnvironment:
             # Use the existing structural launch checker before any target compilation.
             CudaKernelSpec.from_dict({
                 'target': self._target, 'kernel_name': requirements['kernel_entry_point'], 'grid': grid,
-                'block': [options.get('num_warps', 4) * 32, 1, 1], 'dynamic_shared_memory_bytes': 0})
+                'block': [options['num_warps'] * self._compile_route.warp_size, 1, 1], 'dynamic_shared_memory_bytes': 0})
             requirements.update(compile_constants=dict(constants), compile_options=dict(options), grid=grid)
             source = document['kernel_source'].encode()
             validate_triton_kernel(source, requirements)
