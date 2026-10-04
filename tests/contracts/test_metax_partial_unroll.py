@@ -23,7 +23,7 @@ def candidate(lm, x: cake.Tensor((3, {depth}), "fp32"), out: cake.Tensor((3,), "
     for k in lm.range(x, name="depth_loop", dimension=1, tile=64, loop_unroll_factor={factor}):
         with compute:
             value = lm.load(x[row, k], id="load")
-            result = lm.reduce(value, op="sum", axis=1, id="sum")
+            result = lm.reduce(value, op="sum", axis=0, id="sum")
     with compute:
         lm.store(out[row], result, id="store")
 ''').document
