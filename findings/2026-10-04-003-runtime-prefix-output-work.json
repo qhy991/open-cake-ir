@@ -49,6 +49,6 @@
   "original_identity": {
     "id": "F-2026-10-04-002",
     "source": "751ead87:findings/2026-10-04-002-runtime-prefix-output-work.json",
-    "reason": "main local-device admission owns002"
+    "reason": "main local-device admission already owns global sequence002"
   }
 }
