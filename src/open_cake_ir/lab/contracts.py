@@ -555,7 +555,10 @@ class CampaignLock:
         if comparison is not None and "candidate_selection" in arms[comparison]:
             raise ValueError(f"{comparison} empirical selection is unsupported")
         if "candidate_selection" in arms["open_cake"]:
-            if (
+            from open_cake_ir.compiler.target import CodeObject
+            from open_cake_ir.evaluation.platforms import platform_for
+            native_mcpti = platform_for(document['execution']['target']).code_object is CodeObject.MCFATBIN
+            if not native_mcpti and (
                 comparison != "direct_cuda"
                 or "input_format" in arms["open_cake"]
             ):
