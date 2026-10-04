@@ -218,6 +218,38 @@ class DiagnosisRunTests(unittest.TestCase):
                     self.assertFalse(lab._replay_matched_run(store, audit, lock))
 
 
+from tests.contracts.test_lab import SemanticLabTestCase
+
+
+class RunDiagnosisSummaryTests(SemanticLabTestCase):
+    def test_real_engineering_and_study_assigned_runs_use_their_retained_policy(self):
+        import tempfile
+        from hashlib import sha256
+        from tools.summarize_diagnoses import summarize
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.lab.provider_policy import execution_configuration
+        from tests.contracts.test_run_specification import IndependentRunTests
+        from tests.contracts.test_lab import RalphFakeProvider, FakeEnvironment, FakeEvaluator
+        for condition in (None, 'treated'):
+            with self.subTest(condition=condition), tempfile.TemporaryDirectory() as directory:
+                lab, specification = IndependentRunTests.fixture(self, condition=condition)
+                document = specification.document
+                provider = RalphFakeProvider({specification.run_id: lab.task_package(specification, specification.run_id)})
+                provider.qualification_sha256 = document['authoring']['provider']['qualification']['canonical_sha256']
+                provider.configuration = execution_configuration(document['authoring']['provider'])
+                protocol = document['evaluation_protocol']
+                run = lab.execute_run(specification, Path(directory)/'evidence', provider=provider,
+                    environment=FakeEnvironment('open_cake', document['authoring']),
+                    evaluator=FakeEvaluator(protocol, sha256(canonical_json_bytes(protocol)).hexdigest(),
+                                            document['workload']['canonical_sha256']))
+                result = summarize([run.evidence_root], compiler_gaps=True)
+                self.assertEqual(result['groups'][0]['evidence_policy'], document['evidence_policy'])
+                self.assertEqual(result['groups'][0]['executor_revision'], document['execution']['executor_revision'])
+                self.assertEqual(result['groups'][0]['run_count'], 1)
+                self.assertIsNone(result['runs'][0]['campaign_id'])
+                self.assertEqual(result['compiler_gaps'], [])
+
+
 class DiagnosisSummaryTests(unittest.TestCase):
     def test_cross_root_counts_are_read_only_deduplicated_and_policy_scoped(self):
         import os

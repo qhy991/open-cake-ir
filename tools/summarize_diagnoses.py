@@ -18,7 +18,7 @@ from open_cake_ir.serialization import canonical_json_bytes
 def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
     """Archive integrity is checked; counts are archived decisions, not new findings.
 
-    Semantic replay remains owned by each Campaign's pinned Executor. Custody is
+    Semantic replay remains owned by each Run's pinned Executor. Custody is
     reported separately and is never repaired or required for historical counting.
     """
     groups = {}
@@ -36,7 +36,7 @@ def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
             identity = (audit.authority_sha256, audit.run_id)
             if identity in seen:
                 if seen[identity] != audit.terminal_seal_sha256:
-                    raise ValueError("conflicting sealed histories for the same Campaign Run")
+                    raise ValueError("conflicting sealed histories for the same sealed Run")
                 continue  # The same sealed Run copied or named twice is one observation.
             seen[identity] = audit.terminal_seal_sha256
             authority = json.loads((run_path / "authority.json").read_text())["authority"]
@@ -44,8 +44,19 @@ def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
             resolved = authority.get("resolved_inputs", {})
             if not isinstance(execution, dict) or not isinstance(resolved, dict):
                 raise ValueError("diagnosis summary Campaign authority differs")
+            if "run_id" in authority:
+                # RunSpecification owns its policy directly, whether engineering or
+                # Study-assigned. Do not fall back to a Campaign field when it is absent.
+                if (type(authority.get("schema_version")) is not int
+                        or authority["schema_version"] != 1
+                        or authority["run_id"] != audit.run_id
+                        or "resolved_inputs" in authority):
+                    raise ValueError("diagnosis summary Run authority differs")
+                policy = authority.get("evidence_policy")
+            else:
+                policy = resolved.get("evidence_policy")
             provenance = {"executor_revision": execution.get("executor_revision"),
-                          "evidence_policy": resolved.get("evidence_policy")}
+                          "evidence_policy": policy}
             if not isinstance(provenance["executor_revision"], dict) or not isinstance(provenance["evidence_policy"], dict):
                 raise ValueError("diagnosis summary requires retained Executor and evidence policy")
             key = canonical_json_bytes(provenance)
@@ -94,7 +105,7 @@ def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
                          "counts": dict(sorted(counts.items()))})
     result = {"schema_version": 1,
             "domain": "archive-integrity-checked retained diagnosis counts; no semantic reclassification or promotion",
-            "semantic_replay": "use each Campaign's pinned Executor audit",
+            "semantic_replay": "use each Run's pinned Executor audit",
             "groups": [{**groups[key], "counts": dict(sorted(groups[key]["counts"].items()))}
                        for key in sorted(groups)], "runs": runs}
     if compiler_gaps:

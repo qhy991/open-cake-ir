@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-04",
+  "id": "F-2026-10-04-003",
+  "kind": "protocol",
+  "decision": "accepted",
+  "title": "Diagnosis summary reads only the historical Campaign evidence-policy location",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+  "executor_revision": "xcore1002@2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/",
+    "locators": [
+      "predecessor-rmsnorm-compiler-gaps.stderr",
+      "predecessor-rmsnorm-review.json",
+      "../c550-local-admission-20261004/matrix-v1/rmsnorm/run-evidence/runs/open_cake-1/authority.json"
+    ]
+  },
+  "observation": "The sealed RMSNorm Run has archive integrity and custody, but the pinned --compiler-gaps tool refuses with diagnosis summary requires retained Executor and evidence policy. Its authority is a RunSpecification with top-level evidence_policy; the script reads only resolved_inputs.evidence_policy from historical Campaign authorities. The failure prevents curation without proving any Compiler gap.",
+  "proposed_change": "Read the RunSpecification-owned policy for its declared schema and matching Run id; retain historical Campaign handling, exact retained Executor grouping, integrity gates and no semantic reclassification. Never substitute a Campaign policy for a malformed Run authority or change frozen evidence.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "Shared diagnosis tooling repair proposed. No IR, lowering, Verifier, timing or optimization promotion."
+}
