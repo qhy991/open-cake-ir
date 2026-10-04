@@ -5,8 +5,8 @@
   "kind": "protocol",
   "backend": "triton",
   "target": "xcore1002",
-  "compiler_revision_id": "open-cake-ir@e38b555f",
-  "executor_revision": "xcore1002@e38b555f",
+  "compiler_revision_id": "open-cake-ir@e38b555fc3b11ca57dadbe3bcdbc3d10d6383387",
+  "executor_revision": "xcore1002@e38b555fc3b11ca57dadbe3bcdbc3d10d6383387",
   "title": "The captured MCPTI custom-clock interface does not preserve device intervals in a monotonic domain",
   "decision": "deferred",
   "evidence": {
