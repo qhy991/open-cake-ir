@@ -53,6 +53,18 @@ class C550AdvisoryFeedback(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'binary or launch'):compiled_allocation_feedback(tampered)
         with self.assertRaisesRegex(ValueError,'binary or launch'):
             replay_program_candidate(self.compiler,self.program,tampered,tampered.artifact_payloads)
+        # Binary and report agreeing with each other cannot change the Target's family.
+        family='xcore1001'
+        wrong_binary=bundle(architecture=family,native=native_fixture(3,candidate.entry_point,allocation=fields))[0]
+        wrong_report={**report,'native_family':family}
+        wrong_payload=canonical_json_bytes(wrong_report)
+        forged=replace(candidate,artifact_payloads={**candidate.artifact_payloads,
+            'mcfatbin':wrong_binary,'toolchain_resource_report':wrong_payload},
+            artifact_roles={**candidate.artifact_roles,'mcfatbin':sha256(wrong_binary).hexdigest(),
+                            'toolchain_resource_report':sha256(wrong_payload).hexdigest()})
+        with self.assertRaisesRegex(ValueError,'only.*xcore1000'):compiled_allocation_feedback(forged)
+        with self.assertRaisesRegex(ValueError,'only.*xcore1000'):
+            replay_program_candidate(self.compiler,self.program,forged,forged.artifact_payloads)
 
     @classmethod
     def setUpClass(cls):

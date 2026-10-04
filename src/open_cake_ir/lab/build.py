@@ -277,7 +277,9 @@ def seal_triton_compilation(request,compilation,*,workload,case_id):
 def compiled_allocation_feedback(launchable):
     """Project a sealed native report; do not interpret absent allocation as zero."""
     from open_cake_ir.evaluation.platforms import platform_for
-    if platform_for(launchable.target).code_object is not CodeObject.MCFATBIN:
+    from open_cake_ir.compiler.target import declared_target
+    target=declared_target(launchable.target)
+    if platform_for(target).code_object is not CodeObject.MCFATBIN:
         return {}
     payload = launchable.artifact_payloads.get('toolchain_resource_report')
     if payload is None:
@@ -288,7 +290,9 @@ def compiled_allocation_feedback(launchable):
         raise ValueError('sealed native allocation report is not an object')
     from open_cake_ir.compiler.metax_toolchain import native_allocation
     manifest=TensorLaunchManifest.from_dict(json.loads(launchable.artifact_payloads['launch_manifest']))
-    expected={**native_allocation(launchable.artifact_payloads['mcfatbin'],report.get('native_family'),
+    if manifest.target != target.target_id or tuple(manifest.block[1:]) != (1,1):
+        raise ValueError('sealed native allocation launch target or thread block differs')
+    expected={**native_allocation(launchable.artifact_payloads['mcfatbin'],target.architecture,
                                  manifest.kernel_name),
               'target':launchable.target,'launch':{'threads_per_cta':manifest.block[0],
                          'dynamic_shared_bytes':manifest.dynamic_shared_memory_bytes}}
