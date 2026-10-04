@@ -21,7 +21,25 @@
   },
   "observation": "All 54 selected baselines compiled and sealed before authoring. The first RMSNorm Run authored candidates then failed with maca_broker_busy. A later LayerNorm evaluation reported that MACA admission requires a MACA PyTorch and one visible device. The local allocator had no explicit device-selection input and the outer launcher removed inherited masks. Its pre-authoring allocator check returned without testing local deployment. These are deployment faults, not evidence of an IR limit or incorrect kernel.",
   "proposed_change": "Let the existing local broker select an explicitly supplied physical ordinal only after acquiring the same shared user lock. Keep runtime selection API names with the execution platform. Add bounded waiting without holding a lease or a second queue. Probe exact MACA device admission before provider qualification using the same mapping and lock. Preserve CPU input/oracle preparation before device acquisition, worker lifetime ownership, exact target and existing measurement gates.",
-  "implemented_in": null,
-  "verified_by": null,
-  "promotion_disposition": "Executor admission successor proposed for verification. No Compiler primitive or optimization pass promotion; original Run outcomes remain unchanged."
+  "implemented_in": "2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+  "verified_by": {
+    "source_commit": "2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+    "evidence_root": "c550-2:/root/open-cake-runs-reviewed/c550-local-admission-20261004/",
+    "locators": [
+      "owned-device-probe-v3/local-device-admission.json",
+      "author-isolation-observation-v3.json",
+      "common-evaluator-control-v3/confirmatory/observation.json",
+      "common-evaluator-control-v3/confirmatory/correctness_output",
+      "common-evaluator-control-v3/confirmatory/launch_receipt",
+      "common-evaluator-control-v3/confirmatory/timing_samples",
+      "common-evaluator-control-v3/attribution/profile",
+      "workload-continuity.json"
+    ],
+    "scope": "Actual C550 physical ordinal 0 admitted as one visible xcore1002 under the original shared UID lock. Fresh sealed RMSNorm A/A common Evaluation: all required input checks passed; 10 preflight calls, 740 kernel calls, 500 timing samples, measurement quality passed, speedup 1.0 and close_null. Independent attribution passed correctness and retained its MCPTI profile. All 54 predecessor Workload documents compare equal. This qualifies the bounded local deployment and unchanged Evaluation entry, not every task or future performance result; external GPU activity remains not excluded."
+  },
+  "promotion_disposition": "Promoted existing local-broker device mapping and pre-provider admission in an Executor successor. No Compiler primitive or optimization-pass promotion. Original failed Run outcomes and SDK clock limitations remain unchanged.",
+  "software_verification": {
+    "source_commit": "2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+    "scope": "123 focused contracts in a dedicated committed test worktree; full Corpus Gate 180/180 unchanged; Python 3.10, 3.11 and 3.12 CI passed. Lock-wait/release, no mapping before acquisition, invalid mapping refusal and pre-provider exact-device refusal tested."
+  }
 }
