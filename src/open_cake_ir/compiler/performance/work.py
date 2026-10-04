@@ -36,6 +36,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..backends.triton_output_domain import output_tile_domain
+
 from ..ir import (
     AccessIndexKind,
     ElementwiseOp,
@@ -307,6 +309,12 @@ def operation_repetitions(
     tiles = program_tiles(schedule)
     if tiles is None:
         return None
+
+    if output_tile_domain(schedule) is not None:
+        return tuple(OperationRepetition(
+            operation.op_id, "unknown", None,
+            ("active output tiles depend on device-resident valid extents; launch grid is unchanged",),
+        ) for operation in schedule.operations)
 
     loops = {loop.name: loop for loop in schedule.tile_loops}
     scopes: dict[str, list[str]] = {}

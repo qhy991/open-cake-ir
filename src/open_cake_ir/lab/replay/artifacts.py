@@ -87,6 +87,8 @@ def _replay_launchable_candidate(
         launch_spec_sha256=manifest.canonical_sha256,
         artifact_payloads=artifact_payloads,
     )
+    from ..build import compiled_allocation_feedback
+    compiled_allocation_feedback(candidate)
     authored = json.loads(authored_bytes) if arm=='open_cake' and authored_bytes is not None else None
     if candidate.is_program or isinstance(authored,Mapping) and 'program_id' in authored:
         if compiler_factory is None:

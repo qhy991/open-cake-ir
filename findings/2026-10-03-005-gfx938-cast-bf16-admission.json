@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-10-03-001",
+  "id": "F-2026-10-03-005",
   "kind": "capacity",
   "date": "2026-10-03",
   "title": "gfx938 omits existing cast and BF16 contraction admission",
@@ -30,5 +30,10 @@
     "scope": "Four component comparisons against the same-geometry explicit FP32 widening route, with reversed order and A/A controls. Not a community SOTA, GQA, serving, full-workload or authoring-budget result. Physical exclusivity is not established."
   },
   "verified_by": null,
-  "remaining_acceptance": "Independent integration review and a successor operator campaign against its frozen strong community baseline; capability Finding remains proposed until that campaign qualifies."
+  "remaining_acceptance": "Independent integration review and a successor operator campaign against its frozen strong community baseline; capability Finding remains proposed until that campaign qualifies.",
+  "original_identity": {
+    "id": "F-2026-10-03-001",
+    "source": "f0f465f6:findings/2026-10-03-001-gfx938-cast-bf16-admission.json",
+    "reason": "distinct main native-cohort record owns global sequence001"
+  }
 }

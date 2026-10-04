@@ -111,8 +111,15 @@ def _project_candidate_submission(
         if environment_kind != 'open_cake' or not isinstance(arm, str) or not arm:
             raise ValueError('Python candidate-bundle submission contract differs')
         from .python_candidate_bundle import project_python_candidate_bundle
-        return project_python_candidate_bundle(payload,
-            maximum_candidates_per_turn=maximum_candidates_per_turn)
+        try:
+            return project_python_candidate_bundle(payload,
+                maximum_candidates_per_turn=maximum_candidates_per_turn)
+        except ValueError as error:
+            # The native Turn/session/file/usage were valid; the authored file
+            # was not. Preserve its exact bytes in raw_submission and reject
+            # the whole bundle as one invalid submission, without compiling or
+            # truncating excess proposals. The next Turn can repair its source.
+            return (canonical_json_bytes({'python_bundle_error':str(error)}),)
     if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or not isinstance(arm, str) or not arm or environment_kind not in {
         "open_cake",
         "direct_cuda",

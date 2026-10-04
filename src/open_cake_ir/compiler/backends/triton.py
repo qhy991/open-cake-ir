@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .triton_selection import top_k_selection_structure
+from .triton_output_domain import output_tile_domain
 from .metax import (emit_compensated_fp8_mma, streaming_compensated_loop,
                     emit_streaming_compensated_state, emit_streaming_compensated_step,
                     emit_streaming_compensated_finalize)
@@ -1279,6 +1280,14 @@ class _TritonEmitter:
             for axis in program_map.axes:
                 self.line(f"    {axis.name} = tl.program_id({axis.axis})", declares=(axis.name,))
         pad = self._body_pad()
+        domain = output_tile_domain(self.schedule)
+        if domain is not None:
+            # Every output store has the same mask; outside this prefix the
+            # program has no global effects. Partial tiles keep normal masks.
+            self.line(f"{pad}# Skip only a provably empty output tile.")
+            self.line(f"{pad}_cake_output_length = tl.load({domain.lengths} + {domain.group})")
+            self.line(f"{pad}if {domain.tile_axis} * {self._tile(domain.tile_axis)} < _cake_output_length:")
+            pad += "    "
         for axis in self.schedule.program_map.axes:
             if axis.is_tiled:
                 tile = self._tile(axis.name)
