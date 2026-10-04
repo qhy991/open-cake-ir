@@ -43,11 +43,16 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-04-003 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
+- F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.
+
+- F-2026-10-04-002 — local MACA authoring began before shared-lock and single-device admission; broker-owned explicit selection, bounded waiting and pre-authoring device probe prepared for successor verification. Original failed batch remains unchanged.
+
 - F-2026-10-04-001 — C550 native controls preserve wall-clock intervals but reject both monotonic domains; no monotonic-clock promotion. SDK-default timing and all strict gates retained.
 
 - F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport and reset-calibration retention verified through a fresh native rejection; old missing observations stay missing.
 - F-2026-10-03-002 — Python source normalization, exact parent/stage feedback and malformed-bundle recovery implemented and software-verified; old Run classifications remain fixed.
-- F-2026-10-03-003 — measured N output partitioning encoded as an explicit guarded squared-distance rewrite; fresh pass-generated C550 qualification pending.
+- F-2026-10-03-003 — explicit guarded N output partitioning qualified by fresh C550 pass-generated correctness, paired timing (3.33x, 10/10 wins) and profiler at bc7b4dee; limited to R128 K256 N32.
 
 - F-2026-10-02-002 — isolated Claude E/P admission excluded the existing v4 native compaction contract. Closed by the Study admission successor at 36e346b5 and diagnostic replay of nine retained complete C550 traces; old v3 outcomes remain unchanged.
 

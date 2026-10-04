@@ -194,6 +194,7 @@ class _TL:
     float32 = object()
     int32 = object()
     range = staticmethod(lambda *args, **kwargs: range(*args))
+    static_range = staticmethod(range)
     arange = staticmethod(lambda start, stop: _Tile((stop-start,), range(start, stop)))
     full = staticmethod(lambda shape, value, dtype: _Tile(shape, itertools.repeat(value, _size(shape))))
     zeros = staticmethod(lambda shape, dtype: _TL.full(shape, 0, dtype))

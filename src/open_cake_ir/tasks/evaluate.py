@@ -1404,9 +1404,13 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--local-kind", choices=LOCAL_KINDS,
                         help="prepare tensor inputs/oracles before requesting this local broker")
+    parser.add_argument("--local-device", type=int, help="physical ordinal selected by the local broker after CPU preparation")
+    parser.add_argument("--local-queue-seconds", type=float, default=0)
     parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.local_kind is None and (args.local_device is not None or args.local_queue_seconds != 0):
+        parser.error('local device and queue settings require --local-kind')
     request_path = args.request.resolve(strict=True)
     # The allocator that admitted this process names its job in its own variable: the
     # local broker in METAL_JOB_ID under the family's prefix, the cluster allocator in
@@ -1419,7 +1423,9 @@ def main() -> int:
             if args.profile_child or args.profile_admission is not None:
                 raise ValueError('local CPU preparation cannot run as a profiler child')
             authority = _prepare_local_tensor_work(authority, args.local_kind)
-            job = admit_local_job(args.local_kind)
+            job = (admit_local_job(args.local_kind)
+                   if args.local_device is None and args.local_queue_seconds == 0 else
+                   admit_local_job(args.local_kind, device=args.local_device, queue_seconds=args.local_queue_seconds))
             result = _base_result(job)
         if os.environ.get("GPUQ_BACKEND"):
             from open_cake_ir.evaluation.gpuq import observe_allocation
