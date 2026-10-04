@@ -8,7 +8,7 @@
   "compiler_revision_id": "open-cake-ir@5b588ceca20ee33f9a8bec3304af64fc069477c0",
   "executor_revision": "xcore1002@5b588ceca20ee33f9a8bec3304af64fc069477c0",
   "title": "MACA loop-unroll refusal combines an implementable fixed grouping with an unqualified pipeline combination",
-  "decision": "proposed",
+  "decision": "accepted",
   "evidence": {
     "root": "c550-2:/root/open-cake-experiments/c550-compaction-successor-20261002/study-v1/",
     "rejections": [
@@ -39,17 +39,45 @@
     ],
     "retained_sources": "c550-2:/root/open-cake-experiments/c550-partial-unroll-20261004/retained-unroll-events/",
     "fresh_cpu_probes": "/Users/haiyan/.codex/visualizations/2026/10/01/01a0f724-5277-7381-9850-2908be179c27/c550-support-successor-20261004/{before,after}/result.json",
-    "independent_review": "/tmp/cake-c550-unroll-review-20261004/REVIEW.md"
+    "independent_review": "/Users/haiyan/.codex/visualizations/2026/10/01/01a0f724-5277-7381-9850-2908be179c27/c550-support-successor-20261004/independent-review/"
   },
   "observation": "The three retained candidates are valid Cake IR but request partial unroll together with two or four stages; they remain unsupported by this successor. Fresh valid single-stage squared-distance Programs at R128/K256/N32 and R1024/K1024/N64 expose the separate fixed-partial-group gap: factors2/4 that divide the trip count are refused at c72acbd5 despite needing only the existing MACA tl.range and tl.static_range operations. This is a curated exact-source distinction, not a Finding inferred from rejection counts. The captured Triton3.6 range signature accepts loop_unroll_factor, but API keyword availability alone does not qualify the pipelined route.",
   "proposed_change": "Implement explicit single-stage fixed partial grouping with an outer range stepping tile*factor and an inner static range, preserving each original iterator value, tail mask, state initialization and once-per-owning-loop finalization. Require the factor to divide the fixed trip count exactly. Preserve full unroll and non-MCFATBIN routes. Keep dynamic/nondividing/pipelined combinations refused, naming the actual factor, stage and trip commitments and requiring an explicit author choice.",
   "implemented_in": "83afd36ab120c9fb276f54140282a3488693d6c6",
-  "verified_by": null,
+  "verified_by": {
+    "source_commits": [
+      "c0b09a376038c6f18857fe980f956e3102d4aa8c",
+      "7e691143d6561945a5a679c0efa2e2fe68dd3211"
+    ],
+    "evidence_roots": [
+      "c550-2:/root/open-cake-experiments/c550-partial-unroll-approved-20261004/",
+      "c550-2:/root/open-cake-experiments/c550-queued-unroll-20261004/"
+    ],
+    "locators": [
+      "test1-2-attribution-wait2/profile",
+      "test1-2-confirmatory-wait1/result.json",
+      "test1-4-attribution-resume2/profile",
+      "test1-4-confirmatory-resume2/result.json",
+      "test4-2-attribution/profile",
+      "test4-2-confirmatory/result.json",
+      "test4-4-attribution/profile",
+      "test4-4-confirmatory/result.json"
+    ],
+    "scope": "Compiler-generated factor2 single-stage kernels pass all five original Workload distributions and separate profile at R128/K256/N32 and R256/K256/N64. Fresh paired MCPTI uses250samples/arm and10reversed pairs, with10/10candidate wins:15.360/13.824us (1.1111x),31.488/29.696us (1.0603x). A/A controls pass quality. Full factor4 controls are correct and stable but slower:17.920us and34.304us. Local-serialized physicalGPU0, external activity not excluded. No native3.1, unseen-shape, E/P, serving, all-factor or generalization claim."
+  },
   "software_verification": {
     "commit": "c0b09a376038c6f18857fe980f956e3102d4aa8c",
     "focused_contracts": 75,
     "Corpus_Gate": "180 unchanged cases at 83afd36a; successor device preparation at c0b09a37 passed the unchanged Corpus again",
     "scope": "CPU loop-control traces and actual emitted nested loads/reductions/stores, tail masks, single stores, namespace collision and intended-owner refusals; actual isolated MACA3.6 offline compilation of four sealed independent candidates. Device qualification remains pending."
   },
-  "promotion_disposition": "No device-capability or performance promotion yet. Frozen Study outcomes and all strict measurement gates remain unchanged. Pipelined partial unroll remains deferred."
+  "promotion_disposition": "Promote explicit fixed single-stage partial-unroll emission with the stated guards; no automatic unroll choice. Curate factor2 gains and factor4 regressions as bounded target evidence. Native pipeline variants are numerically executable on captured3.6 but slower; no pipeline promotion or old Study reclassification.",
+  "native_engineering": {
+    "reference_access": "known_kernel_reproduction",
+    "environment": "native_triton",
+    "evidence_root": "c550-2:/root/open-cake-experiments/c550-queued-native-20261004/",
+    "hypothesis": "Captured Triton3.6 realizes partial factor2 with stages2 or4 using its native range option, while the cross-version Cake route retains its refusal.",
+    "result": "Both variants compile, pass all five cases and separate attribution, and pass strict fresh paired quality at R256/K256/N64. Native stages2:31.488/34.048us,0.9248x; native stages4:31.488/34.304us,0.9179x; baseline wins10/10pairs in both. A/A is1.0close_null. These are native results, not Cake results.",
+    "promotion_disposition": "No promotion of pipelined native variants: no validated performance advantage at this fixed shape, and a compatible Compiler route/minimum-toolchain contract remains separate work. No IR expressibility gap is established."
+  }
 }

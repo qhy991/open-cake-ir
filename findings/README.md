@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-10-04-003 — fixed single-stage MACA partial-unroll implementation under independent qualification; the three retained multi-stage requests remain refused and are not reclassified.
+- F-2026-10-04-003 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
 - F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.
 
 - F-2026-10-04-002 — local MACA authoring began before shared-lock and single-device admission; broker-owned explicit selection, bounded waiting and pre-authoring device probe prepared for successor verification. Original failed batch remains unchanged.
