@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-10-04-005 — sealed RunSpecification diagnosis summaries used the historical Campaign policy location; successor reader preserves provenance ownership and frozen evidence.
+- F-2026-10-04-006 — sealed RunSpecification diagnosis summaries used the historical Campaign policy location; successor reader preserves provenance ownership and frozen evidence.
 
 
 - F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.

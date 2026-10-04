@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-04",
-  "id": "F-2026-10-04-005",
+  "id": "F-2026-10-04-006",
   "kind": "protocol",
   "decision": "accepted",
   "title": "Diagnosis summary reads only the historical Campaign evidence-policy location",
@@ -38,6 +38,11 @@
   "record_history": {
     "provisional_id": "F-2026-10-04-003",
     "retained_in_commit": "3aaa7fcc390b3f1c4dbc3c3987c13ac4df24f117",
-    "reason": "Parallel main integration allocated global003 to runtime-prefix-output-work and004 to native-triton-launch-width before PR302 merged. Preserve both records; this unmerged diagnosis repair takes next free005."
+    "reason": "Parallel main integration allocated global003 to runtime-prefix-output-work and004 to native-triton-launch-width before PR302 merged. Preserve both records; this unmerged diagnosis repair takes next free005.",
+    "previous_global_assignment": {
+      "id": "F-2026-10-04-005",
+      "retained_in_commit": "8985314a8687582839fd5b551297b5bc2fcb6e91",
+      "reason": "Reviewed MetaX integration reached main with global005 before PR302 merged. Its record is preserved; this unmerged diagnostic record moves to next free006."
+    }
   }
 }
