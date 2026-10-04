@@ -43,7 +43,11 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-10-04-002 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded qualification passed; review and integration status are owned by the canonical Finding.
+- F-2026-10-04-003 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded qualification passed; review and integration status are owned by the canonical Finding.
+
+The output-prefix pruning record first published as F-2026-10-04-002 on task/core-valid-extent-work-pruning-20261004 is assigned global sequence003 here. Original record and evidence remain at751ead87; main sequence002 belongs to the separate local-device admission observation.
+
+- F-2026-10-04-002 — local MACA authoring began before shared-lock and single-device admission; broker-owned explicit selection, bounded waiting and pre-authoring device probe prepared for successor verification. Original failed batch remains unchanged.
 
 - F-2026-10-04-001 — C550 native controls preserve wall-clock intervals but reject both monotonic domains; no monotonic-clock promotion. SDK-default timing and all strict gates retained.
 

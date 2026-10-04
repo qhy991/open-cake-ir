@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-10-04-002",
+  "id": "F-2026-10-04-003",
   "date": "2026-10-04",
   "kind": "capacity",
   "title": "A valid-prefix output can prove an entire program tile has no observable writes",
@@ -45,5 +45,10 @@
     "release": "all six admitted stages terminal exit0, VRAM0, no KFD or live container; canonical community and parent validation passed",
     "scope": "Bounded engineering qualification with original16 workloads x10 rounds and same FP32 chain; separate from Ralph search. Gateway serializes this user only and does not prove physical exclusivity."
   },
-  "promotion_disposition": "Software and bounded DCU operator qualification passed. Independent review and core-to-main-to-dcu integration pending; no global optimality or other-target device claim."
+  "promotion_disposition": "Software and bounded DCU operator qualification passed. Independent review and core-to-main-to-dcu integration pending; no global optimality or other-target device claim.",
+  "original_identity": {
+    "id": "F-2026-10-04-002",
+    "source": "751ead87:findings/2026-10-04-002-runtime-prefix-output-work.json",
+    "reason": "main local-device admission already owns global sequence002"
+  }
 }
