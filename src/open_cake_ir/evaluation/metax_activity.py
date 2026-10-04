@@ -249,6 +249,9 @@ def activity_collector(library: str) -> McptiActivity:
             _COLLECTOR = McptiActivity(library)
         if not _COLLECTOR._ready:
             raise RuntimeError("MCPTI callback registration did not succeed")
+        if (_COLLECTOR._timestamp_callback is not None
+                or _COLLECTOR._timestamp_source != 'sdk_default'):
+            raise ValueError('MCPTI production collection cannot reuse a diagnostic clock')
         if _COLLECTOR.library != str(Path(library).resolve(strict=True)):
             raise ValueError("MCPTI collector cannot change its admitted library in one process")
         return _COLLECTOR

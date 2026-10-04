@@ -332,7 +332,11 @@ class ExplicitActivityClocks(unittest.TestCase):
                 function.restype=ctypes.c_uint64;function.argtypes=[]
                 first,second=function(),function()
                 self.assertGreater(first,0);self.assertGreaterEqual(second,first)
-                if name=='cake_relative_monotonic':self.assertEqual(first,1)
+                if name=='cake_relative_monotonic':
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=8) as pool:
+                        samples=list(pool.map(lambda unused:function(),range(1024)))
+                    self.assertTrue(all(0<stamp<1000000000 for stamp in samples))
 
     def test_invalid_reset_capture_remains_available_to_failed_pair_handoff(self):
         from types import SimpleNamespace
@@ -376,4 +380,6 @@ class ExplicitActivityClocks(unittest.TestCase):
                 self.assertEqual(calls,['mcptiGetVersion','mcptiActivityRegisterCallbacks','mcptiActivityRegisterTimestampCallback'])
                 self.assertIs(api.functions['mcptiActivityRegisterTimestampCallback'].callback,collector._timestamp_callback)
                 self.assertEqual(collector._timestamp_source,'CPU fixture clock')
+                with self.assertRaisesRegex(ValueError,'cannot reuse a diagnostic clock'):
+                    activity.activity_collector(str(library))
                 with self.assertRaisesRegex(RuntimeError,'process owner'):activity.McptiActivity(str(library))
