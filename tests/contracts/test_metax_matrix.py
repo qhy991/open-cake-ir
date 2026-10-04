@@ -120,13 +120,13 @@ def candidate(lm, x: cake.Tensor((72, 128), "fp32"), out: cake.Tensor((72, 128),
         self.assertTrue(nvidia.lowering_eligible, nvidia.findings)
         self.assertIn('loop_unroll_factor=4', self.compiler.lower(nvidia).source)
 
-    def test_maca_partial_or_pipelined_unroll_is_refused_by_its_owner(self):
+    def test_maca_nondividing_or_pipelined_unroll_is_refused_by_its_owner(self):
         document = frontend.read_schedule(ROOT / 'examples/python/b300_gemm_bias.py').document
         document['target'] = 'xcore1002'
         document.pop('residency')
         options = document['tile_loops'][0]['range_options']
         options['disallow_acc_multi_buffer'] = False
-        for factor, stages in ((2, 1), (4, 2)):
+        for factor, stages in ((3, 1), (8, 1), (2, 2), (4, 2)):
             with self.subTest(factor=factor, stages=stages):
                 options.update(loop_unroll_factor=factor, num_stages=stages)
                 assessment = self.compiler.assess(document)
