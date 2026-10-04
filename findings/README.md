@@ -43,7 +43,9 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport implemented, fresh C550 diagnosis pending.
+- F-2026-10-04-001 — C550 native controls preserve wall-clock intervals but reject both monotonic domains; no monotonic-clock promotion. SDK-default timing and all strict gates retained.
+
+- F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport and reset-calibration retention verified through a fresh native rejection; old missing observations stay missing.
 - F-2026-10-03-002 — Python source normalization, exact parent/stage feedback and malformed-bundle recovery implemented and software-verified; old Run classifications remain fixed.
 - F-2026-10-03-003 — measured N output partitioning encoded as an explicit guarded squared-distance rewrite; fresh pass-generated C550 qualification pending.
 
