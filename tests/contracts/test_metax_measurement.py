@@ -317,6 +317,23 @@ class MacaProfileRepresentation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'instrumented output'):receipt()
 
 class ExplicitActivityClocks(unittest.TestCase):
+    def test_native_clock_controls_have_the_sdk_uint64_void_abi_without_gpu(self):
+        import shutil, subprocess
+        compiler=shutil.which('c++')
+        if compiler is None:self.skipTest('C++ compiler unavailable for native diagnostic control')
+        source=Path(__file__).resolve().parents[2]/'src/open_cake_ir/evaluation/metax_clock_probe.cc'
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/'clock.so'
+            subprocess.run([compiler,'-std=c++11','-shared','-fPIC',str(source),'-o',str(output)],
+                           check=True,capture_output=True,timeout=30)
+            library=ctypes.CDLL(str(output))
+            for name in ('cake_wall_time','cake_monotonic','cake_relative_monotonic'):
+                function=getattr(library,name)
+                function.restype=ctypes.c_uint64;function.argtypes=[]
+                first,second=function(),function()
+                self.assertGreater(first,0);self.assertGreaterEqual(second,first)
+                if name=='cake_relative_monotonic':self.assertEqual(first,1)
+
     def test_invalid_reset_capture_remains_available_to_failed_pair_handoff(self):
         from types import SimpleNamespace
         from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
