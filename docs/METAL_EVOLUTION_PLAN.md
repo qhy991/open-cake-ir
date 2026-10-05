@@ -72,7 +72,7 @@ H1/H2 是同类算子迁移，H3 是不同收缩语义；这些不能声称是�
 | G2 可搜索性 | 每任务至少两个非改名、非纯 group 调参的结构策略可表达；至少两个代表任务验证完整策略对 | 若只有一种实现可走，先补关键表达能力，不能通过奖励调参掩盖 |
 | G3 设备与测量 | 封存基线全部输入正确；A/A 对照、已知慢化对照、配对顺序、时间戳与独立确认通过 | 无可信计时就只报正确性/覆盖，不能开启性能研究 |
 | G4 两轮系统验收 | 候选绑定的结果与 MSL/operation 对应实际交付并可回放；作者探索 Cake 并核对低层机制；受保护文件、预算、确认预留正确；经验摘要可追溯 | 结果归因修复已合入 main；MSL 投递仍缺失，待共享后继、Metal 集成和真实作者验收 |
-| G5 冻结 | Workload、固定基线、提交、scaffold、模型/effort、参考权限、预算、计划、经验和 pass grants 完整 | 不使用浮动 main、latest 模型或自动更新 incumbent |
+| G5 冻结 | Workload、固定基线、提交、每任务 scaffold/资料、Codex gpt-6.1-sol/xhigh、作者环境、参考权限、预算、经验和 pass grants 完整 | 独立 Run 目录与状态；技能发现按实证范围声明；不使用浮动 main 或自动更新 incumbent |
 
 G1 要覆盖所有发现任务的 starter；G2 先以 D2、D6 做完整机制对演练，其他任务再逐项扩展。
 只验证组数可改并不足以通过 G2。至少覆盖一种数据流/活跃存储改写和一种输出工作划分改写。
@@ -203,6 +203,13 @@ Metal 审阅基点的 routing 把特定 backend vocabulary 拒绝分给 `ir_voca
 是后端能力边界，不能只按汇总计数判断作者写错。共享 main 后继已有 `backend_lowering` /
 `backend_triage` 归属，应在平台集成时核对实际 owner；旧事件保持原分类。
 
+任务组织也要区分三个范围：任务文件夹、Codex 状态目录、作者实际可见的 skill/参考材料。
+当前 Metal 基点只已有第一项；main 的 auth-only home 后继补了部分状态隔离，仍未证明
+宿主/祖先/admin skill 来源受控。原多任务入口还把顶层参考资料共用给所有 cells。
+后继采用每 cell 自己的规范与材料快照，保留独立 judge、冻结 Compiler 和证据权限。
+执行绑定、KDA 当前实现的可借鉴范围与目录约定见 [authoring 规划](METAL_EVOLUTION_AUTHORING.md)。
+这些属于先固定的 authoring treatment，不能把新增技能或目录改造的收益记到 Compiler。
+
 ## 5. 内环与外环分工
 
 ```mermaid
@@ -239,7 +246,8 @@ verifier；真实表达缺口进 IR/lowering；测量缺口进 Evaluation；反�
 
 ## 6. 如何判断“越来越好”，避免四个因素一起变化
 
-固定同一个模型、effort、provider/scaffold、任务、硬件和预算；每个独立 Run 新会话，
+按用户选择固定 `Codex / gpt-6.1-sol / xhigh`，保持相同 provider/scaffold、任务、硬件和预算；
+每任务独立目录，再按 Compiler treatment 与重复编号分层；每个独立 Run 新会话，
 同 Run 内延续 Ralph。维护会话和作者会话隔离，当前分析上下文不得当作无经验组的起点。
 
 **第一步：工程重复性先导。** 在 G4 完成 D2、D6 各一个至少两轮接入验收，再过 G5，
@@ -307,7 +315,8 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 2. **共享反馈修复与两轮经验验收。** 共享修复已合入 main；接续 `main → metal` 集成，
    在干净集成提交核对候选归因、peer 结果与独立回放；离线正反例通过后，再按
    [authoring 规划](METAL_EVOLUTION_AUTHORING.md)补齐候选 MSL/operation 对应投递与回放，
-   接入明确要求 Cake 探索及低层对照的新 scaffold。验证作者引用真实区域并根据可见反馈
+   接入明确要求 Cake 探索及低层对照的新 scaffold；按每任务独立材料与 Run 状态组织目录，
+   以 `gpt-6.1-sol / xhigh` 完成适用资格，核对 skill 发现边界。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
 3. **C0 发现批次。** 六任务 × 三重复，固定基线；封存后选一个最频繁、最可复现的缺口。

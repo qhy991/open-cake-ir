@@ -4,6 +4,85 @@
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。
 
+## 执行绑定、任务目录与技能材料
+
+2026-10-05 用户确定后续 Ralph 作者使用 Codex 的 `gpt-6.1-sol`、`xhigh`。
+将下面的显式输入传给实验入口，并由既有 owner 写入 Run 的 provider authority：
+
+```json
+{"harness": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"}
+```
+
+不是浮动默认模型，不替换成其他模型，也不把其他模型的 qualification 借给它。
+CLI/executable、模型、effort、工具与作者环境的两轮资格仍需通过；initial/resume 保持
+同一绑定，独立重复使用新 Run。当前仍未启动这组正式 Metal 实验。
+
+目录采用“任务 → Compiler treatment → 独立重复”，都在源码 checkout 外。例如：
+
+```text
+metal-evolution/
+  manager/                         # 管理输入；schema v2
+    TASK.md AGENTS.md experiment.json
+    cells/rmsnorm-c0-r01/           # 每个 cell 独立材料快照
+      TASK.md AGENTS.md scaffold.md
+      references/
+    cells/softmax-c0-r01/
+      TASK.md AGENTS.md scaffold.md
+      references/
+    launches/<cell-id>/            # 保留发送内容、transport 状态
+  rmsnorm/C0/r01/
+    run-inputs/AGENTS.md            # 节点收到的该 cell scaffold
+    run-source/                    # 固定提交的 detached worktree
+    run/                           # node.workspace 指向这里
+      workload.json starter.py run.json runtime.json
+      qualification-workspace/     # 独立资格任务
+      qualification-workspace-author-home/
+      actors/<run-id>/             # Lab 生成的作者 TASK/AGENTS 与候选
+      actors/.codex-homes/<run-id>/ # 私有状态/凭据，不进入报告
+      builds/ baseline/ infra-evaluations/
+      run-evidence/ report.json
+  rmsnorm/C0/r02/                   # 新 Run，不能复用 r01 的可写状态
+  softmax/C0/r01/
+```
+
+这是后继输入的布局约定，不是已经生成并完成的实验。环境版本可以共享固定安装，
+各任务不必重复安装 Compiler；进程状态、可写缓存、候选和证据则要按 Run 分开。
+Ralph 与 GPU Infra/Evaluation 保持现有唯一执行路径，不引入第二套调度器或评测器。
+
+**同步边界不能省略。** `metal@a2e62b08` 已有 task/actor/evidence 独立目录，但没有
+ADR 0081 的 Codex author-home 后继；主线 `69a9f2a1` 已有每 Run auth-only home。
+主线的该 home 只复制私有凭据，允许 CLI 自带 system skills，检查并拒绝该 CODEX_HOME 内的 user skills/plugins；
+它不是每任务任意技能包安装能力，也不是完整文件读取隔离。必须先把所需共享后继集成
+到 Metal 并验证，不能按主线文档解释旧基点的运行。
+
+新管理输入采用共享 `kernel_experiment.py` 的 schema v2，
+实现见 [PR #317](https://github.com/qhy991/open-cake-ir/pull/317)、提交 `d7c25360`，仍需集成到 Metal。
+每 cell 必填自己的
+`references`，可选完整 `agents_md`，各自产生 TASK/AGENTS/资料/scaffold 快照；选中
+哪个 cell 就只发送那份 scaffold。共同资料须显式列在每个使用者的列表中。schema v1
+保留历史共享资料语义；新实验不用它来声称任务材料隔离。源码快照投递的独立实现不
+表示候选 MSL 已进入下一轮反馈，后者仍由下文 G4 的 Lab 后继负责。
+
+第一阶段的技能说明通过已审阅 `agents_md` 与显式参考材料交付；前者是完整任务规范，
+后者是数据，不会安装脚本或取得工具权限。通用 Cake 使用规则与每任务数值/结构提示
+分开审阅后组成该 cell 的完整规范。C0/C1、独立重复和经验消融中保持相同材料边界，
+不得把维护者读过的其他任务经验隐式带入作者。
+
+原生 skill 环境是另一项需要资格验证的后继。当前 main 仍保留宿主 `HOME`；Codex
+还会从 `$HOME/.agents/skills`、工作目录祖先、admin 与 system 来源发现技能，见
+[官方技能加载规则](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。
+仅检查 `CODEX_HOME/skills` 不足以证明全部发现来源受控。后继需绑定允许的技能说明、
+脚本依赖及调用权限，观察实际 catalog/输入，并以宿主、邻任务和非授权插件的哨兵材料
+验证 initial/resume 都未混入；不以 agent 口头自报作为证明。既有 auth-only 策略不容许
+塞入 user skills 后继续沿用原资格；也不因这一项完成就开放 clean-start。
+
+借鉴依据是 [KDA-Internal e99a6ce1 的 workspace builder](https://github.com/qhy991/KDA-Internal/blob/e99a6ce1f0ea69101bb03904b00d39ade988e708/src/kda/tasks/workspace.py)：
+每次 setup 创建独立 repo，仅复制当前任务资源，并测试其他任务资源未投递。
+其 [运行职责](https://github.com/qhy991/KDA-Internal/blob/e99a6ce1f0ea69101bb03904b00d39ade988e708/docs/running-experiments.md)
+将 flow、模型、重复与 agent 容器交给 Humanize2；当前 KDA 源码没有证明 author skill
+的完整安装/挂载流程。因此借鉴最小任务投递、固定 runtime 和独立 judge，不把 GPU
+容器的 HOME 设置当成 author 隔离证明，也不将 CUDA 镜像与 NCU 路线照搬到 Metal。
+
 ## TASK.md 负责“做什么、如何判断”
 
 保留当前 renderer 的 Workload、oracle、预算、候选输出、基线和完整参考权限投影。
