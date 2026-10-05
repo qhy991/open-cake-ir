@@ -403,6 +403,8 @@ def main() -> int:
         help="exact provider reasoning effort to qualify as a treatment factor",
     )
     parser.add_argument("--service-tier", default="default")
+    parser.add_argument('--native-skill-name', action='append', default=[],
+                        help='Exact native skill name to select in both qualification turns; repeat for multiple skills')
     parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1))
     parser.add_argument('--author-skill-package', type=Path,
                         help='controlled native skill package; only fixture qualification is currently supported')
@@ -447,6 +449,11 @@ def main() -> int:
         parser.error('Claude isolation requires the Claude harness')
     native_skill_package = (NativeSkillPackage.read(ROOT, args.author_skill_package)
         if args.author_skill_package is not None else None)
+    from open_cake_ir.lab.native_skill_qualification import selection_instruction
+    if native_skill_package is not None:
+        skill_instruction = selection_instruction(args.native_skill_name)
+    elif args.native_skill_name:
+        parser.error('--native-skill-name requires --author-skill-package')
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
     workspace = _new_path(args.workspace)
@@ -600,7 +607,8 @@ def main() -> int:
             tool_instruction, python_source, submission_contract,
         )
         if native_skill_package is not None:
-            package = replace(package, native_skill_package=native_skill_package)
+            package = replace(package, native_skill_package=native_skill_package,
+                              task_markdown=package.task_markdown + "\n" + skill_instruction)
         materialize_task_package(arm_workspace, package)
         task_packages[arm] = package
     task_bundle = {
@@ -648,6 +656,12 @@ def main() -> int:
         authority['author_home_policy'] = args.author_home_policy
     if native_skill_package is not None:
         authority['native_skill_package'] = native_skill_package.reference
+        authority['native_skill_context'] = {
+            'kind': 'native_skill_qualification_v1', 'executable': str(executable),
+            'output_schema': str(output_schema), 'selected_names': args.native_skill_name,
+            'arms': {arm: {'cwd': str(workspaces[arm]), 'user_home': str(user_homes[arm]),
+                           'codex_home': str(codex_homes[arm])} for arm in qualification_arms},
+        }
     if event_contract == "closed_file_change_v1":
         authority["web_search"] = "disabled"
     authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
@@ -872,6 +886,8 @@ def main() -> int:
         if native_skill_package is not None:
             objects.append(evidence.put(native_skill_package.raw_bytes,
                                         media_type='application/x-tar').reference('native_skill_package'))
+            objects.append(_put_json(evidence, observations[qualification_arms[0]]['builder'].remembered_system_skills)
+                           .reference('system_skills_snapshot'))
         arm_payloads: dict[str, object] = {}
         for arm, observation in observations.items():
             initial = observation["initial"]
@@ -879,25 +895,12 @@ def main() -> int:
             initial_invocation = observation["initial_invocation"]
             resumed_invocation = observation["resumed_invocation"]
             prefix = f"{arm}_"
-            previous_skill_input = None
-            for turn_number, (phase, observed_turn, invocation) in enumerate((
-                ("initial", initial, initial_invocation), ("resumed", resumed, resumed_invocation)), start=1):
+            for phase, observed_turn in (("initial", initial), ("resumed", resumed)):
                 if native_skill_package is not None:
-                    from open_cake_ir.lab.native_skill_observation import replay_observation
                     if observed_turn.native_skill_input is None:
                         raise ValueError('qualification Turn lacks native skill input')
-                    reference = evidence.put(observed_turn.native_skill_input,
-                        media_type="application/json").reference(f"{prefix}{phase}_native_skill_input")
-                    retained_input = evidence.read_object(reference)
-                    entries = {f'skills/{name}/SKILL.md' for name in native_skill_package.entry_names}
-                    replay_observation(retained_input, previous=previous_skill_input,
-                        thread_id=initial.thread_id, cwd=str(invocation.cwd), model=args.model,
-                        effort=args.reasoning_effort, turn=turn_number,
-                        package_files={str(invocation.user_home/'.agents'/item.path): item.payload
-                                       for item in native_skill_package.files if item.path in entries},
-                        system_paths=observation['builder'].system_skill_entrypoints)
-                    previous_skill_input = retained_input
-                    objects.append(reference)
+                    objects.append(evidence.put(observed_turn.native_skill_input,
+                        media_type="application/json").reference(f"{prefix}{phase}_native_skill_input"))
                 elif observed_turn.native_skill_input is not None:
                     raise ValueError('qualification has undeclared native skill input')
             objects.extend(
@@ -981,6 +984,10 @@ def main() -> int:
             "objects": objects,
             "reference_bundle_sha256": reference_bundle_sha256,
         }
+        if native_skill_package is not None:
+            from open_cake_ir.lab.native_skill_qualification import reconstruct_qualification_inputs
+            reconstruct_qualification_inputs(evidence=evidence, run_id=args.run_id,
+                authority=authority, payload=observed_payload, receipt=receipt)
         ledger.append(
             "provider_qualification_observed",
             observed_payload,
