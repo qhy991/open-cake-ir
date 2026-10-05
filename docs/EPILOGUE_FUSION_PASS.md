@@ -107,3 +107,25 @@ the complete result. It is not an automatic graph pass; unknown external consume
 physical aliasing are outside the supplied composition boundary. Old Workload metadata
 is cleared because the resulting ABI is new. Unsupported patterns return a reason.
 CPU/source checks establish no GPU, performance or model-level qualification.
+
+## Matching tiled producers and multiple rounded outputs
+
+`Compiler.rewrite_program(program, "fuse_tiled_epilogue", parameters)` uses the same
+producer/epilogue selection and fresh result identity. It admits adjacent stages
+whose private BF16/FP16 outputs feed only the selected consumer. All producer
+outputs must be removed together; a public or extra consumer remains a refusal.
+
+The bounded domain is rank-two masked Cartesian tiles with identical launch axes,
+extents, tile widths, role and residency commitments. The consumer is loop-free
+and pointwise, consumes exactly those intermediates and keeps the same output
+domain. Producer loops remain unchanged. Each removed output is an explicit
+BF16/FP16 cast result and both its cast and store are outside all producer loops.
+The casts remain in the fused Schedule; FP32 arithmetic seams are still refused.
+No permutation, slice, singleton view, state or synchronization is inferred.
+
+This supports the actual dual-GEMM/epilogue structure without introducing a layout
+algebra or a task name into Compiler. It returns a complete reassessed Program or
+a localized reason; lowering never applies it automatically. Input and output
+ABI are preserved by Program bindings. Numerical and performance acceptance still
+requires the unchanged original Workload, strong community baseline and device
+measurement. Software contracts alone do not establish a Task gain.
