@@ -77,14 +77,15 @@ class ExecutionGroupSpecialization(unittest.TestCase):
         self.assertTrue(self.compiler.assess(tiled.schedule).lowering_eligible)
         self.assertEqual(self.apply(tiled.schedule).reason, 'loop_domain')
 
-    def test_residency_and_register_commitments_are_not_silently_changed(self):
-        for field, value in [('residency', {'ctas_per_multiprocessor': 1}),
-                             ('registers', 128)]:
-            document = self.gemm('sm_100a' if field == 'registers' else 'gfx938')
-            if field == 'registers':
-                document['roles'][0]['registers_per_thread'] = value
-                document['residency'] = {'registers_per_thread': value}
-            else:
-                document[field] = value
-            self.assertTrue(self.compiler.assess(document).lowering_eligible)
-            self.assertEqual(self.apply(document).reason, 'execution_commitments')
+    def test_valid_residency_commitment_is_not_silently_changed(self):
+        document = self.gemm()
+        document['residency'] = {'ctas_per_multiprocessor': 1}
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        self.assertEqual(self.apply(document).reason, 'execution_commitments')
+
+    def test_backend_register_refusal_is_not_relaxed_by_the_pass(self):
+        document = self.gemm('sm_100a')
+        document['roles'][0]['registers_per_thread'] = 128
+        document['residency'] = {'registers_per_thread': 128}
+        self.assertFalse(self.compiler.assess(document).lowering_eligible)
+        self.assertEqual(self.apply(document).reason, 'input_refused')
