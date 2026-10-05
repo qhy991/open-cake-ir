@@ -1,6 +1,6 @@
 """Guarded explicit tiling of a pure FP32 squared-difference reduction.
 
-Both rewrites share graph, arithmetic, storage and access admission. Neither adds
+The rewrites share graph, arithmetic, storage and access admission. None adds
 an instruction, target fact, physical register guarantee or performance claim.
 """
 from copy import deepcopy
@@ -33,12 +33,25 @@ def _guard_squared_difference(schedule):
     d = deepcopy(dict(schedule))
     if s.lowering.backend.value != 'triton':
         return refuse('target_route', 'This rewrite emits an explicit Triton reduction loop.')
-    if (s.tile_loops or s.allocations or s.pipelines or s.barriers or s.residency
-        or len(s.roles) != 1 or s.roles[0].registers_per_thread is not None
-        or s.program_map is None or s.program_map.persistent
-        or len(s.program_map.axes) != 1
-        or any(op.waits or op.signals or op.pipeline for op in s.operations)):
-        return refuse('execution_commitments', 'Require a pure loop-free row reduction with one role.')
+    for path, incompatible, requirement in (
+        ('tile_loops', bool(s.tile_loops), 'an original loop-free reduction'),
+        ('allocations', bool(s.allocations), 'ordinary unallocated storage'),
+        ('pipelines', bool(s.pipelines), 'no existing pipeline'),
+        ('barriers', bool(s.barriers), 'no existing barrier'),
+        ('residency', bool(s.residency), 'no existing residency commitment'),
+        ('roles', len(s.roles) != 1, 'one role'),
+        ('roles[0].registers_per_thread', len(s.roles) == 1 and s.roles[0].registers_per_thread is not None,
+         'no role register budget'),
+        ('program_map', s.program_map is None or s.program_map.persistent
+         or len(s.program_map.axes) != 1, 'one nonpersistent row axis'),
+    ):
+        if incompatible:
+            return refuse('execution_commitments', f'{path}: this pass requires {requirement}.')
+    for index, op in enumerate(s.operations):
+        for field in ('waits', 'signals', 'pipeline'):
+            if getattr(op, field):
+                return refuse('execution_commitments',
+                              f'operations[{index}].{field}: this pass requires no synchronization or pipeline commitment.')
     ops = d['operations']
     if len(ops) != 6 or [op['kind'] for op in ops] != ['load','load','elementwise','elementwise','reduce','store']:
         return refuse('operation_domain', 'Require two loads, subtraction, square, sum, and store only.')
@@ -91,66 +104,133 @@ def _assess_result(compiler,document,message):
     try:
         assessment=compiler.assess(document)
         if not assessment.lowering_eligible:
-            return _refuse('result_refused',', '.join(f.code for f in assessment.findings if f.blocks_lowering or f.blocks_acceptance))
+            return _refuse('result_refused', '; '.join(
+                f'{f.category.value}: {f.code} at {f.path}: {f.message}'
+                for f in assessment.findings if f.blocks_lowering or f.blocks_acceptance))
         compiler.lower(assessment)
     except (CompilerError,ValueError,TypeError) as error:
         return _refuse('result_refused',str(error))
     return SpecializationResult(assessment,'applied',message)
 
 
-def tile_squared_difference(compiler,schedule,*,k_tile,schedule_id,entry_point):
-    if type(k_tile) is not int or k_tile<=0 or k_tile & (k_tile-1):
-        return _refuse('tile_extent','k_tile must be a positive power of two.')
-    input=_guard_squared_difference(schedule)
-    if isinstance(input,SpecializationResult):return input
-    identity=_result_identity(input,schedule_id,entry_point)
-    if identity is not None:return identity
-    d,s=input.document,input.schedule
-    xb=input.point
-    if k_tile>=xb['shape'][1]:
-        return _refuse('tile_extent','k_tile must be smaller than the contracted extent.')
-    ops=d['operations'];x,c,sub,square,fold,store=ops
-    buffers={b['name']:b for b in d['buffers']}
-    axis=d['program_map']['axes'][0]
-    names = {b.name for b in s.buffers} | {op.op_id for op in s.operations} | {axis['name']}
-    iterator = 'contracted_tile'
-    while iterator in names: iterator += '_'
+def _fresh_name(base, names):
+    while base in names:
+        base += '_'
+    names.add(base)
+    return base
+
+
+def _build_candidate(compiler, input, *, output_tile, k_tile, loop_unroll_factor,
+                     schedule_id, entry_point):
+    """One constructor for the admitted canonical graph; no implicit selection."""
+    d = input.document
+    K, N = input.point['shape'][1], input.centroids['shape'][0]
+    ops = d['operations']
+    x, c, sub, square, fold, store = ops
+    buffers = {b['name']: b for b in d['buffers']}
+    row = d['program_map']['axes'][0]
+    names = set(buffers) | {op['id'] for op in ops} | {row['name']}
     d['schedule_id'] = schedule_id
     d['lowering']['entry_point'] = entry_point
-    for op in (x,c,sub,square):
-        buffers[op['writes'][0]]['shape'][-1] = k_tile
-    for access in d['access_maps']:
-        if access['operation'] in {x['id'],c['id']}:
-            access['indices'][-1] = {'source':'loop_tile','name':iterator}
-    del fold['parameters']['across_loop']
-    d['tile_loops'] = [dict(name=iterator+'_loop',iterator=iterator,buffer=xb['name'],dimension=1,
-        tile=k_tile,body=[op['id'] for op in ops[:-1]],range_options=dict(num_stages=1,
-        loop_unroll_factor=1,disallow_acc_multi_buffer=False,flatten=False,warp_specialize=False,disable_licm=False))]
-    return _assess_result(compiler,d,'Explicit K tiling preserves FP32 subtraction before square; measure reduction grouping, latency and resources independently.')
+    if output_tile < N:
+        column = _fresh_name('output_columns', names)
+        row['axis'] = 1
+        d['program_map']['axes'].insert(0, dict(name=column, axis=0,
+            buffer=input.centroids['name'], dimension=0, tile=output_tile))
+        for op in (c, sub, square, fold):
+            buffers[op['writes'][0]]['shape'][0] = output_tile
+        for access in d['access_maps']:
+            if access['operation'] == c['id']:
+                access['indices'][0] = {'source': 'program_tile', 'name': column}
+            elif access['operation'] == store['id']:
+                access['indices'][1] = {'source': 'program_tile', 'name': column}
+    if k_tile < K:
+        iterator = _fresh_name('contracted_tile', names)
+        loop_name = _fresh_name(iterator + '_loop', names)
+        for op in (x, c, sub, square):
+            buffers[op['writes'][0]]['shape'][-1] = k_tile
+        for access in d['access_maps']:
+            if access['operation'] in {x['id'], c['id']}:
+                access['indices'][-1] = {'source': 'loop_tile', 'name': iterator}
+        del fold['parameters']['across_loop']
+        d['tile_loops'] = [dict(name=loop_name, iterator=iterator,
+            buffer=input.point['name'], dimension=1, tile=k_tile,
+            body=[op['id'] for op in ops[:-1]], range_options=dict(num_stages=1,
+            loop_unroll_factor=loop_unroll_factor, disallow_acc_multi_buffer=False,
+            flatten=False, warp_specialize=False, disable_licm=False))]
+    columns_per_row = (N + output_tile - 1) // output_tile
+    trips = (K + k_tile - 1) // k_tile
+    rows = input.point['shape'][0]
+    message = (
+        f'Intermediate tile [{N}, {K}] -> [{output_tile}, {k_tile}]; '
+        f'logical elements {N*K} -> {output_tile*k_tile}. '
+        f'Static CTAs {rows} -> {rows*columns_per_row}; '
+        f'row-input load multiplicity 1 -> {columns_per_row}. '
+        f'K trips {trips}, unroll factor {loop_unroll_factor}. '
+        'FP32 subtraction precedes square; K tiling can change reduction rounding. '
+        'Logical sizes and repeated loads do not predict physical allocation, memory traffic or latency; '
+        'external-oracle and target measurement are required.'
+    )
+    return _assess_result(compiler, d, message)
 
 
-def tile_squared_difference_outputs(compiler,schedule,*,output_tile,schedule_id,entry_point):
+def specialize_squared_difference(compiler, schedule, *, output_tile, k_tile,
+                                  loop_unroll_factor, schedule_id, entry_point):
+    """Build a jointly selected N/K/unroll candidate from the canonical seed.
+
+    An extent-sized tile preserves that dimension. Smaller tiles are powers of
+    two; a single-stage K loop has a fixed, evenly unrolled ceiling trip count.
+    This is a candidate constructor, not a performance ranking or acceptance act.
+    """
+    input = _guard_squared_difference(schedule)
+    if isinstance(input, SpecializationResult):
+        return input
+    identity = _result_identity(input, schedule_id, entry_point)
+    if identity is not None:
+        return identity
+    K, N = input.point['shape'][1], input.centroids['shape'][0]
+    for name, tile, extent, reason in (('output_tile', output_tile, N, 'output_extent'),
+                                       ('k_tile', k_tile, K, 'tile_extent')):
+        if (type(tile) is not int or tile <= 0 or tile > extent
+            or (tile < extent and tile & (tile - 1))):
+            return _refuse(reason, f'{name}: require the full extent {extent} or a smaller positive power of two.')
+    if type(loop_unroll_factor) is not int or loop_unroll_factor < 1:
+        return _refuse('unroll_extent', 'loop_unroll_factor: require a positive integer.')
+    trips = (K + k_tile - 1) // k_tile
+    if loop_unroll_factor > trips or trips % loop_unroll_factor:
+        return _refuse('unroll_extent',
+                       f'loop_unroll_factor: {loop_unroll_factor} must divide the fixed K trip count {trips}; full K requires factor 1.')
+    return _build_candidate(compiler, input, output_tile=output_tile, k_tile=k_tile,
+        loop_unroll_factor=loop_unroll_factor, schedule_id=schedule_id, entry_point=entry_point)
+
+
+def tile_squared_difference(compiler, schedule, *, k_tile, schedule_id, entry_point):
+    if type(k_tile) is not int or k_tile <= 0 or k_tile & (k_tile - 1):
+        return _refuse('tile_extent', 'k_tile must be a positive power of two.')
+    input = _guard_squared_difference(schedule)
+    if isinstance(input, SpecializationResult):
+        return input
+    identity = _result_identity(input, schedule_id, entry_point)
+    if identity is not None:
+        return identity
+    if k_tile >= input.point['shape'][1]:
+        return _refuse('tile_extent', 'k_tile must be smaller than the contracted extent.')
+    return _build_candidate(compiler, input, output_tile=input.centroids['shape'][0],
+        k_tile=k_tile, loop_unroll_factor=1, schedule_id=schedule_id, entry_point=entry_point)
+
+
+def tile_squared_difference_outputs(compiler, schedule, *, output_tile, schedule_id, entry_point):
     """Partition independent N outputs while retaining the complete K contraction."""
-    if type(output_tile) is not int or output_tile<=0 or output_tile & (output_tile-1):
-        return _refuse('output_extent','output_tile must be a positive power of two.')
-    input=_guard_squared_difference(schedule)
-    if isinstance(input,SpecializationResult):return input
-    identity=_result_identity(input,schedule_id,entry_point)
-    if identity is not None:return identity
-    d=input.document
-    x,c,sub,square,fold,store=d['operations']
-    buffers={b['name']:b for b in d['buffers']}
-    global_c=input.centroids;N=global_c['shape'][0]
-    if output_tile>=N:return _refuse('output_extent','output_tile must be smaller than the output-column extent.')
-    d['schedule_id']=schedule_id;d['lowering']['entry_point']=entry_point
-    old_axis=d['program_map']['axes'][0]
-    column='output_columns'
-    names={b['name'] for b in d['buffers']} | {op['id'] for op in d['operations']} | {old_axis['name']}
-    while column in names:column+='_' 
-    old_axis['axis']=1
-    d['program_map']['axes'].insert(0,dict(name=column,axis=0,buffer=global_c['name'],dimension=0,tile=output_tile))
-    for op in (c,sub,square,fold):buffers[op['writes'][0]]['shape'][0]=output_tile
-    for access in d['access_maps']:
-        if access['operation']==c['id']:access['indices'][0]={'source':'program_tile','name':column}
-        elif access['operation']==store['id']:access['indices'][1]={'source':'program_tile','name':column}
-    return _assess_result(compiler,d,'Explicit output-column partitioning preserves rounded FP32 subtraction, square and the full K sum. Actual resource allocation and speed require target measurement.')
+    if type(output_tile) is not int or output_tile <= 0 or output_tile & (output_tile - 1):
+        return _refuse('output_extent', 'output_tile must be a positive power of two.')
+    input = _guard_squared_difference(schedule)
+    if isinstance(input, SpecializationResult):
+        return input
+    identity = _result_identity(input, schedule_id, entry_point)
+    if identity is not None:
+        return identity
+    if output_tile >= input.centroids['shape'][0]:
+        return _refuse('output_extent', 'output_tile must be smaller than the output-column extent.')
+    return _build_candidate(compiler, input, output_tile=output_tile,
+        k_tile=input.point['shape'][1], loop_unroll_factor=1,
+        schedule_id=schedule_id, entry_point=entry_point)
