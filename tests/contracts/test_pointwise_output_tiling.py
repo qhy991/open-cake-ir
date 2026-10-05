@@ -119,15 +119,26 @@ def candidate(lm,x:cake.Tensor((3,64),"fp32"),out:cake.Tensor((3,32),"fp32",mode
 
     def test_complete_program_rebinds_the_same_public_tensors(self):
         from open_cake_ir.compiler.ir import Program
-        original=Program.from_schedule(pointwise_document())
-        stage=original.stages[0].name
-        result=self.compiler.rewrite_program(original,'tile_pointwise_outputs',
-            {'stage':stage,'output_tile':16,'schedule_id':'program-columns','entry_point':'program_columns'})
-        self.assertTrue(result.applied,(result.reason,result.message))
-        self.assertEqual(result.program.tensors,original.tensors)
-        self.assertEqual(result.program.outputs,original.outputs)
-        self.assertEqual(result.program.stages[0].bindings,original.stages[0].bindings)
-        self.assertEqual(len(result.program.stages),len(original.stages))
+        for columns in (32, 35):
+            with self.subTest(columns=columns):
+                original=Program.from_schedule(pointwise_document(columns))
+                stage=original.stages[0].name
+                result=self.compiler.rewrite_program(original,'tile_pointwise_outputs',
+                    {'stage':stage,'output_tile':16,'schedule_id':'program-columns','entry_point':'program_columns'})
+                self.assertTrue(result.applied,(result.reason,result.message))
+                self.assertEqual(result.program.tensors,original.tensors)
+                self.assertEqual(result.program.outputs,original.outputs)
+                self.assertEqual(result.program.stages[0].bindings,original.stages[0].bindings)
+                self.assertEqual(len(result.program.stages),len(original.stages))
+                self.compiler.lower_program(result.program)
+
+    def test_whole_program_does_not_repair_an_unselected_stage(self):
+        from open_cake_ir.compiler.ir import Program
+        original = Program.from_schedule(pointwise_document(35))
+        result = self.compiler.rewrite_program(original, 'tile_pointwise_outputs',
+            {'stage':'unselected','output_tile':16,'schedule_id':'program-columns','entry_point':'program_columns'})
+        self.assertFalse(result.applied)
+        self.assertEqual(result.reason, 'input_refused')
 
     def test_author_declared_metadata_survives_and_no_automatic_rewrite_occurs(self):
         source=pointwise_document();source['metadata']={'workload_contract_sha256':'1'*64}
