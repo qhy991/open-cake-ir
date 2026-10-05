@@ -89,10 +89,11 @@ def cake_kda_weighted_combine_b8_smoke(expert_rows, expert_ids, row_ids, route_w
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((8, 16), dtype=torch.bfloat16, device=expert_rows.device)
-    if tuple(out.shape) != (8, 16) or out.dtype != torch.bfloat16:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != expert_rows.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
+    else:
+        if tuple(out.shape) != (8, 16) or out.dtype != torch.bfloat16:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != expert_rows.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
     _cake_kda_weighted_combine_b8_smoke_kernel[(8, 1, 1)](
         expert_rows,
         expert_ids,

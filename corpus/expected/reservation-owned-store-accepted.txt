@@ -71,10 +71,11 @@ def cake_reservation_owned_store_b8_smoke(expert_ids, payloads, counts, out=None
         raise ValueError("every input and state must share one device")
     if out is None:
         out = torch.empty((4, 64), dtype=torch.int32, device=expert_ids.device)
-    if tuple(out.shape) != (4, 64) or out.dtype != torch.int32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != expert_ids.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
+    else:
+        if tuple(out.shape) != (4, 64) or out.dtype != torch.int32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != expert_ids.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
     _cake_reservation_owned_store_b8_smoke_kernel[(8, 1, 1)](
         expert_ids,
         payloads,

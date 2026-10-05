@@ -91,10 +91,11 @@ def cake_qsa_layernorm_t32768(pooled, k_norm_weight, out=None):
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((8192, 128), dtype=torch.float32, device=pooled.device)
-    if tuple(out.shape) != (8192, 128) or out.dtype != torch.float32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != pooled.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
+    else:
+        if tuple(out.shape) != (8192, 128) or out.dtype != torch.float32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != pooled.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
     _cake_qsa_layernorm_t32768_kernel[(128, 1, 1)](
         pooled,
         k_norm_weight,

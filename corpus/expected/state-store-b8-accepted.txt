@@ -59,15 +59,16 @@ def cake_state_store_b8_smoke(state, update, out=None):
     if out is None:
         out = (
         )
-    out = tuple(out)
-    if len(out) != 0:
-        raise ValueError("out must provide 0 output tensors")
-    for tensor, shape, dtype in (
-    ):
-        if tuple(tensor.shape) != shape or tensor.dtype != dtype:
-            raise ValueError("out differs from the frozen output contract")
-        if tensor.device != state.device or not tensor.is_contiguous():
-            raise ValueError("out must be contiguous on the input device")
+    else:
+        out = tuple(out)
+        if len(out) != 0:
+            raise ValueError("out must provide 0 output tensors")
+        for tensor, shape, dtype in (
+        ):
+            if tuple(tensor.shape) != shape or tensor.dtype != dtype:
+                raise ValueError("out differs from the frozen output contract")
+            if tensor.device != state.device or not tensor.is_contiguous():
+                raise ValueError("out must be contiguous on the input device")
     _cake_state_store_b8_smoke_kernel[(8, 1, 1)](
         state,
         update,

@@ -141,10 +141,11 @@ def cake_moe_expert_selection(routing_logits, routing_bias, selected_groups, out
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((1, 8), dtype=torch.int32, device=routing_logits.device)
-    if tuple(out.shape) != (1, 8) or out.dtype != torch.int32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != routing_logits.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
+    else:
+        if tuple(out.shape) != (1, 8) or out.dtype != torch.int32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != routing_logits.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
     _cake_moe_expert_selection_kernel[(1, 1, 1)](
         routing_logits,
         routing_bias,
