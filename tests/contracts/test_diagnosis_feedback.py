@@ -248,6 +248,7 @@ class DiagnosisSummaryTests(unittest.TestCase):
         from tools.summarize_diagnoses import summarize
         policy = {"event_vocabulary": "current-fixture"}
         cases = [
+            ({"evidence_policy": {"schema_version": True}, "resolved_inputs": {"evidence_policy": {"schema_version": 1}}}, "conflicting"),
             ({"evidence_policy": policy, "resolved_inputs": {"evidence_policy": {"event_vocabulary": "other"}}}, "conflicting"),
             ({"evidence_policy": None, "resolved_inputs": {"evidence_policy": policy}}, "conflicting"),
             ({"evidence_policy": policy, "resolved_inputs": None}, "authority differs"),
