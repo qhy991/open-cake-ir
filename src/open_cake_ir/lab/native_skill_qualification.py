@@ -27,12 +27,14 @@ def selection_instruction(names):
     return 'Use these native skills in every turn: ' + ', '.join('$' + name for name in names) + '.\n'
 
 
-def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, receipt):
+def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, receipt, requested_names=None):
     """Recheck each declared arm's initial/resume pair; do not reopen its original files.
 
     Reuses Run command-policy/native reconstruction with an in-memory binding derived
     from the retained invocation. The binding is not a second archived record.
     Receipt and authority are expected to be independently anchored by the caller.
+    Requested names, when supplied for reuse, must be current package bodies in
+    every arm and both turns; a system skill of the same name cannot satisfy them.
     """
     if (authority.get('author_home_policy') != ISOLATED_SKILL_PACKAGE_V1
         or authority.get('harness') != 'codex'
@@ -47,6 +49,10 @@ def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, re
         or context['kind'] != NATIVE_SKILL_QUALIFICATION_V1):
         raise ValueError('native qualification lacks its frozen context')
     instruction = selection_instruction(context['selected_names'])
+    if requested_names is not None:
+        selection_instruction(requested_names)
+    # A reused qualification must cover this request, not just its original TASK.
+    names = list(dict.fromkeys(context['selected_names'] + (requested_names or [])))
     arms = authority.get('arms')
     if (not isinstance(arms, list) or not 0 < len(arms) <= 2
         or any(not isinstance(arm, str) or not arm for arm in arms) or len(set(arms)) != len(arms)
@@ -154,18 +160,18 @@ def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, re
                 task_package=task, provider=provider, thread_id=thread_id, turn=number)
             entry_paths = {str(_path(paths['user_home'])/'.agents/skills'/name/'SKILL.md')
                            for name in package.entry_names}
-            for name in context['selected_names']:
+            for name in names:
                 matches = [item for item in observation['catalog']
                            if item['name'] == name and item['path'] in entry_paths]
                 if (len(matches) != 1 or not any(item['name'] == name and item['path'] == matches[0]['path']
                     for item in observation['loaded_this_turn'])):
-                    raise ValueError('native qualification selected body was not delivered this turn')
+                    raise ValueError(f'native qualification selected body was not delivered this turn: {arm}/{phase}/{name}')
             result[arm].append(observation)
             previous_input, previous_binding = native_input, binding
     return result
 
 
-def verify_qualification_evidence(*, qualification, anchor):
+def verify_qualification_evidence(*, qualification, anchor, requested_names=None):
     """Open actual sealed evidence and verify the receipt's native-input capability.
 
     Scope admission and the external anchor reference belong to admission. This
@@ -173,6 +179,8 @@ def verify_qualification_evidence(*, qualification, anchor):
     evidence. A capability name or an immediate-audit flag cannot replace this check.
     """
     from open_cake_ir.evidence import EvidenceStore
+    if requested_names is not None:
+        selection_instruction(requested_names)
     if qualification.native_skill_input_contract != NATIVE_SKILL_QUALIFICATION_V1:
         raise ValueError('native skill input capability is not qualified by this receipt')
     if (not isinstance(anchor, dict)
@@ -207,4 +215,4 @@ def verify_qualification_evidence(*, qualification, anchor):
     if len(observations) != 1 or any(event['kind'] == 'provider_qualification_failed' for event in events):
         raise ValueError('native qualification must retain exactly one successful observation')
     return reconstruct_qualification_inputs(evidence=evidence, run_id=audit.run_id,
-        authority=authority, payload=observations[0], receipt=qualification)
+        authority=authority, payload=observations[0], receipt=qualification, requested_names=requested_names)

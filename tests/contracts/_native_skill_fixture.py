@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 
-def append_rollout(thread_id, arguments, *, load_body=True):
+def append_rollout(thread_id, arguments, *, load_body=True, extra_skill=None):
     resumed = arguments[:2] == ['exec', 'resume']
     home, codex = Path(os.environ['HOME']), Path(os.environ['CODEX_HOME'])
     skill = home/'.agents/skills/cake/SKILL.md'
@@ -26,7 +26,9 @@ def append_rollout(thread_id, arguments, *, load_body=True):
     if not resumed:
         instructions = ('<skills_instructions>\n## Skills\n### Skill roots\n'
             f'- `r0` = `{skill.parent.parent}`\n### Available skills\n'
-            '- cake: fixture (file: r0/cake/SKILL.md)\n</skills_instructions>')
+            '- cake: fixture (file: r0/cake/SKILL.md)\n'
+            + (f'- {extra_skill[0]}: fixture (file: r0/{extra_skill[1]}/SKILL.md)\n' if extra_skill else '')
+            + '</skills_instructions>')
         rows.append(frame(instructions, 'host_skills.instructions', 'developer'))
         rows.append(row('world_state', full=True, state={'host_skills': {
             'body': instructions.removeprefix('<skills_instructions>').removesuffix('</skills_instructions>'),
@@ -34,6 +36,11 @@ def append_rollout(thread_id, arguments, *, load_body=True):
     rows.append(row('turn_context', turn_id=native_turn, cwd=str(Path.cwd()), model=model, effort=effort))
     if load_body:
         rows.append(frame(f'<skill>\n<name>cake</name>\n<path>{skill}</path>\n{skill.read_text()}\n</skill>',
+                          'skills.selected_skill_instructions', 'user'))
+    if extra_skill and extra_skill[2]:
+        name, directory, _ = extra_skill
+        extra_path = skill.parent.parent/directory/'SKILL.md'
+        rows.append(frame(f'<skill>\n<name>{name}</name>\n<path>{extra_path}</path>\n{extra_path.read_text()}\n</skill>',
                           'skills.selected_skill_instructions', 'user'))
     rows.append(row('event_msg', type='task_complete', turn_id=native_turn))
     with path.open('ab' if resumed else 'xb') as stream:

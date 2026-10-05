@@ -419,9 +419,13 @@ and experiment input, transports only that cell's names/package, and passes repe
 node transport use the same pure selection validator before creating inputs or starting
 a process. No frontmatter parser or native-name guess is introduced.
 
-This completes selection transport, not live enablement. The live guards remain
-closed. Runtime integration must check any requested selection against the retained
-qualification when reusing an existing receipt; a matching package alone does not
-establish that a different named body's delivery was observed. Existing prepared native
+Selection transport and qualification reuse do not enable live execution. The live
+guards remain closed. Reusing an existing qualification now reconstructs its anchored
+inputs and requires every requested name to resolve to a package entry with its body
+delivered in every declared arm, in both the initial and resumed turn. A catalog, an
+earlier body or a system skill with the same name is insufficient. No second list of
+qualified names is stored: the retained package and inputs remain authoritative.
+Receipt scope and runtime configuration/material admission keep their existing owners.
+Existing prepared native
 experiments without an explicit selection remain at their original source commit; use
 a new prepared experiment for this successor interface.

@@ -30,7 +30,7 @@ from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
 from open_cake_ir.lab.providers import ProviderQualificationReceipt
-from open_cake_ir.lab.native_skill_qualification import selection_instruction
+from open_cake_ir.lab.native_skill_qualification import selection_instruction, verify_qualification_evidence
 from open_cake_ir.tasks.compose import execute_run_from_config
 from open_cake_ir.tasks.preparation import prepare_task_run
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
@@ -478,6 +478,9 @@ def _qualify(root, workspace, args, executable, source_path):
     if args.qualification is not None:
         receipt_path = external_file(root, str(args.qualification), "provider qualification")
         anchor_path = external_file(root, str(args.qualification_anchor), "provider qualification anchor")
+        if getattr(args, "author_skill_package", None) is not None:
+            verify_qualification_evidence(qualification=ProviderQualificationReceipt.load(receipt_path),
+                anchor=json.loads(anchor_path.read_bytes()), requested_names=names)
         return receipt_path, anchor_path
     version = subprocess.run([str(executable), "--version"], check=True, capture_output=True, text=True, timeout=30)
     if not version.stdout.strip():
