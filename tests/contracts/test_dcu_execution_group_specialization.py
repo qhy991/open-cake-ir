@@ -89,3 +89,41 @@ class ExecutionGroupSpecialization(unittest.TestCase):
         document['residency'] = {'registers_per_thread': 128}
         self.assertFalse(self.compiler.assess(document).lowering_eligible)
         self.assertEqual(self.apply(document).reason, 'input_refused')
+
+    def cast_loop(self, *, widen):
+        document = self.gemm('sm_100a')
+        target_dtype = 'fp32' if widen else 'bf16'
+        if not widen:
+            for buffer in document['buffers']:
+                if buffer['name'] in {'a', 'b', 'a_tile', 'b_tile'}:
+                    buffer['dtype'] = 'fp32'
+        operations = []
+        for op in document['operations']:
+            operations.append(op)
+            if op['id'] in {'load_a', 'load_b'}:
+                name = op['id'][-1]
+                source = next(b for b in document['buffers'] if b['name'] == name + '_tile')
+                destination = deepcopy(source)
+                destination.update(name=name + '_cast', dtype=target_dtype)
+                document['buffers'].append(destination)
+                operations.append(dict(id='cast_' + name, kind='cast', role='compute',
+                    reads=[source['name']], writes=[destination['name']],
+                    depends_on=[op['id']], parameters={'to': target_dtype}))
+            if op['id'] == 'dot':
+                op.update(reads=['a_cast', 'b_cast'], depends_on=['cast_a', 'cast_b'])
+                op['parameters']['instruction']['contract'] = 'triton.dot.fp32_ieee' if widen else 'triton.dot.bf16_fp32'
+        document['operations'] = operations
+        document['tile_loops'][0]['body'] = ['load_a', 'cast_a', 'load_b', 'cast_b', 'dot']
+        return document
+
+    def test_widening_required_by_strict_fp32_mma_remains_inside_the_loop(self):
+        document = self.cast_loop(widen=True)
+        result = self.apply(document)
+        self.assertTrue(result.applied, result.message)
+        self.assertEqual(result.schedule['operations'], document['operations'])
+        self.assertEqual(result.schedule['tile_loops'], document['tile_loops'])
+
+    def test_valid_narrowing_loop_remains_outside_the_qualified_domain(self):
+        document = self.cast_loop(widen=False)
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        self.assertEqual(self.apply(document).reason, 'loop_domain')
