@@ -4,6 +4,7 @@ The graph, arithmetic order, dtype, public tensors and storage effects remain.
 Compiler guards admit the rewrite; Lab must select and measure each candidate.
 """
 from copy import deepcopy
+from collections.abc import Mapping
 
 from .errors import CompilerError
 from .ir import AccessIndexKind, BufferMode, MemorySpace, OperationKind, ScheduleParseError
@@ -16,6 +17,8 @@ def _refuse(reason, message):
 
 def tile_pointwise_outputs(compiler, schedule, *, output_tile, schedule_id, entry_point):
     """Partition one whole-row, pure rank-2 pointwise graph without a new IR form."""
+    if not isinstance(schedule, Mapping):
+        return _refuse('input_refused', 'Require a Schedule document object.')
     if type(output_tile) is not int or output_tile <= 0 or output_tile & (output_tile - 1):
         return _refuse('tile_extent', 'output_tile must be a positive power of two.')
     try:

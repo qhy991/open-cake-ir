@@ -87,6 +87,8 @@ def candidate(lm,x:cake.Tensor((3,32),"fp32"),out:cake.Tensor((3,32),"fp32",mode
 
     def test_result_identity_bad_tiles_and_already_column_programmed_candidates_are_refused(self):
         source=pointwise_document()
+        for malformed in (None, [], 'source'):
+            self.assertEqual(self.apply(malformed).reason,'input_refused')
         for tile in (True,0,-1,3,32,64):
             result=self.apply(source,tile);self.assertFalse(result.applied);self.assertEqual(result.reason,'tile_extent')
         self.assertFalse(self.compiler.tile_pointwise_outputs(source,output_tile=16,
