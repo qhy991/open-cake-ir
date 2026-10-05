@@ -44,7 +44,13 @@ Before launching a reproduction Campaign, the management Agent establishes:
 4. A fixed reference measurement under the task's timing interval, timer and reset
    protocol, plus available profiler evidence. Check the reference against the oracle.
    Distinguish this external reference from a generated starter or incumbent baseline.
-5. The comparison criterion and search budget before observing candidate results.
+5. The author-visible evidence surface: which candidate-generated source, operation
+   mappings, compiled resources and profiler observations are actually delivered, at
+   which turn and under which reference permissions. Inspect the prepared task package;
+   when requests are retained, verify actual delivery there, including later feedback.
+   A path to an artifact outside the author's readable inputs is not delivery. Record
+   missing coverage rather than requiring the author to invent observations.
+6. The comparison criterion and search budget before observing candidate results.
    If performance parity has no declared criterion or the reference has no comparable
    measurement, report the ratio/coverage available without claiming parity.
 
@@ -74,6 +80,46 @@ IR. Keep the reference location, candidate operation/region and evidence path to
 Separate algorithmic choices from target-specific instructions and incidental code.
 Do not infer a mechanism from a symbol named `producer`, nor count copied seeds as
 independent evidence. A dispatcher or library fallback is not an authored single kernel.
+
+## Explore Cake and test the lowering hypothesis
+
+In the Cake arm, explore the delivered frontend/API and the exact Target's admitted
+capabilities before concluding that a mechanism is unavailable. Start with the relevant
+indexing, partition, reduction, reuse, lifetime or arithmetic contracts. Try a canonical
+composition of existing primitives and inspect its construction/verifier feedback;
+do not assume the starter exhausts Cake's expressibility. Exploration is hypothesis-led,
+not a quota of API names or an exhaustive sweep. Restricted authors use normal candidate
+submissions within the existing budget; this is not permission to run extra probes.
+
+For each structural hypothesis, retain a concise, auditable summary in the permitted
+reasoning or source comments, and in the manager's existing result:
+
+- The Cake API/primitive and candidate operation or region that express the mechanism.
+- The expected lowering change and an observation that would refute it.
+- What the delivered evidence actually shows, tied to the source turn, candidate and
+  operation/region; mark missing source, mapping or resource evidence unverified.
+- The bounded lesson and next action: correct API use, change the candidate, or propose
+  an evidenced Compiler/measurement investigation outside the frozen Run.
+
+These are result summaries, not a request for private reasoning or extra protocol fields.
+If the envelope has no comment/summary slot, the manager records this limitation and
+curates the existing output after the Run; do not change the required output schema.
+
+Keep three claims separate: Cake expresses the mechanism; lowering realizes it; device
+evaluation supports its benefit. Where candidate-bound low-level code is delivered and
+authorized, inspect work mapping, memory accesses, reduction/synchronization and arithmetic
+at the relevant regions. State the evidence layer: emitted source, compiler IR, native
+instructions, compiled resource report or measured profile. Source-level variables or
+logical storage slots do not establish physical registers, spills or occupancy. A
+source-level change may disappear in later compilation, and timing alone does not
+identify the instruction sequence. Use only observations the exact toolchain provides.
+
+Generated code retained by the Lab is not necessarily visible in the author's feedback.
+When absent, continue with admitted Cake exploration and mark the lowering hypothesis
+unverified; the manager owns closing the delivery gap in a successor Run. Do not inspect
+black-box baseline internals, other arms' candidates or undeclared historical kernels.
+Candidate-generated source access must also be explicit in the frozen treatment; this
+scaffold grants no new reference or tool permissions.
 
 ## Reproduction loop
 
