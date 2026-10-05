@@ -1,7 +1,8 @@
 """Runtime boundary mechanics against synthetic sealed archives, never a live model.
 
 Entrance checks stop at the next owned boundary; separate zero-turn/first-fault
-cases execute and replay the real Run engine with CPU fixtures. Neither establishes
+cases execute and replay the real Run engine with CPU fixtures. The successful
+two-turn case uses the real provider subprocess/collector pipeline too. None establishes
 real model qualification or device execution. The pre-existing refusal matrix
 still tests missing qualifications before files, callbacks and early returns.
 """
@@ -34,6 +35,7 @@ class NativeSkillRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.fixture = admission_fixtures.NativeQualificationAdmissionTests(methodName='runTest')
         self.addCleanup(self.fixture.doCleanups)
+        self.fixture.provider_options = {'runtime_turns': True}
         self.fixture.setUp()
         self.root = self.fixture.root
         self.receipt, self.anchor, self.provider = self.fixture.synthetic_archive()
@@ -251,6 +253,87 @@ class NativeSkillRuntimeTests(unittest.TestCase):
                         from open_cake_ir.lab.native_skill_fault import has_native_rejection
                         fault = next(event['payload'] for event in events if event['kind'] == 'run_fault')
                         self.assertTrue(has_native_rejection(fault))
+
+    def test_successful_two_turn_native_run_uses_real_provider_capture_and_replay(self):
+        import json
+        from open_cake_ir.evidence import EvidenceStore
+        from open_cake_ir.lab import RunSpecification
+        from open_cake_ir.lab.author_home import provision_codex_home, provision_user_home
+        from open_cake_ir.lab.provider_invocation import CodexInvocationBuilder
+        from open_cake_ir.lab.providers import CodexProviderAdapter
+        from open_cake_ir.tasks.runtime import TaskLab
+        from tests.contracts import test_run_specification as run_fixtures
+        from tests.contracts import test_lab as lab_fixtures
+
+        template = run_fixtures.IndependentRunTests(methodName='runTest')
+        self.addCleanup(template.doCleanups)
+        _, original = template.fixture(condition='open_cake')
+        document = deepcopy(original.document)
+        document['authoring']['provider'] = deepcopy(self.provider)
+        specification = RunSpecification.from_dict(document)
+        lab = TaskLab(ROOT, clock=lambda: 0.0)
+        task = lab.task_package(specification, specification.run_id)
+        workspace = self.root/'successful-author'
+        workspace.mkdir(mode=0o700)
+        materialize_task_package(workspace, task)
+        codex_home = provision_codex_home(self.root/'auth.json', self.root/'successful-codex-home')
+        user_home = provision_user_home(self.root/'successful-user-home', task.native_skill_package)
+        declared = self.provider
+        builder = CodexInvocationBuilder(executable=self.root/'codex',
+            provider_revision=self.receipt.provider_revision, model=declared['model'],
+            reasoning_effort=declared['reasoning_effort'], service_tier=declared['service_tier'],
+            workspace=workspace, output_schema=ROOT/declared['output_schema']['path'],
+            removed_environment=tuple(declared['removed_environment']),
+            disabled_features=tuple(declared['disabled_features']),
+            code_mode_host=declared['code_mode_host'], submission_contract=declared['submission_contract'],
+            author_home_policy=declared['author_home_policy'], codex_home=codex_home,
+            qualified_system_skills_sha256=self.receipt.system_skills_sha256,
+            user_home=user_home, native_skill_package=task.native_skill_package)
+        provider = CodexRunProvider(qualification=self.receipt, qualification_anchor=self.anchor,
+            builders={specification.run_id: builder}, task_packages={specification.run_id: task},
+            adapter=CodexProviderAdapter(timeout_seconds=30))
+        evaluator = lab_fixtures.FakeEvaluator(document['evaluation_protocol'],
+            sha256(canonical_json_bytes(document['evaluation_protocol'])).hexdigest(),
+            document['workload']['canonical_sha256'])
+        environment = lab_fixtures.FakeEnvironment('open_cake', document['authoring'])
+        run = lab.execute_run(specification, self.root/'successful-evidence', provider=provider,
+                              environment=environment, evaluator=evaluator)
+        audit, replay = lab.audit_run(run)
+        self.assertTrue(audit.archive_integrity)
+        self.assertTrue(audit.filesystem_custody_verified)
+        self.assertTrue(replay, replay.refusals)
+        self.assertEqual(audit.protocol_adherence, 'adhered')
+        self.assertEqual(audit.endpoint_observation, 'qualified')
+        self.assertGreater(evaluator.calls, 0)
+        store = EvidenceStore.open(run.evidence_root)
+        events = store.replay_events(specification.run_id)
+        turns = [event['payload'] for event in events if event['kind'] == 'provider_turn_completed']
+        self.assertEqual(len(turns), 2)
+        self.assertEqual(turns[0]['thread_id'], turns[1]['thread_id'])
+        self.assertEqual([turn['turn_provider_tokens'] for turn in turns], [80000, 80000])
+        self.assertEqual([turn['cumulative_provider_tokens'] for turn in turns], [80000, 160000])
+        for number, payload in enumerate(turns, 1):
+            refs = {item['role']: item for item in payload['objects']}
+            observed = json.loads(store.read_object(refs['provider_native_skill_input']))
+            binding = json.loads(store.read_object(refs['provider_native_skill_binding']))
+            reference = json.loads(store.read_object(refs['provider_reference_bundle']))
+            self.assertEqual(binding['turn'], number)
+            self.assertEqual(binding['run_id'], specification.run_id)
+            self.assertEqual(binding['invocation']['user_home'], str(user_home))
+            self.assertEqual(binding['invocation']['codex_home'], str(codex_home))
+            self.assertEqual(observed['prior_turn_count'], number-1)
+            self.assertEqual([item['name'] for item in observed['loaded_this_turn']], ['cake'])
+            expected_body = next(item.payload.decode() for item in task.native_skill_package.files
+                                 if item.path == 'skills/cake/SKILL.md')
+            self.assertEqual(observed['loaded_this_turn'][0]['body'], expected_body)
+            self.assertEqual(reference['task_markdown'], task.task_markdown)
+            self.assertEqual(reference['state_card']['iteration'], number)
+            if number == 2:
+                self.assertNotEqual(reference['state_card']['previous_feedback']['kind'], 'initial')
+                history = reference['state_card']['optimization_history']
+                self.assertGreater(history['total']['evaluations'], 0)
+                self.assertTrue(all(row['turn'] == 1 for row in history['evaluations']))
+        self.assertNotIn('run_fault', [event['kind'] for event in events])
 
     def test_request_environment_shape_is_checked_before_archive_open(self):
         for kinds in (None, 'open_cake', [None], ['']):

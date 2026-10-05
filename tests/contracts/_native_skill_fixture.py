@@ -45,3 +45,35 @@ def append_rollout(thread_id, arguments, *, load_body=True, extra_skill=None):
     rows.append(row('event_msg', type='task_complete', turn_id=native_turn))
     with path.open('ab' if resumed else 'xb') as stream:
         stream.write(b''.join(json.dumps(item).encode() + b'\n' for item in rows))
+
+
+def emit_runtime_turn(arguments, projection):
+    """CPU executable fixture using existing candidate/events and native facts owners.
+
+    No model or GPU is invoked. The real adapter observes these synthetic events and
+    files; the test must never publish their synthetic qualification as a real one.
+    """
+    from types import SimpleNamespace
+    from open_cake_ir.lab.task_package import TaskPackage
+    from tests.contracts.test_lab import RalphFakeProvider
+
+    resumed = arguments[:2] == ['exec', 'resume']
+    task = TaskPackage(projection['run_id'], projection['arm'],
+                       projection['task_markdown'], projection['agents_markdown'])
+    state = projection['state_card']
+    request = SimpleNamespace(run_id=task.run_id, arm=task.arm, turn=state['iteration'],
+        thread_id=arguments[-2] if resumed else None,
+        cumulative_provider_tokens=state['cumulative_provider_tokens'], state_card=state)
+    result = RalphFakeProvider({task.run_id: task}).turn(request)
+    candidate = Path.cwd()/'candidate-set.json'
+    candidate.write_bytes(result.raw_submission)
+    append_rollout(result.thread_id, arguments)
+    # The reusable CPU provider uses /fixture as its synthetic event path. This
+    # executable owns a real task directory, so retain the actual changed file.
+    for raw in result.raw_events.splitlines():
+        event = json.loads(raw)
+        item = event.get('item', {})
+        if item.get('type') == 'file_change':
+            for change in item['changes']:
+                change['path'] = str(candidate)
+        print(json.dumps(event, separators=(',', ':')))

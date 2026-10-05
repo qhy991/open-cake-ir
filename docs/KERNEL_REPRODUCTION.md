@@ -429,6 +429,14 @@ through the real execution and replay owners, with no Evaluation calls. These ne
 are prepared but not executed; earlier hosted-runner failures remain external
 preconditions, not passing validation.
 
+The successful two-turn integration fixture now uses `CodexRunProvider`, its real
+invocation builder and subprocess adapter, input capture, Run archive and semantic
+replay. The executable emits synthetic CPU fixture events and candidate envelopes;
+existing CPU environment/evaluator fixtures handle candidates. It checks one resumed
+thread, cumulative-to-delta usage, current package bodies in both turns, and the first
+turn's evaluated history in the second retained request. These are software assertions
+awaiting execution, not evidence that a real model used the skill or learned from it.
+
 For native-skill qualification, each schema-2 experiment cell declares
 `native_skill_names` alongside `author_skill_package`. These are exact native names,
 not package directory names. The manager snapshots the selection in the cell's TASK

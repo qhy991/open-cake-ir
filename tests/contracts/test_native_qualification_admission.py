@@ -54,7 +54,7 @@ class NativeQualificationAdmissionTests(unittest.TestCase):
         self.root = Path(temporary.name).resolve()
         executable = self.root/'codex'
         helper = fixtures.ProviderQualificationContractTests(methodName='runTest')
-        helper._write_provider(executable)
+        helper._write_provider(executable, **getattr(self, 'provider_options', {}))
         package = self.root/'skills.tar'
         with tarfile.open(package, 'w') as archive:
             for name, data in (

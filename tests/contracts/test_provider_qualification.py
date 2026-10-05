@@ -37,6 +37,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         mutate_helper: bool = False,
         pretty_submission: bool = False,
         omit_skill_body_in_turn: int = 0,
+        runtime_turns: bool = False,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -68,6 +69,12 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 for field, name in (("task_markdown", "TASK.md"), ("agents_markdown", "AGENTS.md")):
                     if projection[field].encode() != Path(name).read_bytes():
                         raise SystemExit(39)
+                if {runtime_turns!r} and not any(line.startswith("QUALIFICATION_PLAN_JSON=")
+                                               for line in projection["task_markdown"].splitlines()):
+                    sys.path.insert(0, {str(ROOT)!r})
+                    from tests.contracts._native_skill_fixture import emit_runtime_turn
+                    emit_runtime_turn(arguments, projection)
+                    raise SystemExit(0)
                 plan_line = next(line for line in projection["task_markdown"].splitlines()
                                  if line.startswith("QUALIFICATION_PLAN_JSON="))
                 plan = json.loads(plan_line.split("=", 1)[1])
