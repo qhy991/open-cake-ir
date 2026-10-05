@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 
-def append_rollout(thread_id, arguments):
+def append_rollout(thread_id, arguments, *, load_body=True):
     resumed = arguments[:2] == ['exec', 'resume']
     home, codex = Path(os.environ['HOME']), Path(os.environ['CODEX_HOME'])
     skill = home/'.agents/skills/cake/SKILL.md'
@@ -32,8 +32,9 @@ def append_rollout(thread_id, arguments):
             'body': instructions.removeprefix('<skills_instructions>').removesuffix('</skills_instructions>'),
             'includeInstructions': True}}))
     rows.append(row('turn_context', turn_id=native_turn, cwd=str(Path.cwd()), model=model, effort=effort))
-    rows.append(frame(f'<skill>\n<name>cake</name>\n<path>{skill}</path>\n{skill.read_text()}\n</skill>',
-                      'skills.selected_skill_instructions', 'user'))
+    if load_body:
+        rows.append(frame(f'<skill>\n<name>cake</name>\n<path>{skill}</path>\n{skill.read_text()}\n</skill>',
+                          'skills.selected_skill_instructions', 'user'))
     rows.append(row('event_msg', type='task_complete', turn_id=native_turn))
     with path.open('ab' if resumed else 'xb') as stream:
         stream.write(b''.join(json.dumps(item).encode() + b'\n' for item in rows))

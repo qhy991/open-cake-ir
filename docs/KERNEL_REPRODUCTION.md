@@ -382,3 +382,19 @@ samples. HIP Program profiling and ordinary HIP/MACA optimization Run measuremen
 refused. No command here establishes a measured speedup.
 The build command uses the shared `build_program_candidate` source/ABI handoff; it does
 not construct an optimization environment whose measurement loop it cannot satisfy.
+
+
+Native-skill qualification now reconstructs its retained initial/resume inputs before
+sealing success. `--author-skill-package` requires explicit `--native-skill-name` values
+(repeat the flag for multiple native names); TASK names them in both turns. Directory
+names are not treated as native names, and a catalog or a body from an earlier turn is
+not current body delivery. The declared arm set remains authoritative, including a
+single Cake arm.
+
+`lab/native_skill_qualification.py` reuses Run invocation/native validation against the
+frozen qualification paths and policy, retained task projection, actual provider thread,
+complete package and existing system-tree snapshot. Replay reads no original HOME,
+installation or task files. This is a semantic evidence check: receipt versions 1/2
+gain no new admission capability, fixture scope stays fixture-only, and live native-skill
+qualification/Run gates remain closed pending receipt/anchor/admission integration.
+Historical Evidence custody is a separate prerequisite; reconstruction cannot supply it.
