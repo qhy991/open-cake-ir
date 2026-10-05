@@ -263,6 +263,11 @@ class _TL:
                 pointer.memory[offset] = value
 
     @staticmethod
+    def broadcast_to(a, shape):
+        # Reference broadcasting, independent of the emitter's axis spelling.
+        return a.binary(_Tile(tuple(shape), [None] * _size(shape)), lambda value, _: value)
+
+    @staticmethod
     def trans(a):
         m, n = a.shape
         return _Tile((n, m), [a.at((i, j)) for j in range(n) for i in range(m)])

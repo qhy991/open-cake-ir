@@ -154,14 +154,15 @@ def _whole_row(schedule: Schedule, op: str, buffer: str, axis: str) -> bool:
 def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Mapping, *,
                            private_intermediate: str, schedule_id: str,
                            entry_point: str) -> FusionResult:
-    """Fuse one row-owned, low-precision materialization into a unary epilogue.
+    """Fuse one row-owned materialization into a unary epilogue.
 
     This transforms the explicit composition epilogue(producer(inputs)); it cannot
     prove absence of consumers in an unseen graph. The caller must select a private
     intermediate and later bind the composed Workload. Neither source is mutated.
     Only direct-global Triton, one matching role/grid, no loops/state/synchronization,
-    an explicit BF16/FP16 producer cast and a whole-row unary epilogue are admitted.
-    FP32 materialization is refused: an identity cast is not a rounding barrier.
+    a whole-row unary epilogue, and either an explicit BF16/FP16 producer cast or
+    a pure FP32 load/store copy are admitted. FP32 arithmetic materialization is
+    refused: an identity cast is not a rounding barrier.
     """
     originals = []
     typed = []
@@ -205,8 +206,8 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
             or ep_input.shape != middle.shape or ep_input.dtype != middle.dtype
             or ep_output.shape != middle.shape):
         return _refuse('intermediate_abi', 'Both stages must agree on the full rank-2 intermediate and output shape.')
-    if middle.dtype not in {DType.BF16, DType.FP16}:
-        return _refuse('rounding_boundary', 'Only an explicit BF16/FP16 rounding seam is preserved; FP32 store/load fusion is not admitted.')
+    if middle.dtype not in {DType.BF16, DType.FP16, DType.FP32}:
+        return _refuse('rounding_boundary', 'Require an explicit BF16/FP16 rounding seam or a pure FP32 copy.')
     pa, ea = _row_axis(p, middle.shape[0]), _row_axis(e, middle.shape[0])
     if pa is None or ea is None:
         return _refuse('row_ownership', 'Each stage must own one complete row per program.')
@@ -233,10 +234,24 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
     bridge, loaded = p.buffer(store.reads[0]), e.buffer(load.writes[0])
     definitions = [op for op in p.operations if bridge is not None and bridge.name in op.writes]
     if (bridge is None or loaded is None or len(definitions) != 1
-            or definitions[0].kind is not OperationKind.CAST
-            or definitions[0].parameters.to != middle.dtype
             or bridge.dtype != middle.dtype or bridge.shape != (middle.shape[1],)
             or loaded.dtype != bridge.dtype or loaded.shape != bridge.shape):
+        return _refuse('rounding_boundary', 'The forwarded register value must preserve the full intermediate dtype and row shape.')
+    definition = definitions[0]
+    if middle.dtype is DType.FP32:
+        # Removing a plain memory copy cannot join arithmetic across a FP32
+        # rounding seam. A cast, scaling operation or unused arithmetic is not
+        # evidence for this narrow domain and remains refused.
+        copied_input = p.buffer(definition.reads[0]) if definition.reads else None
+        if (len(p.operations) != 2 or p.operations[0] != definition
+                or definition.kind is not OperationKind.LOAD or len(definition.reads) != 1
+                or copied_input is None or copied_input.mode is not BufferMode.INPUT
+                or copied_input.space is not MemorySpace.GLOBAL
+                or copied_input.dtype is not DType.FP32 or copied_input.shape != middle.shape
+                or not _whole_row(p, definition.op_id, copied_input.name, pa.name)):
+            return _refuse('rounding_boundary', 'FP32 fusion admits a pure whole-row load/store copy only; arithmetic materialization keeps its rounding seam.')
+    elif (definition.kind is not OperationKind.CAST
+            or definition.parameters.to != middle.dtype):
         return _refuse('rounding_boundary', 'The forwarded value must be the explicit low-precision cast result, not its pre-round input.')
     # Reject hidden global arguments: every surviving global is a public input or output.
     if any(b.space is MemorySpace.GLOBAL and b.mode not in {BufferMode.INPUT, BufferMode.OUTPUT}
@@ -290,7 +305,9 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
     if not assessed.lowering_eligible:
         return _refuse('result_refused', ', '.join(f.code for f in assessed.findings
             if f.blocks_lowering or f.blocks_acceptance))
-    return FusionResult(assessed, 'applied', 'Removed one intermediate global store and reload; preserved the explicit low-precision cast. No performance qualification is implied.')
+    seam = 'the pure FP32 copy value' if middle.dtype is DType.FP32 else 'the explicit low-precision cast'
+    return FusionResult(assessed, 'applied',
+        f'Removed one intermediate global store and reload; preserved {seam}. No performance qualification is implied.')
 
 
 def specialize_output_columns(compiler: Compiler, schedule: Mapping, *,

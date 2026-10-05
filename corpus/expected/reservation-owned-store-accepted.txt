@@ -55,6 +55,8 @@ def _cake_reservation_owned_store_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_reservation_owned_store_b8_smoke = _cake_reservation_owned_store_b8_smoke_kernel[(8, 1, 1)]
+
 def cake_reservation_owned_store_b8_smoke(expert_ids, payloads, counts, out=None):
     for tensor, shape, dtype in (
         (expert_ids, (8, 8), torch.int32),
@@ -71,11 +73,12 @@ def cake_reservation_owned_store_b8_smoke(expert_ids, payloads, counts, out=None
         raise ValueError("every input and state must share one device")
     if out is None:
         out = torch.empty((4, 64), dtype=torch.int32, device=expert_ids.device)
-    if tuple(out.shape) != (4, 64) or out.dtype != torch.int32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != expert_ids.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
-    _cake_reservation_owned_store_b8_smoke_kernel[(8, 1, 1)](
+    else:
+        if tuple(out.shape) != (4, 64) or out.dtype != torch.int32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != expert_ids.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
+    _cake_launch_cake_reservation_owned_store_b8_smoke(
         expert_ids,
         payloads,
         counts,

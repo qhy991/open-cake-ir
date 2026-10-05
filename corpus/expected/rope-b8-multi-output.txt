@@ -110,6 +110,8 @@ def _cake_rope_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_rope_b8_smoke = _cake_rope_b8_smoke_kernel[(8, 8, 1)]
+
 def cake_rope_b8_smoke(x_lo, x_hi, cos, sin, out=None):
     for tensor, shape, dtype in (
         (x_lo, (8, 512, 64), torch.float32),
@@ -130,18 +132,19 @@ def cake_rope_b8_smoke(x_lo, x_hi, cos, sin, out=None):
             torch.empty((8, 512, 64), dtype=torch.float32, device=x_lo.device),
             torch.empty((8, 512, 64), dtype=torch.float32, device=x_lo.device),
         )
-    out = tuple(out)
-    if len(out) != 2:
-        raise ValueError("out must provide 2 output tensors")
-    for tensor, shape, dtype in (
-        (out[0], (8, 512, 64), torch.float32),
-        (out[1], (8, 512, 64), torch.float32),
-    ):
-        if tuple(tensor.shape) != shape or tensor.dtype != dtype:
-            raise ValueError("out differs from the frozen output contract")
-        if tensor.device != x_lo.device or not tensor.is_contiguous():
-            raise ValueError("out must be contiguous on the input device")
-    _cake_rope_b8_smoke_kernel[(8, 8, 1)](
+    else:
+        out = tuple(out)
+        if len(out) != 2:
+            raise ValueError("out must provide 2 output tensors")
+        for tensor, shape, dtype in (
+            (out[0], (8, 512, 64), torch.float32),
+            (out[1], (8, 512, 64), torch.float32),
+        ):
+            if tuple(tensor.shape) != shape or tensor.dtype != dtype:
+                raise ValueError("out differs from the frozen output contract")
+            if tensor.device != x_lo.device or not tensor.is_contiguous():
+                raise ValueError("out must be contiguous on the input device")
+    _cake_launch_cake_rope_b8_smoke(
         x_lo,
         x_hi,
         cos,

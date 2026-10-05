@@ -178,3 +178,49 @@ class EpilogueFusionTests(unittest.TestCase):
         text=text.replace('negated = values * -1.0',
             'total = lm.reduce(values, op="sum", axis=0, scope="cta", across_loop=False, id="sum_values")\n        negated = values * total')
         self.assert_refused_valid_pair(stage('producer'),frontend.parse(text).document,'operation_domain')
+
+
+def fp32_copy_stage():
+    return frontend.parse('''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="copy_stage", target="sm_100a", backend="triton", entry_point="copy_stage")
+def candidate(lm, x: cake.Tensor((2, 8), "fp32"), mid: cake.Tensor((2, 8), "fp32", mode="output")):
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
+    with compute:
+        values = lm.load(x[row, :])
+        lm.store(mid[row, :], values, coalesced=True)
+''').document
+
+
+class FP32CopyFusion(unittest.TestCase):
+    fuse = EpilogueFusionTests.fuse
+    assert_refused_valid_pair = EpilogueFusionTests.assert_refused_valid_pair
+
+    @classmethod
+    def setUpClass(cls):
+        cls.compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
+
+    def test_plain_copy_then_pointwise_preserves_values_and_removes_only_the_copy_seam(self):
+        p, e = fp32_copy_stage(), stage('consumer', 'fp32')
+        before = deepcopy((p, e))
+        result = self.fuse(p, e)
+        self.assertTrue(result.applied, result.message)
+        self.assertEqual((p, e), before)
+        inputs={'x':[-2.,-1.,-0.,0.,1.,2.,0.1,-0.1]*2}
+        middle, _ = execute(p, inputs)
+        expected, _ = execute(e, middle)
+        observed, trace = execute(result.schedule, inputs)
+        self.assertEqual(list(observed.values()),list(expected.values()))
+        self.assertEqual(sum(op['kind']=='load' for op in result.schedule['operations']),1)
+        self.assertEqual(sum(op['kind']=='store' for op in result.schedule['operations']),1)
+        self.assertNotIn('mid',[b['name'] for b in result.schedule['buffers']])
+        self.assertEqual(sum(trace.loads.values()),2)
+        self.assertEqual(sum(trace.stores.values()),16)
+
+    def test_valid_fp32_arithmetic_copy_cannot_cross_the_rounding_seam(self):
+        p=fp32_copy_stage()
+        p['buffers'].append(dict(name='shifted',space='register',dtype='fp32',shape=[8],mode='scratch'))
+        load,store=p['operations']
+        p['operations'].insert(1,dict(id='shift',kind='elementwise',role=load['role'],reads=['values'],writes=['shifted'],depends_on=[load['id']],parameters=dict(op='add',scalar=1.0)))
+        store['reads']=['shifted'];store['depends_on']=['shift']
+        self.assert_refused_valid_pair(p,stage('consumer','fp32'),'rounding_boundary')
