@@ -588,6 +588,9 @@ class _Builder:
                 if type(axis) is not int or not 0 <= axis < len(shape):
                     self.fail(node, "reduce requires a valid static axis")
                 shape = shape[:axis] + shape[axis + 1:] or [1]
+            elif kind == "scan":
+                # The scan's accumulator type owns its result, as in the verifier.
+                dtype = "int32" if first.dtype.value == "int32" else "fp32"
             elif kind == "cast":
                 if "to" not in parameters:
                     self.fail(node, "lm.cast requires to=...", "SCHEDULE_STRUCTURE",

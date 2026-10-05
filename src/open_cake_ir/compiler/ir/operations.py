@@ -271,7 +271,12 @@ class ReduceParameters:
 
 @dataclass(frozen=True)
 class ScanParameters:
-    """An inclusive running prefix along one declared axis."""
+    """An inclusive resident prefix; integer sum wraps in signed INT32.
+
+    Floating inputs accumulate in FP32. INT32 inputs retain INT32 and sum
+    modulo 2**32, interpreted as signed two's-complement. No carry between
+    independently launched tiles or tile-loop iterations is implied.
+    """
 
     op: ScanOp
     axis: int

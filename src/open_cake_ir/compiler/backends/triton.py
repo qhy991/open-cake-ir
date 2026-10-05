@@ -103,7 +103,7 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
 }
 
 SCANS: dict[ScanOp, str] = {
-    ScanOp.SUM: "{out} = tl.cumsum({src}.to(tl.float32), axis={axis}, reverse={reverse})",
+    ScanOp.SUM: "{out} = tl.cumsum({src}.to({acc_dtype}), axis={axis}, reverse={reverse})",
 }
 
 
@@ -1794,12 +1794,20 @@ class _TritonEmitter:
         axis = operation.parameters.axis
         _require(axis < len(source.shape), f"scan axis {axis} is outside {source.name!r}")
         reverse = operation.parameters.direction is ScanDirection.REVERSE
+        acc_dtype = "tl.int32" if source.dtype is DType.INT32 else "tl.float32"
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if source.is_scalar:
+            # Canonical [1] may be a native rank-zero scalar load. Its inclusive
+            # prefix is itself; do not apply a rank-one cumsum to a scalar value.
+            self.line(f"{pad}{operation.writes[0]} = {operation.reads[0]}.to({acc_dtype})",
+                      declares=(operation.writes[0],))
+            return
         self.line(
             pad
             + SCANS[operation.parameters.op].format(
                 out=operation.writes[0],
                 src=operation.reads[0],
+                acc_dtype=acc_dtype,
                 axis=axis,
                 reverse=reverse,
             ),

@@ -1260,18 +1260,25 @@ def _verify_operation_shape(
         result = buffers.get(operation.writes[0])
         axis = operation.parameters.axis
         if source is not None and result is not None:
-            if (
-                source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
-                or result.dtype is not DType.FP32
-            ):
+            expected_dtype = (DType.INT32 if source.dtype is DType.INT32 else
+                              DType.FP32 if source.dtype in _ELEMENTWISE_FLOAT_DTYPES else None)
+            if expected_dtype is None or result.dtype is not expected_dtype:
                 out.add(
                     "SCAN_DTYPE_MISMATCH",
                     f"{path}.writes",
                     f"a {operation.parameters.op.value} scan accumulates bf16/fp16/fp32 "
-                    f"into fp32, but {source.name!r} is {source.dtype.value} and "
+                    f"into fp32 or int32 into int32, but {source.name!r} is {source.dtype.value} and "
                     f"{result.name!r} is {result.dtype.value}",
                     category,
                 )
+            for buffer, edge in ((source, "reads"), (result, "writes")):
+                _require_register_resident(
+                    buffer, "SCAN_VALUE_SPACE", f"{path}.{edge}",
+                    f"scan operates on register values, but {buffer.name!r} "
+                    f"is in {buffer.space.value}", out, category,
+                )
+            if len(operation.reads) != 1 or len(operation.writes) != 1:
+                out.add("SCAN_ARITY", path, "scan reads and writes exactly one value", category)
             if axis >= len(source.shape):
                 out.add(
                     "SCAN_AXIS_OUT_OF_RANGE",
