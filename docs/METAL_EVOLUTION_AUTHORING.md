@@ -71,6 +71,18 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 或旧 auth-only 资格来声称满足独立 skill 环境。通用 Cake 规则与每任务提示分开审阅后
 组成完整输入，同一比较的独立重复保持相同材料边界。
 
+待 [PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 验收并集成后，每个带技能包的
+v2 cell 同时显式声明 `native_skill_names`。本计划现有草案的原生名字已从 SKILL.md
+核对为 `cake-metal-optimization`，因此该 cell 的选择为 `['cake-metal-optimization']`。
+管理 TASK/config 保存名字列表；local/SSH 节点把它逐项传成 `--native-skill-name`，
+再由 launcher 交给 qualifier。目录名不能替代原生名字；本机与节点使用同一校验规则。
+本项实现已提交、CI 尚未完成，不代表任务已经获得真实 skill 环境。
+
+复用已有资格时，必须从已验证的资格归档确认请求名字在各声明 arm 的 initial/resume
+当前输入中都有对应包内正文。包身份相同、目录可见或历史残留都不足以授权一个未观察的
+名字。Run 继续通过既有 qualification/anchor 引用绑定这份证据，不新增第二份资格清单。
+
+
 原生 skill 环境是另一项需要资格验证的后继。默认 auth-only 策略仍保留宿主 `HOME`；Codex
 还会从 `$HOME/.agents/skills`、工作目录祖先、admin 与 system 来源发现技能，见
 [官方技能加载规则](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。
@@ -214,6 +226,10 @@ provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HO
 未作为本页已验证能力。其反例包括旧收据、scope 替换、过期 anchor、custody-false 与语义不符
 的封存归档；真实运行入口接线和零轮/首轮故障覆盖仍待完成。软件反事实归档只用于测试，
 不能列为真实模型资格。准备与 provider 构造必须在缺失资格时先拒绝，再考虑读取凭据。
+首轮 Python 3.12 CI 有一项新夹具失败：provider 把仓库内 schema 写成绝对外部引用；
+资格重建检查已通过，随后由原有路径规则正确拒绝。后继夹具改用仓库相对引用，原资格
+调用仍保留绝对路径，没有修环境或放宽检查。原日志见 `native-admission-failure-1e5a236e/`。
+
 
 资格接入沿现有 owner 进行，验收范围如下，不新增并行资格流程：
 
