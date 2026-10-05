@@ -129,9 +129,11 @@ pass 不会在重编译时自动调用，其价值须由作者搜索比较或另
 当前 [StudyPlan](../src/open_cake_ir/lab/study_plan.py) 的四组语义是 E/P，要求共同
 Compiler 和其他控制；不能把 Compiler 版本伪装成某个 E/P 组。跨版本比较先完成固定基线
 准入的修正与测试，再分别冻结 C0/C1 批次及关联报告。现有
-[`validate_paired_baseline`](../src/open_cake_ir/lab/admission.py) 的非 incumbent 路径
-将基线与当前 starter lowering 绑定；跨版本需要明确保留旧基线的身份、来源和可执行合同，
-不能为了通过该检查重新编译替换固定基线。已有独立 Run/结果记录仍是执行与证据所有者。
+[`admit_paired_baseline_artifact`](../src/open_cake_ir/lab/admission.py) 在各入口统一检查
+封存 bundle 的身份、精确 Target、Workload ABI 与选择策略。`explicit_fixed_bundle`
+保留 C0 产物，不要求匹配 C1 starter 的源码或 launch；`starter_reference` 仍要求匹配
+当前 lowering。MetaX/HSACO 显式基线继续检查原生架构和隐藏参数。软件准入不授予后继环境
+的设备或测量资格，也不授予作者参考实现权限。已有独立 Run/结果记录仍是执行与证据所有者。
 
 ## 必需的矩阵计算里程碑
 

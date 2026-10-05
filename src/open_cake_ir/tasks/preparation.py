@@ -46,6 +46,13 @@ def prepare_task_run(project_root,inputs,*,compiler_reference,executor,qualifica
     workload = load_workload(workload_path)
     validate_backend_assay(route=authoring['lowering_route'],evaluation=document['evaluation_protocol'],workload=workload,
         attribution_evaluation=document['evaluation_protocol'].get('attribution_evaluation'))
+    selection = document['execution']['fixed_baseline'].get('selection')
+    if selection is not None and (selection['policy'] == 'explicit_fixed_bundle'
+                                  or selection['source'] == 'task_incumbent'):
+        # Run preflight already checked the sealed opponent and its selection.
+        # Re-lowering a C0 baseline with C1 would change the comparison anchor.
+        # This does not establish successor device/measurement qualification.
+        return specification
     if baseline_source_path is not None:
         from open_cake_ir.compiler import frontend
         skeleton = frontend.read_schedule(external_file(root, str(baseline_source_path), 'baseline source')).document
