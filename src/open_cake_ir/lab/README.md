@@ -65,6 +65,17 @@ token 用量未知时区分已知小计。阈值报告使用经过审计的同�
 每个 ledger 绑定自己的 Run authority。`audit_run` 返回存储审计和独立语义回放结果；
 `reporting.py` 从这些 Run 结果投影原有 matched-Study 报告，不产生新的证据。
 
+`feedback.py` 将已完成搜索轮次的事实投影给作者：`source_turn` 绑定轮次，
+`selected_candidate_sha256` 对齐选择事件，`candidate_results` 按实际产生候选的首次动作位置
+列出结果。已评测、构建拒绝、同轮重复和未评测分别标识；未评测候选不借用其他候选的
+正确性、时间或 profile。全部构建拒绝时选择项只是诊断对象，不表示可执行或取得资格。
+过滤事件保留有界 Environment Findings，原始拒绝和 Receipt 继续拥有完整事实。
+
+`replay/feedback.py` 从先前完成的动作、过滤、拒绝和 Receipt 重建反馈，核对下一轮 bundle、
+搜索终态和最终 StateCard。受中断的轮次不替换先前反馈，确认和旧式终态 attribution 不回填
+搜索反馈。回放核对诊断归属与拒绝投影，不重新运行原生编译器证明诊断本身正确。
+候选身份使用已有引用；新增字段只适用于后继提交，历史 Run 仍由冻结的原提交回放。
+
 ## Changes
 
 输入检查顺序、失败类别、预算计数、日志顺序和冻结格式都是行为合同。

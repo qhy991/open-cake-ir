@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-05-007 — multi-candidate author feedback lacked candidate identity; bounded result attribution and independent feedback replay prepared at 5453a4f5 with CPU contracts. Proposed protocol successor; no hardware or learning qualification.
+
 - F-2026-10-05-006 — gfx938 register broadcasts/coordinate predicates and resident INT32/FP32 scans pass63 exact component checks on25 proposed-Target sources; admission and five Corpus cases added without changing188 prior expectations. Whole-task strong-baseline replay remains pending.
 
 - F-2026-10-03-004 — exact gfx938 INT32 relaxed device-scope fetch-add is device-qualified150/150 with native buffer_atomic_add; original malformed histogram still refuses its edge/output guards. No scan, scatter or stable-sort performance claim.
