@@ -105,6 +105,9 @@ class Transformation:
 TRANSFORMATIONS = (
     Transformation('tile_pointwise_outputs', ('stage', 'output_tile', 'schedule_id', 'entry_point'),
                    'Partition whole-row pure pointwise outputs into explicit column tiles; preserve arithmetic and public tensors. No reductions, state or synchronization.'),
+    Transformation('specialize_squared_difference',
+                   ('stage', 'output_tile', 'k_tile', 'loop_unroll_factor', 'schedule_id', 'entry_point'),
+                   'Jointly choose output/K tiles and explicit single-stage K unroll for the original pure FP32 squared-distance graph. A full-extent tile keeps that dimension unchanged; smaller tiles are powers of two. The unroll factor divides the fixed K trip count. Structural feedback is not a latency prediction.'),
     Transformation('tile_squared_difference_outputs', ('stage', 'output_tile', 'schedule_id', 'entry_point'),
                    'Partition independent FP32 squared-distance output columns while retaining the full K sum. output_tile is a power of two below N; same pure loop-free row/centroid domain as K tiling.'),
     Transformation('tile_squared_difference', ('stage', 'k_tile', 'schedule_id', 'entry_point'),
@@ -126,7 +129,7 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
     if not isinstance(parameters, Mapping) or set(parameters) != set(declaration.parameters):
         return _refuse('transform_parameters', f'Required parameters: {declaration.parameters}.')
     if any(not isinstance(parameters[key], str) or not parameters[key]
-           for key in declaration.parameters if key not in {'num_warps', 'k_tile', 'output_tile'}):
+           for key in declaration.parameters if key not in {'num_warps', 'k_tile', 'output_tile', 'loop_unroll_factor'}):
         return _refuse('transform_parameters', 'Stage names and result identity must be nonempty strings.')
     try:
         program = Program.from_dict(program.document)
@@ -139,17 +142,28 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
                 continue
             assessment = compiler.assess(json.loads(stage.schedule_bytes))
             if not assessment.lowering_eligible:
+                blocking = [f for f in assessment.findings if f.blocks_lowering or f.blocks_acceptance]
+                if (transformation == 'specialize_squared_difference' and stage.name == parameters['stage']
+                    and blocking and all(f.code == 'TRITON_ARANGE_RANGE_UNSUPPORTED' for f in blocking)):
+                    # The joint pass can replace non-power-of-two vector extents
+                    # with masked tiles. Its guard and final assessment still own
+                    # the selected candidate; unrelated input refusals stay intact.
+                    continue
                 return _refuse('input_refused', ', '.join(f.code for f in assessment.findings), (stage.name,))
         if transformation == 'fuse_pointwise_epilogue':
             return _fuse(compiler, program, **parameters)
         from .pointwise_tiling import tile_pointwise_outputs
         from .passes import specialize_triton_warps, specialize_output_columns
-        from .reduction_tiling import tile_squared_difference, tile_squared_difference_outputs
-        transform = (tile_pointwise_outputs if transformation == 'tile_pointwise_outputs' else
-                     tile_squared_difference_outputs if transformation == 'tile_squared_difference_outputs' else
-                     tile_squared_difference if transformation == 'tile_squared_difference' else
-                     specialize_triton_warps if transformation == 'specialize_triton_warps'
-                     else specialize_output_columns)
+        from .reduction_tiling import (tile_squared_difference, tile_squared_difference_outputs,
+                                       specialize_squared_difference)
+        transform = {
+            'tile_pointwise_outputs': tile_pointwise_outputs,
+            'specialize_squared_difference': specialize_squared_difference,
+            'tile_squared_difference_outputs': tile_squared_difference_outputs,
+            'tile_squared_difference': tile_squared_difference,
+            'specialize_triton_warps': specialize_triton_warps,
+            'specialize_output_columns': specialize_output_columns,
+        }[transformation]
         return _specialize(compiler, program, transform=transform, **parameters)
     except (CompilerError, ScheduleParseError, ValueError, TypeError) as error:
         return _refuse('result_refused', str(error))
