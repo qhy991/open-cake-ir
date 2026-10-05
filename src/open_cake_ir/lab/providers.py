@@ -341,7 +341,13 @@ class QualifiedRunProvider:
                     artifact_payloads={'provider_stdout': result.raw_events},
                     reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
                                                            expected_thread_id=request.thread_id)) from error
-        return replace(result, provider_tokens=tokens, reference_bundle=reference_bundle)
+        native_binding = None
+        if package.native_skill_package is not None:
+            from .native_skill_run import bind_invocation
+            native_binding = bind_invocation(invocation=invocation, request=request,
+                configuration=self.configuration, system_skills_snapshot=builder.remembered_system_skills)
+        return replace(result, provider_tokens=tokens, reference_bundle=reference_bundle,
+                       native_skill_binding=native_binding)
 
 
 class CodexRunProvider(QualifiedRunProvider):

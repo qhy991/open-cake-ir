@@ -325,21 +325,8 @@ def _validate_workspace(
 
 
 def _invocation_document(invocation: ProviderInvocation) -> dict[str, object]:
-    document = {
-        "argv": list(invocation.argv),
-        "cwd": str(invocation.cwd),
-        "sandbox": invocation.sandbox,
-        "provider_revision": invocation.provider_revision,
-        "removed_environment": list(invocation.removed_environment),
-        "thread_id": invocation.thread_id,
-    }
-    if invocation.codex_home is not None:
-        document['codex_home'] = str(invocation.codex_home)
-    if invocation.user_home is not None:
-        document['user_home'] = str(invocation.user_home)
-    if invocation.native_skill_package is not None:
-        document['native_skill_package'] = invocation.native_skill_package.reference
-    return document
+    from open_cake_ir.lab.provider_documents import invocation_document
+    return invocation_document(invocation)
 
 
 def _put_json(evidence: EvidenceStore, value: object) -> EvidenceObject:
