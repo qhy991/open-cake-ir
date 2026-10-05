@@ -368,7 +368,9 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                     rejected_feedback={entry.sha256: result.feedback for entry, result in built
                                        if result.disposition == 'rejected'},
                     actions=action_feedback, arm=kind, specification=specification,
-                    selection_summary=selection_summary))
+                    selection_summary=selection_summary,
+                    launchables={item.submission.sha256: item.launchable for item in searched},
+                    authored=resolved_candidates))
             if not built:
                 ledger.append('candidate_selected', {'turn': turn_number, 'candidate_sha256': None,
                     'qualified_search_candidates': [], 'reason': 'no_candidate_produced'})

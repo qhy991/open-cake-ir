@@ -1,6 +1,6 @@
 # Metal 演进实验：TASK.md / AGENTS.md 与 Run 后提炼
 
-状态：待接入的文本设计，不是当前实验的可执行权限。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
+状态：平台规划已合入 `metal@f619a6d3`；演进文本 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。
 
@@ -52,8 +52,8 @@ Ralph 与 GPU Infra/Evaluation 保持现有唯一执行路径，不引入第二�
 **同步边界不能省略。** 旧 `metal@a2e62b08` 已有 task/actor/evidence 独立目录，但没有
 ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f` 的每 Run auth-only home。
 主线的该 home 只复制私有凭据，允许 CLI 自带 system skills，检查并拒绝该 CODEX_HOME 内的 user skills/plugins；
-它不是每任务任意技能包安装能力，也不是完整文件读取隔离。集成提交仍需独立验证与平台
-合并；旧基点的 Run 继续在旧提交回放，不能按新实现解释。
+它不是每任务任意技能包安装能力，也不是完整文件读取隔离。PR #319 已完成 CPU 集成检查
+与平台合并；真实作者与设备资格仍待验证。旧基点的 Run 在旧提交回放，不能按新实现解释。
 
 新管理输入采用共享 `kernel_experiment.py` 的 schema v2，
 实现见 [PR #317](https://github.com/qhy991/open-cake-ir/pull/317)，已合入 `main@354a670f` 并被本计划分支吸收。
@@ -76,6 +76,23 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 验证 initial/resume 都未混入；不以 agent 口头自报作为证明。既有 auth-only 策略不容许
 塞入 user skills 后继续沿用原资格；也不因这一项完成就开放 clean-start。
 
+本机静态接口审计还发现版本差异：bundled Codex CLI 为 `0.159.2`，其导出的
+`skills/list` 参数只有 `cwds` / `forceReload`，没有最新文档中的
+`perCwdExtraUserRoots`；`extraRoots` 只增加来源，不排除默认来源。响应 schema 能表示
+`path`、`scope`、`enabled`、`pluginId` 与错误，但没有执行该查询，也未观察真实 exec
+加载的 catalog。help/schema 命令退出 0，同时保留 PATH alias 的 EPERM 警告；未修复
+宿主后重跑。schema、独立 app-server 的查询和 agent 自报都不能充当实际作者输入证明。
+见 [官方技能接口](https://learn.chatgpt.com/docs/app-server#skills)。
+
+最小后继应沿现有 `author_home` / `ProviderInvocation` / qualification owner：为每 Run
+绑定私有用户 HOME 与明确技能包，initial/resume 使用相同绑定，保留既有独立
+CODEX_HOME；旧 auth-only 策略不改，也不把 user skills 塞入其禁止的位置。技能脚本、
+引用资源、依赖和工具权限须显式声明，不自动安装插件或授予执行权。祖先、admin、system
+和插件来源仍需检查；发现未知来源、重复/缺失技能或漂移时拒绝。先建立同一次 exec 的
+实际 catalog / 上下文来源观测，再实现并验证此策略；当前没有已验证的 exec catalog
+导出接口，不能用旁路进程补出“隔离通过”。这项接口条件未满足时，继续准备和验证已审阅的任务
+材料投递，并明确原生技能环境未验收；不把它计为完成用户要求的独立 skill 环境。
+
 技能资格的最小验收步骤：
 
 1. 固定 CLI、模型/effort、技能名单/版本、依赖、参考范围、工具与预算，绑定到既有 Run owner。
@@ -93,6 +110,37 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 将 flow、模型、重复与 agent 容器交给 Humanize2；当前 KDA 源码没有证明 author skill
 的完整安装/挂载流程。因此借鉴最小任务投递、固定 runtime 和独立 judge，不把 GPU
 容器的 HOME 设置当成 author 隔离证明，也不将 CUDA 镜像与 NCU 路线照搬到 Metal。
+
+## 完整 scaffold 的准备边界
+
+当前 `--agents-md` 与 `cells[].agents_md` 都完整替换默认 scaffold；系统不会展开 Markdown
+链接、include 或 extends。把短附录单独传入会遗漏 Metal 能力约束。
+
+本次提供 [演进附录组件](../contracts/scaffolds/metal-evolution-appendix-v1.md)。冻结前，从同一
+固定提交读取完整 `python-artifact-optimization-metal-bundle-v1.md` 与该附录，按此顺序拼接，
+在 checkout 外独占创建一份完整文件，再交给现有 `--agents-md` 或 v2 cell 的 `agents_md`。
+准备后不追加；实际 Run 仍由现有 scaffold 绑定和 TaskPackage owner 验证、投递、回放。
+附录只增加行为要求，不重复形状、模型、预算等参数，不授予源码访问或工具权限。
+未实际交付生成代码的 Run 只能记录缺失，不能被算作低层代码驱动的优化验收。
+
+已从固定 `1b2920b7` 顺序组合完整文件，在源码外独占创建并通过现有 `task_run_inputs`
+做了 D2 的 CPU 绑定检查：模型为 `gpt-6.1-sol/xhigh`，完整说明与报告列出的预算上限被绑定。
+confirmatory 配额仍为 8，执行逻辑最终只确认一个提名；正式冻结时再核对完整 RunSpecification。
+记录位于外部规划根目录的 `authoring-treatment-1b2920/composition-report.json`，完整
+文件为同目录 `AGENTS.md`。这是初版 CPU 观察，不是已冻结 Run 或真实 TaskPackage 交付。
+管理预算入口已由 PR #321 实现并集成，参数及完整验证范围见总计划。
+
+当前 CLI 作者的正常生命周期保留上轮 `candidate-set.py`，resume 要求该文件存在，
+沿用原 thread 与 cwd；读取提交和封存原始文件不会把它清空或移走。但下一请求不会重新
+投递上轮作者源码/注释，`generated_source` 也是 Compiler 输出，不是研究笔记。
+因此附录增加“更新前按既有权限读取当前文件”的要求，只携带少量有效观察，再替换本轮
+有序候选；不把旧完整候选累加以越过候选上限。现有文件可读不等于 agent 已读取，G4
+仍需真实两轮行为证据。上述 `1b2920b7` 初版组合文件没有这条后继要求，不能直接作为
+最终 treatment。后继已从固定 `8cc264f0` 重新组合，并通过原有 input owner 绑定
+`generated_source_v1`、精确模型、预算与每轮 3 次搜索；报告和完整文件分别为
+`authoring-treatment-8cc264f0/composition-report.json` 与同目录 `AGENTS.md`。它包含上述
+重读要求，可作为待验收的完整任务材料；仍没有创建正式 Run 或实际作者/设备资格。
+正式冻结时引用这份完整文件及实际 Run 权限，不能只传附录。
 
 ## TASK.md 负责“做什么、如何判断”
 
@@ -165,7 +213,8 @@ E0 表示没有额外经验材料，不代表 P1 API 不含机制描述。材料
 随后规划 search，且去重只作用于本轮。跨轮重复仍可能消耗评测额度，须在维护总结中单独统计。
 源码和既有原生输出可供 Run 后整理；消息作者和 CLI 作者都通过同一 source transport 保留摘要。
 这些是旧 envelope 的探针结论。当前 bundle 从装饰器到函数末行切片：函数体内注释保留，
-装饰器前注释仅在 sealed `provider_source_file` 保留。新模式须单独验证，不能套用旧结论。
+装饰器前注释仅在 sealed `provider_source_file` 保留。`d3967a0d` 的独立 CPU probe 已验证
+投影位置以及注释不同而 Schedule 相同；它没有启动 provider 或证明完整 seal custody/作者学习。
 PR #316 已实现从先前事件与收据派生的有界 `optimization_history` 和独立回放，供下一轮
 及上下文压缩后读取；它不自动证明作者理解了负结果，也不授予跨 Run 经验。不能新增一个
 会自行改写政策的长期记忆文件。
@@ -191,28 +240,38 @@ SIMD-group 操作和数值契约，只检查该候选实际包含的机制。AIR
 源码级观察不能证明最终指令、物理寄存器或带宽瓶颈；最终收益仍由合格的 oracle、测量
 与相应覆盖的 profiler 支持，MSL 看起来更短不等于设备更快。
 
-**当前交付缺口。** `metal_build.py::MetalArtifactBuilder.build` 已保存 `lowered_source`
-和 `metal_binary_archive`，实际路线是 MSL 经运行时 `MTLDevice.makeLibrary` 构建；并不
-额外导出 AIR。`Compiler.lower` 提供 operation source map，但 `task_package.py` 的初始
-材料与 `feedback.py` 的下一轮反馈都没有将候选 MSL 正文交给作者。因此本页规范尚不能
-证明“agent 阅读低层代码后改进”；维护者看到代码不等于作者看到。该差距属于 Lab 交付，
-不是新 primitive、Metal native authoring 路线或要求作者自行调用编译器的理由。
+**源码交付的软件后继已合入 main。** [PR #320](https://github.com/qhy991/open-cake-ir/pull/320)
+在 `main@473f8cad` 引入显式 `generated_source_v1`；本计划任务分支已吸收，尚未启动新 Run。
+单任务用 `--generated-source-feedback`，schema v2 cell 用 `generated_source_feedback: true`；
+默认不启用，只接纳 Cake 的 `known_kernel_reproduction`，不扩大 baseline、其他 arm、
+clean-start 或工具权限。完整 scaffold 的说明文字不会自动授予这一开关。
 
-G4 增加一个共享后继，沿既有 evidence 和 TaskPackage owner 实现并验收：
+`MetalArtifactBuilder` 保存的 `lowered_source` 现在可以随已封存且已搜索的候选进入
+下一实际请求。仍由 MSL 经 `MTLDevice.makeLibrary` 构建，不额外导出 AIR。每项保留
+source Turn、candidate、stage、精确 Target、lowering route、语言和原始行号；源码中的
+`CAKE_OP` 标记原样保留，未声称另有完整物理指令映射。多阶段使用既有 Program artifact
+owner，折叠为一个 kernel 的 Program 仍保留作者 stage 身份；**这没有开放多阶段 Metal
+执行**，其现有运行 owner 仍拒绝该路线。
 
-1. 显式绑定自身候选生成代码的可见性、参考权限和预算；第一阶段保持已声明的
-   `known_kernel_reproduction`。不额外开放黑盒 baseline、其他 arm 或历史低层实现。
-2. 按 source turn、candidate、stage、精确 Target 和 lowering route 投递有界 MSL 内容与
-   operation 对应关系。引用原有 artifact 身份；只有不可读路径不算交付。源码过大时
-   明示摘录范围及截断；缺失映射也如实报告，不能声称观察了未交付区域。
-   `Lowering.source_map` 当前是内存结果；从封存的 `lowered_source` 标记重建映射，或在
-   原构建边界正式留存。不能用浮动 Compiler 重新 lower 后声称是作者当时所见。
-3. 实际交付正文进入现有请求 evidence bundle；独立 replay 从原 artifact 校验归属与内容，
-   正反例覆盖多候选/多 stage、交叉错绑、缺失、截断、末轮无后续交付及禁止的参考来源。
-   多 stage 属于共享交付机制的 CPU 验收；D2/D6 首轮仍为已绑定的单 stage 权限。
-4. 先做 CPU 传输与回放验收，适用门通过后再做 D2/D6 两轮作者行为验收：作者准确引用
-   一处真实代码区域，比较预期与实现，并据此改变或撤回假设。分别报告交付、解释准确度、
-   行为变化与设备收益；没有收益也能提供有效的反证。
+投递完整 stage 文本，不截取半段代码：每候选源码 32 KiB、每 Turn 源码 64 KiB、每候选
+最多 32 stages；包含元数据的单候选序列化视图另限 64 KiB，总视图受冻结候选数约束。
+按原提交/stage 次序分配，超限、缺失、未封存或未搜索均有明确原因；不以其他候选或
+baseline 代码填空。完整正文不会重复进入 `optimization_history`。
+
+交付正文进入现有请求 bundle，独立 replay 从正确时间点的候选 artifact 重建，并用
+冻结 Compiler 校验 authored candidate 与生成源码的关系。反例覆盖真正不同的 MSL
+自洽替换、多候选/多 stage 错绑、大小边界、缺失、initial/resume 请求以及故障和末轮
+没有后续交付。只有封存源码或反馈记录，不等于存在下一次作者请求。
+
+固定 `03d9cac5` 的 10 项非 custody CPU 检查通过，完整 CI 在 Python 3.10/3.11/3.12
+各 2698 通过、35 跳过，包含 EvidenceStore 的两轮控制器用例。记录为外部规划根目录
+`generated-source-feedback-03d9cac5/report.json`。本机先前 custody EPERM 保持原样；
+没有提权重跑该用例，也没有真实 provider、原生编译或 GPU 验收。
+
+G4 剩余的是在适用门通过后，用 D2/D6 的真实两轮作者路径检查：允许的候选 MSL 确实
+进入请求；作者准确引用一个真实区域，比较预期与实现，并据此改变或撤回假设。分别报告
+交付、解释准确度、行为变化与设备收益。维护者可读代码、CPU bundle 测试和提示词要求
+都不能代替这些行为证据；没有设备收益也可产生有效反证。
 
 公共复现任务的 canonical 要求维护在
 `contracts/scaffolds/kernel-reproduction/AGENTS.md`，通过已有 `--agents-md` 显式绑定。
@@ -289,9 +348,9 @@ Ralph；真实 provider/GPU 接入在对应门通过后单独执行。
 
 ## 接入验收与开发边界
 
-第一轮采用后继 scaffold 的文本要求，并完成上述 MSL 交付合同后，用两个代表任务检查
+第一轮绑定后继 scaffold 与已实现的源码反馈开关；适用资格通过后，用两个代表任务检查
 Cake 探索与低层对照的实际行为。只有文本而缺少源码时，可验收可见反馈的利用，不能
-据此验收“作者结合低层实现优化”。未来实现工作拆分为：
+据此验收“作者结合低层实现优化”。后继接入按以下边界推进：
 
 1. 平台 scaffold：`task/metal-*`，外部路径通过已有 `--agents-md` 冻结机制接入；
    先核对入口实际参数与权限，不能把本文整页当成未经处理的 author scaffold。

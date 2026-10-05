@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import re
 import shlex
@@ -69,10 +70,27 @@ def validate(config):
         if provider['harness'] != 'claude-code':
             raise ValueError('response model aliases require the Claude provider')
         response_model_aliases(provider['model'], provider['response_model_aliases'])
-    object_fields(config["budget"], {"turns", "wall_seconds"}, {"token_budget"})
-    if any(type(v) is not int or v <= 0 for k, v in config["budget"].items()
-           if not (k == "token_budget" and v is None)):
+    budget = config["budget"]
+    optional_budget = {"token_budget"}
+    if version == 2:
+        optional_budget |= {"max_candidates", "searches_per_turn", "max_compilations", "confirmation_seconds"}
+    object_fields(budget, {"turns", "wall_seconds"}, optional_budget)
+    if any(type(v) is not int or v <= 0 for k, v in budget.items()
+           if k != "confirmation_seconds" and not (k == "token_budget" and v is None)):
         raise ValueError("positive per-cell budgets are required")
+    if "confirmation_seconds" in budget:
+        value = budget["confirmation_seconds"]
+        try:
+            finite = type(value) in (int, float) and math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite or not 0 < value < budget["wall_seconds"]:
+            raise ValueError("confirmation_seconds must be positive, finite and below wall_seconds")
+    if ("max_candidates" in budget and "searches_per_turn" in budget
+            and budget["searches_per_turn"] > budget["max_candidates"]):
+        raise ValueError("searches_per_turn must fit max_candidates")
+    # Absent controls remain absent. The node's launch_task/task_run_inputs owns
+    # defaults and validates their resolved budget before stack admission.
     if version == 1:
         validate_references(config["references"])
     if not isinstance(config["cells"], list) or not config["cells"]:
@@ -84,11 +102,14 @@ def validate(config):
         if version == 2:
             required.add("references")
             optional.add("agents_md")
+            optional.add('generated_source_feedback')
         object_fields(cell, required, optional)
         if version == 2:
             validate_references(cell["references"])
             if "agents_md" in cell:
                 absolute(cell["agents_md"])
+            if 'generated_source_feedback' in cell and type(cell['generated_source_feedback']) is not bool:
+                raise ValueError('cell generated_source_feedback must be an explicit boolean')
         if 'pointer_alignment' in cell:
             value = cell['pointer_alignment']
             if type(value) is not int or value <= 0 or value & (value - 1):
@@ -258,6 +279,8 @@ for group in (p["provider"], p["budget"]):
                 args += ["--response-model-alias", alias]
         elif value is not None:
             args += ["--" + name.replace("_", "-"), str(value)]
+if p["cell"].get("generated_source_feedback"):
+    args += ["--generated-source-feedback"]
 environment = dict(os.environ)
 if "codex_home" in n:
     home = pathlib.Path(n["codex_home"])

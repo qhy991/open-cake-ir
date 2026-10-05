@@ -31,7 +31,9 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
   "schema_version": 2,
   "objective": "复现参考 RMSNorm 的执行结构，并解释性能差距",
   "provider": {"harness": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"},
-  "budget": {"turns": 8, "token_budget": 300000, "wall_seconds": 7200},
+  "budget": {"turns": 8, "token_budget": 150000, "wall_seconds": 3600,
+    "max_candidates": 3, "searches_per_turn": 3,
+    "max_compilations": 24, "confirmation_seconds": 600},
   "cells": [{
     "id": "rmsnorm-b300", "task": "rmsnorm", "backend": "triton-b300",
     "rows": 128, "columns": 4096,
@@ -46,6 +48,34 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
 
 模型与 effort 是显式输入；示例按当前实验选择 `gpt-6.1-sol` / `xhigh`，不是 launcher
 全局默认值，也不证明该 CLI/模型组合已经通过资格。初始与续轮均使用同一绑定。
+
+`budget` 为每个 cell 单独计数，不从 scaffold 或参考材料读取。`turns` 与 `wall_seconds`
+必填；`token_budget` 可省略或为 `null`。schema v2 另外允许以下四项独立覆盖，均可省略，
+不要求同时填写：
+
+| v2 可选字段 | 传入现有 launcher 的参数 | 含义 |
+| --- | --- | --- |
+| `max_candidates` | `--max-candidates` | 每个 Turn 最多提交的候选数，正整数 |
+| `searches_per_turn` | `--searches-per-turn` | 每个 Turn 的搜索评测配额，正整数，不超过最终解析的候选数 |
+| `max_compilations` | `--max-compilations` | Run 内 native source-to-artifact 编译入口调用上限，正整数，包含失败调用和内部 variants |
+| `confirmation_seconds` | `--confirmation-seconds` | 总 wall budget 内预留给确认阶段的秒数，正有限数，可带小数，严格小于 `wall_seconds` |
+
+其余预算计数必须为正整数，布尔值、字符串与自动数值转换不被接受。
+`token_budget` 是 provider token 停止阈值，在 Turn 边界检查，不是单次响应的硬截断；
+省略或 `null` 仍记录用量，但不启用 token 停止阈值。
+例如上述配置向既有 Run budget 投影为最多 8 Turns、每 Turn 3 候选和 3 次搜索、
+全 Run 24 次搜索配额、24 次 attribution 配额和 24 次编译调用；600 秒确认预留包含在
+3600 秒总预算内。配额不是实际执行次数，既有 `task_run_inputs` 继续推导其余 Run 限制。
+
+管理器保留省略项，不填补默认值。固定 source commit 的 `launch_task.py` 解析默认值，
+`task_run_inputs` 校验完整预算；这两个入口仍是实际执行参数与 Run 预算的 owner。
+当两个计数字段都显式填写时，管理器先检查 `searches_per_turn <= max_candidates`；
+只填写其中一项时，它与 CLI 默认值是否相容由真实运行入口检查。
+`prepare` 成功只表示输入可准备，不表示 Run 已冻结、通过资格或一定能启动。
+完整预算校验先于 stack admission、native baseline 构建、provider qualification 和 GPU
+评测；此前节点可能已经创建输入与 source worktree、解析 provider 可执行文件并查询
+GPU Infra `node-status`。失败仍应检查保留的启动记录，不自动重试同一 cell。
+schema v1 继续只接受原有的三个预算字段；新字段不会改变旧版配置或其 CLI 默认行为。
 
 schema v2 为每个 cell 创建 `cells/<id>/TASK.md`、`AGENTS.md`、`references/` 和
 `scaffold.md`。每项必须声明自己的 `references`；没有顶层资料继承或缺失文件回退。
@@ -136,10 +166,26 @@ CUDA 工程、注册新 Workload 或将外部源码编译为测量基线。管�
 ## 低层代码怎样进入任务
 
 规范要求分别判断 Cake 表达、lowering 实现与设备收益。冻结输入时，管理 Agent 应列明
-作者实际能看到的材料层级、来源、目标和候选归属。当前 `lab/feedback.py` 的 Ralph 反馈
-交付诊断、正确性、计时和 profile，**不交付生成源码或 artifact 正文**。因此绑定本规范
-能要求 Cake 探索，但不能单靠提示词让作者检查生成代码。维护者在 Run 外读到源码，也
-不构成作者利用源码的行为证据；需要源码交付的研究应先完成后继 Lab 投影与回放验证。
+作者实际能看到的材料层级、来源、目标和候选归属。生成源码反馈默认关闭；显式向
+`tools/launch_task.py` 传入 `--generated-source-feedback`，或在管理输入 schema v2 的
+相应 cell 设置 `"generated_source_feedback": true`，才会把 `generated_source_v1`
+绑定到新 Run 的 authoring feedback。schema v1 和未开启的旧 Run 保持原行为。
+
+此权限只允许 `open_cake` + `known_kernel_reproduction` 的作者检查自己该轮已封存且
+完成搜索评测的候选 `lowered_source`。反馈逐候选保留原声明 stage 身份（独立 Schedule
+为 null）、精确 target、lowering route 和 Compiler 声明的源码语言；route 的入口属于
+源码，不证明 native binary 符号。它不交付 baseline/其他 Run 的实现，也不授予低层
+authoring、读取任意 artifact 或额外工具的权限。独立回放从既有封存件及原作者程序
+重新 lowering 验证对应关系，再重建下一轮反馈，无第二套源码存储或 history 副本。
+
+原文按提交顺序、Program 声明 stage 顺序有界交付：UTF-8 正文每候选最多 32 KiB、
+每轮最多 64 KiB；每候选最多 32 个 stage，含 metadata 的 JSON 视图最多 64 KiB。
+总视图上界为该限制乘以 Run 冻结的最大候选数。保留的源码完整不截断，行号从 1
+开始，已有 CAKE_OP 标记原样保留；缺失、未搜索或超界省略都有明确原因与计数。
+只有下一次实际 provider 请求及其保留 bundle 才能证明投递；末轮结果或 provider fault
+本身不证明作者收到了源码，更不证明模型使用了它。Run-local optimization history
+仍只汇总观察；provider 自身会话历史可能保留先前请求。Metal 多 stage Program 仍不准入，
+源码反馈不扩大任何目标的 executor 能力。
 
 Metal 的几个层级不可混称：
 
@@ -157,8 +203,8 @@ Metal 的几个层级不可混称：
 
 当前 Cake Metal builder 留存 `lowered_source` 和 `metal_binary_archive`，通过运行时
 `MTLDevice.makeLibrary` 构建，没有向作者提供 AIR 或机器指令检查通道。
-`Compiler.lower` 的 operation source map 是后续区域对应的入口；新交付应复用既有
-candidate/artifact 身份、保留作者收到的实际内容并独立回放。缺失证据保持 unknown，
+`Compiler.lower` 的 operation source map 仍是区域对应的 owner；当前交付保留原文行号和
+CAKE_OP 标记，复用既有 candidate/artifact 身份并独立回放。缺失证据保持 unknown，
 不能从 logical slots 或 timestamp profile 补出寄存器、spill、occupancy 或指令事实。
 修改源码可见性属于 authoring treatment 变更，须绑定后继 Run；参考访问与工具权限仍适用。
 

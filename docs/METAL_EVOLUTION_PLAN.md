@@ -2,8 +2,9 @@
 
 状态：设计草案；已做离线准入探针，尚未满足正式实验执行门。2026-10-05，用户选择先验证闭环，
 再扩展 FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
-本计划分支现已保留祖先地吸收 `main@354a670f`；以下分别标注旧探针与当前实现，
-旧证据仍在原提交回放，不自动升级为同步后的资格。平台合并和验证记录见外部准入台账。
+共享同步和计划已由 [PR #319](https://github.com/qhy991/open-cake-ir/pull/319) 合入
+`metal@f619a6d3`，保留 `main@354a670f` 的祖先。以下分别标注旧探针与当前实现；
+旧证据仍在原提交回放，不自动升级为同步后的资格。验证记录见外部准入台账。
 本页是开发计划，不是实验报告或验收记录。模板见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
 
 ## 1. 产品定位与当前判断
@@ -72,7 +73,7 @@ H1/H2 是同类算子迁移，H3 是不同收缩语义；这些不能声称是�
 | G1 任务与 Compiler | 六个 starter 构造、assess、lower、原生编译；已有 Corpus Gate 与适用合同测试通过；oracle 覆盖完整输入 | 区分 frontend、verifier、lowering、任务 ABI；按 owner 修复后作为后继验证 |
 | G2 可搜索性 | 每任务至少两个非改名、非纯 group 调参的结构策略可表达；至少两个代表任务验证完整策略对 | 若只有一种实现可走，先补关键表达能力，不能通过奖励调参掩盖 |
 | G3 设备与测量 | 封存基线全部输入正确；A/A 对照、已知慢化对照、配对顺序、时间戳与独立确认通过 | 无可信计时就只报正确性/覆盖，不能开启性能研究 |
-| G4 两轮系统验收 | 候选绑定的结果与 MSL/operation 对应实际交付并可回放；作者探索 Cake 并核对低层机制；受保护文件、预算、确认预留正确；经验摘要可追溯 | 结果归因修复已合入 main；MSL 投递仍缺失，待共享后继、Metal 集成和真实作者验收 |
+| G4 两轮系统验收 | 候选绑定的结果与 MSL/operation 对应实际交付并可回放；作者探索 Cake 并核对低层机制；受保护文件、预算、确认预留正确；经验摘要可追溯 | 结果归因、源码投递和预算入口已集成；待真实作者、skill 输入和设备资格 |
 | G5 冻结 | Workload、固定基线、提交、每任务 scaffold/资料、Codex gpt-6.1-sol/xhigh、作者环境、参考权限、预算、经验和 pass grants 完整 | 独立 Run 目录与状态；技能发现按实证范围声明；不使用浮动 main 或自动更新 incumbent |
 
 G1 要覆盖所有发现任务的 starter；G2 先以 D2、D6 做完整机制对演练，其他任务再逐项扩展。
@@ -105,7 +106,7 @@ A/A 应落入预注册的零差异范围并得到 `close_null`，已知慢化应
 `command_buffer.dispatches` 读取。G3 保留配对顺序、原始时间、正确性输入、profile、
 observer/snapshot 成本和封存 archive 的严格重载结果；编译源码成功不能代替产物重载。
 
-后续离线检查已执行现有完整 Corpus Gate，178 个案例全部匹配既定预期；但其 Apple 覆盖
+旧 `a2e62b08` 的离线检查执行了当时完整 Corpus Gate，178 个案例全部匹配既定预期；其 Apple 覆盖
 只有 family8 的 15 个案例，family7 / family9 明确未检查。不能把 Gate 通过写成 M4 覆盖通过。
 十二项 M4 任务准入只是正例。另一次离线探针已检查 M4 的两个正例和十类拒绝：非连续 groups、
 不支持的 coalescing 承诺、CUDA load policy、未建模 residency、缺失 access map、错误 backend、
@@ -113,6 +114,12 @@ observer/snapshot 成本和封存 archive 的严格重载结果；编译源码�
 规则命中，并在公共 lower 入口拒绝；不是依赖无关规则碰巧拦截。这些尚未被采纳为 Corpus
 案例，也没有原生/GPU 数值证据；未修改 Corpus expectations。
 本机会话环境失败与后续离线验证分别保留在 checkout 外，不用后来结果覆盖早期失败。
+
+同步后的固定提交 `d3967a0d` 已重新检查：181 项 Corpus 匹配、12 个任务形状可构造并生成
+MSL；Corpus 仍没有 family9 案例，新增的 synthetic family10 案例不构成 M4 资格。三版本
+完整 CPU CI 各 2687 通过、35 跳过，离线 baseline/successor 编译与发布边界检查也通过。
+本机局部合同测试在 38 项通过后遇到 Evidence custody 的 `mkdir(dir_fd)` EPERM，按首错
+停止；没有修环境后重跑，剩余本机测试保持未验证。以上均不代替原生或 GPU 验收。
 
 两个代表任务已验证结构表达范围：RMSNorm 可以从保留输入改为归约后重读输入、延后加载
 权重（2 次 load → 3 次 load）；GEMM-SiLU 可以通过现有列特化，从行程序变为行×列程序
@@ -145,7 +152,10 @@ envelope Run 继续按旧提交运行，不能沿用其资格解释默认 bundle
 旧 `a2e62b08` 的记忆探针证明 Python 假设注释经过 envelope 投影仍保留，去掉注释后的 Schedule 相同；
 `selection._matched_search_plan` 会把同轮相同程序折叠为一次 search。但原始提交字节不同，
 且 `candidate_filter` 先构建整组候选，再做评测计划；这一去重不节省前面的构建额度，
-也不跨轮记忆。相同程序下一轮仍可进入 search。必须记录重复构建/跨轮重测的成本，
+也不跨轮记忆。相同程序下一轮仍可进入 search。当前 `d3967a0d` 的独立 bundle 探针又
+验证了函数体注释进入逐候选源码、函数外/transform 注释仅留原文件；两份笔记不同的
+候选仍解析为相同 Schedule。该探针没有重新证明全链 search 去重或作者学习。
+必须记录重复构建/跨轮重测的成本，
 不能把“有会话上下文”当作已经有自动经验积累或全程去重。
 
 **旧 Metal 审阅基点的 G4 曾有确定的反馈归因缺口。** 在共享 Lab 的两轮 CPU fixture 中，每轮三个普通
@@ -186,9 +196,11 @@ Cake 表达能力、lowering 实现和设备收益必须分别判断，负结果
 低层参照分为 MSL 源码、Metal IR/AIR 中间表示、Apple GPU 机器指令；MSL 不等于 PTX。
 首轮以候选绑定的生成 MSL 为代码检查层；更低层能力按精确工具链的实际证据增加。
 源码与 logical slots 不能证明最终指令、寄存器、spill 或 occupancy。
-当前 builder 已保存 MSL，但作者初始材料/反馈没有交付其正文；已有候选归因修复也没有
-补上这一点。G4 必须先增加有界代码与 operation 对应投递及独立回放，再要求作者引用
-实际区域并检验假设。任务文字不能授予额外参考访问或调用编译器的权限。
+[PR #320](https://github.com/qhy991/open-cake-ir/pull/320) 已在 `main@473f8cad` 补齐显式
+启用的候选源码反馈及独立回放，本计划任务分支已吸收；默认和旧 Run 权限不变。
+投递完整 stage 的 MSL、原始行号和既有 `CAKE_OP` 标记，超限时明确省略，不能声称看过
+未交付区域。固定实现的三版本 CI 各 2698 通过、35 跳过；这证明软件合同，不证明真实
+作者阅读、设备正确或收益。G4 继续要求实际作者引用区域并检验假设，任务文字不授予额外工具。
 分层依据、短任务文案及交付正反例见 [authoring 合同](METAL_EVOLUTION_AUTHORING.md)。
 
 当前有四种不同的“记忆”：
@@ -271,6 +283,23 @@ verifier；真实表达缺口进 IR/lowering；测量缺口进 Evaluation；反�
 可执行候选。当前 `task_run_inputs` 生成的 confirmatory 配额为 `turns`，执行逻辑最终只确认
 一个提名；冻结时核对实际 RunSpecification，不能把“执行一次”误写成“配额字段已设为一”。
 
+**管理预算入口已补齐。** [PR #321](https://github.com/qhy991/open-cake-ir/pull/321) 已合入
+`main@08e89422`，本页配套提交已集成。schema v2 在原有预算之外，独立接纳
+`max_candidates`、`searches_per_turn`、`max_compilations` 与 `confirmation_seconds`；
+省略项仍由固定提交的单任务 CLI 决定，v1 保持原语义。准备快照、节点参数和实际
+`task_run_inputs` 的 CPU 检查已证明下面的输入映射；它不是正式 Run 或执行资格：
+
+```json
+{"turns": 8, "token_budget": 150000, "wall_seconds": 3600,
+ "max_candidates": 3, "searches_per_turn": 3,
+ "max_compilations": 24, "confirmation_seconds": 600}
+```
+
+完整参数关系由既有 Run budget owner 在 provider qualification / GPU 评测前验证；
+prepare 成功不表示已冻结或必能启动。独立覆盖与 CLI 默认冲突时，运行入口会拒绝。
+原始和集成检查、完整 CI 记录见外部 `experiment-budget-7a74fa2c/report.json`。
+不能从 scaffold 文字推断实际预算，仍需在正式冻结时核对 RunSpecification。
+
 **第二步：只改变 Compiler。** 冻结 C0 后发现一个重复缺口，审查实现 C1。以相同任务、
 同一 scaffold、无额外经验、相同 pass grants（第一轮建议均为空）分别运行 C0/C1，每格
 至少三个工程重复。维护者根据 D 集开发 C1，H 集用于检验迁移；D 上提升只能叫开发集改善。
@@ -329,11 +358,12 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    在一致的后继环境上完成 G0/G1 和固定基线。代码编写前检查冻结与 source owner。
    当前离线任务与结构表达已完成；下一步优先解决主机声明/工具链的一致性，以及 G2 原生语义，
    不先扩大 dtype 或增加 primitive。
-2. **共享反馈修复与两轮经验验收。** 计划分支已吸收 `main@354a670f`，保留默认 bundle、
-   候选归因、peer 结果、Run 内历史和任务资料隔离；在干净集成提交完成静态/合同验证后进入
-   Metal 平台。继续按
-   [authoring 规划](METAL_EVOLUTION_AUTHORING.md)补齐候选 MSL/operation 对应投递与回放，
-   接入明确要求 Cake 探索及低层对照的新 scaffold；按每任务独立材料与 Run 状态组织目录，
+2. **共享反馈修复与两轮经验验收。** PR #319 已将 `main@354a670f` 的默认 bundle、
+   候选归因、peer 结果、Run 内历史和任务资料隔离经 CPU 集成验证合入 Metal；本机 custody
+   条件和真实资格保持各自未验证状态。继续按
+   [authoring 规划](METAL_EVOLUTION_AUTHORING.md)使用已集成的 PR #320 源码反馈与 PR #321 预算入口，
+   绑定完整 scaffold 和显式源码权限；每轮更新前重读当前候选文件，保留少量有效观察。
+   按每任务独立材料与 Run 状态组织目录，
    以 `gpt-6.1-sol / xhigh` 完成适用资格，核对 skill 发现边界。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
@@ -358,11 +388,11 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | 项目 | 已观察 | 剩余条件 | 原始记录 |
 | --- | --- | --- | --- |
 | G0 环境 | 本机 M4；当前 macOS 与已提交 host 记录不同；CPU shim 链接失败 | 单独维护后继一致环境；适用 GPU/provider 准入 | `readiness.md`、`followup-readiness.md` |
-| G1 静态 | 12/12 任务可生成 MSL；现有 Corpus 178/178 匹配；M4 2 正例/10 拒绝命中预期 | 原生/oracle/设备；M4 Corpus 的独立审查采纳 | `task-admission.json`、`search-space-and-corpus.json`、`m4-boundaries-and-source-notes.json` |
+| G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 原生/oracle/设备；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
-| G4 经验接入 | 旧 envelope 注释/去重与归因缺口保留；计划分支已同步候选绑定、Run 内历史、Python bundle 和每任务资料 | 新 bundle 笔记传输验收；有界 MSL/operation 交付与回放；集成合同/平台 PR；真实作者行为 | `feedback-binding/observation.json`、`feedback-binding-successor/report.json`、`task-environment-integration.json` |
-| G5 冻结与发现批次 | 未启动 | 前置门通过、完整有限预算和权限冻结 | 无 Run / Study |
+| G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
+| G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
 
 ## 8. 走向更完整的 Metal 工具
 
