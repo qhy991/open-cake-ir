@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "id": "F-2026-10-05-004",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "executor_revision": "xcore1002@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "title": "MACA route qualification remains incomplete for exact retained controls",
+  "decision": "deferred",
+  "evidence": {
+    "parallel_root": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/matrix-v1",
+    "serial_root": "c550-2:/root/open-cake-runs-reviewed/c550-local-admission-20261004/matrix-v1",
+    "serial_source": "2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+    "inspection": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/exact-gap-schedule-inspection-parsed.json",
+    "retained_inputs": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/route-dispositions-f0393c92/cake-pr307-route-gap-inputs.json",
+    "successor_assessment": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/route-dispositions-f0393c92/cake-pr307-route-disposition-f0393c92.json",
+    "successor_commit": "f0393c92664b665e3cb4bf545964fa86bdb17e0f"
+  },
+  "observation": "Seven unchanged retained sources are parsed and assessed by the successor without provider or GPU work. They are semantically accepted. Six still have localized route blockers; the fixed single-stage Softmax unroll instead lowers under the already integrated partial-unroll implementation. These are exact Schedule/Target/backend distinctions, not conclusions from a rejection count. C550's declared1024 threads and64 lanes allow16 groups within the Target's thread limit; this does not qualify that launch on the MACA route. The Target declares no per-thread register cap, and maxnreg enforcement remains a separate unverified toolchain contract.",
+  "gaps": [
+    {
+      "code": "MACA_REGISTER_BUDGET_UNQUALIFIED",
+      "events": ["serial/rmsnorm:8 (action2/ordinal2)", "serial/layernorm:77 (action74/ordinal1)", "parallel/residual_rmsnorm:7 (action2/ordinal2)"],
+      "commitments": "One execution group; residency registers_per_thread64 and ctas_per_multiprocessor2.",
+      "disposition": "Defer until the exact MACA option's enforcement is demonstrated and any required Target register fact is declared by its owner. API keyword availability, compiled-resource counts and another vendor's maxnreg behavior do not prove enforcement. Retain the refusal; changing the author-requested budget is not a lowering repair."
+    },
+    {
+      "code": "MACA_WARP_COUNT_UNQUALIFIED",
+      "events": ["parallel/residual_rmsnorm:21 (action17/ordinal0)"],
+      "commitments": "Role execution_groups0 through15; no inferred hardware-thread-limit violation.",
+      "disposition": "Defer the route enlargement beyond its existing eight-group qualification. Require bounded build, launch, correctness, measurement and attribution evidence on this exact Target and runtime before widening the evidence set. Keep the declared groups unchanged at rejection."
+    },
+    {
+      "code": "MACA_LOOP_UNROLL_UNSUPPORTED",
+      "events": ["parallel/residual_rmsnorm:172 (action168/ordinal1)"],
+      "commitments": "Two sibling K loops, tile256, factor2, stages4 and2.",
+      "disposition": "The fixed single-stage repair in F-2026-10-04-005 does not cover this pipelined combination. Retain both requested stage counts and the unroll factor; do not silently serialize or remove the pipeline. Faithful spelling and route qualification remain deferred. Separate native results in005 do not qualify this residual-RMSNorm candidate."
+    },
+    {
+      "code": "MACA_WARP_SPECIALIZATION_UNSUPPORTED",
+      "events": ["parallel/residual_rmsnorm:230 (action226/ordinal1)"],
+      "commitments": "Two execution groups; two tile256 sibling loops, stages4 and2, each warp_specialize=true.",
+      "disposition": "Defer until the route realizes and qualifies the exact role, synchronization and loop-option combination. IR already carries the decision. Do not inherit NVIDIA's specialization evidence or invent a new backend. This assessment does not promise the candidate will become admissible after one gate is removed."
+    }
+  ],
+  "existing_successor_resolution": {
+    "event": "parallel/softmax:208 (action205/ordinal1)",
+    "commitments": "Fixed single-stage tile64 loop, trip count16, explicit factor8.",
+    "result": "The unchanged source assesses lowering_eligible and lowers atf0393c92 through main's faithful divisible-group implementation. This software result is not device correctness or performance confirmation for the old Run. The original rejection remains unchanged."
+  },
+  "proposed_change": "Keep these controls visible and their qualification refusals explicit. Curate the exact follow-up proof obligations at the owning route, while shared diagnosis routing reports expressibility separately from qualification. New hardware work requires separate admission and a successor Run; this record authorizes none.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "No route capability or Compiler performance promotion. The deferred controls and original Runs remain unchanged; the diagnostic clarification does not close a qualification finding."
+}

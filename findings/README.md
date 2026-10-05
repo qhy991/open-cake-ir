@@ -45,6 +45,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - F-2026-10-05-002 — three sibling Softmax regions expose the Triton two-loop cap; flat-region admission is software verified, including isolated compilation of retained events99/100. Device qualification remains open.
 - F-2026-10-05-003 — confirmed SiLU column partition motivates an explicit guarded pointwise rewrite; public ABI, tail effects and refusal ownership are software verified. Original candidate performance does not qualify the successor pass.
+- F-2026-10-05-004 — exact retained maxnreg,16-group, pipelined-unroll and warp-specialization requests remain deferred MACA route qualifications; fixed single-stage Softmax unroll is separately lowerable under the existing main repair. No new hardware qualification.
+- F-2026-10-05-005 — RMSNorm event57's two-stage Program lowers, but common MACA optimization-Run timing and attribution cover one dispatch. Defer the Lab/Executor measurement gap; standalone Program attribution does not qualify the Run.
 
 - F-2026-10-04-005 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
 
