@@ -323,6 +323,8 @@ def _replay_matched_run(
         workload_sha256=workload_sha256,
     )
     launchables, receipts, receipt_order, rejected = candidates
+    from .history import replay_optimization_history
+    replay_optimization_history(events=events, evidence=evidence, receipts=receipts, arm=lock.environment_kind)
     try:
         invocation_counts = replay_evaluation_invocations(events, receipts=receipts,
             budget=replay_budget, protocol=lock.document["evaluation_protocol"])
