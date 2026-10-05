@@ -44,7 +44,7 @@ class FixedEvolutionBaselineTests(unittest.TestCase):
         target = Target.load(ROOT / 'compiler/targets/xcore1002.json')
         requirements = self.lowering.toolchain_requirements
         manifest = TensorLaunchManifest.for_workload(self.workload, 'primary', target=target.target_id,
-            kernel_name=self.lowering.route.entry_point, grid=requirements['grid'],
+            kernel_name=requirements['kernel_entry_point'], grid=requirements['grid'],
             block=[target.warp_size * requirements['compile_options']['num_warps'], 1, 1],
             dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=0)
         count = len(manifest.tensor_abi)
@@ -104,7 +104,7 @@ class FixedEvolutionBaselineTests(unittest.TestCase):
         self.assertEqual(candidate_identity(admitted), candidate_identity(self.candidate))
         for policy in ('starter_reference', 'explicit_fixed_bundle'):
             self.validate(self.execution(policy=policy), self.lowering)
-        with self.assertRaisesRegex(ValueError, 'fixed baseline differs from the frozen Compiler'):
+        with self.assertRaisesRegex(ValueError, 'fixed baseline differs from the frozen Compiler|native Triton positional signature differs'):
             self.validate(self.execution(policy='starter_reference'), successor)
         with self.assertRaisesRegex(ValueError, 'requires the frozen Compiler lowering'):
             self.validate(self.execution(policy='starter_reference'), None)
@@ -125,9 +125,9 @@ class FixedEvolutionBaselineTests(unittest.TestCase):
     def test_explicit_bundle_keeps_native_family_and_argument_checks(self):
         count = len(self.workload.tensor_abi('primary'))
         wrong_family = self.seal({**self.payloads, 'mcfatbin': bundle(architecture='xcore1001',
-            native=native_fixture(count, self.lowering.route.entry_point))[0]})
+            native=native_fixture(count, self.lowering.toolchain_requirements['kernel_entry_point']))[0]})
         wrong_pointers = self.seal({**self.payloads, 'mcfatbin': bundle(
-            native=native_fixture(count + 2, self.lowering.route.entry_point))[0]})
+            native=native_fixture(count + 2, self.lowering.toolchain_requirements['kernel_entry_point']))[0]})
         for name, candidate, expected in (
             ('wrong-family', wrong_family, 'only'),
             ('wrong-pointers', wrong_pointers, 'hidden pointer commitments')):
@@ -177,7 +177,7 @@ class FixedEvolutionBaselineTests(unittest.TestCase):
         for hidden in (0, 2):
             with self.subTest(hidden=hidden):
                 manifest = TensorLaunchManifest.for_workload(workload, 'primary', target=target.target_id,
-                    kernel_name=lowering.route.entry_point, grid=requirements['grid'],
+                    kernel_name=requirements['kernel_entry_point'], grid=requirements['grid'],
                     block=[target.warp_size * requirements['compile_options']['num_warps'], 1, 1],
                     dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=hidden)
                 payloads = {'lowered_source': lowering.source.encode(),
@@ -207,5 +207,5 @@ class FixedEvolutionBaselineTests(unittest.TestCase):
                             self.validate(starter, lowering, workload=workload)
                     else:
                         self.validate(starter, lowering, workload=workload)
-                        with self.assertRaisesRegex(ValueError, 'fixed baseline differs from the frozen Compiler'):
+                        with self.assertRaisesRegex(ValueError, 'fixed baseline differs from the frozen Compiler|native Triton positional signature differs'):
                             self.validate(starter, successor, workload=workload)
