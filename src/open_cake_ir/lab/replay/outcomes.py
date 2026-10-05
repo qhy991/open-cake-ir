@@ -198,7 +198,7 @@ def _replay_terminal(
         ("kind", ralph_state.get("kind"), "ralph_state_v1"),
         ("cumulative_provider_tokens", ralph_state.get("cumulative_provider_tokens"), terminal_tokens),
         ("remaining.provider_tokens", ralph_state.get("remaining", {}).get("provider_tokens"),
-         max(0, budget["limit"] - terminal_tokens)),
+         None if budget["limit"] is None else max(0, budget["limit"] - terminal_tokens)),
         ("evaluation_counts", ralph_state.get("evaluation_counts"), expected_counts),
         ('compilation_count',ralph_state.get('compilation_count'),compilation_count),
         ('remaining.compilations',ralph_state.get('remaining',{}).get('compilations'),budget['maximum_compilations']-compilation_count),
@@ -209,7 +209,7 @@ def _replay_terminal(
                    "differs from the Ralph state rederived from the Run's facts",
                    observed=observed, expected=expected)
     expected_observation, expected_endpoint = matched_endpoint(
-        checkpoint=projected[-1], observations=observations,
+        checkpoint=projected[-1] if projected else None, observations=observations,
         terminal_provider_tokens=terminal_tokens, protocol_adherence=audit.protocol_adherence,
         terminal_reason=expected_stop_reason, analysis=lock.terminal_policy, confirmation=confirmation,
         budget_exceeded=exceeded_run_budgets(time_limits,search_state=search_state,terminal_state=ralph_state),

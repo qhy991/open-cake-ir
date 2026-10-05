@@ -208,6 +208,31 @@ The paper states eight. They bind IR changes here.
   no per-change release document or machine-checked reviewer field is introduced.
 - Recurring failures become verifier rules, IR primitives, transformation passes and
   reusable tactics. A one-off failure is not evidence for a rule.
+- After a sealed Run, the maintenance agent examines retained `backend_lowering` and
+  `backend_triage` rejections (`tools/summarize_diagnoses.py --compiler-gaps <evidence-root>`).
+  The queue also exposes known backend gaps that co-occur with an invalid candidate;
+  these are leads, not evidence that this Schedule is admissible.
+  For each distinct gap, inspect the exact Schedule, Target and backend: implement
+  target-specific emission and its admission/analysis with counterexamples in a successor
+  Compiler commit when supported by the Target, or curate a deferred Finding that cites
+  the retained event. A generic emitter error requires triage before assigning ownership.
+  Do not change the frozen Run, infer hardware support from another Target, or create a
+  Finding from a count alone. If Cake IR itself cannot express the operation, evolve the
+  primitive and analyses together instead of disguising it as a backend restriction.
+- **IR is the default development interface, not a presumed performance ceiling.** When
+  a concrete optimization hypothesis cannot be expressed in the current IR or realized
+  by the assigned lowering, retain the candidate, diagnosis and constrained hardware
+  decision. Lab may start a separate native engineering Run outside the frozen Run,
+  subject to existing admission and route qualification. Preserve the Workload, exact
+  Target, correctness requirements and measurement contract; declare reference access,
+  inherited materials and budget. Keep hypotheses distinct from established gaps;
+  a generic lowering error proves no IR expressibility limit. A new Run does not erase
+  prior reference access. Do not switch routes within a frozen Run, report native results
+  as Cake results, or backfill the original Study with them. Route validated mechanisms
+  to Compiler passes, lowering, Verifier, IR or Lab recipes according to ownership, using
+  existing Findings and result records. IR changes carry semantics, types, effects,
+  legality analyses and tests together; promotion requires a successor commit and the
+  applicable verification. `No promotion` remains valid.
 - After a bounded optimization or recurring-failure investigation, record the promotion
   disposition in the existing result; `No promotion` is valid. Route the lesson to its
   owner: rewrites to Compiler passes, when-to-apply choices to Lab recipes, missing

@@ -35,17 +35,21 @@ def validate_run_controls(document):
         "unit", "limit", "checkpoints", "maximum_turns", "maximum_candidates_per_turn",
         "wall_time_seconds", "active_authoring_time_seconds", "evaluation_limits", "maximum_compilations", "confirmation_wall_time_seconds",
     }
+    token_grid_valid = (
+        checkpoints == [] if limit is None else
+        type(limit) is int and limit > 0 and isinstance(checkpoints, list) and bool(checkpoints)
+        and all(type(value) is int and value > 0 for value in checkpoints)
+        and checkpoints == sorted(set(checkpoints)) and checkpoints[-1] == limit
+    )
+    if limit is None:
+        from .endpoints import NORMAL_BUDGET_TERMINAL
+        policy = document.get('endpoint_policy', document.get('analysis_plan', {}).get('endpoint_policy'))
+        if policy != NORMAL_BUDGET_TERMINAL:
+            raise ValueError('unlimited provider tokens require normal terminal observation, not token checkpoints')
     if (
         set(budget) != budget_fields
         or budget.get("unit") != "provider_tokens"
-        or not isinstance(limit, int)
-        or isinstance(limit, bool)
-        or limit <= 0
-        or not isinstance(checkpoints, list)
-        or not checkpoints
-        or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in checkpoints)
-        or checkpoints != sorted(set(checkpoints))
-        or checkpoints[-1] != limit
+        or not token_grid_valid
         or not isinstance(maximum_turns, int)
         or isinstance(maximum_turns, bool)
         or maximum_turns <= 0
@@ -56,7 +60,7 @@ def validate_run_controls(document):
         raise differs(
             "Run budget grid",
             expected={"fields": sorted(budget_fields), "unit": "provider_tokens",
-                      "limit": "positive int", "checkpoints": "sorted positive ints ending at limit",
+                      "limit": "positive int or null", "checkpoints": "sorted positive ints ending at limit; empty for null",
                       "maximum_turns": "positive int", "maximum_candidates_per_turn": "positive int"},
             observed={key: budget.get(key) for key in sorted(set(budget) | budget_fields)},
         )

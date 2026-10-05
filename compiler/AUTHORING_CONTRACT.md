@@ -6,6 +6,9 @@ Author one complete Schedule as JSON or the restricted Python surface documented
 acceptance. Names are unique within each declaration list; operation dependencies refer only backward; every output
 must be written; buffer allocation extents and role execution groups must fit the exact Target. `program_map` and `grid` are
 mutually exclusive. Each role owns one ascending contiguous warp interval, and no warp belongs to two roles.
+Multiple complete Python Schedules may be composed through static `cake.program` and
+`cake.stage` declarations; the resulting Program uses the existing tensor-binding,
+single-producer and read-before-write rules, with no separate layout language.
 Findings carry a stable code and path. Each Finding independently declares whether it
 blocks acceptance or lowering. A non-blocking Finding reports what the Schedule implies,
 such as a declared residency bound; another Finding in the same Assessment may still
@@ -66,6 +69,12 @@ names the padded axis, `buffer` names the global INT32 input that owns the lengt
 coordinate authority, so every access derives `coordinate < length` rather than
 restating a predicate. The first Triton subset lowers one length axis indexed by one
 scalar program axis and refuses wider mappings explicitly.
+When every global write is an output store with the same scalar-indexed valid prefix,
+Triton skips a program tile whose first coordinate is outside that prefix. Partial tiles
+retain the original access masks. Dense outputs, atomic/state effects, and persistent
+walks keep their original execution. A masked input alone never authorizes this pruning.
+The launch grid stays fixed; work analysis reports runtime-dependent repetitions rather
+than charging the full grid as exact executed arithmetic.
 An AccessMap index with `source: buffer` names a rank-one register INT32 Buffer that the
 operation also reads. Multiple such coordinates share one shape and are zipped into one
 runtime-index domain; they are not a Cartesian product. `mask_tiled_axes` bounds both
@@ -150,7 +159,10 @@ Workload from a route or hard-code its tensor shapes.
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
 that skeleton. A Schedule may change admitted block sizes, execution groups and stages, but must preserve its route, external
-tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
+tensor shapes, operator semantics, and frozen Compiler Revision during a Run. The Lab checks
+target, lowering route and public tensor ABI before attaching its Workload content binding;
+authors do not write that digest into a Python Schedule. An explicitly supplied digest that
+disagrees with the frozen Workload is refused.
 
 Native CUDA/PTX (`native_cuda`) consumes the same typed operations and exact Target.
 A `load(movement="tmem", source_atom={"op":"tcgen05.Ld32x32b","repetition":16})`
@@ -207,3 +219,33 @@ the assessment reports `total_execution_groups`. Backend ISA names and Triton
 `num_warps` remain native toolchain terms. Version 1 and the `warps` field are refused;
 historical records replay at their pinned commit. This schema migration changes document
 identity, not the assigned groups, target, or lowering decisions.
+
+## Sequential Triton regions and pointwise output tiles
+
+A Schedule may declare any finite sequence of sibling tile loops. Their contiguous
+operation intervals determine execution order; declaration order does not. Each loop
+initializes and finalizes its own carried state, and an explicit live-out may feed a
+later loop. The admitted multi-region slice uses fixed extents and retains the existing
+operation/effect guards; query stops, flattening, warp specialization and deeper
+nesting do not gain support from this change. The existing one outer/inner pair remains
+admitted. No range option is discarded or replaced.
+
+`Compiler.tile_pointwise_outputs(..., output_tile=..., schedule_id=..., entry_point=...)`
+is an explicit candidate rewrite. It matches a loop-free, single-role, whole-row rank-2
+pointwise graph over ordinary nonaliasing global/register buffers. All public outputs
+share a shape and have one writer; arithmetic uses aligned column-vector register values.
+The rewrite adds a column program tile, resizes only internal vectors, and updates direct
+load/store accesses with tail masking. It preserves the operation graph, dtype, public
+ABI and metadata. Reductions, contractions, scans, atomics, synchronization, state,
+explicit storage and cross-axis broadcasting are outside its independence proof.
+
+A valid input refused only for a whole-column Triton arange may enter this rewrite: the
+new power-of-two tile is the intended repair, and the result must pass the normal complete
+assessment and lowering. The rewrite never applies implicitly. The complete-Program
+interface exposes `tile_pointwise_outputs` on one selected stage without changing its
+public bindings. Lab owns parameter search, applicability recipes and performance acceptance;
+no new route qualification, physical register guarantee or speedup is inferred.
+
+Lowering diagnostics distinguish a declaration the author can repair from an unemitted
+loop topology and an unqualified route control. Shared/register operand and affine loop
+store-coordinate requirements remain blocking; accurate owner routing does not relax them.

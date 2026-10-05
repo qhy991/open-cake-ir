@@ -6,6 +6,7 @@ import argparse
 from dataclasses import asdict, dataclass
 import grp
 import json
+import math
 import os
 import platform
 from pathlib import Path
@@ -19,9 +20,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.cli import _json_projection
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
+from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.incumbents import TaskIncumbentRegistry, admit_baseline_selection
 from open_cake_ir.lab.build import TritonToolchainBuilder
@@ -34,15 +36,9 @@ from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, task_run_inputs, _ROUTE_CALLS_PER_COHORT
 from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort_payload
 from open_cake_ir.tasks.aka_v3.workload import LAUNCHABLE_TASKS as AKA_TASKS
+from open_cake_ir.tasks.metax_fp8_gemm import TASK as METAX_FP8_GEMM_TASK
 from open_cake_ir.tasks.add_rmsnorm import TASK as ADD_RMSNORM_TASK
-from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
-from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
-from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
-from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
-from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
-from open_cake_ir.tasks.solx_fib.gemm import SPECS as FIB_GEMM_SPECS
-from open_cake_ir.tasks.solx_fib.workload import (
-    SPECS as _SOLX_FIB_SPECS, default_rows as _solx_fib_rows, launchable_tasks as _solx_fib_launchable)
+from open_cake_ir.tasks.catalog import task_names, default_shape as _default_shape
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.reporting import primary_summary
@@ -50,24 +46,15 @@ from open_cake_ir.tasks.workloads import create_task, load_workload
 from open_cake_ir.tasks.tinygemm.reproduction import TASK as TINYGEMM_TASK
 from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
 
-# The launcher offers whatever the activation family registers, so a migrated AKA
-# parent becomes launchable by being added to that one table.
-ACTIVATION_TASKS = tuple(_ACTIVATION_TASKS)
-ROWWISE_TASKS = tuple(_ROWWISE_TASKS)
-REDUCTION_TASKS = tuple(_REDUCTION_TASKS)
-OPTIMIZER_TASKS = tuple(_OPTIMIZER_TASKS)
-# The arithmetic-bound family declares a K extent, as the legacy GEMM task does.
-CONTRACTION_TASKS = tuple(_CONTRACTION_TASKS)
-# SoL-ExecBench tasks carry their upstream definition's constant axis in their own name,
-# so only the batch extent is a flag here. The launcher offers the tasks some registered
-# backend admits; normalization starters partition non-power-of-two rows explicitly.
-SOLX_FIB_TASKS = _solx_fib_launchable()
-FIB_GEMM_TASKS = tuple(FIB_GEMM_SPECS)
-# The single-task and explicit matrix selectors expose the same completed factories.
-TASKS = ("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
-         *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS, *OPTIMIZER_TASKS,
-         *CONTRACTION_TASKS, *SOLX_FIB_TASKS, *FIB_GEMM_TASKS, "gemm_bias",
-         ADD_RMSNORM_TASK, *AKA_TASKS, TINYGEMM_TASK)
+# All authoring selectors and absent shape flags use the task catalog.
+ACTIVATION_TASKS = task_names(family="activation")
+ROWWISE_TASKS = task_names(family="rowwise")
+REDUCTION_TASKS = task_names(family="reductions")
+OPTIMIZER_TASKS = task_names(family="optimizers")
+CONTRACTION_TASKS = task_names(family="contraction")
+SOLX_FIB_TASKS = task_names(family="solx_fib_normalization")
+FIB_GEMM_TASKS = task_names(family="solx_fib_gemm")
+TASKS = task_names()
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -106,6 +93,12 @@ def _provider_executable(harness: str, requested: Path | None) -> Path:
     if not native.is_file() or not os.access(native, os.X_OK):
         raise ValueError("this Codex installation has no usable native executable; no installation attempted")
     return native.resolve(strict=True)
+
+
+def _codex_auth_source(requested: Path | None) -> Path:
+    source = (requested if requested is not None else
+              Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex')))/'auth.json')
+    return verify_auth_source(external_file(ROOT, str(source), 'Codex credential source'))
 
 
 def _new_workspace(value: Path) -> Path:
@@ -315,7 +308,7 @@ def _admit_allocator(runtime) -> None:
     broker = runtime["broker"]
     command = list(broker["command"])
     if "--" not in command:
-        return  # the local broker takes no lease and needs no probe
+        return  # MACA's device/lock admission is checked separately before authoring.
     probe = command[: command.index("--") + 1] + ["/bin/true"]
     try:
         completed = subprocess.run(probe, cwd=broker["cwd"], capture_output=True,
@@ -332,7 +325,8 @@ def _admit_allocator(runtime) -> None:
 
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
-                    kernelctl=None, infra_socket=None):
+                    kernelctl=None, infra_socket=None, auth_source=None,
+                    local_device=None, local_queue_seconds=0):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -341,6 +335,8 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     refused every DCU launch for lacking a CUDA cluster allocator it has no use for.
     """
     from open_cake_ir.evaluation.source_bootstrap import module_command
+    if (local_device is not None or local_queue_seconds != 0) and (allocation != 'local_broker' or kernelctl is not None):
+        raise ValueError('local device selection and queue require the local broker allocation')
     python = executor.document["host_environment"]["python"]["invocation_path"]
     if kernelctl is not None:
         if gpu_run is not None or broker_socket is not None or infra_socket is None:
@@ -374,7 +370,15 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             command = module_command(python, "open_cake_ir.evaluation.local_broker",
                                      "--kind", local_kind,
                                      "--worker-module", "open_cake_ir.tasks.evaluate")
-        timeout = 1800
+        from open_cake_ir.evaluation.local_broker import _selection_environment
+        _selection_environment(local_kind, local_device)
+        if local_device is not None:
+            command.extend(('--local-device', str(local_device)))
+        if local_queue_seconds != 0:
+            if local_queue_seconds < 0 or not math.isfinite(local_queue_seconds):
+                raise ValueError('local queue seconds must be finite and nonnegative')
+            command.extend(('--local-queue-seconds', str(local_queue_seconds)))
+        timeout = 1800 + math.ceil(local_queue_seconds)
     elif allocation == "gpu_run":
         discovered = shutil.which(str(gpu_run) if gpu_run is not None else "gpu-run")
         if discovered is None:
@@ -396,11 +400,43 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     else:
         raise ValueError(f"task execution allocation {allocation!r} is unsupported")
     return {"schema_version": 1,
-            "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors")},
+            "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors"),
+                         **({'auth_source': str(auth_source)} if auth_source is not None else {})},
             "toolchain": toolchain,
             "broker": {"command": command, "cwd": str(ROOT), "timeout_seconds": timeout,
                        "service_user": pwd.getpwuid(os.getuid()).pw_name,
                        "service_group": grp.getgrgid(os.getgid()).gr_name}}
+
+
+def _admit_local_allocator(runtime, executor, target, workspace):
+    """Probe the same MACA selection and lock before any provider work."""
+    from open_cake_ir.compiler.target import CodeObject
+    from open_cake_ir.evaluation.platforms import platform_for
+    from open_cake_ir.evaluation.source_bootstrap import module_command
+    if platform_for(target).code_object is not CodeObject.MCFATBIN:
+        return
+    host = executor.admit_host()
+    broker = runtime['broker']
+    if '--local-kind' not in broker['command']:
+        return  # A GPU Infra deployment has its own admission owner.
+    output = workspace / 'local-device-admission.json'
+    command = module_command(executor.document['host_environment']['python']['invocation_path'],
+        'open_cake_ir.evaluation.local_broker', '--kind', 'maca', '--probe-target', target,
+        '--runtime-library', host['runtime_library'], '--output', str(output))
+    wait = 0.0
+    for flag in ('--local-device', '--local-queue-seconds'):
+        if flag in broker['command']:
+            value = broker['command'][broker['command'].index(flag) + 1]
+            command.extend((flag, value))
+            if flag == '--local-queue-seconds':
+                wait = float(value)
+    completed = subprocess.run(command, cwd=broker['cwd'], capture_output=True, timeout=wait + 120)
+    _write(workspace / 'local-device-admission.stdout', completed.stdout)
+    _write(workspace / 'local-device-admission.stderr', completed.stderr)
+    result = json.loads(output.read_text()) if output.is_file() else {}
+    if completed.returncode != 0 or result.get('admitted') is not True:
+        raise ValueError('local device admission failed before provider qualification: '
+                         + str(result.get('error', completed.stderr.decode(errors='replace')[-600:])))
 
 
 def _prepare_baseline(root, workspace, compiler, executor, host, workload, authoring, source,
@@ -446,6 +482,13 @@ def _qualify(root, workspace, args, executable, source_path):
                "--workspace", str(workspace / "qualification-workspace"), "--receipt-output", str(receipt),
                "--anchor-output", str(anchor), "--evidence-root", str(workspace / "qualification-evidence"),
                "--run-id", "task-provider-qualification"]
+    from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
+    command.extend(('--submission-contract',
+                    PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
+                    else PYTHON_CANDIDATE_BUNDLE_V1))
+    if args.harness == 'codex':
+        command.extend(('--author-home-policy', ISOLATED_AUTH_ONLY_V1,
+                        '--auth-source', str(args.auth_source)))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -484,34 +527,6 @@ def _report_provider_limitations(receipt: Path) -> None:
 
 
 
-def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[int, int]:
-    """Resolve absent shape flags; the contraction family carries its own defaults.
-
-    The elementwise tile this launcher otherwise uses (128 x 1024) hands every
-    contraction task a starter that materializes a second operand the Metal backend's
-    lane-owned storage bound must refuse (F-2026-09-10-014). The contraction contract's
-    own extents keep that operand inside the bound; explicit flags still win.
-    """
-    if task in AKA_TASKS:
-        return 8 if rows is None else rows, 256 if columns is None else columns
-    if task == ADD_RMSNORM_TASK:
-        return 128 if rows is None else rows, 2560 if columns is None else columns
-    if task == TINYGEMM_TASK:
-        return 1 if rows is None else rows, 128 if columns is None else columns
-    if task in CONTRACTION_TASKS:
-        return 1024 if rows is None else rows, 64 if columns is None else columns
-    if task in FIB_GEMM_SPECS:
-        return (min(FIB_GEMM_SPECS[task]["batches"]) if rows is None else rows,
-                FIB_GEMM_SPECS[task]["N"] if columns is None else columns)
-    if task in SOLX_FIB_TASKS:
-        # The hidden size is the upstream task's constant, not a default: passing another
-        # one is refused by name rather than silently authoring a different task. The
-        # batch default is bounded by the independent CPU oracle, not upstream latency.
-        return (_solx_fib_rows(task) if rows is None else rows,
-                _SOLX_FIB_SPECS[task]["hidden"] if columns is None else columns)
-    return 128 if rows is None else rows, 1024 if columns is None else columns
-
-
 def _run_exit_code(report) -> int:
     """CLI success describes an intact protocol outcome, including negative results."""
     audit = report['audit']
@@ -532,17 +547,24 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
+                        default='known_kernel_reproduction',
+                        help='clean_start is reserved until provider read isolation is qualified')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
+    parser.add_argument('--local-device', type=int, help='physical device ordinal selected by the existing local broker')
+    parser.add_argument('--local-queue-seconds', type=float, default=0, help='bounded wait for the existing local lock; no lease held while waiting')
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int,
                         help="contracted K extent; only a contraction task declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=32)
-    parser.add_argument("--token-budget", type=int, default=3000000,
-                        help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
+    parser.add_argument("--token-budget", type=int,
+                        help="optional provider-token threshold; omitted means usage accounting only, with no token stop or qualification limit")
     parser.add_argument("--max-candidates", type=int, default=3)
+    parser.add_argument('--source-file', action='store_true',
+                        help='author one raw candidate.py per Turn; requires --max-candidates 1 --searches-per-turn 1')
     parser.add_argument("--max-compilations", type=int, default=128,
                         help="native source-to-artifact compiler entry calls, including failed calls and variants")
     parser.add_argument("--searches-per-turn", type=int, default=2)
@@ -558,6 +580,8 @@ def main(argv=None) -> int:
     parser.add_argument("--confirmation-seconds", type=float,
                         help="fixed confirmation-phase reserve inside total wall budget (default: one tenth)")
     parser.add_argument("--provider-executable", type=Path)
+    parser.add_argument('--auth-source', type=Path,
+                        help='private Codex credential copied into a new home for each Run')
     parser.add_argument("--provider-revision")
     parser.add_argument("--qualification", type=Path)
     parser.add_argument("--qualification-anchor", type=Path)
@@ -578,6 +602,10 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if args.local_device is not None and args.local_device < 0:
+        parser.error('--local-device must be nonnegative')
+    if args.local_queue_seconds < 0 or not math.isfinite(args.local_queue_seconds):
+        parser.error('--local-queue-seconds must be finite and nonnegative')
     if (args.kernelctl is None) != (args.infra_socket is None):
         parser.error("--kernelctl and --infra-socket must be supplied together")
     if args.kernelctl is not None and (args.gpu_run is not None or args.broker_socket is not None):
@@ -590,6 +618,11 @@ def main(argv=None) -> int:
         parser.error("--fixed-baseline-bundle, --incumbent-registry and --prepared-baseline are mutually exclusive")
     if (args.qualification is None) != (args.qualification_anchor is None):
         parser.error("--qualification and --qualification-anchor must be supplied together")
+    if args.source_file and (args.reference_access != 'known_kernel_reproduction'
+                             or args.max_candidates != 1 or args.searches_per_turn != 1):
+        parser.error('--source-file requires known-kernel reproduction, one candidate and one search per Turn')
+    if args.reference_access == 'clean_start':
+        raise ValueError('clean-start provider read isolation is not qualified; refusing launch')
     workspace = _new_workspace(args.workspace)
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
@@ -615,14 +648,22 @@ def main(argv=None) -> int:
     if route == "metal":
         admit_cohort_payload(workload, args.case,
                              _ROUTE_CALLS_PER_COHORT)
-    inputs = task_run_inputs(ROOT, workload, workload_path, source_path, harness=args.harness,
+    authoring_source_path = source_path
+    inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
-        agents_md=args.agents_md)
+        agents_md=args.agents_md, reference_access=args.reference_access,
+        source_file=args.source_file)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
+    if args.harness != 'codex' and args.auth_source is not None:
+        raise ValueError('--auth-source applies only to the Codex harness')
+    auth_source = (_codex_auth_source(args.auth_source)
+                   if not args.baseline_only and args.harness == 'codex' else None)
+    if auth_source is not None:
+        args.auth_source = auth_source
     # The runtime config binds the provider and the allocator, both of which belong to
     # stages `--baseline-only` stops before; it is written only on the path that reaches
     # them. Building it here regardless is what made the provider mandatory above.
@@ -631,7 +672,9 @@ def main(argv=None) -> int:
                                allocation=_allocation_of(args.backend),
                                local_kind=_local_kind_of(args.backend),
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
-                               kernelctl=args.kernelctl, infra_socket=args.infra_socket))
+                               kernelctl=args.kernelctl, infra_socket=args.infra_socket,
+                               auth_source=auth_source, local_device=args.local_device,
+                               local_queue_seconds=args.local_queue_seconds))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for
@@ -738,6 +781,7 @@ def main(argv=None) -> int:
         }))
         print(baseline_path)
         return 0
+    _admit_local_allocator(runtime, executor, workload.target, workspace)
     receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":
@@ -746,7 +790,7 @@ def main(argv=None) -> int:
     _write(runtime_path, canonical(runtime))
     specification = prepare_task_run(ROOT,inputs,compiler_reference=compiler_reference,executor=executor,
         qualification_path=receipt_path,qualification_anchor_path=anchor_path,runtime_config_path=runtime_path,
-        baseline_path=baseline_path,baseline_selection=baseline_selection)
+        baseline_path=baseline_path,baseline_selection=baseline_selection,baseline_source_path=source_path)
     _write(workspace / "run.json",canonical(specification.document))
     if args.preflight_only:
         print(workspace / "run.json")

@@ -91,7 +91,7 @@ def preflight(
     single_environment = comparison is None
     open_cake = arms["open_cake"]
     direct_cuda = arms[comparison] if comparison is not None else {}
-    validate_reference_handoff(project_root, arms)
+    validate_reference_handoff(project_root, arms, workload=workload, case_id=study.evaluation_protocol['case_id'])
     validate_authoring(workload, arms, empirical_cost_model_path=empirical_cost_model_path)
     has_empirical_policy = "candidate_selection" in open_cake
     # The document's half of this rule is `StudyContract.load`'s; the model path is an
@@ -100,32 +100,44 @@ def preflight(
         raise ValueError("empirical selection requires artifact_optimization_only candidate-set policy and an explicit model")
     if single_environment:
         _digest(open_cake.get("toolchain_sha256"), "study.arms.open_cake.toolchain_sha256")
-    schedule_skeleton = _object(
-        open_cake.get("schedule_skeleton"), "study.arms.open_cake.schedule_skeleton"
-    )
-    _, schedule_skeleton_path = source_reference_path(
-        project_root,
-        schedule_skeleton.get("path"),
-        "study.arms.open_cake.schedule_skeleton.path",
-    )
-    skeleton_document = _object(
-        read_skeleton(schedule_skeleton_path),
-        "study.arms.open_cake.schedule_skeleton",
-    )
-    expected_skeleton_sha256 = _digest(
-        schedule_skeleton.get("canonical_sha256"),
-        "study.arms.open_cake.schedule_skeleton.canonical_sha256",
-    )
-    observed_skeleton_sha256 = sha256(_canonical_json_bytes(skeleton_document)).hexdigest()
-    if (
-        skeleton_document.get("lowering") != open_cake.get("lowering_route")
-        or expected_skeleton_sha256 != observed_skeleton_sha256
-    ):
-        raise differs(
-            "Study Contract Schedule skeleton bytes or lowering route differ",
-            expected={"canonical_sha256": expected_skeleton_sha256, "lowering": open_cake.get("lowering_route")},
-            observed={"canonical_sha256": observed_skeleton_sha256, "lowering": skeleton_document.get("lowering")},
+    python_clean_start = (open_cake.get('reference_access') == 'clean_start'
+                          and open_cake.get('input_format') == 'python_source_v1')
+    if python_clean_start:
+        from .reference_access import incomplete_schedule
+        # The reference validator checked the exact incomplete Python bytes above.
+        # This private projection supplies only target/route facts to Evaluation;
+        # it is never handed to the author or compiled as a baseline.
+        skeleton_document = incomplete_schedule(workload,
+            str(study.evaluation_protocol['case_id']), open_cake['lowering_route'])
+    else:
+        schedule_skeleton = _object(
+            open_cake.get("schedule_skeleton"), "study.arms.open_cake.schedule_skeleton"
         )
+        _, schedule_skeleton_path = source_reference_path(
+            project_root,
+            schedule_skeleton.get("path"),
+            "study.arms.open_cake.schedule_skeleton.path",
+        )
+        if open_cake.get('input_format') == 'python_source_v1' and schedule_skeleton_path.suffix != '.py':
+            raise ValueError('Python-only Study requires a .py Schedule starter')
+        skeleton_document = _object(
+            read_skeleton(schedule_skeleton_path),
+            "study.arms.open_cake.schedule_skeleton",
+        )
+        expected_skeleton_sha256 = _digest(
+            schedule_skeleton.get("canonical_sha256"),
+            "study.arms.open_cake.schedule_skeleton.canonical_sha256",
+        )
+        observed_skeleton_sha256 = sha256(_canonical_json_bytes(skeleton_document)).hexdigest()
+        if (
+            skeleton_document.get("lowering") != open_cake.get("lowering_route")
+            or expected_skeleton_sha256 != observed_skeleton_sha256
+        ):
+            raise differs(
+                "Study Contract Schedule skeleton bytes or lowering route differ",
+                expected={"canonical_sha256": expected_skeleton_sha256, "lowering": open_cake.get("lowering_route")},
+                observed={"canonical_sha256": observed_skeleton_sha256, "lowering": skeleton_document.get("lowering")},
+            )
     if comparison is not None:
         _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
     claim_scope = validate_provider(

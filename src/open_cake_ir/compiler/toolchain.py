@@ -55,6 +55,24 @@ _TRITON_MODULES = frozenset({"triton", "tl", "libdevice"})
 _TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range", "float"}
 
 
+def _libdevice_function_allowed(name, requirements) -> bool:
+    from .backends.metax import DIRECTED_FMA_FUNCTIONS
+    return (name == "tanh" or requirements.get("code_object") == CodeObject.MCFATBIN.value
+            and name in DIRECTED_FMA_FUNCTIONS.values())
+
+
+def _approved_libdevice_call(node, requirements) -> bool:
+    if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute)
+        or not isinstance(node.func.value, ast.Name)
+        or node.func.value.id != "libdevice"):
+        return False
+    if node.func.attr == "tanh":
+        return True  # Preserve the existing source boundary.
+    return (_libdevice_function_allowed(node.func.attr, requirements)
+            and len(node.args) == 3 and not node.keywords
+            and all(not isinstance(arg, ast.Starred) for arg in node.args))
+
+
 def _infinity_literal(node: ast.AST) -> bool:
     """Only the two constant reduction identities, never Python conversion code."""
     return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
@@ -130,7 +148,8 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     """Admit one kernel-only module without importing or evaluating any source.
 
     Module imports and @triton.jit have one spelling. The optional libdevice import
-    admits only tanh. Constant infinity identities and the exact FP32 FMA instruction
+    admits tanh and direct ternary MACA directed FMA calls on mcfatbin only.
+    Constant infinity identities and the exact FP32 FMA instruction
     emitted by this Compiler are admitted; arbitrary inline assembly is not.
     Function annotations are only tl.constexpr, defaults and arbitrary
     decorators are forbidden, and kernel calls are a closed Triton language subset.
@@ -198,9 +217,9 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 attribute = parents.get(node)
                 call = parents.get(attribute)
                 if (not isinstance(attribute, ast.Attribute) or attribute.value is not node
-                    or attribute.attr != "tanh" or not isinstance(call, ast.Call)
-                    or call.func is not attribute):
-                    raise ValueError(f"native Triton libdevice requires a direct tanh call at line {node.lineno}")
+                    or not isinstance(call, ast.Call) or call.func is not attribute
+                    or not _approved_libdevice_call(call, requirements)):
+                    raise ValueError(f"native Triton libdevice requires a direct tanh call or an admitted MACA directed FMA call at line {node.lineno}")
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES
@@ -211,7 +230,8 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                         if not allowed:
                             raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract or materialization identity at line {node.lineno}")
                 elif isinstance(node.value, ast.Name) and node.value.id == "libdevice":
-                    allowed = has_libdevice and node.attr == "tanh" and isinstance(node.ctx, ast.Load)
+                    allowed = (has_libdevice and isinstance(node.ctx, ast.Load)
+                               and _libdevice_function_allowed(node.attr, requirements))
                 else:
                     allowed = node.attr == "to" and isinstance(node.ctx, ast.Load)
                 if not allowed:
@@ -221,7 +241,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 allowed = (isinstance(fn, ast.Name) and fn.id == "range") or (
                     isinstance(fn, ast.Attribute) and (
                         isinstance(fn.value, ast.Name) and fn.value.id == "tl" and fn.attr in _TRITON_CALLS
-                        or has_libdevice and isinstance(fn.value, ast.Name) and fn.value.id == "libdevice" and fn.attr == "tanh"
+                        or has_libdevice and _approved_libdevice_call(node, requirements)
                         or fn.attr == "to" and not (isinstance(fn.value, ast.Name) and fn.value.id in _TRITON_MODULES)
                     ))
                 if isinstance(fn, ast.Name) and fn.id == "float":

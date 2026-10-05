@@ -79,6 +79,30 @@ class ScheduleSource:
         return self.locations[max(matches, key=len)] if matches else None
 
 
+def source_node_text(source: str, node: ast.AST, *, start_lineno: int | None = None) -> str:
+    """Slice an AST node by physical LF lines, not Unicode text separators."""
+    if '\r' in source.replace('\r\n', ''):
+        raise ValueError('Cake Python source requires LF or CRLF line endings')
+    lines = source.split('\n')
+    start = (node.lineno if start_lineno is None else start_lineno) - 1
+    return '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
+
+
+def schedule_function_source(source: str, node: ast.FunctionDef) -> str:
+    """Project one decorated function with its original physical source lines.
+
+    Author bundles and Program composition share this extraction. Preserving blank
+    lines before the decorator lets the existing single-Schedule frontend report
+    locations in the original author file without executing it.
+    """
+    if len(node.decorator_list) != 1:
+        raise ValueError('Cake Schedule function needs one decorator')
+    start = node.decorator_list[0].lineno - 1
+    snippet = source_node_text(source, node, start_lineno=start + 1)
+    return ('from open_cake_ir.compiler import frontend as cake\n'
+            + '\n' * max(0, start - 1) + snippet)
+
+
 def read_schedule(path: str | Path) -> ScheduleSource:
     """Read JSON or elaborate Python without executing authored code."""
     path = Path(path).resolve(strict=True)
@@ -511,6 +535,17 @@ class _Builder:
                         index = self.symbols[item["name"]]
                         if index not in reads:
                             reads.append(index)
+        if kind == "reduce":
+            # Python exposes the familiar explicit default and negative-axis
+            # spellings. The IR still records only its positive canonical axis
+            # and the exceptional across_loop=False commitment.
+            if parameters.get("across_loop") is True:
+                del parameters["across_loop"]
+            axis = parameters.get("axis")
+            if reads and type(axis) is int and axis < 0:
+                rank = len(self.buffer(reads[0], node).shape)
+                if -rank <= axis:
+                    parameters["axis"] = axis + rank
         outputs = controls.pop("out", None)
         if outputs is None:
             if not reads and kind != "coordinate":
@@ -553,6 +588,9 @@ class _Builder:
                 if type(axis) is not int or not 0 <= axis < len(shape):
                     self.fail(node, "reduce requires a valid static axis")
                 shape = shape[:axis] + shape[axis + 1:] or [1]
+            elif kind == "scan":
+                # The scan's accumulator type owns its result, as in the verifier.
+                dtype = "int32" if first.dtype.value == "int32" else "fp32"
             elif kind == "cast":
                 if "to" not in parameters:
                     self.fail(node, "lm.cast requires to=...", "SCHEDULE_STRUCTURE",

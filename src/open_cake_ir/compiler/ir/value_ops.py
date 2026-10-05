@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from .vocabulary import DType, MemorySpace, OperationKind
 
-VALUE_KINDS = frozenset({OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT})
+VALUE_KINDS = frozenset({OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT, OperationKind.BROADCAST_IN_DIM})
 NUMERIC = frozenset({DType.INT32, DType.FP32, DType.FP16, DType.BF16})
 
 
@@ -44,6 +44,21 @@ def result_type(schedule, operation):
     reads = [schedule.buffer(name) for name in operation.reads]
     if any(buffer is None or buffer.space is not MemorySpace.REGISTER for buffer in reads):
         raise ValueError('value inputs must name declared register buffers')
+    if operation.kind is OperationKind.BROADCAST_IN_DIM:
+        if len(reads) != 1:
+            raise ValueError('broadcast_in_dim reads one register value')
+        result = schedule.buffer(operation.writes[0])
+        if result is None or result.space is not MemorySpace.REGISTER:
+            raise ValueError('broadcast_in_dim writes one declared register value')
+        source = reads[0]
+        axes = p.dimensions
+        if len(axes) != len(source.shape) or tuple(sorted(set(axes))) != axes:
+            raise ValueError('broadcast dimensions must map every source axis in strictly increasing order')
+        if any(axis >= len(result.shape) for axis in axes):
+            raise ValueError('broadcast dimension is outside the result rank')
+        if any(extent not in (1, result.shape[axis]) for extent, axis in zip(source.shape, axes)):
+            raise ValueError('broadcast extent must match the result axis or be one')
+        return source.dtype, result.shape
     if operation.kind is OperationKind.COMPARE:
         if len(reads) != (1 if p.scalar is not None else 2):
             raise ValueError('compare needs two operands, optionally a scalar second operand')

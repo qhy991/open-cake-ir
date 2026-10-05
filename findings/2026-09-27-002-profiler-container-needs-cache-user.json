@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-002",
+  "date": "2026-09-27",
+  "kind": "protocol",
+  "title": "The B300 profiler container cannot resolve its numeric user for the TorchInductor cache",
+  "backend": "triton",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@82e6eab36cd8e3d5b5cc9558a776230b76243052",
+  "executor_revision": "sm_103a@82e6eab36cd8e3d5b5cc9558a776230b76243052",
+  "tasks": [
+    "b300-gemm-mtile-cost-calibration-20260927-v4"
+  ],
+  "evidence": {
+    "host": "B300-M4",
+    "run": "/home/qinhaiyan/cake-cost-kernel-infra-state/runs/b300-gemm-mtile-cost-calibration-20260927-v4-48b217979cb2",
+    "events": "events.jsonl lines 11-12 record the passed broker-owned correctness stage; lines 16-18 record the exclusive profile allocation on GPU 0 and its infra_error",
+    "stage": "stages/collection/stderr.log ends at torch._inductor.runtime.cache_dir_utils.default_cache_dir -> getpass.getuser -> pwd.getpwuid(1010), raising KeyError; receipt.json records broker execution, exit 1 and GPU 0",
+    "release": "The broker showed no task job or queued resubmission and no cake-cost container remained after the failure."
+  },
+  "observation": "All 12 frozen GEMM candidates passed the device correctness stage, but the exclusive profiler failed before collecting a timing cohort. The pinned container ran as numeric UID 1010, absent from its /etc/passwd; when PyTorch initialized its profiler cache, getpass could not resolve that UID. No calibrated cost model or GPU-search saving follows from this run.",
+  "proposed_change": "Give the pinned CPU and GPU containers stage-local TorchInductor/Triton cache directories and pass the host account name as USER and LOGNAME while retaining the numeric UID, exact image, broker device mapping, oracle and measurement protocol. Preserve the failed v4 run and validate the cache initialization without a GPU before a successor campaign.",
+  "decision": "accepted",
+  "implemented_in": "1fafaca7a7d7cce5dfcd58b9ed971b5fb9cfab87",
+  "verified_by": {
+    "kind": "cpu_only_original_failure_reproduction",
+    "replay": "/home/qinhaiyan/cake-cost-f002-profiler-replay-1fafaca7-r2/replay.json",
+    "observed": "The original collection stderr contains the UID-lookup failure. In the same pinned image, a no-GPU profiler entry under UID 1010 failed without the cache/account environment and passed with the successor's environment projection.",
+    "contracts": "46 relevant findings, documentation and empirical-cost contract tests passed at 1fafaca7 in an isolated worktree.",
+    "limits": "This closes only the software container initialization failure. A new frozen B300 run must still establish profiler trace quality, calibration error, ranking regret and any saved GPU searches."
+  }
+}

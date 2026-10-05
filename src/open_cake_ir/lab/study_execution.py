@@ -6,6 +6,7 @@ from pathlib import Path
 from open_cake_ir.serialization import canonical_json_bytes
 from .bindings import source_reference_path, qualification_path
 from .custody import admit_new_campaign_path
+from .reference_access import require_qualified_clean_start_execution
 from .message_provider import MessageQualification
 from .study_plan import StudyPlan, StudyRef
 from .run_spec import RunSpecification
@@ -92,9 +93,16 @@ def validate_study_inputs(plan, *, project_root, workload_loader, preflight_run,
         specification = preflight_run(plan.run_specification(allocations[0]))
         provider = specification.document['authoring']['provider']
         _,path = qualification_path(project_root,provider['qualification']['path'],'Study provider qualification')
-        qualification = MessageQualification.load(path)
+        from .provider_policy import provider_harness
+        if provider_harness(provider) == 'responses':
+            qualification = MessageQualification.load(path)
+            expected_scope = 'live_two_turn_message_provider'
+        else:
+            from .providers import ProviderQualificationReceipt
+            qualification = ProviderQualificationReceipt.load(path)
+            expected_scope = 'live_two_turn_tool_rich_provider'
         if (document['claim_scope']=='scientific_matched_search'
-            and qualification.scope != 'live_two_turn_message_provider'):
+            and qualification.scope != expected_scope):
             raise ValueError('scientific Study cannot use a CPU fixture provider qualification')
         for allocation in allocations:
             run = plan.run_specification(allocation)
@@ -139,6 +147,9 @@ def execute_study(study, *, execute_run, runtime_factory):
     """
     validate_prepared_study(study)
     allocations = study.plan.allocations()
+    require_qualified_clean_start_execution(
+        study.plan.run_specification(allocation).document['authoring']
+        for allocation in allocations)
     for allocation in allocations:
         directory = study.root/'runs'/allocation.run_id
         if (directory/'evidence').exists() or (directory/'failure.json').exists():

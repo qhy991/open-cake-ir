@@ -95,8 +95,9 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 declared = next(item for item in plan["turns"] if item["turn"] == selected_turn)
                 expected = declared["submission"]
                 candidate.write_text(
-                    (json.dumps(expected, indent=2, ensure_ascii=False)
-                     if {pretty_submission!r} else json.dumps(expected, sort_keys=True, separators=(",", ":"))) + "\\n",
+                    (expected if isinstance(expected, str) else
+                     (json.dumps(expected, indent=2, ensure_ascii=False)
+                      if {pretty_submission!r} else json.dumps(expected, sort_keys=True, separators=(",", ":"))) + ("" if isinstance(expected, str) else "\\n")),
                     encoding="utf-8",
                 )
                 if {mutate_helper!r} and not resumed:
@@ -195,6 +196,11 @@ class ProviderQualificationContractTests(unittest.TestCase):
         reasoning_effort: str = "max",
         output_schema: Path | None = None,
         environment_kind: str | None = None,
+        submission_contract: str | None = None,
+        python_source: Path | None = None,
+        author_home_policy: str | None = None,
+        auth_source: Path | None = None,
+        workspace_path: Path | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -217,7 +223,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     )
                 ),
                 "--workspace",
-                str(root / "workspace"),
+                str(workspace_path or root / "workspace"),
                 "--receipt-output",
                 str(receipt_path),
                 "--anchor-output",
@@ -233,6 +239,14 @@ class ProviderQualificationContractTests(unittest.TestCase):
             ]
         if environment_kind is not None:
             command.extend(["--environment-kind", environment_kind])
+        if submission_contract is not None:
+            command.extend(['--submission-contract', submission_contract])
+        if python_source is not None:
+            command.extend(['--python-source', str(python_source)])
+        if author_home_policy is not None:
+            command.extend(['--author-home-policy', author_home_policy])
+        if auth_source is not None:
+            command.extend(['--auth-source', str(auth_source)])
         if maximum_candidates_per_turn is not None:
             command.extend(
                 [
@@ -278,6 +292,139 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 observed["payload"]["arms"]["open_cake"]["initial_auxiliary_activity"][0]["item_type"],
                 "command_execution",
             )
+
+    def test_python_source_file_qualification_seals_original_bytes_and_projection(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'codex'
+            self._write_provider(executable, tool_rich=True)
+            source = root/'reference.py'
+            source.write_bytes((ROOT/'examples/python/fma.py').read_bytes())
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision='source-file-fixture', run_id='source-file',
+                feature_policy='provider_defaults_optimization', maximum_candidates_per_turn=1,
+                output_schema=ROOT/'contracts/providers/run-turn-output-schema-v2.json',
+                environment_kind='open_cake', submission_contract=PYTHON_SOURCE_FILE_V1,
+                python_source=source)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertEqual(ProviderQualificationReceipt.load(receipt_path).scope,
+                             'zero_gpu_contract_fixture_only')
+            observed = next(event['payload'] for event in EvidenceStore.open(evidence_root).replay_events('source-file')
+                            if event['kind'] == 'provider_qualification_observed')
+            objects = {item['role']:item for item in observed['objects']}
+            evidence = EvidenceStore.open(evidence_root)
+            raw = evidence.read_object(objects['open_cake_initial_source_file'])
+            self.assertEqual(raw, (root/'workspace'/'open_cake'/'candidate.py').read_bytes().replace(
+                b'qualification turn 2', b'qualification turn 1'))
+            projected = evidence.read_object(objects['open_cake_initial_candidate_0000'])
+            self.assertEqual(projected, canonical_json_bytes({'python_source': raw.decode()}))
+
+    def test_python_bundle_qualification_seals_ordered_source_candidates(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'codex'
+            self._write_provider(executable, tool_rich=True)
+            source = root/'reference.py'
+            source.write_bytes((ROOT/'examples/python/fma.py').read_bytes())
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision='python-bundle-fixture', run_id='python-bundle',
+                feature_policy='provider_defaults_optimization', maximum_candidates_per_turn=3,
+                output_schema=ROOT/'contracts/providers/open-cake-optimization-output-schema-v1.json',
+                submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, python_source=source)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertEqual(ProviderQualificationReceipt.load(receipt_path).scope,
+                             'zero_gpu_contract_fixture_only')
+            evidence = EvidenceStore.open(evidence_root)
+            observed = next(row['payload'] for row in evidence.replay_events('python-bundle')
+                            if row['kind'] == 'provider_qualification_observed')
+            self.assertEqual(len(observed['arms']['open_cake']['initial_candidate_sha256s']), 3)
+            objects = {item['role']:item for item in observed['objects']}
+            raw = evidence.read_object(objects['open_cake_initial_source_file'])
+            self.assertEqual(raw.count(b'@cake.schedule('), 3)
+            for index in range(3):
+                member = json.loads(evidence.read_object(objects[f'open_cake_initial_candidate_{index:04d}']))
+                self.assertEqual(set(member), {'python_source'})
+                self.assertIn(f'candidate_1_{index}', member['python_source'])
+
+    def test_closed_paired_transports_receive_distinct_arm_qualifications(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            executable = root/'codex'
+            self._write_provider(executable)
+            receipts = {}
+            for arm, contract in (('open_cake', PYTHON_CANDIDATE_BUNDLE_V1),
+                                  ('native_triton', None)):
+                arm_root = root/arm
+                arm_root.mkdir()
+                auth_source = arm_root/'auth.json'
+                auth_source.write_bytes(b'fixture credential')
+                auth_source.chmod(0o600)
+                completed, receipt_path, _, evidence_root = self._run_qualification(
+                    arm_root, executable, provider_revision='paired-python-fixture',
+                    run_id=f'paired-{arm}', feature_policy='closed_research',
+                    maximum_candidates_per_turn=3,
+                    output_schema=ROOT/'contracts/providers/run-turn-output-schema-v1.json',
+                    environment_kind=arm, submission_contract=contract,
+                    author_home_policy='isolated_auth_only_v1', auth_source=auth_source,
+                    workspace_path=root/f'{arm}-workspace')
+                self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+                receipts[arm] = ProviderQualificationReceipt.load(receipt_path)
+                from open_cake_ir.lab.author_home import system_skills_identity
+                self.assertEqual(receipts[arm].document['schema_version'], 2)
+                self.assertEqual(receipts[arm].system_skills_sha256,
+                                 system_skills_identity(()))
+                self.assertEqual((root/f'{arm}-workspace-author-home'/'auth.json').read_bytes(),
+                                 b'fixture credential')
+                evidence = EvidenceStore.open(evidence_root)
+                self.assertTrue(evidence.audit_run(f'paired-{arm}').archive_integrity)
+                observed = next(row['payload'] for row in evidence.replay_events(f'paired-{arm}')
+                                if row['kind'] == 'provider_qualification_observed')
+                invocations = {item['role']: json.loads(evidence.read_object(item))
+                               for item in observed['objects'] if item['role'].endswith('_invocation')}
+                self.assertEqual(invocations[f'{arm}_initial_invocation']['codex_home'],
+                                 invocations[f'{arm}_resumed_invocation']['codex_home'])
+            self.assertNotEqual(receipts['open_cake'].configuration_sha256,
+                                receipts['native_triton'].configuration_sha256)
+
+    def test_a_two_arm_qualification_uses_distinct_fresh_author_homes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            executable = root/'codex'
+            self._write_provider(executable)
+            source = root/'auth.json'
+            source.write_bytes(b'fixture credential')
+            source.chmod(0o600)
+            completed, receipt_path, _, _ = self._run_qualification(
+                root, executable, provider_revision='two-arm-home-fixture',
+                run_id='two-arm-home', feature_policy='closed_research',
+                maximum_candidates_per_turn=3,
+                output_schema=ROOT/'contracts/providers/codex-triton-optimization-output-schema-v1.json',
+                author_home_policy='isolated_auth_only_v1', auth_source=source)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertTrue(ProviderQualificationReceipt.load(receipt_path).qualified)
+            for arm in ('open_cake', 'native_triton'):
+                self.assertTrue((root/f'workspace-{arm}-author-home'/'auth.json').is_file())
+
+    def test_closed_qualification_rejects_a_schema_without_terminal_tool_calls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'codex'
+            self._write_provider(executable)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision='schema-mismatch-fixture',
+                run_id='schema-mismatch', feature_policy='closed_research',
+                maximum_candidates_per_turn=3,
+                output_schema=ROOT/'contracts/providers/run-turn-output-schema-v2.json',
+                environment_kind='open_cake',
+                submission_contract='python_candidate_bundle_v1')
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b'terminal-event contract', completed.stderr)
+            self.assertFalse(receipt_path.exists())
+            self.assertFalse(evidence_root.exists())
 
     def test_two_executable_fixture_turns_archive_fixture_only_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -248,7 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
             "--format", dest="output_format", choices=("json", "text"), default="json",
             help="JSON for tools (default), or a concise Chinese explanation",
         )
-        command.add_argument("--revision", type=Path, required=True)
+        command.add_argument("--revision", type=Path,
+                             help="Compiler revision; defaults to this project's compiler/revision.json")
         command.add_argument("schedule", type=Path, help="Schedule JSON or restricted Python source")
         if name == "lower":
             command.add_argument("--output", type=Path, required=True)
@@ -258,6 +259,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON for tools (default), or a concise Chinese explanation",
     )
     check.add_argument("--revision", type=Path, required=True)
+
+    tasks = commands.add_parser("tasks", help="list tasks or check an exact cell without running a GPU")
+    task_commands = tasks.add_subparsers(dest="task_command", required=True)
+    for name in ("list", "show", "check"):
+        command = task_commands.add_parser(name)
+        command.add_argument("--suite", choices=("all", "portable", "flashinfer-rewrites"), default="all")
+        command.add_argument("--family", help="task family; see tasks list")
+        command.add_argument("--format", dest="output_format", choices=("text", "json", "markdown"), default="text")
+        if name == "show":
+            command.add_argument("task", help="launcher task name or reference collection id")
+        if name == "check":
+            command.add_argument("--task", action="append", help="select tasks; omitted means all in the suite")
+            command.add_argument("--backend", required=True, help="exact task device entry; see tasks list")
+            for extent in ("rows", "columns", "depth"):
+                command.add_argument("--" + extent, type=int, help="shape override for one selected task")
 
     lab = commands.add_parser("lab")
     lab_commands = lab.add_subparsers(dest="lab_command", required=True)
@@ -294,6 +310,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.project_root = args.project_root.resolve(strict=True)
         if args.command == "compiler":
             return _compiler(args)
+        if args.command == "tasks":
+            from open_cake_ir.tasks.catalog_cli import run
+            return run(args)
         return _lab(args)
     except FrontendError as error:
         if args.command != "compiler":
@@ -308,6 +327,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                    "findings": [finding], "guidance": []})
         return 2
     except (CompilerError, OSError, ValueError) as error:
+        if args.command == "tasks":
+            print(f"tasks {args.task_command}: {error}", file=sys.stderr)
+            return 2
         if args.command == "lab":
             print(f"lab {args.lab_command}: {error}", file=sys.stderr)
             if args.lab_command == "preflight" and args.execution_bindings is None:

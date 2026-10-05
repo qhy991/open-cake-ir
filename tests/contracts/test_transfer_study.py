@@ -117,14 +117,37 @@ class TransferStudyTests(SemanticLabTestCase):
             first = json.loads(seen[row['run_id']].requests[0]['input'][0]['content'])
             text = first['task_markdown']
             self.assertEqual('SOURCE_MECHANISM_SENTINEL' in text,condition['experience'])
-            self.assertEqual('## Frozen reference: `transformation-api.json`' in text,condition['passes'])
+            self.assertEqual('## Frozen reference: `transformation-api.json`' in text,condition['passes'] or condition['experience'])
             self.assertEqual(row['transforms_applied'],int(condition['passes']))
             self.assertEqual(row['transforms_refused'],int(not condition['passes']))
+            self.assertEqual(row['context_compactions'],[])
             self.assertIsNotNone(row['first_correct'])
             self.assertEqual(row['first_correct']['compilations'],1)
             self.assertEqual(len(seen[row['run_id']].requests[0]['input']),1)
+        api = {}
+        for row in report['runs']:
+            first = json.loads(seen[row['run_id']].requests[0]['input'][0]['content'])
+            if plan.document['conditions'][row['condition_id']]['experience']:
+                api[row['condition_id']] = first['task_markdown'].split('## Frozen reference: `transformation-api.json`')[1].split('```json\n')[1].split('\n```')[0]
+        self.assertEqual(api['explanation'],api['both'])
         with self.assertRaisesRegex(ValueError,'already attempted'):
             lab.execute_study(study,runtime_factory=self.factory(lab,workload,program,qualification,{}))
+
+    def test_cli_study_requires_isolation_and_frozen_compaction_contract(self):
+        _,plan,_,_,_,_ = self.fixture()
+        document = plan.document
+        provider = document['tasks'][0]['run_template']['authoring']['provider']
+        provider.update(harness='claude-code',isolation_policy='linux_claude_workspace_v1',
+                        event_contract='claude_stream_candidate_v3')
+        document['tasks'][0]['run_template']['execution']['sandbox']='none'
+        StudyPlan.from_dict(document)
+        provider['event_contract']='claude_stream_candidate_v4'
+        StudyPlan.from_dict(document)
+        provider['event_contract']='unobserved_compaction_contract'
+        with self.assertRaisesRegex(ValueError,'confined'):StudyPlan.from_dict(document)
+        provider['event_contract']='claude_stream_candidate_v4'
+        del provider['isolation_policy']
+        with self.assertRaisesRegex(ValueError,'confined'):StudyPlan.from_dict(document)
 
     def test_allocations_and_treatments_freeze_before_run_and_reject_posthoc_edits(self):
         lab,plan,_,_,_,root = self.fixture()
@@ -214,7 +237,7 @@ class TransferStudyTests(SemanticLabTestCase):
         with self.assertRaisesRegex(ValueError,'scientific'):StudyPlan.from_dict(document)
         with self.assertRaisesRegex(ValueError,'one-task'):task_bootstrap([[0.,1.,0.,1.]],draws=1000,seed=1)
         self.assertEqual(task_bootstrap([[0.,0.,0.,0.],[1.,1.,1.,1.]],draws=1000,seed=7),
-                         {name:[0.,0.] for name in ('experience','passes','interaction')})
+                         {name:[0.,0.] for name in ('experience','passes','interaction','passes_given_experience')})
 
     def test_prepare_and_audit_cli_create_reviewable_inputs_without_running_providers(self):
         from tools.transfer_study import main
@@ -249,9 +272,9 @@ class TransferStudyTests(SemanticLabTestCase):
         summary = summarize_cells(model,rows)
         values = summary['strata']['unseen_family']
         self.assertEqual(set(values['cell_rates'].values()),{.5})
-        self.assertEqual(values['effects'],{'experience':0.,'passes':0.,'interaction':0.})
+        self.assertEqual(values['effects'],{'experience':0.,'passes':0.,'interaction':0.,'passes_given_experience':0.})
         rows[0]['status']='missing'
         changed = summarize_cells(model,rows)['strata']['unseen_family']
         self.assertEqual(changed['missingness_rate_bounds']['control'],[.5,1.])
         self.assertEqual(changed['observed_subset_sensitivity']['tasks'],1)
-        self.assertEqual(factorial_effects([0.,.2,.3,.9]),{'experience':.4,'passes':.5,'interaction':.4})
+        self.assertEqual(factorial_effects([0.,.2,.3,.9]),{'experience':.4,'passes':.5,'interaction':.4,'passes_given_experience':.7})

@@ -147,8 +147,15 @@ def main():
             return 0
         prepared = run / 'stages/prepare'
         admit_cases(prepared,workload)
+        candidate = load_baseline_bundle(ROOT,regular(root,'optimized/candidate.json'))
+        baseline = load_baseline_bundle(ROOT,regular(root,'starter/candidate.json'))
+        manifest = validate_pair_candidates(candidate,baseline,workload,'primary')['candidate']
         if phase == 'verify':
-            report = verify_capture(workload,prepared,run / 'stages/guard')
+            if candidate.is_program:
+                from tools.program_alignment_guard import verify
+                report = verify(candidate,workload,prepared,run / 'stages/guard',commit)
+            else:
+                report = verify_capture(workload,prepared,run / 'stages/guard')
             write(stage / 'guard-report.json',report)
             write(Path(os.environ['KERNELINFRA_RESULT']),{'schema':'kernelinfra.stage-result.v1',
                 'status':'passed' if report['passed'] else 'failed',
@@ -156,9 +163,14 @@ def main():
                 'summary':f"{sum(r['passed'] for r in report['checks'])}/{len(report['checks'])} guard checks passed after GPU release",
                 'artifacts':{'guard':'guard-report.json'}})
             return 0  # A handled numerical failure is recorded by status/validity.
-        candidate = load_baseline_bundle(ROOT,regular(root,'optimized/candidate.json'))
-        baseline = load_baseline_bundle(ROOT,regular(root,'starter/candidate.json'))
-        manifest = validate_pair_candidates(candidate,baseline,workload,'primary')['candidate']
+        if candidate.is_program:
+            from tools.program_alignment_guard import capture
+            admission = observe_exclusive_cuda(workload.target)
+            report = capture(candidate,workload,prepared,stage,admission,commit)
+            write(Path(os.environ['KERNELINFRA_RESULT']),{'schema':'kernelinfra.stage-result.v1',
+                'status':'passed','validity':'valid','summary':'Complete Program guards captured; CPU verification pending',
+                'artifacts':{'capture':'capture.json','snapshots':'snapshots.bin'}})
+            return 0
         if not manifest.aligned_variant:
             raise ValueError('guard replay requires a sealed alignment bundle')
         admission = observe_exclusive_cuda(workload.target)

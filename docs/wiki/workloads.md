@@ -23,6 +23,7 @@ Workload 是一道题的完整约定：给什么输入，必须输出什么，�
 | [RMSNorm FP32 v2](../../contracts/workloads/rmsnorm-fp32-v2.json) | 同一数学定义与 6 个用例，明确绑定 B300 `sm_103a`。 |
 | [GEMM+bias BF16/FP32 v2](../../contracts/workloads/gemm-bias-bf16-fp32-v2.json) | 同一数学定义与 5 个用例，明确绑定 B300 `sm_103a`。 |
 | [Indexed gather BF16 v2](../../contracts/workloads/indexed-gather-bf16-v2.json) | 同一索引语义与 4 个用例，明确绑定 B300 `sm_103a`。 |
+| [Indexed gather BF16 v3](../../contracts/workloads/indexed-gather-bf16-v3.json) | 同一索引语义与 4 个用例，分别按各自 ABI 构建，明确绑定 C550 `xcore1002`。 |
 
 B300 的 Python 起点和单独的实验资格要求见 [B300 指南](../B300.md)。
 
@@ -30,6 +31,12 @@ B300 的 Python 起点和单独的实验资格要求见 [B300 指南](../B300.md
 [基线准备入口](../../examples/paired_triton/README.md)从同一 IR 生成对应的原生 Triton
 源码，供明确声明的共同优化起点使用。当前交付范围是合同、CPU 参考与源码准备；
 GPU 编译、正确性、计时、profiler 和框架验收仍待 R2 验证。
+
+## MetaX C550 固定 FP8 矩阵乘
+
+[合同](../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1.json)固定 `M=N=K=64`、E4M3FN 输入、FP32 输出与逐元素容差。任务所有的字节生成器覆盖 5 个基础用例和 32 个额外有限值用例；[独立 CPU oracle](../../src/open_cake_ir/tasks/metax_fp8_gemm.py)先解码，再高精度求和并只在输出处舍入为 FP32。现有[补偿求和 Schedule](../../examples/python/xcore1002_fp8_compensated.py)与输入输出 ABI 相符；这份合同本身不证明新用例的设备正确性或性能收益。
+
+后继 [v2](../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json) 明确 B 的存储为 `[N,K]`，计算 `A @ B.T`，与 resident 补偿指令一致。v1 的 `A @ B` 定义保留，但不能用该 resident 示例充当符合语义的基线。方阵 ABI 相同不证明方向相同；v2 的 identity 用例检查非对称 B 的完整转置输出。
 
 ## Flash-KMeans
 

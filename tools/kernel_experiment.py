@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.tasks.devices import BACKENDS
 from open_cake_ir.tasks.workloads import create_task
+from open_cake_ir.tasks.catalog import task_entry
 
 POLICY = ROOT / "contracts/scaffolds/kernel-reproduction/AGENTS.md"
 
@@ -40,32 +41,54 @@ def absolute(value):
     return value
 
 
-def validate(config):
-    object_fields(config, {"schema_version", "objective", "provider", "budget", "references", "cells"})
-    if type(config["schema_version"]) is not int or config["schema_version"] != 1:
-        raise ValueError("experiment schema_version must be 1")
-    if not isinstance(config["objective"], str) or not config["objective"].strip():
-        raise ValueError("experiment objective is required")
-    provider = config["provider"]
-    object_fields(provider, {"harness", "model", "effort"})
-    if provider["harness"] not in {"codex", "claude-code"} or any(
-            not isinstance(v, str) or not v.strip() for v in provider.values()):
-        raise ValueError("explicit provider settings are required")
-    object_fields(config["budget"], {"turns", "token_budget", "wall_seconds"})
-    if any(type(v) is not int or v <= 0 for v in config["budget"].values()):
-        raise ValueError("positive per-cell budgets are required")
-    if not isinstance(config["references"], list) or not config["references"]:
+def validate_references(references):
+    if not isinstance(references, list) or not references:
         raise ValueError("reproduction requires explicit reference files")
-    for ref in config["references"]:
+    for ref in references:
         object_fields(ref, {"path", "source"})
         absolute(ref["path"])
         if not isinstance(ref["source"], str) or not ref["source"].strip():
             raise ValueError("reference provenance is required")
+
+
+def validate(config):
+    version = config.get("schema_version") if isinstance(config, dict) else None
+    if type(version) is not int or version not in {1, 2}:
+        raise ValueError("experiment schema_version must be 1 or 2")
+    fields = {"schema_version", "objective", "provider", "budget", "cells"}
+    object_fields(config, fields | ({"references"} if version == 1 else set()))
+    if not isinstance(config["objective"], str) or not config["objective"].strip():
+        raise ValueError("experiment objective is required")
+    provider = config["provider"]
+    object_fields(provider, {"harness", "model", "effort"}, {"response_model_aliases"})
+    if provider["harness"] not in {"codex", "claude-code"} or any(
+            not isinstance(provider[key], str) or not provider[key].strip() for key in ('harness', 'model', 'effort')):
+        raise ValueError("explicit provider settings are required")
+    if 'response_model_aliases' in provider:
+        from open_cake_ir.lab.claude import response_model_aliases
+        if provider['harness'] != 'claude-code':
+            raise ValueError('response model aliases require the Claude provider')
+        response_model_aliases(provider['model'], provider['response_model_aliases'])
+    object_fields(config["budget"], {"turns", "wall_seconds"}, {"token_budget"})
+    if any(type(v) is not int or v <= 0 for k, v in config["budget"].items()
+           if not (k == "token_budget" and v is None)):
+        raise ValueError("positive per-cell budgets are required")
+    if version == 1:
+        validate_references(config["references"])
     if not isinstance(config["cells"], list) or not config["cells"]:
         raise ValueError("at least one exact target cell is required")
     ids, destinations = set(), set()
     for cell in config["cells"]:
-        object_fields(cell, {"id", "task", "backend", "rows", "columns", "node"}, {"depth", "fixed_baseline_bundle", "pointer_alignment"})
+        required = {"id", "task", "backend", "rows", "columns", "node"}
+        optional = {"depth", "fixed_baseline_bundle", "pointer_alignment"}
+        if version == 2:
+            required.add("references")
+            optional.add("agents_md")
+        object_fields(cell, required, optional)
+        if version == 2:
+            validate_references(cell["references"])
+            if "agents_md" in cell:
+                absolute(cell["agents_md"])
         if 'pointer_alignment' in cell:
             value = cell['pointer_alignment']
             if type(value) is not int or value <= 0 or value & (value - 1):
@@ -76,6 +99,7 @@ def validate(config):
                 or cell["id"] in ids or cell["backend"] not in BACKENDS):
             raise ValueError("unique cell ids and declared backends are required")
         ids.add(cell["id"])
+        task_entry(cell["task"])
         # Each Workload factory owns its actual supported target/shape domain.
         create_task(cell["task"], backend=cell["backend"], rows=cell["rows"],
                     columns=cell["columns"], depth=cell.get("depth"))
@@ -113,21 +137,17 @@ def validate(config):
         destinations.add(destination)
 
 
-def prepare(config_path: Path, output: Path) -> None:
-    config = json.loads(config_path.read_bytes())
-    validate(config)
-    output = output.absolute()
-    if output != output.resolve() or any((p / ".git").exists() for p in (output, *output.parents)):
-        raise ValueError("experiment workspace must be canonical and outside source")
-    commit = checkout_commit(ROOT)
-    policy = POLICY.read_text(encoding="utf-8")
+def read_materials(references):
     materials = []
-    for ref in config["references"]:
+    for ref in references:
         source = Path(ref["path"])
         if source.is_symlink() or not source.is_file():
             raise ValueError("reference must be an explicit regular UTF-8 file")
         materials.append((ref, source.read_text(encoding="utf-8")))
-    output.mkdir(parents=True, exist_ok=False)
+    return materials
+
+
+def write_authoring_inputs(output: Path, policy: str, materials) -> None:
     write(output / "AGENTS.md", policy)
     references = output / "references"
     references.mkdir()
@@ -139,11 +159,63 @@ def prepare(config_path: Path, output: Path) -> None:
         scaffold += "\n" + json.dumps({"source": ref["source"], "original_path": ref["path"],
                                       "content": content}, ensure_ascii=False) + "\n"
     write(output / "scaffold.md", scaffold)
+
+
+def prepare(config_path: Path, output: Path) -> None:
+    config = json.loads(config_path.read_bytes())
+    validate(config)
+    output = output.absolute()
+    if output != output.resolve() or any((p / ".git").exists() for p in (output, *output.parents)):
+        raise ValueError("experiment workspace must be canonical and outside source")
+    commit = checkout_commit(ROOT)
+    policy = POLICY.read_text(encoding="utf-8")
+    # Read every selected input before creating the experiment. Execution later
+    # reads these snapshots, never a mutable reference or policy source path.
+    cell_inputs = {}
+    if config["schema_version"] == 1:
+        materials = read_materials(config["references"])
+    else:
+        for cell in config["cells"]:
+            cell_policy = policy
+            if "agents_md" in cell:
+                source = Path(cell["agents_md"])
+                if source.is_symlink() or not source.is_file():
+                    raise ValueError("cell agents_md must be an explicit regular UTF-8 file")
+                cell_policy = source.read_text(encoding="utf-8")
+                if not cell_policy.strip():
+                    raise ValueError("cell agents_md must contain authoring instructions")
+            cell_inputs[cell["id"]] = (cell_policy, read_materials(cell["references"]))
+    output.mkdir(parents=True, exist_ok=False)
+    if config["schema_version"] == 1:
+        write_authoring_inputs(output, policy, materials)
+    else:
+        write(output / "AGENTS.md", policy)
+        (output / "cells").mkdir()
+        for cell in config["cells"]:
+            cell_output = output / "cells" / cell["id"]
+            cell_output.mkdir()
+            write_authoring_inputs(cell_output, *cell_inputs[cell["id"]])
+            write(cell_output / "TASK.md", "# Task management input\n\n"
+                + "This is a prepared cell, not a frozen author Run or a permission grant. "
+                + "Read AGENTS.md and this cell's references/. The launcher delivers only this "
+                + "cell's scaffold.md through the existing Lab task-package boundary.\n\n"
+                + config["objective"] + "\n\nCell configuration:\n"
+                + json.dumps(cell, indent=2, ensure_ascii=False)
+                + "\n\nProvider and budget (shared experiment input):\n"
+                + json.dumps({"provider": config["provider"], "budget": config["budget"]},
+                             indent=2, ensure_ascii=False)
+                + "\n\nSource commit: " + commit + "\n")
     write(output / "experiment.json", json.dumps({**config, "source_commit": commit}, indent=2, ensure_ascii=False) + "\n")
     rows = [f"- `{c['id']}`: {c['task']} / {BACKENDS[c['backend']]['target']} / {c['node']['transport']}" for c in config["cells"]]
+    if config["schema_version"] == 2:
+        rows = [row + f" — [task inputs](cells/{cell['id']}/TASK.md)"
+                for row, cell in zip(rows, config["cells"])]
+    material_scope = ("Use references/ and scaffold.md to recover mechanisms. "
+                      if config["schema_version"] == 1 else
+                      "Each cells/<id>/ directory owns its references and scaffold; there is no shared material fallback. ")
     write(output / "TASK.md", "# Kernel reproduction experiment\n\n" + config["objective"]
         + "\n\nRead AGENTS.md. You are the experiment-management Agent outside frozen Runs. "
-        "Use references/ and scaffold.md to recover mechanisms. Prepare or verify the external "
+        + material_scope + "Prepare or verify the external "
         "reference measurement before claiming reproduction; the registered starter is not that reference. "
         "Run each explicitly configured cell through tools/kernel_experiment.py run --workspace "
         + str(output) + " --cell CELL_ID from the pinned source checkout. "
@@ -181,7 +253,11 @@ for name in ("task", "backend", "rows", "columns", "depth", "fixed_baseline_bund
         args += ["--" + name.replace("_", "-"), str(p["cell"][name])]
 for group in (p["provider"], p["budget"]):
     for name, value in group.items():
-        args += ["--" + name.replace("_", "-"), str(value)]
+        if name == "response_model_aliases":
+            for alias in value:
+                args += ["--response-model-alias", alias]
+        elif value is not None:
+            args += ["--" + name.replace("_", "-"), str(value)]
 environment = dict(os.environ)
 if "codex_home" in n:
     home = pathlib.Path(n["codex_home"])
@@ -206,10 +282,13 @@ def run_cell(workspace: Path, cell_id: str) -> int:
         raise ValueError("unknown experiment cell")
     cell = cells[0]
     node = cell["node"]
+    scaffold_path = (workspace / "scaffold.md" if config["schema_version"] == 1 else
+                     workspace / "cells" / cell_id / "scaffold.md")
+    scaffold = scaffold_path.read_text(encoding="utf-8")
     attempt = workspace / "launches" / cell_id
     attempt.mkdir(parents=True, exist_ok=False)
     payload = {"cell": cell, "source_commit": commit, "provider": config["provider"],
-               "budget": config["budget"], "scaffold": (workspace / "scaffold.md").read_text(encoding="utf-8")}
+               "budget": config["budget"], "scaffold": scaffold}
     command = [node["python"], "-c", _NODE]
     if node["transport"] == "ssh":
         command = ["ssh", "-x", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", node["host"], shlex.join(command)]

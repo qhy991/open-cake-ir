@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from ._parse import (
@@ -117,7 +118,12 @@ def _metadata(value: Any) -> Mapping[str, Any]:
                 "schedule.metadata.legacy_source.canonical_json_sha256 must be a "
                 "lowercase SHA256 digest"
             )
-    return dict(obj)
+    # The typed Schedule can be retained after admission only when no caller can
+    # change its semantic metadata through either the source document or a view.
+    frozen = dict(obj)
+    if legacy is not None:
+        frozen["legacy_source"] = MappingProxyType(dict(legacy))
+    return MappingProxyType(frozen)
 
 
 @dataclass(frozen=True)

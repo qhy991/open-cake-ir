@@ -4,8 +4,8 @@ from hashlib import sha256
 from types import SimpleNamespace
 import unittest
 
-from open_cake_ir.evaluation.metax_driver import LoadedMetaxCandidate
-from tests.contracts.test_metax_binary import bundle
+from open_cake_ir.evaluation.metax_driver import LoadedMetaxCandidate, _call
+from tests.contracts.test_metax_binary import bundle, native_fixture
 
 
 class API:
@@ -30,8 +30,18 @@ class API:
 
 
 class MetaxDriverTests(unittest.TestCase):
+    def test_recompile_status_names_the_runtime_boundary(self):
+        class RecompileApi:
+            def mcModuleLaunchKernel(self, *args):
+                return 1009
+
+        with self.assertRaisesRegex(
+                RuntimeError,
+                r"mcModuleLaunchKernel failed with status 1009 \(mcErrorRecompile\)"):
+            _call(RecompileApi(), "mcModuleLaunchKernel")
+
     def setUp(self):
-        self.payload, self.native = bundle()
+        self.payload, self.native = bundle(native=native_fixture())
         self.api = API()
         self.candidate = SimpleNamespace(target="xcore1002", entry_point="kernel",
             launch_spec_sha256="c" * 64, artifact_payloads={"mcfatbin": self.payload},
@@ -110,3 +120,16 @@ class MetaxDriverTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.load()
         self.assertEqual(self.api.loads, [])
+
+    def test_two_native_scratch_slots_are_packed_after_tensor_arguments(self):
+        self.payload, self.native = bundle(native=native_fixture(3))
+        self.candidate.artifact_payloads["mcfatbin"] = self.payload
+        self.candidate.artifact_roles["mcfatbin"] = sha256(self.payload).hexdigest()
+        self.manifest.hidden_null_pointer_parameters = 2
+        loaded = self.load()
+        loaded.launch([self.argument()], tensor_contract=self.manifest)
+        import ctypes
+        slots = self.api.launches[-1][-2]
+        values = [ctypes.cast(slots[i], ctypes.POINTER(ctypes.c_void_p))[0] for i in range(3)]
+        self.assertEqual(values, [4096, None, None])
+        loaded.close()

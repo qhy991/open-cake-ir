@@ -69,6 +69,15 @@ class McptiMeasurements(unittest.TestCase):
         with self.assertRaises(ValueError):
             dispatch_samples(raw,kernel_name="cak",grid=(8,1,1),block=(64,1,1),repeats=2,reset_record=None)
 
+    def test_overlap_diagnostic_keeps_the_adjacent_interval_boundaries(self):
+        raw = capture(kernel("cake", 1, 1000), kernel("cake", 2, 2500))
+        raw["records"][1]["end_ns"] = 4000
+        with self.assertRaisesRegex(
+                ValueError,
+                r"sample=1 previous_end_ns=3048 next_start_ns=2500 overlap_ns=548"):
+            dispatch_samples(raw, kernel_name="cake", grid=(8, 1, 1),
+                             block=(64, 1, 1), repeats=2, reset_record=None)
+
     def test_device_drop_and_failed_launch_api_invalidate_attribution_too(self):
         for change in ({"api_version":19},{"dropped_records":True},{"dropped_records":2},
                        {"pending_buffers":1}):
@@ -166,6 +175,15 @@ class RejectedCaptureEvidence(unittest.TestCase):
 
 
 class MacaProfileRepresentation(unittest.TestCase):
+    def test_profile_allows_native_zero_scratch_slots_but_refuses_other_counts(self):
+        from open_cake_ir.evaluation.metax_observations import maca_profile_summary
+        raw = deepcopy(self.raw)
+        raw['manifest']['hidden_null_pointer_parameters'] = 2
+        self.assertEqual(maca_profile_summary(raw)['device_time_us'], 2.048)
+        raw['manifest']['hidden_null_pointer_parameters'] = 1
+        with self.assertRaisesRegex(ValueError, 'unsupported hidden launch parameters'):
+            maca_profile_summary(raw)
+
     def setUp(self):
         from dataclasses import asdict
         from open_cake_ir.evaluation.core import TensorLaunchManifest
@@ -297,3 +315,71 @@ class MacaProfileRepresentation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'aggregate'):receipt()
         correctness.pop('instrumented')
         with self.assertRaisesRegex(ValueError,'instrumented output'):receipt()
+
+class ExplicitActivityClocks(unittest.TestCase):
+    def test_native_clock_controls_have_the_sdk_uint64_void_abi_without_gpu(self):
+        import shutil, subprocess
+        compiler=shutil.which('c++')
+        if compiler is None:self.skipTest('C++ compiler unavailable for native diagnostic control')
+        source=Path(__file__).resolve().parents[2]/'src/open_cake_ir/evaluation/metax_clock_probe.cc'
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/'clock.so'
+            subprocess.run([compiler,'-std=c++11','-shared','-fPIC',str(source),'-o',str(output)],
+                           check=True,capture_output=True,timeout=30)
+            library=ctypes.CDLL(str(output))
+            for name in ('cake_wall_time','cake_monotonic','cake_relative_monotonic'):
+                function=getattr(library,name)
+                function.restype=ctypes.c_uint64;function.argtypes=[]
+                first,second=function(),function()
+                self.assertGreater(first,0);self.assertGreaterEqual(second,first)
+                if name=='cake_relative_monotonic':
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=8) as pool:
+                        samples=list(pool.map(lambda unused:function(),range(1024)))
+                    self.assertTrue(all(0<stamp<1000000000 for stamp in samples))
+
+    def test_invalid_reset_capture_remains_available_to_failed_pair_handoff(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        # Same strict refusal as the native reset failure, before any cohort exists.
+        raw=capture(kernel('fill',1,1000))
+        raw['records'][0]['start_ns']=0
+        assay=object.__new__(McptiDispatchBenchmark)
+        assay._reset=None;assay.l2_cache_bytes=8388608;assay.last_activity=None
+        assay.manifest=SimpleNamespace(kernel_name='cake')
+        tensor=SimpleNamespace(fill_=lambda value:None)
+        torch=SimpleNamespace(cuda=SimpleNamespace(get_device_properties=lambda index:
+            SimpleNamespace(L2_cache_size=8388608)),float32='fixture',empty=lambda *a,**k:tensor)
+        with patch.dict('sys.modules',{'torch':torch}),patch.object(assay,'_collect',return_value=raw):
+            with self.assertRaisesRegex(ValueError,'kernel timestamps'):assay._prepare_reset()
+        self.assertEqual(assay.last_activity['phase'],'reset_calibration')
+        self.assertEqual(assay.last_activity['activity'],raw)
+
+    def test_timestamp_is_registered_once_before_any_activity_enable(self):
+        import open_cake_ir.evaluation.metax_activity as activity
+        calls=[]
+        class Function:
+            def __init__(self,name):self.name=name
+            def __call__(self,*args):
+                calls.append(self.name)
+                if self.name=='mcptiGetVersion':args[0]._obj.value=18
+                if self.name=='mcptiActivityRegisterTimestampCallback':
+                    self.callback=args[0]
+                    if self.callback()<=0:raise AssertionError('invalid registered time')
+                return 0
+        class API:
+            def __init__(self):self.functions={}
+            def __getattr__(self,name):return self.functions.setdefault(name,Function(name))
+        with tempfile.TemporaryDirectory() as directory:
+            library=Path(directory).resolve()/'libmcpti.so';library.write_bytes(b'CPU fixture only')
+            api=API()
+            with patch.object(activity,'_COLLECTOR',None),patch.object(activity.C,'CDLL',return_value=api):
+                callback=activity._Timestamp(lambda:1)
+                collector=activity.McptiActivity(str(library),timestamp_callback=callback,timestamp_source='CPU fixture clock')
+                self.assertTrue(collector._ready)
+                self.assertEqual(calls,['mcptiGetVersion','mcptiActivityRegisterCallbacks','mcptiActivityRegisterTimestampCallback'])
+                self.assertIs(api.functions['mcptiActivityRegisterTimestampCallback'].callback,collector._timestamp_callback)
+                self.assertEqual(collector._timestamp_source,'CPU fixture clock')
+                with self.assertRaisesRegex(ValueError,'cannot reuse a diagnostic clock'):
+                    activity.activity_collector(str(library))
+                with self.assertRaisesRegex(RuntimeError,'process owner'):activity.McptiActivity(str(library))

@@ -5,6 +5,7 @@ import ast
 import copy
 import itertools
 import json
+import math
 import operator
 import unittest
 from pathlib import Path
@@ -170,8 +171,11 @@ class _Tile:
     def __mul__(self, x): return self.binary(x, operator.mul)
     __rmul__ = __mul__
     def __sub__(self, x): return self.binary(x, operator.sub)
+    def __truediv__(self, x): return self.binary(x, operator.truediv)
+    def __rtruediv__(self, x): return self.binary(x, lambda a,b: b/a)
     def __lt__(self, x): return self.binary(x, operator.lt)
     def __eq__(self, x): return self.binary(x, operator.eq)
+    def __ne__(self, x): return self.binary(x, operator.ne)
     def __and__(self, x): return self.binary(x, operator.and_)
     def __or__(self, x): return self.binary(x, operator.or_)
     def to(self, dtype): return self
@@ -194,6 +198,7 @@ class _TL:
     float32 = object()
     int32 = object()
     range = staticmethod(lambda *args, **kwargs: range(*args))
+    static_range = staticmethod(range)
     arange = staticmethod(lambda start, stop: _Tile((stop-start,), range(start, stop)))
     full = staticmethod(lambda shape, value, dtype: _Tile(shape, itertools.repeat(value, _size(shape))))
     zeros = staticmethod(lambda shape, dtype: _TL.full(shape, 0, dtype))
@@ -258,6 +263,11 @@ class _TL:
                 pointer.memory[offset] = value
 
     @staticmethod
+    def broadcast_to(a, shape):
+        # Reference broadcasting, independent of the emitter's axis spelling.
+        return a.binary(_Tile(tuple(shape), [None] * _size(shape)), lambda value, _: value)
+
+    @staticmethod
     def trans(a):
         m, n = a.shape
         return _Tile((n, m), [a.at((i, j)) for j in range(n) for i in range(m)])
@@ -269,6 +279,13 @@ class _TL:
         assert k == kb
         return _Tile((m, n), [sum(a.at((i, t)) * b.at((t, j)) for t in range(k))
                               for i in range(m) for j in range(n)])
+
+    @staticmethod
+    def exp(a):
+        def hardware_exp(value):
+            try:return math.exp(value)
+            except OverflowError:return float('inf')
+        return _Tile(a.shape, map(hardware_exp, a.values))
 
     @staticmethod
     def sum(a, axis):
@@ -493,10 +510,12 @@ class TritonLoopScopesTest(unittest.TestCase):
         d["access_maps"][0]["indices"].reverse()
         self.preflight_refuse(d, "TRITON_MMA_ANCESTOR_CARRY")
 
-    def test_sibling_deeper_and_dynamic_nests_remain_explicitly_refused(self):
+    def test_invalid_sibling_scope_deeper_and_dynamic_nests_remain_refused(self):
         d = _gemm()
         d["tile_loops"][1]["body"].remove("k_loop")
-        self.preflight_refuse(d, "TRITON_LOOP_NEST_UNSUPPORTED")
+        # Sibling loops are now a supported emission shape. This former borrowed
+        # backend block must be owned by the actual invalid cross-loop coordinate.
+        self.refuse(d, "ACCESS_LOOP_SCOPE")
         d = _gemm()
         third = copy.deepcopy(d["tile_loops"][1])
         third.update(name="third", iterator="third_i", body=["m_loop"])

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+from threading import Barrier, Event, Lock
 import unittest
 
 from open_cake_ir.tasks import devices
@@ -109,7 +110,7 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         with patch.object(matrix.subprocess, "run", side_effect=run):
             self.assertEqual(matrix.main(self.args("rmsnorm", "layernorm")), 1)
         self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[0][calls[0].index('--token-budget')+1], '3000000')
+        self.assertNotIn('--token-budget', calls[0])
         self.assertEqual(calls[0][calls[0].index('--turns')+1], '32')
         self.assertEqual(calls[0][calls[0].index('--wall-seconds')+1], '28800')
         self.assertNotIn("--qualification", calls[0])
@@ -147,6 +148,106 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         terminal=json.loads((self.root/'terminal.json').read_text())
         self.assertEqual(terminal['status'], 'stopped_before_provider_qualification')
         self.assertEqual(terminal['task_count_attempted'], 1)
+
+    def test_parallel_tasks_overlap_after_one_preflight_and_preserve_every_result(self):
+        tasks = ('rmsnorm', 'layernorm', 'softmax')
+        barrier, lock = Barrier(3), Lock()
+        preparations, calls = [], []
+        def run(command, **kwargs):
+            workspace = Path(command[command.index('--workspace') + 1])
+            workspace.mkdir(parents=True)
+            task = command[command.index('--task') + 1]
+            if '--baseline-only' in command:
+                (workspace / 'prepared-baseline.json').write_text('{}')
+                with lock: preparations.append(task)
+                return subprocess.CompletedProcess(command, 0, b'prepared', b'')
+            self.assertEqual(set(preparations), set(tasks))
+            if '--preflight-only' in command:
+                (workspace / 'provider-qualification.json').write_text('{}')
+                (workspace / 'provider-anchor.json').write_text('{}')
+                return subprocess.CompletedProcess(command, 0, b'qualified', b'')
+            self.assertIn('--qualification', command)
+            self.assertEqual(command[command.index('--qualification') + 1],
+                             str(self.root / 'provider-preflight/provider-qualification.json'))
+            self.assertEqual(command[command.index('--turns') + 1], '20')
+            self.assertEqual(command[command.index('--wall-seconds') + 1], '28800')
+            self.assertNotIn('--token-budget', command)
+            with lock: calls.append(task)
+            barrier.wait(timeout=5)  # All three task processes must start before any returns.
+            return subprocess.CompletedProcess(command, int(task == 'layernorm'),
+                                               task.encode(), b'fault' if task == 'layernorm' else b'')
+        with patch.object(matrix.subprocess, 'run', side_effect=run):
+            self.assertEqual(matrix.main(self.args(*tasks) + [
+                '--parallel-tasks', '3', '--local-queue-seconds', '1200', '--turns', '20']), 1)
+        self.assertEqual(set(calls), set(tasks))
+        rows = [json.loads(line) for line in (self.root / 'task-results.jsonl').read_text().splitlines()]
+        self.assertEqual({r['task']: r['position'] for r in rows},
+                         dict(zip(tasks, (1, 2, 3))))
+        self.assertTrue(all(r['qualification_reused'] for r in rows))
+        self.assertEqual((self.root / 'layernorm.stdout').read_bytes(), b'layernorm')
+        self.assertEqual(json.loads((self.root / 'terminal.json').read_text())['task_fault_count'], 1)
+
+    def test_parallel_host_slots_are_bounded_and_refilled_after_completion(self):
+        entered, release = Barrier(3), Event()
+        lock = Lock()
+        active = maximum = 0
+        def job(value):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            if value < 3: entered.wait(timeout=5)
+            with lock: active -= 1
+            return value
+        results = list(matrix._bounded_map(range(9), job, 3, release))
+        self.assertEqual(set(results), set(range(9)))
+        self.assertEqual(maximum, 3)
+
+    def test_parallel_preflight_failure_starts_no_optimization_run(self):
+        optimized = []
+        def run(command, **kwargs):
+            workspace = Path(command[command.index('--workspace') + 1])
+            workspace.mkdir(parents=True)
+            if '--baseline-only' in command:
+                (workspace / 'prepared-baseline.json').write_text('{}')
+                return subprocess.CompletedProcess(command, 0, b'', b'')
+            if '--preflight-only' in command:
+                return subprocess.CompletedProcess(command, 1, b'', b'qualification refused')
+            optimized.append(command)
+            raise AssertionError('optimization before qualification')
+        with patch.object(matrix.subprocess, 'run', side_effect=run):
+            self.assertEqual(matrix.main(self.args('rmsnorm', 'layernorm') + [
+                '--parallel-tasks', '2', '--local-queue-seconds', '1200']), 1)
+        self.assertEqual(optimized, [])
+        terminal = json.loads((self.root / 'terminal.json').read_text())
+        self.assertEqual(terminal['task_count_attempted'], 0)
+        self.assertEqual(terminal['status'], 'stopped_before_provider_qualification')
+
+    def test_parallel_local_tasks_refuse_zero_queue_before_creating_inputs(self):
+        with self.assertRaises(SystemExit), patch.object(matrix.subprocess, 'run') as run:
+            matrix.main(self.args('rmsnorm') + ['--parallel-tasks', '2'])
+        run.assert_not_called()
+        self.assertFalse(self.root.exists())
+
+    def test_supplied_qualification_is_reused_without_another_provider_preflight(self):
+        receipt, anchor = self.root.parent / 'receipt.json', self.root.parent / 'anchor.json'
+        receipt.write_text('{}'); anchor.write_text('{}')
+        calls = []
+        def run(command, **kwargs):
+            workspace = Path(command[command.index('--workspace') + 1])
+            workspace.mkdir(parents=True)
+            if '--baseline-only' in command:
+                (workspace / 'prepared-baseline.json').write_text('{}')
+            else:
+                self.assertNotIn('--preflight-only', command)
+                self.assertEqual(command[command.index('--qualification') + 1], str(receipt))
+                calls.append(command)
+            return subprocess.CompletedProcess(command, 0, b'', b'')
+        with patch.object(matrix.subprocess, 'run', side_effect=run):
+            self.assertEqual(matrix.main(self.args('rmsnorm', 'layernorm') + [
+                '--parallel-tasks', '2', '--local-queue-seconds', '1200',
+                '--qualification', str(receipt), '--qualification-anchor', str(anchor)]), 0)
+        self.assertEqual(len(calls), 2)
 
     def test_duplicate_task_selection_refuses_before_creating_the_root(self):
         with self.assertRaises(SystemExit), patch.object(matrix.subprocess, "run") as run:

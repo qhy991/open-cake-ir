@@ -166,7 +166,8 @@ def _scientific_analysis_plan_version(
 
     analysis = analysis_without_endpoint_policy(analysis)
     for arm in ("native_triton", "native_cute_dsl"):
-        if analysis == native_optimization_analysis_plan(arm):
+        if analysis in (native_optimization_analysis_plan(arm),
+                        native_optimization_analysis_plan(arm, python_only=True)):
             return native_backend(arm).analysis_version
     if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
         return "two_part_v2"
