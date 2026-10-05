@@ -123,9 +123,15 @@ def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
             seen[identity] = audit.terminal_seal_sha256
             authority = json.loads((run_path / "authority.json").read_text())["authority"]
             execution = authority.get("execution", {})
-            resolved = authority.get("resolved_inputs", {})
+            # A current Run stores its policy directly. Historical Campaign
+            # archives retain the same fact inside resolved_inputs.
+            resolved = authority.get("resolved_inputs", authority)
             if not isinstance(execution, dict) or not isinstance(resolved, dict):
-                raise ValueError("diagnosis summary Campaign authority differs")
+                raise ValueError("diagnosis summary authority differs")
+            if (resolved is not authority and "evidence_policy" in authority
+                    and canonical_json_bytes(authority["evidence_policy"])
+                    != canonical_json_bytes(resolved.get("evidence_policy"))):
+                raise ValueError("diagnosis summary has conflicting retained evidence policies")
             provenance = {"executor_revision": execution.get("executor_revision"),
                           "evidence_policy": resolved.get("evidence_policy")}
             if not isinstance(provenance["executor_revision"], dict) or not isinstance(provenance["evidence_policy"], dict):
