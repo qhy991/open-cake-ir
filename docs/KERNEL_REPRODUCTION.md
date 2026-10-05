@@ -2,7 +2,9 @@
 
 任务规范只有一个来源：[AGENTS.md](../contracts/scaffolds/kernel-reproduction/AGENTS.md)。
 它要求 Agent 自主拆解参考实现、建立结构对应、选择候选、诊断缺口归属，并提出或执行
-其权限范围内的 Compiler 演进。研究者不需要逐次决定失败属于 IR、后端还是候选。
+其权限范围内的 Compiler 演进。Cake 探索与 lowering 假设要求也由该规范维护：
+作者需结合已交付 API、候选结构和可见低层证据判断下一步，不能把 starter 当作表达能力上限。
+研究者不需要逐次决定失败属于 IR、后端还是候选。
 
 可移植任务集合与 CAKE 原框架能力评估见
 [改写任务包](../experiments/flashinfer_rewrites/README.md)。其中 027–030 对应论文的
@@ -110,6 +112,35 @@ CUDA 工程、注册新 Workload 或将外部源码编译为测量基线。管�
 管理整个实验的 Agent 也应在初始任务输入中读取同一规范。该 Agent 可在运行之外准备
 参考、整理 Finding、修改代码并验证；冻结 Run 内的作者仍只写 candidate envelope。
 这份规范没有创建后台管理进程，也没有让受限作者获得修改 Compiler 的工具。
+
+## 低层代码怎样进入任务
+
+规范要求分别判断 Cake 表达、lowering 实现与设备收益。冻结输入时，管理 Agent 应列明
+作者实际能看到的材料层级、来源、目标和候选归属。当前 `lab/feedback.py` 的 Ralph 反馈
+交付诊断、正确性、计时和 profile，**不交付生成源码或 artifact 正文**。因此绑定本规范
+能要求 Cake 探索，但不能单靠提示词让作者检查生成代码。维护者在 Run 外读到源码，也
+不构成作者利用源码的行为证据；需要源码交付的研究应先完成后继 Lab 投影与回放验证。
+
+Metal 的几个层级不可混称：
+
+| 层级 | Metal 对应物 | 任务中的用途与限制 |
+| --- | --- | --- |
+| 生成源码 | Metal Shading Language（MSL，`.metal`） | 对照 Cake 的 work mapping、访存、归约与算术；属于 CUDA C++ 一类的源码层 |
+| 编译器中间表示 | Metal IR；离线流程可使用 `.air` 文件 | 在编译链位置上可类比 PTX，但不能据此假定有同等的文本 ISA、手写或检查接口 |
+| 目标机器指令 | GPU-specific binary 中的 Apple GPU 指令 | 只有精确工具链实际提供且能解释的证据才能支持指令层结论；二进制容器不是可读反汇编 |
+
+上述是层级类比，不是格式或能力等价。Apple 描述了
+[MSL → Metal IR → GPU-specific binary](https://developer.apple.com/documentation/metal/metal-libraries)
+的编译过程；其[离线工具说明](https://developer.apple.com/library/archive/documentation/Miscellaneous/Conceptual/MetalProgrammingGuide/Dev-Technique/Dev-Technique.html)
+说明 `.air` 保存 IR。NVIDIA 将 [PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/)
+定义为虚拟 ISA。不要将 MSL 命名为“Metal PTX”。
+
+当前 Cake Metal builder 留存 `lowered_source` 和 `metal_binary_archive`，通过运行时
+`MTLDevice.makeLibrary` 构建，没有向作者提供 AIR 或机器指令检查通道。
+`Compiler.lower` 的 operation source map 是后续区域对应的入口；新交付应复用既有
+candidate/artifact 身份、保留作者收到的实际内容并独立回放。缺失证据保持 unknown，
+不能从 logical slots 或 timestamp profile 补出寄存器、spill、occupancy 或指令事实。
+修改源码可见性属于 authoring treatment 变更，须绑定后继 Run；参考访问与工具权限仍适用。
 
 ## 结果与验证
 
