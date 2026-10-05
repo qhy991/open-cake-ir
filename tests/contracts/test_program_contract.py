@@ -68,7 +68,7 @@ class ProgramContractTest(unittest.TestCase):
         self.assertEqual(program.program_id, successor["program_id"])
         self.assertNotEqual(successor["program_id"], previous["program_id"])
         v4 = ROOT / "contracts/programs/qsa-prefill-t32768-v4.json"
-        with self.assertRaisesRegex(ValueError, "lowering source differs"):
+        with self.assertRaisesRegex(ValueError, "lowering differs"):
             ProgramContract.load(ROOT, v4, self.compiler)
         successor["program_id"] = previous["program_id"]
         for old_node, new_node in zip(previous["nodes"], successor["nodes"]):
