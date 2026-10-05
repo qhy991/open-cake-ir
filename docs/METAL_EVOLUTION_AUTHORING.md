@@ -1,6 +1,6 @@
 # Metal 演进实验：TASK.md / AGENTS.md 与 Run 后提炼
 
-状态：平台规划已合入 `metal@f619a6d3`；演进文本 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
+状态：平台规划及技能观察边界已合入 `metal@229c1293`；演进文本 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。
 
@@ -25,7 +25,7 @@ metal-evolution/
     TASK.md AGENTS.md experiment.json
     cells/rmsnorm-c0-r01/           # 每个 cell 独立材料快照
       TASK.md AGENTS.md scaffold.md
-      references/
+      references/ author-skills.tar  # 包为后继策略的可选材料
     cells/softmax-c0-r01/
       TASK.md AGENTS.md scaffold.md
       references/
@@ -39,6 +39,7 @@ metal-evolution/
       qualification-workspace-author-home/
       actors/<run-id>/             # Lab 生成的作者 TASK/AGENTS 与候选
       actors/.codex-homes/<run-id>/ # 私有状态/凭据，不进入报告
+      actors/.user-homes/<run-id>/  # 技能包后继的私有 HOME；正式使用仍待资格
       builds/ baseline/ infra-evaluations/
       run-evidence/ report.json
   rmsnorm/C0/r02/                   # 新 Run，不能复用 r01 的可写状态
@@ -97,12 +98,24 @@ context，已见 `host_skills.instructions` 与 `world_state.host_skills.body` �
 
 最小后继应沿现有 `author_home` / `ProviderInvocation` / qualification owner：为每 Run
 绑定私有用户 HOME 与明确技能包，initial/resume 使用相同绑定，保留既有独立
-CODEX_HOME；旧 auth-only 策略不改，也不把 user skills 塞入其禁止的位置。技能脚本、
-引用资源、依赖和工具权限须显式声明，不自动安装插件或授予执行权。祖先、admin、system
-和插件来源仍需检查；发现未知来源、重复/缺失技能或漂移时拒绝。先建立同一次 exec 的
-实际 catalog / 上下文来源观测，再实现并验证此策略；目前已有 retained context 的观察入口，
-尚未验证它与实际请求及 resume 的关系，不能用旁路进程补出“隔离通过”。这项条件未满足时，继续准备和验证已审阅的任务
-材料投递，并明确原生技能环境未验收；不把它计为完成用户要求的独立 skill 环境。
+CODEX_HOME；旧 auth-only 策略不改，也不把 user skills 塞入其禁止的位置。完整包保留原生
+SKILL.md、脚本、引用资料和二进制资源，依赖说明继续由技能自身文档持有，不新增另一种
+依赖清单语言；文件投递不自动安装依赖、插件或授予工具权限。允许先完成包绑定、投递、
+漂移拒绝与 fixture 证据重建的软件实现和 CPU 检查；真正启用此策略仍须同一次 exec 的实际 catalog /
+输入观测以及独立 qualification，旧 auth-only 收据不能放行。
+祖先、admin、system 和插件来源仍需检查；发现未知来源、重复/缺失技能或漂移时拒绝。
+目前已有 retained context 的观察入口，尚未验证它与实际请求及 resume 的关系，不能用旁路
+进程补出“隔离通过”。实现完成、CPU 检查通过、原生输入资格、模型实际使用和设备收益
+分别报告；前两项不计为已经完成用户要求的独立 skill 环境。
+
+通用软件后继已提交为 [PR #325](https://github.com/qhy991/open-cake-ir/pull/325)，当前待完整
+CI 与 main 集成。固定 `8a937973` 的 31 项技能测试及 33 项管理器测试通过；本机没有 ruff，
+完整证据资格 fixture 交 CI，未安装工具或修改环境。现有材料入口接纳完整原生 tar 包，
+v2 cell 保存并发送自己的快照；两个私有 home、初次/续轮绑定和漂移检查沿用 Lab owner。
+实现将在 fixture qualification 中保留原包并支持重建投影；该完整证据 fixture 的运行结果待 CI。
+正式 Run/Campaign/回放仍明确拒绝新策略。
+使用方法和准确边界由共享 `docs/KERNEL_REPRODUCTION.md` 持有，平台不复制实现。
+本地结果见 `native-skill-preparation-8a937973/report.json`，不替代上面的原生输入验收。
 
 技能资格的最小验收步骤：
 
