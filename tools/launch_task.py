@@ -23,7 +23,7 @@ from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
-from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
+from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, verify_auth_source
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.incumbents import TaskIncumbentRegistry, admit_baseline_selection
 from open_cake_ir.lab.build import TritonToolchainBuilder
@@ -326,7 +326,7 @@ def _admit_allocator(runtime) -> None:
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
                     kernelctl=None, infra_socket=None, auth_source=None,
-                    local_device=None, local_queue_seconds=0):
+                    local_device=None, local_queue_seconds=0, local_lock_scope="user"):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -335,7 +335,7 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     refused every DCU launch for lacking a CUDA cluster allocator it has no use for.
     """
     from open_cake_ir.evaluation.source_bootstrap import module_command
-    if (local_device is not None or local_queue_seconds != 0) and (allocation != 'local_broker' or kernelctl is not None):
+    if (local_device is not None or local_queue_seconds != 0 or local_lock_scope != "user") and (allocation != 'local_broker' or kernelctl is not None):
         raise ValueError('local device selection and queue require the local broker allocation')
     python = executor.document["host_environment"]["python"]["invocation_path"]
     if kernelctl is not None:
@@ -372,6 +372,10 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
                                      "--worker-module", "open_cake_ir.tasks.evaluate")
         from open_cake_ir.evaluation.local_broker import _selection_environment
         _selection_environment(local_kind, local_device)
+        if local_lock_scope not in {'user', 'device'} or (local_lock_scope == 'device' and local_device is None):
+            raise ValueError('device lock scope requires an explicit local device')
+        if local_lock_scope != 'user':
+            command.extend(('--local-lock-scope', local_lock_scope))
         if local_device is not None:
             command.extend(('--local-device', str(local_device)))
         if local_queue_seconds != 0:
@@ -424,7 +428,7 @@ def _admit_local_allocator(runtime, executor, target, workspace):
         'open_cake_ir.evaluation.local_broker', '--kind', 'maca', '--probe-target', target,
         '--runtime-library', host['runtime_library'], '--output', str(output))
     wait = 0.0
-    for flag in ('--local-device', '--local-queue-seconds'):
+    for flag in ('--local-device', '--local-queue-seconds', '--local-lock-scope'):
         if flag in broker['command']:
             value = broker['command'][broker['command'].index(flag) + 1]
             command.extend((flag, value))
@@ -487,8 +491,12 @@ def _qualify(root, workspace, args, executable, source_path):
                     PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
                     else PYTHON_CANDIDATE_BUNDLE_V1))
     if args.harness == 'codex':
-        command.extend(('--author-home-policy', ISOLATED_AUTH_ONLY_V1,
+        skill_package = getattr(args, 'author_skill_package', None)
+        command.extend(('--author-home-policy',
+                        ISOLATED_SKILL_PACKAGE_V1 if skill_package is not None else ISOLATED_AUTH_ONLY_V1,
                         '--auth-source', str(args.auth_source)))
+        if skill_package is not None:
+            command.extend(('--author-skill-package', str(skill_package)))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -547,6 +555,8 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--author-skill-package', type=Path,
+                        help='controlled native skill package for a private Codex HOME; live discovery and delivery remain unqualified')
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
                         default='known_kernel_reproduction',
                         help='clean_start is reserved until provider read isolation is qualified')
@@ -555,6 +565,7 @@ def main(argv=None) -> int:
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument('--local-device', type=int, help='physical device ordinal selected by the existing local broker')
+    parser.add_argument('--local-lock-scope', choices=('user', 'device'), default='user')
     parser.add_argument('--local-queue-seconds', type=float, default=0, help='bounded wait for the existing local lock; no lease held while waiting')
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
@@ -604,6 +615,11 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if args.author_skill_package is not None:
+        if args.harness != 'codex' or args.reference_access != 'known_kernel_reproduction':
+            parser.error('--author-skill-package requires Codex known-kernel authoring')
+        if not args.baseline_only:
+            parser.error('native skill discovery and delivery on initial/resume are not verified; refusing formal qualification or launch')
     if args.local_device is not None and args.local_device < 0:
         parser.error('--local-device must be nonnegative')
     if args.local_queue_seconds < 0 or not math.isfinite(args.local_queue_seconds):
@@ -658,7 +674,8 @@ def main(argv=None) -> int:
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
-        source_file=args.source_file, generated_source_feedback=args.generated_source_feedback)
+        source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
+        native_skill_package=args.author_skill_package)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     if args.harness != 'codex' and args.auth_source is not None:
         raise ValueError('--auth-source applies only to the Codex harness')
@@ -676,7 +693,7 @@ def main(argv=None) -> int:
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
                                kernelctl=args.kernelctl, infra_socket=args.infra_socket,
                                auth_source=auth_source, local_device=args.local_device,
-                               local_queue_seconds=args.local_queue_seconds))
+                               local_queue_seconds=args.local_queue_seconds, local_lock_scope=args.local_lock_scope))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for

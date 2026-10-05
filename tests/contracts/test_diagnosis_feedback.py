@@ -239,6 +239,36 @@ class CompilerDiagnosisOwnershipTests(unittest.TestCase):
             self.assertIn('expressible',route.reason)
 
 class DiagnosisSummaryTests(unittest.TestCase):
+    def test_missing_malformed_or_conflicting_policies_are_not_substituted(self):
+        import os
+        import tempfile
+        from hashlib import sha256
+        from open_cake_ir.evidence import EvidenceStore
+        from open_cake_ir.serialization import canonical_json_bytes
+        from tools.summarize_diagnoses import summarize
+        policy = {"event_vocabulary": "current-fixture"}
+        cases = [
+            ({"evidence_policy": {"schema_version": True}, "resolved_inputs": {"evidence_policy": {"schema_version": 1}}}, "conflicting"),
+            ({"evidence_policy": policy, "resolved_inputs": {"evidence_policy": {"event_vocabulary": "other"}}}, "conflicting"),
+            ({"evidence_policy": None, "resolved_inputs": {"evidence_policy": policy}}, "conflicting"),
+            ({"evidence_policy": policy, "resolved_inputs": None}, "authority differs"),
+            ({}, "requires retained Executor and evidence policy"),
+            ({"evidence_policy": []}, "requires retained Executor and evidence policy"),
+        ]
+        for values, expected in cases:
+            with self.subTest(values=values), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                with patch.dict(os.environ, {"OPEN_CAKE_CUSTODY_DIRECTORY": str(root / "registry")}):
+                    store = EvidenceStore.create(root / "evidence")
+                    authority = {"run_id": "fixture-run", "execution": {
+                        "executor_revision": {"executor_id": "fixture-executor"}}, **values}
+                    run = store.start_run("fixture-run", authority=authority,
+                        authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
+                    run.seal(protocol_adherence="adhered", endpoint_observation="observed",
+                             endpoint={"kind": "archive-reader-fixture"})
+                    with self.assertRaisesRegex(ValueError, expected):
+                        summarize([store.root], compiler_gaps=True)
+
     def test_transform_refusals_keep_permissions_guards_and_source_locators_separate(self):
         import os
         import shutil
@@ -295,10 +325,10 @@ class DiagnosisSummaryTests(unittest.TestCase):
             root = Path(directory).resolve()
             with patch.dict(os.environ, {'OPEN_CAKE_CUSTODY_DIRECTORY': str(root / 'registry')}):
                 store = EvidenceStore.create(root / 'evidence')
-                authority = {'campaign_id': 'fixture-transform-reader', 'execution': {
+                authority = {'execution': {
                     'executor_revision': {'executor_id': 'fixture-source'}},
                     'reference_inputs': {'baseline_programs': {'starter/a~b': program.document}},
-                    'resolved_inputs': {'evidence_policy': {'event_vocabulary': 'fixture'}}}
+                    'run_id': 'open_cake-1', 'evidence_policy': {'event_vocabulary': 'fixture'}}
                 run = store.start_run('open_cake-1', authority=authority,
                     authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
                 obj = store.put(program_bytes, media_type='application/json')
@@ -382,6 +412,10 @@ class DiagnosisSummaryTests(unittest.TestCase):
                     authority = {"campaign_id": f"fixture-{index}", "execution": {
                         "executor_revision": {"executor_id": f"fixture-executor-{index}"}},
                         "resolved_inputs": {"evidence_policy": {"event_vocabulary": f"fixture-{index}"}}}
+                    if index == 0:
+                        authority.pop("campaign_id")
+                        authority["run_id"] = "direct_cuda-1"
+                        authority["evidence_policy"] = authority.pop("resolved_inputs")["evidence_policy"]
                     run = store.start_run("direct_cuda-1", authority=authority,
                         authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
                     run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "a" * 64,

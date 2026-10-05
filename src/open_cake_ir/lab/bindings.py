@@ -148,12 +148,13 @@ def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anch
     """Resolve the CLI provider's existing qualification into one authoring value."""
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
     from .provider_policy import provider_harness
-    from .author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
+    from .author_home import CODEX_HOME_POLICIES, verify_auth_source, require_live_skill_qualification
+    require_live_skill_qualification(provider.get('author_home_policy'))
     harness = provider_harness(provider)
     if harness not in {'codex','claude-code'}:
         raise ValueError('CLI task preparation requires a CLI provider')
     config = load_runtime_config(runtime_path,toolchain_kind=row.runtime_kind)
-    isolated = provider.get('author_home_policy') == ISOLATED_AUTH_ONLY_V1
+    isolated = provider.get('author_home_policy') in CODEX_HOME_POLICIES
     auth_source = config['provider'].get('auth_source')
     if isolated != (auth_source is not None):
         raise ValueError('runtime Codex credential source differs from author home policy')
