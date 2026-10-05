@@ -143,9 +143,10 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
             assessment = compiler.assess(json.loads(stage.schedule_bytes))
             if not assessment.lowering_eligible:
                 blocking = [f for f in assessment.findings if f.blocks_lowering or f.blocks_acceptance]
-                if (transformation == 'specialize_squared_difference' and stage.name == parameters['stage']
+                if (transformation in {'specialize_squared_difference', 'tile_pointwise_outputs'}
+                    and stage.name == parameters['stage'] and assessment.accepted
                     and blocking and all(f.code == 'TRITON_ARANGE_RANGE_UNSUPPORTED' for f in blocking)):
-                    # The joint pass can replace non-power-of-two vector extents
+                    # These passes can replace non-power-of-two vector extents
                     # with masked tiles. Its guard and final assessment still own
                     # the selected candidate; unrelated input refusals stay intact.
                     continue
