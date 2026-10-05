@@ -217,19 +217,26 @@ class GeneratedSourceTests(unittest.TestCase):
 
     def test_single_stage_program_keeps_authored_stage_identity(self):
         from open_cake_ir.compiler import Program
+        from open_cake_ir.evaluation.program import single_kernel_lowering
+        from open_cake_ir.tasks.workloads import create_task
         from tests.contracts.test_program_evaluation import ProgramEvaluationTests, workload_for
-        from tests.contracts.test_program_rewrites import epilogue_program
-        rewritten = self.compiler.rewrite_program(Program.from_dict(epilogue_program()),
-            'fuse_pointwise_epilogue', {'producer': 'producer', 'epilogue': 'epilogue',
-                                       'schedule_id': 'fused', 'entry_point': 'fused'})
-        program = rewritten.program
+        _, source = create_task('softsign', backend='triton-b200', rows=2, columns=32)
+        document = Program.from_schedule(frontend.parse(source).document).document
+        document['program_id'] = 'source-inspection-program'
+        document['stages'][0]['name'] = 'authored-source-stage'
+        program = Program.from_dict(document)
+        # A fused single stage can retain nonidentity public bindings and still
+        # require Program execution. This fixture actually uses the kernel ABI.
+        self.assertIsNotNone(single_kernel_lowering(self.compiler.lower_program(program)))
         candidate, _, _ = ProgramEvaluationTests.build(self, program.document)
         self.assertFalse(candidate.is_program)
         authored = canonical_json_bytes(program.document)
         verified = self.replay_artifact(authored, candidate, workload_for(program),
                                        authority({'backend': 'triton', 'entry_point': 'starter'}))
         view, _ = source_views(sealed_sources(verified, authored), MAX_TURN_SOURCE_BYTES)
-        self.assertEqual([row['stage_id'] for row in view['stages']], [program.stages[0].name])
+        self.assertEqual([row['stage_id'] for row in view['stages']], ['authored-source-stage'])
+        self.assertNotEqual(program.program_id, program.stages[0].name)
+        self.assertNotEqual(view['stages'][0]['route']['entry_point'], program.stages[0].name)
         self.assertEqual(view['stages'][0]['source'].encode(), candidate.artifact_payloads['lowered_source'])
 
     def feedback_fixture(self):
