@@ -410,3 +410,18 @@ replay entry gates remain closed while their end-to-end integration is unfinishe
 This admission component is not authorization to start a native-skill Run. Actual
 model qualification, zero-turn/initial-fault entrances and runtime credential ordering
 remain separate acceptance work; no fixture archive establishes a real model capability.
+
+For native-skill qualification, each schema-2 experiment cell declares
+`native_skill_names` alongside `author_skill_package`. These are exact native names,
+not package directory names. The manager snapshots the selection in the cell's TASK
+and experiment input, transports only that cell's names/package, and passes repeated
+`--native-skill-name` arguments through `launch_task` to the qualifier. Local and SSH
+node transport use the same pure selection validator before creating inputs or starting
+a process. No frontmatter parser or native-name guess is introduced.
+
+This completes selection transport, not live enablement. The live guards remain
+closed. Runtime integration must check any requested selection against the retained
+qualification when reusing an existing receipt; a matching package alone does not
+establish that a different named body's delivery was observed. Existing prepared native
+experiments without an explicit selection remain at their original source commit; use
+a new prepared experiment for this successor interface.
