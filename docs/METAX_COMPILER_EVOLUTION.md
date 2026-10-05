@@ -131,7 +131,8 @@ Compiler 和其他控制；不能把 Compiler 版本伪装成某个 E/P 组。�
 准入的修正与测试，再分别冻结 C0/C1 批次及关联报告。现有
 [`admit_paired_baseline_artifact`](../src/open_cake_ir/lab/admission.py) 在各入口统一检查
 封存 bundle 的身份、精确 Target、Workload ABI 与选择策略。`explicit_fixed_bundle`
-保留 C0 产物，不要求匹配 C1 starter 的源码或 launch；`starter_reference` 仍要求匹配
+在 MetaX、HSACO 和 Metal 路径保留 C0 产物，不要求匹配 C1 starter 的源码或 launch；
+显式 CUBIN 尚无独立产物 ABI 证明，保留原源码、launch 和参数检查。`starter_reference` 仍要求匹配
 当前 lowering。MetaX/HSACO 显式基线继续检查原生架构和隐藏参数。软件准入不授予后继环境
 的设备或测量资格，也不授予作者参考实现权限。已有独立 Run/结果记录仍是执行与证据所有者。
 

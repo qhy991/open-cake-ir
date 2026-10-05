@@ -11,6 +11,7 @@ import unittest
 
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.target import Target
+from open_cake_ir.compiler.reduction_tiling import tile_squared_difference_outputs
 from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract
 from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation.paired import candidate_identity
@@ -86,8 +87,8 @@ class FixedEvolutionBaselineTests(unittest.TestCase):
     def test_c0_bundle_survives_changed_emission_only_under_explicit_selection(self):
         # Two actual legal emissions model the changed starter output of a successor
         # Compiler. The old executable bundle and its identity remain unchanged.
-        rewritten = self.compiler.tile_squared_difference_outputs(
-            self.schedule, output_tile=4, schedule_id='successor_mapping',
+        rewritten = tile_squared_difference_outputs(
+            self.compiler, self.schedule, output_tile=4, schedule_id='successor_mapping',
             entry_point=self.lowering.route.entry_point)
         self.assertTrue(rewritten.applied, rewritten.message)
         successor = self.compiler.lower(rewritten.assessment)
@@ -158,3 +159,53 @@ class FixedEvolutionBaselineTests(unittest.TestCase):
         execution['fixed_baseline']['bundle_path'] = str(alias)
         with self.assertRaisesRegex(ValueError, 'custody differs'):
             self.validate(execution, None)
+
+    def test_explicit_cubin_keeps_source_launch_and_abi_checks(self):
+        workload = WorkloadContract(workload_document(
+            'pairwise_sqdist', rows=64, depth=256, columns=32, backend='triton-b200'))
+        schedule = frontend.parse(starter_source(workload)).document
+        lowering = self.compiler.lower(self.compiler.assess(schedule))
+        requirements = lowering.toolchain_requirements
+        target = Target.load(ROOT / 'compiler/targets/sm_100a.json')
+        from open_cake_ir.compiler.reduction_tiling import tile_squared_difference_outputs
+        rewritten = tile_squared_difference_outputs(self.compiler, schedule, output_tile=4,
+            schedule_id='cuda_successor_mapping', entry_point=lowering.route.entry_point)
+        self.assertTrue(rewritten.applied, rewritten.message)
+        successor = self.compiler.lower(rewritten.assessment)
+        # Real serialized seals and normal bundle loading; the CPU-only binary
+        # fixture has no executable body. No CUDA device readiness is claimed.
+        for hidden in (0, 2):
+            with self.subTest(hidden=hidden):
+                manifest = TensorLaunchManifest.for_workload(workload, 'primary', target=target.target_id,
+                    kernel_name=lowering.route.entry_point, grid=requirements['grid'],
+                    block=[target.warp_size * requirements['compile_options']['num_warps'], 1, 1],
+                    dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=hidden)
+                payloads = {'lowered_source': lowering.source.encode(),
+                    'cubin': b'\x7fELFcpu-fixture-not-executable',
+                    'launch_manifest': canonical_json_bytes(manifest.as_dict())}
+                candidate = LaunchableCandidate(lowering.schedule_sha256, target.target_id,
+                    manifest.kernel_name, {role: sha256(value).hexdigest() for role, value in payloads.items()},
+                    manifest.canonical_sha256, payloads)
+                path = self.publish(f'cuda-hidden-{hidden}', candidate)
+                execution = self.execution(path=path)
+                for author_route in ('triton', 'cutlass_cute_dsl'):
+                    admitted, independent = admit_paired_baseline_artifact(project_root=ROOT,
+                        workload=workload, evaluation={'case_id': 'primary'}, execution=execution,
+                        route={'backend': author_route})
+                    self.assertFalse(independent)
+                    self.assertEqual(candidate_identity(admitted), candidate_identity(candidate))
+                # A checked current Triton starter still has its original ABI
+                # check. Zero is not a universal CUDA error: it is wrong for
+                # this identified starter, while an independent native/CuTe
+                # artifact needs different evidence before it is admitted.
+                for policy in ('starter_reference', 'explicit_fixed_bundle'):
+                    starter = self.execution(policy=policy, path=path)
+                    with self.assertRaisesRegex(ValueError, 'requires the frozen Compiler lowering'):
+                        self.validate(starter, None, workload=workload)
+                    if hidden == 0:
+                        with self.assertRaisesRegex(ValueError, 'hidden pointer commitments differ'):
+                            self.validate(starter, lowering, workload=workload)
+                    else:
+                        self.validate(starter, lowering, workload=workload)
+                        with self.assertRaisesRegex(ValueError, 'fixed baseline differs from the frozen Compiler'):
+                            self.validate(starter, successor, workload=workload)

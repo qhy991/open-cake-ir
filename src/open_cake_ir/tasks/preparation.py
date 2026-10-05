@@ -11,7 +11,9 @@ from open_cake_ir.lab.bindings import (
     external_file, bind_cli_provider, bind_runtime_execution, bind_fixed_baseline,
     source_reference_path,
 )
-from open_cake_ir.lab.admission import validate_paired_baseline, validate_backend_assay
+from open_cake_ir.lab.admission import (
+    admit_paired_baseline_artifact, validate_paired_baseline, validate_backend_assay,
+)
 from open_cake_ir.lab.python_reference import read_skeleton_reference
 from open_cake_ir.lab.toolchains import toolchain_for
 from open_cake_ir.serialization import canonical_json_bytes
@@ -46,12 +48,13 @@ def prepare_task_run(project_root,inputs,*,compiler_reference,executor,qualifica
     workload = load_workload(workload_path)
     validate_backend_assay(route=authoring['lowering_route'],evaluation=document['evaluation_protocol'],workload=workload,
         attribution_evaluation=document['evaluation_protocol'].get('attribution_evaluation'))
-    selection = document['execution']['fixed_baseline'].get('selection')
-    if selection is not None and (selection['policy'] == 'explicit_fixed_bundle'
-                                  or selection['source'] == 'task_incumbent'):
-        # Run preflight already checked the sealed opponent and its selection.
-        # Re-lowering a C0 baseline with C1 would change the comparison anchor.
-        # This does not establish successor device/measurement qualification.
+    _, independent = admit_paired_baseline_artifact(project_root=root, workload=workload,
+        evaluation=document['evaluation_protocol'], execution=document['execution'],
+        route=authoring['lowering_route'])
+    if independent:
+        # An admitted independent opponent does not need current starter emission.
+        # Explicit CUBIN bundles still use the established source/launch/ABI path
+        # below; the selection label alone does not qualify another binary ABI.
         return specification
     if baseline_source_path is not None:
         from open_cake_ir.compiler import frontend

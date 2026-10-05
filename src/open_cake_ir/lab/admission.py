@@ -215,9 +215,10 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
 def admit_paired_baseline_artifact(*, project_root, workload, evaluation, execution, route):
     """Admit one sealed opponent and its existing selection policy.
 
-    An explicitly fixed bundle is a black-box executable, independent of the current
-    Compiler's starter emission. This software check establishes no device readiness:
-    a successor environment still requires correctness and measurement qualification.
+    Return whether the selected opponent may be independent of current starter
+    emission. CUBIN keeps its existing source/launch/ABI checks with the caller;
+    author route identity is not evidence of an old binary's argument contract.
+    This software check establishes no successor device or measurement readiness.
     """
     fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
     sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
@@ -233,15 +234,18 @@ def admit_paired_baseline_artifact(*, project_root, workload, evaluation, execut
             evaluation_protocol=evaluation,
         )
     explicit = selection is not None and selection['policy'] == 'explicit_fixed_bundle'
-    if explicit and not sealed_baseline.is_program:
-        # Retain the native argument/family checks for the two inspected binary
-        # formats. Their facts come from this Target and this sealed artifact, not
-        # from the successor Compiler's new launch shape or source.
+    independent_explicit = False
+    if explicit:
         from open_cake_ir.compiler.target import CodeObject
         _, target_path = source_reference_path(project_root,
             f'compiler/targets/{workload.target}.json', 'paired baseline target')
         target = Target.load(target_path)
-        if target.code_object in {CodeObject.MCFATBIN, CodeObject.HSACO}:
+        independent_explicit = target.code_object in {
+            CodeObject.MCFATBIN, CodeObject.HSACO, CodeObject.METAL_BINARY_ARCHIVE}
+        # Retain the native argument/family checks for the two inspected binary
+        # formats. Their facts come from this Target and this sealed artifact, not
+        # from the successor Compiler's new launch shape or source.
+        if not sealed_baseline.is_program and target.code_object in {CodeObject.MCFATBIN, CodeObject.HSACO}:
             from open_cake_ir.compiler.backends.triton import target_route_facts
             facts = {'target': target.target_id, **target_route_facts(target)}
             manifest = manifests['baseline']
@@ -254,7 +258,7 @@ def admit_paired_baseline_artifact(*, project_root, workload, evaluation, execut
             if manifest.hidden_null_pointer_parameters != expected_hidden:
                 raise differs('fixed baseline hidden pointer commitments differ',
                     expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters)
-    return sealed_baseline, bool(incumbent_baseline or explicit)
+    return sealed_baseline, bool(incumbent_baseline or independent_explicit)
 
 
 def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,baseline_lowering,manifest_parser):
@@ -420,10 +424,11 @@ def validate_evaluation(
 def admit_run_inputs(specification, *, project_root, workload_loader):
     """The complete Run dependency boundary, before provider/Evidence side effects.
 
-    Sealed opponent and selection admission is common to both entry paths. Starter
-    source equality remains with task preparation and legacy Study preflight, which
-    own preparation of the current baseline Schedule. An explicit fixed opponent
-    requires no current-source equality through either path.
+    Sealed opponent and selection admission is common to both entry paths. Source
+    equality, when independent admission is not granted, remains with task
+    preparation and legacy Study preflight, which own the current baseline
+    Schedule. This boundary retains its existing sealed-bundle/ABI scope; it does
+    not independently prove a CUBIN's source or hidden-pointer contract.
     """
     from .executor import ExecutorRevision
     from .provider_policy import execution_configuration
