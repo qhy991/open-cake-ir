@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from .diagnoses import rejected_peer_feedback
 from .selection import _matched_search_plan, _receipt_latency_ms, _receipt_qualifies
 from ._policies import _ATTRIBUTION_EVALUATION
+from .generated_source import candidate_source_feedback
 
 
 def baseline_comparison_feedback(specification, timing):
@@ -45,12 +46,14 @@ def evaluated_feedback(receipt, attribution, diagnostics, specification):
 
 
 def derive_turn_feedback(*, turn, candidates, filter_rows, selected, receipts, attributions,
-                         rejected_feedback, actions, arm, specification, selection_summary=None):
+                         rejected_feedback, actions, arm, specification, selection_summary=None,
+                         launchables=None, authored=None):
     """One pure projection for live execution and replay; candidate count is Run-bounded.
 
     Filter rows retain bounded Environment diagnostics before GPU time. Receipts own
     evaluation facts. All identities are existing action/filter/receipt references;
-    no source, artifacts or new identity scheme enter the author handoff.
+    Opt-in source views use the same sealed candidates; no new identity scheme or
+    artifact authority enters the author handoff.
     """
     by_candidate = {row['candidate_sha256']: row for row in filter_rows}
     indices = {}
@@ -67,6 +70,8 @@ def derive_turn_feedback(*, turn, candidates, filter_rows, selected, receipts, a
         for candidate in candidates if candidate in rejected_feedback], arm=arm)
     rejections = {row['candidate_sha256']: row for row in rejected}
     results = []
+    source_feedback = candidate_source_feedback(candidates=candidates,
+        launchables=launchables or {}, authored=authored or {}, specification=specification)
     for candidate in candidates:
         filtered = by_candidate[candidate]
         row = {'candidate_index': indices[candidate], 'candidate_sha256': candidate,
@@ -86,12 +91,14 @@ def derive_turn_feedback(*, turn, candidates, filter_rows, selected, receipts, a
             row.update(status='duplicate', same_program_as=duplicates[candidate])
         else:
             row.update(status='not_evaluated', reason='searches_per_turn_limit')
+        if candidate in source_feedback:
+            row['generated_source'] = source_feedback[candidate]
         results.append(row)
 
     if selected in receipts:
         selected_result = next(row for row in results if row['candidate_sha256'] == selected)
         result = {'kind': 'evaluation', **{key: value for key, value in selected_result.items()
-            if key not in {'candidate_index', 'candidate_sha256', 'selected', 'status'}}}
+            if key not in {'candidate_index', 'candidate_sha256', 'selected', 'status', 'generated_source'}}}
     elif selected is not None:
         # Primary guidance obeys the same bounds as the peer projection.
         result = {key: value for key, value in rejections[selected].items() if key != 'candidate_sha256'}
