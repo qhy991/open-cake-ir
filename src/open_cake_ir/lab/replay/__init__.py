@@ -356,7 +356,8 @@ def _replay_matched_run(
     observations, searches_per_turn, attribution_evaluation = selected
     replay_feedback(events=events, evidence=evidence, specification=lock,
         provider_candidates_by_turn=provider_candidates_by_turn, receipts=receipts,
-        rejected=rejected, fault_turn=fault_turn)
+        rejected=rejected, fault_turn=fault_turn,
+        launchables=launchables, authored=provider_candidate_bytes)
     confirmation, search_state = replay_nomination(events=events, observations=observations,
         launchables=launchables, receipts=receipts,budget=replay_budget,protocol=lock.document['evaluation_protocol'],
         compilation_count=compilation_count,

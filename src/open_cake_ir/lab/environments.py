@@ -24,7 +24,7 @@ from .faults import CandidateCompileRejected
 from .build import (BuildRequest, ToolchainBuilder, TritonToolchainBuilder, _ptxas_finding_rows,
                     compiled_allocation_feedback)
 from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1, PYTHON_SOURCE_FILE_V1
-from .workload_binding import bind_program_workload
+from .workload_binding import bind_program_workload, bind_schedule_workload
 
 
 @dataclass(frozen=True)
@@ -326,9 +326,7 @@ class OpenCakeEnvironment:
             if "workload_contract_sha256" not in metadata:
                 # The frozen Workload, not the author, owns this content binding.
                 # Bind only after the target, route and public tensor ABI agree.
-                parsed = {**parsed, "metadata": {
-                    **metadata, "workload_contract_sha256": self._workload_sha256,
-                }}
+                parsed = bind_schedule_workload(parsed, self._workload_sha256)
             assessment = self._compiler.assess(cast(Mapping[str, object], parsed))
             if self._empirical_selection is not None and (
                 assessment.compiler_revision_id != self._empirical_selection._compiler_revision_id

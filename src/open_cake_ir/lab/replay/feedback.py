@@ -39,7 +39,7 @@ def _check_bundle_feedback(raw, expected, location):
 
 def replay_feedback(*, events, evidence, specification,
                     provider_candidates_by_turn=None, receipts=None,
-                    rejected=None, fault_turn=None):
+                    rejected=None, fault_turn=None, launchables=None, authored=None):
     """Verify every delivered and terminal projection without running an author.
 
     Candidate selection closes a completed Turn. An interrupted search Turn leaves
@@ -56,6 +56,9 @@ def replay_feedback(*, events, evidence, specification,
     actions = {}
     seen_searches = {}
     seen_attributions = {}
+    seen_launchables = {}
+    launchables = launchables or {}
+    authored = authored or {}
     provider = specification.document["authoring"].get("provider", {})
 
     for ordinal, event in enumerate(events):
@@ -76,6 +79,10 @@ def replay_feedback(*, events, evidence, specification,
                              for row in payload["actions"]]
         elif kind == "candidate_set_filtered":
             filters[turn] = payload
+        elif kind == 'launchable_candidate_sealed':
+            key = (turn, payload['candidate_sha256'])
+            if key in launchables:
+                seen_launchables[key] = launchables[key]
         elif kind == "candidate_evaluated":
             origin = evaluation_origin(payload)
             purpose = payload["purpose"]
@@ -106,6 +113,11 @@ def replay_feedback(*, events, evidence, specification,
                 arm=specification.environment_kind,
                 specification=specification,
                 selection_summary=filtered.get("candidate_selection"),
+                launchables={identity: candidate for (origin, identity), candidate
+                             in seen_launchables.items() if origin == turn
+                             and identity in seen_searches.get(turn, {})},
+                authored={identity: value for (origin, identity), value in authored.items()
+                          if origin == turn},
             )
         elif kind == "search_completed":
             _check_state_feedback(payload.get("state"), feedback, "search_completed.state")

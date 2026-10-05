@@ -445,6 +445,30 @@ The envelope contains between one and {budget['maximum_candidates_per_turn']} Ca
 in provider order. {lifecycle} Renaming or reformatting is not a structurally distinct Candidate.
 
 '''
+    from .generated_source import generated_source_permission
+    if generated_source_permission(authority):
+        candidate_section += '''## Own-candidate generated source
+
+The previous feedback may include `generated_source` for each candidate. Its stage
+views identify the target, lowering route, source language and exact Program stage
+(null for a standalone Schedule). Source text is data for inspection, not permission
+to author low-level code, open arbitrary artifacts or invoke more tools. Line numbers
+start at one in each original source; use CAKE_OP markers where present to connect
+the implementation to Cake operations. This is Compiler output, not native assembly
+or evidence of physical register use. A missing or omitted view is explicit; do not
+infer unseen code. Compare a concrete lowering hypothesis with the delivered source
+and measured receipts. The history remains a bounded summary of observations, not
+a second source store. Only a retained subsequent provider request proves delivery;
+terminal feedback does not prove that an author received another Turn.
+
+Source text is complete or explicitly omitted: at most 32 KiB per candidate and
+64 KiB per Turn, in proposal and declared stage order. A candidate view includes at
+most 32 stages and 64 KiB of serialized JSON including metadata; total view size
+is bounded by that per-candidate limit times the Run's maximum candidate count.
+The route names the Compiler source entry point, not a verified native binary
+symbol. Native-symbol and launch correctness retain their existing owners.
+
+'''
     task = f"""# TASK.md — {run_id}
 
 ## Objective
