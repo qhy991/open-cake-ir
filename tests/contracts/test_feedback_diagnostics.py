@@ -5,12 +5,29 @@ import copy
 from types import SimpleNamespace
 import unittest
 
-from open_cake_ir.lab.diagnoses import findings_feedback, validate_findings_feedback
+from open_cake_ir.lab.diagnoses import (
+    findings_feedback, validate_findings_feedback, rejected_candidate_feedback, rejected_peer_feedback,
+)
 from open_cake_ir.lab.replay.refusals import ReplayRefusal
 from open_cake_ir.lab.replay.selection import _replay_candidate_selection
 
 
 class FeedbackDiagnosticsTests(unittest.TestCase):
+    def test_history_and_peer_rejections_share_one_field_projection(self):
+        feedback = {'stage': 'assessment', 'findings': [
+            {'code': 'LOCAL_CONTRACT', 'path': 'operations[1]', 'severity': 'blocking',
+             'blocks_lowering': True, 'message': 'x' * 513, 'private_source': 'hidden'},
+            {'code': 'ADVISORY', 'blocks_lowering': False, 'message': 'not a blocking finding'},
+        ]}
+        row = rejected_candidate_feedback('a' * 64, feedback, arm='open_cake')
+        peers = rejected_peer_feedback([(SimpleNamespace(sha256='a' * 64),
+            SimpleNamespace(disposition='rejected', feedback=feedback))], arm='open_cake')
+        self.assertEqual(peers, [row])
+        self.assertEqual(row['findings'], findings_feedback(feedback['findings'], blocking_only=True)['findings'])
+        self.assertTrue(row['text_truncated'])
+        self.assertEqual(len(row['findings']), 1)
+        self.assertNotIn('private_source', row['findings'][0])
+
     def test_projection_preserves_field_types_and_reports_omissions(self):
         finding = {"code": "LOCAL_CONTRACT", "path": "operations[1]",
                    "category": "hardware_conformance", "severity": "error",
