@@ -44,6 +44,8 @@ BACKEND_LOWERING_GAP_CODES = frozenset({
     'TRITON_MMA_INSTRUCTION_UNSUPPORTED',
     'TRITON_MMA_K_RANGES_UNSUPPORTED',
     'TRITON_LOOP_STOP_UNSUPPORTED',
+    'TRITON_TILE_LOOP_COUNT',
+    'TRITON_LOOP_NEST_UNSUPPORTED',
     'TRITON_ELEMENTWISE_UNSUPPORTED',
     'TOP_K_SOURCE_UNLOWERABLE',
     'TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE',
@@ -68,6 +70,8 @@ BACKEND_LOWERING_GAP_CODES = frozenset({
 # These lowering-only backend diagnostics name a declaration the author can change
 # without extending Cake IR or implementing a new emitter body.
 AUTHOR_FIXABLE_LOWERING_CODES = frozenset({
+    'TRITON_ELEMENTWISE_STORAGE',
+    'TRITON_LOOP_STORE_OWNERSHIP',
     'BACKEND_IDENTIFIER_COLLISION',
     'BACKEND_IDENTIFIER_UNSAFE',
     'BACKEND_SOURCE_ID_UNSAFE',
@@ -75,6 +79,16 @@ AUTHOR_FIXABLE_LOWERING_CODES = frozenset({
     'METAL_ENTRY_POINT_UNSUPPORTED',
     'NATIVE_NAME_UNSUPPORTED',
     'NATIVE_REFERENCE_UNKNOWN',
+})
+
+
+# These controls are expressible in IR, but have no qualified realization on the
+# assigned route. Keep curation separate from syntax repair and emitter omission.
+ROUTE_QUALIFICATION_GAP_CODES = frozenset({
+    'MACA_REGISTER_BUDGET_UNQUALIFIED',
+    'MACA_WARP_COUNT_UNQUALIFIED',
+    'MACA_WARP_SPECIALIZATION_UNSUPPORTED',
+    'MACA_LOOP_UNROLL_UNSUPPORTED',
 })
 
 
