@@ -12,13 +12,16 @@ kernels to 16. A fresh common evaluation determines the useful width per task.
 
 ## Contract
 
-- Static admission covers exact `sm_100a`/`sm_103a` Triton routes. GPU performance
-  evidence currently covers only FP32 128x1024 on `sm_103a`. Other targets are
+- Static admission covers exact `sm_100a`/`sm_103a`/`gfx938` Triton routes. Retained
+  NVIDIA performance evidence covers FP32 128x1024 on `sm_103a`. Other targets are
   valid inputs but ineligible for this pass; no target is substituted.
 - Input must already be lowering-eligible, have one zero-based role, and declare
-  no per-role register split, residency, loops, persistent grid, explicit storage
+  no per-role register split, residency, persistent grid, explicit storage
   allocation or synchronization. Only global/register buffers and ordinary loads,
-  pure elementwise arithmetic/casts, CTA reductions and stores are admitted.
+  pure elementwise arithmetic/casts, MMA, CTA reductions and stores are admitted.
+  One fixed sequential loop may contain only loads and MMA; its body, trip count,
+  tile and precision stay unchanged. Multiple loops, loop exits and loop-level
+  warp specialization remain outside this rewrite.
 - The caller requests a positive power-of-two count within the bound Target's
   `maximum_warps_per_cta`, checked before constructing the new role list. Triton
   preflight also owns this compile-option constraint for non-pass callers.
@@ -87,6 +90,23 @@ The measured selections differ: RMSNorm gradient and cosine similarity selected
 below materiality. These observations keep the parameter choice in Lab rather than
 turning this pass into a global default. The original Finding owns the actual
 paired values and paths; summaries must use each confirmation's own baseline.
+
+## gfx938 resource-mapping successor
+
+The previous DCU pass returned `target_route`, and the previous pure-operation
+domain refused looped MMA. The retained original GateUp M128 emission uses four
+execution groups and reports 256 VGPR, 16 KiB LDS and scratch32. This footprint
+motivates explicit width candidates; it does not prove a bottleneck or gain.
+The successor exposes the same existing width API for ordinary looped MMA and
+gfx938. It changes only the requested launch width and result identity. Lab still
+chooses the width and must qualify the actual binary against the unchanged
+original Task, baseline, precision and timer. The operation AST is not a proof
+that SDK reduction, dot layout or resource allocation stays identical.
+
+Device qualification and fixed-budget version comparisons remain separate:
+same-candidate replay measures codegen/runtime effects; fresh matched authoring
+starts measure how quickly an agent finds a confirmed result with each Compiler.
+Historical continuation scores are not substituted for fresh version controls.
 
 This tick-tock integration combines the unchanged, approved Compiler v85 source
 with the newer runtime. [Current release status](../reports/current/STATUS.md) owns the
