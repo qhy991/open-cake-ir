@@ -1770,9 +1770,16 @@ class _TritonEmitter:
         result = self.schedule.buffer(operation.writes[0])
         _require(result is not None, "broadcast result is undeclared")
         axes = operation.parameters.dimensions
-        index = ", ".join(":" if axis in axes else "None" for axis in range(len(result.shape)))
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, "broadcast source is undeclared")
+        # Canonical [1] may be a native rank-zero reduction or scalar load.
+        # Both rank-zero and one-element block values broadcast directly.
+        value = operation.reads[0]
+        if not source.is_scalar:
+            index = ", ".join(":" if axis in axes else "None" for axis in range(len(result.shape)))
+            value += f"[{index}]"
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
-        self.line(f"{pad}{result.name} = tl.broadcast_to({operation.reads[0]}[{index}], {tuple(result.shape)})",
+        self.line(f"{pad}{result.name} = tl.broadcast_to({value}, {tuple(result.shape)})",
                   declares=(result.name,))
 
     def _emit_scan(self, operation, pad: str) -> None:

@@ -100,6 +100,34 @@ class RegisterBroadcast(unittest.TestCase):
         kind,shape=result_type(schedule,schedule.operation('ba'))
         self.assertEqual(kind.value,'int32');self.assertEqual(shape,(4,8))
 
+    def test_canonical_scalar_from_reduce_or_scalar_load_broadcasts_without_block_indexing(self):
+        from tests.contracts.test_triton_loop_scopes import _execute
+        for producer in ['reduce', 'load']:
+            d=outer_document()
+            if producer=='reduce':
+                d['buffers'].append(dict(name='one',space='register',dtype='fp32',shape=[1],mode='scratch'))
+                d['operations'].insert(2,dict(id='scalar',kind='reduce',role='compute',reads=['at'],writes=['one'],depends_on=['la'],parameters=dict(op='sum',axis=0,scope='cta',across_loop=False)))
+                d['operations'][3]['reads']=['one'];d['operations'][3]['depends_on']=['scalar']
+                expected=[sum([1.,2.,3.,4.])*b for _ in range(4) for b in range(8)]
+            else:
+                d['buffers'][0]['shape']=[1,1];d['buffers'][3]['shape']=[1]
+                d['access_maps'][0]['indices'][1]=dict(source='program',name='row')
+                expected=[2.*b for _ in range(4) for b in range(8)]
+            schedule=Schedule.from_dict(d);self.assertFalse([f for f in verify(schedule,prototype_target()) if f.blocks_acceptance])
+            memory=dict(a=[1.,2.,3.,4.] if producer=='reduce' else [2.],b=list(range(8)),out=[None]*32)
+            _execute(emit(schedule,prototype_target()),memory)
+            self.assertEqual(memory['out'],expected)
+
+    def test_schema_parser_agree_on_broadcast_structure_without_copying_shape_semantics(self):
+        from jsonschema import Draft202012Validator
+        from open_cake_ir.compiler.schema import schedule_schema
+        validator=Draft202012Validator(schedule_schema());document=outer_document()
+        self.assertEqual(list(validator.iter_errors(document)),[])
+        for parameters in [{'dimensions':[]},{'dimensions':[True]},{'dimensions':[-1]}, {'dimensions':[0],'shape':[4,8]}]:
+            bad=deepcopy(document);bad['operations'][2]['parameters']=parameters
+            self.assertTrue(list(validator.iter_errors(bad)))
+            with self.assertRaises(ScheduleParseError):Schedule.from_dict(bad)
+
     def test_invalid_axes_extents_dtype_and_effects_refuse_by_value_typing(self):
         variants=[]
         d=outer_document();d['operations'][2]['parameters']['dimensions']=[1];variants.append(d)
