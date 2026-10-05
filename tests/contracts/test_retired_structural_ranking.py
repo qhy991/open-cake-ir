@@ -13,7 +13,7 @@ class DefaultCandidateOrderingTests(unittest.TestCase):
         def build(submission, *, compilation=None):
             observed.append(submission.payload)
             return SimpleNamespace(disposition='rejected' if submission.payload == b'rejected' else 'launchable',
-                                   semantic_sha256=None, empirical_cost=None)
+                                   semantic_sha256=None, empirical_cost=None, feedback={})
         ledger = Mock()
         def append(kind, row):
             self.assertEqual(tuple(observed), payloads)

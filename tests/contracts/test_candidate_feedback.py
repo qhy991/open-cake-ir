@@ -305,12 +305,31 @@ class CandidateFeedbackTests(unittest.TestCase):
                     # Re-derive the rubric as the author interface does. A rejection
                     # must bind feedback to measurements, not only to its own rubric.
                     forged = provider.packages[request.run_id].evidence_bundle(state)
+                    forged_digest = sha256(forged).hexdigest()
+                    forged_events = copy.deepcopy(events)
+                    forged_turn = next(event for event in forged_events
+                                       if event["kind"] == "provider_turn_completed"
+                                       and event["payload"]["turn"] == 2)
+                    forged_reference = next(item for item in forged_turn["payload"]["objects"]
+                                            if item["role"] == "provider_reference_bundle")
+                    # Rebind the mock CAS reference, so the pre-existing byte
+                    # identity check passes and cannot mask the feedback check.
+                    forged_reference.update(sha256=forged_digest, size_bytes=len(forged),
+                        relative_path=f"objects/sha256/{forged_digest[:2]}/{forged_digest}")
                     def read_forged(item):
-                        return forged if item.get("sha256") == reference["sha256"] else read_object(item)
-                    with patch.object(store, "read_object", side_effect=read_forged):
-                        self.assertFalse(lab._replay_matched_run(store, audit, lock))
-            # Semantic probes modify only the mocked read; frozen evidence stays intact.
+                        return forged if item.get("sha256") == forged_digest else read_object(item)
+                    with patch.object(store, "read_object", side_effect=read_forged), \
+                            patch.object(store, "replay_events", return_value=tuple(forged_events)):
+                        result = lab._replay_matched_run(store, audit, lock)
+                    self.assertFalse(result)
+                    self.assertEqual(len(result.refusals), 1)
+                    self.assertEqual(result.refusals[0].location,
+                        "provider_turn_completed[turn=2].provider_reference_bundle.state_card.previous_feedback")
+                    self.assertEqual(result.refusals[0].message,
+                        "differs from the feedback reconstructed from completed earlier candidate evidence")
+            # Semantic probes modify only mocked reads; frozen evidence stays intact.
             self.assertEqual(read_object(reference), original)
+            self.assertEqual(store.replay_events(request.run_id), events)
 
     def test_replay_rejects_forged_terminal_feedback_without_a_future_turn(self):
         with self.campaign() as (lab, lock, provider, campaign, store):
