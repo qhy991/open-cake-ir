@@ -76,6 +76,10 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     if arm != "open_cake"
                     else "01234567-89ab-cdef-0123-456789abcdef"
                 )
+                if "native_skill_package" in projection:
+                    sys.path.insert(0, {str(ROOT)!r})
+                    from tests.contracts._native_skill_fixture import append_rollout
+                    append_rollout(thread_id, arguments)
                 reported_thread_id = (
                     "fedcba98-7654-3210-fedc-ba9876543210"
                     if resumed and {break_resumed_thread!r}
@@ -333,6 +337,22 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 self.assertNotEqual(initial['user_home'], initial['codex_home'])
                 self.assertEqual(initial['native_skill_package'], authority['native_skill_package'])
                 self.assertEqual(initial['native_skill_package'], resumed['native_skill_package'])
+                observations = []
+                for phase, invocation in (('initial', initial), ('resumed', resumed)):
+                    observation = json.loads(evidence.read_object(objects[f'{arm}_{phase}_native_skill_input']))
+                    self.assertEqual(observation['kind'], 'codex_skill_input_observation_v1')
+                    self.assertEqual(observation['resumed'], phase == 'resumed')
+                    self.assertEqual(observation['cwd'], invocation['cwd'])
+                    self.assertEqual(len(observation['loaded_this_turn']), 1)
+                    loaded = observation['loaded_this_turn'][0]
+                    self.assertEqual(loaded['turn_id'], observation['turn_id'])
+                    self.assertEqual(loaded['path'], str(Path(invocation['user_home'])/'.agents/skills/cake/SKILL.md'))
+                    expected = next(item.payload for item in package.files if item.path == 'skills/cake/SKILL.md')
+                    self.assertEqual(loaded['body'].encode(), expected)
+                    self.assertNotIn('QUALIFICATION_PLAN_JSON=', json.dumps(observation))
+                    observations.append(observation)
+                self.assertEqual(observations[0]['thread_id'], observations[1]['thread_id'])
+                self.assertNotEqual(observations[0]['turn_id'], observations[1]['turn_id'])
                 homes.update((initial['user_home'], initial['codex_home']))
             self.assertEqual(len(homes), 4)
 
