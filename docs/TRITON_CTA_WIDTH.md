@@ -19,8 +19,9 @@ kernels to 16. A fresh common evaluation determines the useful width per task.
   no per-role register split, residency, persistent grid, explicit storage
   allocation or synchronization. Only global/register buffers and ordinary loads,
   pure elementwise arithmetic/casts, MMA, CTA reductions and stores are admitted.
-  One fixed sequential loop may contain loads, MMA and unchanged FP16/BF16/FP32
-  to FP32 casts; its body, trip count,
+  One fixed sequential loop may contain loads, MMA and unchanged FP16/BF16
+  to FP32 widening casts; existing FP32 operands are used directly and the
+  canonical verifier still refuses identity casts. Its body, trip count,
   tile and precision stay unchanged. Multiple loops, loop exits and loop-level
   warp specialization remain outside this rewrite.
 - The caller requests a positive power-of-two count within the bound Target's
