@@ -76,6 +76,23 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 验证 initial/resume 都未混入；不以 agent 口头自报作为证明。既有 auth-only 策略不容许
 塞入 user skills 后继续沿用原资格；也不因这一项完成就开放 clean-start。
 
+本机静态接口审计还发现版本差异：bundled Codex CLI 为 `0.159.2`，其导出的
+`skills/list` 参数只有 `cwds` / `forceReload`，没有最新文档中的
+`perCwdExtraUserRoots`；`extraRoots` 只增加来源，不排除默认来源。响应 schema 能表示
+`path`、`scope`、`enabled`、`pluginId` 与错误，但没有执行该查询，也未观察真实 exec
+加载的 catalog。help/schema 命令退出 0，同时保留 PATH alias 的 EPERM 警告；未修复
+宿主后重跑。schema、独立 app-server 的查询和 agent 自报都不能充当实际作者输入证明。
+见 [官方技能接口](https://learn.chatgpt.com/docs/app-server#skills)。
+
+最小后继应沿现有 `author_home` / `ProviderInvocation` / qualification owner：为每 Run
+绑定私有用户 HOME 与明确技能包，initial/resume 使用相同绑定，保留既有独立
+CODEX_HOME；旧 auth-only 策略不改，也不把 user skills 塞入其禁止的位置。技能脚本、
+引用资源、依赖和工具权限须显式声明，不自动安装插件或授予执行权。祖先、admin、system
+和插件来源仍需检查；发现未知来源、重复/缺失技能或漂移时拒绝。先建立同一次 exec 的
+实际 catalog / 上下文来源观测，再实现并验证此策略；当前没有已验证的 exec catalog
+导出接口，不能用旁路进程补出“隔离通过”。这项接口条件未满足时，继续准备和验证已审阅的任务
+材料投递，并明确原生技能环境未验收；不把它计为完成用户要求的独立 skill 环境。
+
 技能资格的最小验收步骤：
 
 1. 固定 CLI、模型/effort、技能名单/版本、依赖、参考范围、工具与预算，绑定到既有 Run owner。
@@ -105,6 +122,13 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 准备后不追加；实际 Run 仍由现有 scaffold 绑定和 TaskPackage owner 验证、投递、回放。
 附录只增加行为要求，不重复形状、模型、预算等参数，不授予源码访问或工具权限。
 未实际交付生成代码的 Run 只能记录缺失，不能被算作低层代码驱动的优化验收。
+
+已从固定 `1b2920b7` 顺序组合完整文件，在源码外独占创建并通过现有 `task_run_inputs`
+做了 D2 的 CPU 绑定检查：模型为 `gpt-6.1-sol/xhigh`，完整说明与报告列出的预算上限被绑定。
+confirmatory 配额仍为 8，执行逻辑最终只确认一个提名；正式冻结时再核对完整 RunSpecification。
+记录位于外部规划根目录的 `authoring-treatment-1b2920/composition-report.json`，完整
+文件为同目录 `AGENTS.md`。这不是已冻结 Run，也没有真实 TaskPackage 交付、provider、
+原生编译或 GPU 执行；schema v2 管理预算入口仍按总计划的共享后继处理。
 
 ## TASK.md 负责“做什么、如何判断”
 
