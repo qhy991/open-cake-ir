@@ -19,6 +19,7 @@ VERSION = '0.159.2'
 MAX_ROLLOUT_BYTES = 32 * 1024 * 1024
 MAX_RECORD_BYTES = 8 * 1024 * 1024
 MAX_RECORDS = 100000
+MAX_OBSERVATION_BYTES = 64 * 1024 * 1024
 MAX_SKILLS = 128
 _ID = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
 
@@ -157,6 +158,117 @@ def _catalog(text: str) -> list[dict]:
     return entries
 
 
+
+def _retained_records(rows: list[dict]) -> list[dict]:
+    """Keep only the native fields needed for skill-input semantic reconstruction.
+
+    Original line positions distinguish this turn from prior turns. Missing rows
+    are deliberately outside retained coverage; they are not transcript evidence.
+    """
+    retained = []
+    for index, row in enumerate(rows):
+        kind, payload = row.get('type'), row['payload']
+        selected = None
+        if kind == 'session_meta':
+            selected = {key: payload.get(key) for key in ('id', 'cwd', 'cli_version')}
+        elif kind == 'event_msg' and payload.get('type') in {'task_started', 'task_complete'}:
+            selected = {key: payload.get(key) for key in ('type', 'turn_id')}
+        elif kind == 'turn_context':
+            selected = {key: payload.get(key) for key in ('turn_id', 'cwd', 'model', 'effort')}
+        elif kind == 'world_state':
+            state = payload['state']
+            selected = {'full': payload['full'], 'state': {}}
+            if 'host_skills' in state:
+                selected['state']['host_skills'] = {
+                    key: state['host_skills'].get(key) for key in ('body', 'includeInstructions')}
+        elif kind == 'response_item':
+            metadata = payload.get('internal_chat_message_metadata_passthrough') or {}
+            kinds = metadata.get('content_item_kinds', []) if isinstance(metadata, dict) else []
+            content = payload.get('content', [])
+            if isinstance(content, list) and isinstance(kinds, list):
+                positions = [i for i, item_kind in enumerate(kinds)
+                             if item_kind in {'host_skills.instructions', 'skills.selected_skill_instructions'}]
+                if positions:
+                    selected = {'role': payload['role'],
+                        'content': [{key: content[i][key] for key in ('type', 'text')} for i in positions],
+                        'internal_chat_message_metadata_passthrough': {
+                            'turn_id': metadata['turn_id'], 'content_item_kinds': [kinds[i] for i in positions]}}
+        if selected is not None:
+            retained.append({'line': index + 1, 'record': {'type': kind, 'payload': selected}})
+    return retained
+
+
+def _restore_records(document: dict) -> bytes:
+    count, facts = document.get('record_count'), document.get('native_records')
+    if (type(count) is not int or not 0 < count <= MAX_RECORDS
+        or not isinstance(facts, list) or not 0 < len(facts) <= count):
+        raise ValueError('retained native skill record bounds differ')
+    rows = [{'payload': {}} for _ in range(count)]
+    last = 0
+    for fact in facts:
+        if (not isinstance(fact, dict) or set(fact) != {'line', 'record'}
+            or type(fact['line']) is not int or not last < fact['line'] <= count
+            or not isinstance(fact['record'], dict)
+            or set(fact['record']) != {'type', 'payload'}
+            or not isinstance(fact['record']['payload'], dict)):
+            raise ValueError('retained native skill record shape or order differs')
+        rows[fact['line'] - 1] = fact['record']
+        last = fact['line']
+    return b''.join(canonical_json_bytes(row) + b'\n' for row in rows)
+
+
+def _observation(raw: bytes) -> dict:
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_OBSERVATION_BYTES:
+        raise ValueError('retained native skill observation bounds differ')
+    try:
+        document = json.loads(raw, object_pairs_hook=_unique)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError('retained native skill observation JSON differs') from error
+    if (not isinstance(document, dict) or type(document.get('schema_version')) is not int
+        or document['schema_version'] != 2 or document.get('kind') != 'codex_skill_input_observation_v2'):
+        raise ValueError('retained native skill observation is not replayable v2')
+    return document
+
+
+def replay_observation(raw: bytes, *, previous: bytes | None, thread_id: str,
+                       cwd: str, model: str, effort: str, turn: int,
+                       package_files: dict[str, bytes], system_paths: tuple[str, ...]) -> dict:
+    """Rederive retained skill semantics using externally supplied invocation authority.
+
+    The caller supplies frozen package bytes and installed system entry paths. The
+    preceding observation must have been validated by that caller in sequence.
+    Full raw-prefix continuity is checked during capture, not proved by this
+    filtered replay. No live filesystem, CLI process or model is consulted here.
+    """
+    if type(turn) is not int or turn < 1 or (previous is None) != (turn == 1):
+        raise ValueError('retained native skill turn sequence differs')
+    document = _observation(raw)
+    prior = _observation(previous) if previous is not None else None
+    if prior is not None and (prior.get('prior_turn_count') != turn - 2
+        or any(prior.get(key) != value for key, value in (
+            ('thread_id', thread_id), ('cwd', cwd), ('model', model), ('reasoning_effort', effort)))):
+        raise ValueError('retained native skill previous invocation differs')
+    restored = _restore_records(document)
+    old = _restore_records(prior) if prior is not None else None
+    projected = project_rollout(restored, previous=old, thread_id=thread_id,
+        cwd=cwd, model=model, effort=effort, resumed=turn > 1,
+        package_paths=tuple(package_files), system_paths=system_paths)
+    if (projected['prior_turn_count'] != turn - 1
+        or canonical_json_bytes(document) != canonical_json_bytes(projected)):
+        raise ValueError('retained native skill projection differs from its source facts')
+    # Check every retained package body, including history, against the frozen input.
+    # project_rollout has already parsed and checked the native frame structure.
+    for fact in document['native_records']:
+        payload = fact['record']['payload']
+        if fact['record']['type'] != 'response_item':
+            continue
+        for content in payload['content']:
+            match = re.fullmatch(r'<skill>\n<name>([^\n]+)</name>\n<path>([^\n]+)</path>\n(.*)\n</skill>', content['text'], re.S)
+            if match and match[2] in package_files and match[3].encode() != package_files[match[2]]:
+                raise ValueError('native selected skill body differs from frozen package')
+    return projected
+
+
 def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
                     cwd: str, model: str, effort: str, resumed: bool,
                     package_paths: tuple[str, ...], system_paths: tuple[str, ...]) -> dict:
@@ -273,7 +385,9 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
         or not resumed and len(completed) != 1
         or resumed and len(completed) < 2):
         raise ValueError('native skill invocation does not contain exactly one complete new turn')
-    return {'schema_version': 1, 'kind': 'codex_skill_input_observation_v1',
+    return {'schema_version': 2, 'kind': 'codex_skill_input_observation_v2',
+            'record_count': len(rows), 'prior_record_count': prior_count,
+            'native_records': _retained_records(rows),
             'cli_version': VERSION, 'thread_id': thread_id, 'turn_id': completed[-1],
             'cwd': cwd, 'model': model, 'reasoning_effort': effort, 'resumed': resumed,
             'prior_turn_count': len(completed) - 1, 'catalog_turn_id': catalog_turn,
@@ -312,4 +426,6 @@ def after_invocation(invocation, *, thread_id: str, previous: bytes | None) -> b
         expected = package_files.get(selected['path'])
         if expected is not None and selected['body'].encode() != expected:
             raise ValueError('native selected skill body differs from frozen package')
-    return canonical_json_bytes(observation)
+    encoded = canonical_json_bytes(observation)
+    _observation(encoded)  # Enforce the retained-object bound before accepting the Turn.
+    return encoded

@@ -337,6 +337,15 @@ class CodexInvocationBuilder:
         self._system_skills_snapshot = observed
 
     @property
+    def system_skill_entrypoints(self) -> tuple[str, ...]:
+        """Entry paths from the already verified installed tree, without rereading it."""
+        if self._system_skills_snapshot is None or self._codex_home is None:
+            raise ValueError('Codex system skills have not been observed')
+        return tuple(str(self._codex_home/'skills/.system'/name)
+                     for name, _, _ in self._system_skills_snapshot
+                     if len(name.split('/')) == 2 and name.endswith('/SKILL.md'))
+
+    @property
     def system_skills_sha256(self) -> str | None:
         return (system_skills_identity(self._system_skills_snapshot)
                 if self._system_skills_snapshot is not None else None)
