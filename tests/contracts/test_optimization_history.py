@@ -14,7 +14,6 @@ from open_cake_ir.lab.optimization_history import (
 )
 from open_cake_ir.lab.replay.history import replay_optimization_history
 from open_cake_ir.lab.replay.refusals import ReplayRefusal
-from tests.contracts.test_diagnosis_feedback import DiagnosisRunTests
 
 ROOT=Path(__file__).resolve().parents[2]
 
@@ -77,7 +76,9 @@ class HistoryProjectionTests(unittest.TestCase):
 
 
 class HistoryRunTests(unittest.TestCase):
-    setUp=DiagnosisRunTests.setUp
+    def setUp(self):
+        from tests.contracts.test_diagnosis_feedback import DiagnosisRunTests
+        DiagnosisRunTests.setUp(self)
 
     def test_real_loop_delivers_all_survivors_across_turns_and_replays(self):
         from open_cake_ir.tasks.runtime import TaskLab
@@ -93,6 +94,7 @@ class HistoryRunTests(unittest.TestCase):
             _enable_candidate_set(document,2)
             document['budget']['maximum_turns']=3
             document['budget']['limit']=500000
+            document['budget']['checkpoints']=[500000]
             document['evaluation_protocol']['searches_per_turn']=2
             path=Path(directory)/'study.json';path.write_text(json.dumps(document))
             lab=TaskLab(ROOT);lock=lab.preflight(path);provider=Pairs()
