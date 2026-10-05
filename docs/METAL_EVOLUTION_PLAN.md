@@ -333,7 +333,9 @@ prepare 成功不表示已冻结或必能启动。独立覆盖与 CLI 默认冲�
 **第二步：只改变 Compiler。** 冻结 C0 后发现一个重复缺口，审查实现 C1。以相同任务、
 同一 scaffold、无额外经验、相同 pass grants（第一轮建议均为空）分别运行 C0/C1，每格
 至少三个工程重复。维护者根据 D 集开发 C1，H 集用于检验迁移；D 上提升只能叫开发集改善。
-不把 C1 的新 benchmark helper 或新增提示词一起变化后统称“Compiler 提升”。
+不把 C1 的新 benchmark helper 或新增提示词一起变化后统称“Compiler 提升”。冻结材料
+审查覆盖 scaffold、references 和完整技能包，不仅是 `knowledge.materials`；C0/C1 使用
+相同材料，后续 E0/E1 的额外经验也不能经技能脚本或引用资料隐式跨组进入。
 
 **第三步：在同一 Compiler 上分离经验与工具。** 复用已有
 [E/P 消融设计](OPTIMIZATION_TRANSFER_ABLATION.md)的方法：E0P0、E1P0、E0P1、E1P1。
@@ -394,7 +396,8 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    [authoring 规划](METAL_EVOLUTION_AUTHORING.md)使用已集成的 PR #320 源码反馈与 PR #321 预算入口，
    绑定完整 scaffold 和显式源码权限；每轮更新前重读当前候选文件，保留少量有效观察。
    按每任务独立材料与 Run 状态组织目录，
-   以 `gpt-6.1-sol / xhigh` 完成适用资格，核对 skill 发现边界。验证作者引用真实区域并根据可见反馈
+   为每个 cell 绑定完整技能包与 `isolated_skill_package_v1`，以 `gpt-6.1-sol / xhigh`
+   完成真实 initial/resume 资格；不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
 3. **C0 发现批次。** 六任务 × 三重复，固定基线；封存后选一个最频繁、最可复现的缺口。
@@ -422,7 +425,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | PR #325 的完整技能包、双 home、cell 传输及正式入口拒绝已通过 64 项定点测试 | 完整 CI/main 集成；原生发现、实际投递、模型使用与依赖仍须另验 | `native-skill-preparation-8a937973/report.json` |
+| G4 技能软件准备 | PR #325 的包/home/cell 软件检查已通过；首轮 CI 两项架构回归已修，225e9e6e 的 16 项定点检查通过 | 后继完整 CI/main 集成；原生发现、投递、使用与依赖另验；本计划不以 auth-only 替代 | `native-skill-preparation-8a937973/report.json`、`native-skills-ci-37310854818/report.json`、`native-skill-repair-225e9e6e/report.json` |
 | G4 原生技能观察 | 新软件 fixture 的 initial retained context 已有任务/私有 HOME 的 catalog；未见正文；未观察到请求，45 秒超时后停止 | 超时归因未知；实际投递、resume 与其他来源覆盖未验证；没有资格通过 | `codex-skill-exec-probe-v1/report.json`、`codex-skill-exec-probe-v2/report.json`、`codex-skill-exec-inspection-v2/report.json` |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
 | 平台软件集成 | PR #322 合入 metal；全套三版本 CPU CI 通过 | 这些软件检查不授予主机、设备或作者资格 | `metal-treatment-8c5a5632/report.json` |

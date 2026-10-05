@@ -25,10 +25,10 @@ metal-evolution/
     TASK.md AGENTS.md experiment.json
     cells/rmsnorm-c0-r01/           # 每个 cell 独立材料快照
       TASK.md AGENTS.md scaffold.md
-      references/ author-skills.tar  # 包为后继策略的可选材料
+      references/ author-skills.tar  # 本计划必需的该 cell 技能包
     cells/softmax-c0-r01/
       TASK.md AGENTS.md scaffold.md
-      references/
+      references/ author-skills.tar
     launches/<cell-id>/            # 保留发送内容、transport 状态
   rmsnorm/C0/r01/
     run-inputs/AGENTS.md            # 节点收到的该 cell scaffold
@@ -64,10 +64,12 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 保留历史共享资料语义；新实验不用它来声称任务材料隔离。源码快照投递的独立实现不
 表示候选 MSL 已进入下一轮反馈，后者仍由下文 G4 的 Lab 后继负责。
 
-第一阶段的技能说明通过已审阅 `agents_md` 与显式参考材料交付；前者是完整任务规范，
-后者是数据，不会安装脚本或取得工具权限。通用 Cake 使用规则与每任务数值/结构提示
-分开审阅后组成该 cell 的完整规范。C0/C1、独立重复和经验消融中保持相同材料边界，
-不得把维护者读过的其他任务经验隐式带入作者。
+已准备的 `agents_md` 与显式参考材料提供任务规范和数据，不会安装原生 skill 或取得
+脚本权限。按照本次用户要求，G4 以及后续 C0/C1 必须为每个 cell 绑定具体完整技能包与
+`isolated_skill_package_v1`，并通过真实 initial/resume 的发现和输入资格后再启动。
+该包在通用管理 schema 中仍可选，但在本计划的实验 treatment 中必需；不能退回文本材料
+或旧 auth-only 资格来声称满足独立 skill 环境。通用 Cake 规则与每任务提示分开审阅后
+组成完整输入，同一比较的独立重复保持相同材料边界。
 
 原生 skill 环境是另一项需要资格验证的后继。当前 main 仍保留宿主 `HOME`；Codex
 还会从 `$HOME/.agents/skills`、工作目录祖先、admin 与 system 来源发现技能，见
@@ -108,14 +110,20 @@ SKILL.md、脚本、引用资料和二进制资源，依赖说明继续由技能
 进程补出“隔离通过”。实现完成、CPU 检查通过、原生输入资格、模型实际使用和设备收益
 分别报告；前两项不计为已经完成用户要求的独立 skill 环境。
 
-通用软件后继已提交为 [PR #325](https://github.com/qhy991/open-cake-ir/pull/325)，当前待完整
-CI 与 main 集成。固定 `8a937973` 的 31 项技能测试及 33 项管理器测试通过；本机没有 ruff，
-完整证据资格 fixture 交 CI，未安装工具或修改环境。现有材料入口接纳完整原生 tar 包，
-v2 cell 保存并发送自己的快照；两个私有 home、初次/续轮绑定和漂移检查沿用 Lab owner。
-实现将在 fixture qualification 中保留原包并支持重建投影；该完整证据 fixture 的运行结果待 CI。
-正式 Run/Campaign/回放仍明确拒绝新策略。
+通用软件后继已提交为 [PR #325](https://github.com/qhy991/open-cake-ir/pull/325)，当前待后继
+完整 CI 与 main 集成。现有材料入口接纳完整原生 tar 包，v2 cell 保存并发送自己的快照；
+两个私有 home、初次/续轮绑定和漂移检查沿用 Lab owner。fixture qualification 保留原包
+并能重建投影；正式 Run/Campaign/回放仍明确拒绝新策略。
+固定 `8a937973` 的 31 项技能测试及 33 项管理器测试通过。首轮完整 CI 的技能/证据 fixture
+通过，但两个既有架构合同失败：纯路径拒绝丢失优先次序、旧零 provider 回放过早要求配置。
+修复提交 `225e9e6e` 恢复这些合同；原测试未改，其独立固定 checkout 的 5 项架构及 11 项
+技能入口检查通过，也有新策略不能借零 provider 早退的负例。后继完整 CI 为
+[37313625439](https://github.com/qhy991/open-cake-ir/actions/runs/37313625439)，尚待结论。
+本机缺少 ruff，未安装工具或修环境；CI 自带的现有 lint gate 已通过。
 使用方法和准确边界由共享 `docs/KERNEL_REPRODUCTION.md` 持有，平台不复制实现。
-本地结果见 `native-skill-preparation-8a937973/report.json`，不替代上面的原生输入验收。
+本地、首轮失败和修复结果分别见 `native-skill-preparation-8a937973/report.json`、
+`native-skills-ci-37310854818/report.json` 与 `native-skill-repair-225e9e6e/report.json`；
+这些软件结果不替代上面的原生输入验收。
 
 技能资格的最小验收步骤：
 
@@ -164,7 +172,9 @@ confirmatory 配额仍为 8，执行逻辑最终只确认一个提名；正式�
 `generated_source_v1`、精确模型、预算与每轮 3 次搜索；报告和完整文件分别为
 `authoring-treatment-8cc264f0/composition-report.json` 与同目录 `AGENTS.md`。它包含上述
 重读要求，可作为待验收的完整任务材料；仍没有创建正式 Run 或实际作者/设备资格。
-正式冻结时引用这份完整文件及实际 Run 权限，不能只传附录。
+这份记录使用旧 `isolated_auth_only_v1`，仅可复用其中的完整 scaffold 文本；正式冻结
+还须绑定本计划必需的每任务技能包与后继策略，并取得其真实资格，不能复用旧环境收据。
+不得只传附录，也不改写旧绑定报告。
 
 ## TASK.md 负责“做什么、如何判断”
 
@@ -181,8 +191,12 @@ confirmatory 配额仍为 8，执行逻辑最终只确认一个提名；正式�
 > 正确性失败先修复正确性；计时不稳定保留 unknown；不从逻辑存储估计推断物理寄存器或 spill。
 > 最终提名和确认由控制器管理。作者摘要不能证明收益或改变终止条件。
 
-作者 Run 接收哪些经验，由已有 `knowledge.materials` 控制；哪些工具可调，由
-`knowledge.transformations` 控制。E0 不挂载经验，P0 实际拒绝变换访问，不能仅提示“不要使用”。
+显式经验授予使用已有 `knowledge.materials`，变换访问由 `knowledge.transformations`
+控制。冻结审查同时覆盖完整 scaffold、references 与技能包内的脚本、资料和资源；
+清空 `knowledge.materials` 不证明其他入口没有夹带历史策略或结果。C0/C1 保持这些材料
+一致；E0 不含额外历史经验，新增经验只进入明确的 E1 treatment。通用 Cake/API 说明
+可以作为各组相同的基础材料，不把它伪称为没有机制知识。P0 实际拒绝变换访问，不能
+仅提示“不要使用”。
 第一阶段绑定 `reference_access=known_kernel_reproduction`：当前参考权限 gate 只在这一类别
 接纳现有 Python starter 和新 Metal scaffold。可描述为 starter-informed 优化，但这不能
 替代实际权限枚举，不宣称 clean start。以后改为 clean start，需要另审受限 scaffold 与
