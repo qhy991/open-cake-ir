@@ -7,6 +7,7 @@ The manager reads TASK.md/AGENTS.md; every cell uses the existing frozen Lab loo
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import math
 from pathlib import Path
@@ -22,6 +23,7 @@ from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.tasks.devices import BACKENDS
 from open_cake_ir.tasks.workloads import create_task
 from open_cake_ir.tasks.catalog import task_entry
+from open_cake_ir.lab.native_skills import MAX_ARCHIVE_BYTES, NativeSkillPackage
 
 POLICY = ROOT / "contracts/scaffolds/kernel-reproduction/AGENTS.md"
 
@@ -103,6 +105,7 @@ def validate(config):
             required.add("references")
             optional.add("agents_md")
             optional.add('generated_source_feedback')
+            optional.add('author_skill_package')
         object_fields(cell, required, optional)
         if version == 2:
             validate_references(cell["references"])
@@ -110,6 +113,10 @@ def validate(config):
                 absolute(cell["agents_md"])
             if 'generated_source_feedback' in cell and type(cell['generated_source_feedback']) is not bool:
                 raise ValueError('cell generated_source_feedback must be an explicit boolean')
+            if 'author_skill_package' in cell:
+                absolute(cell['author_skill_package'])
+                if provider['harness'] != 'codex':
+                    raise ValueError('native author skill packages require the Codex provider')
         if 'pointer_alignment' in cell:
             value = cell['pointer_alignment']
             if type(value) is not int or value <= 0 or value & (value - 1):
@@ -193,6 +200,7 @@ def prepare(config_path: Path, output: Path) -> None:
     # Read every selected input before creating the experiment. Execution later
     # reads these snapshots, never a mutable reference or policy source path.
     cell_inputs = {}
+    skill_packages = {}
     if config["schema_version"] == 1:
         materials = read_materials(config["references"])
     else:
@@ -206,6 +214,8 @@ def prepare(config_path: Path, output: Path) -> None:
                 if not cell_policy.strip():
                     raise ValueError("cell agents_md must contain authoring instructions")
             cell_inputs[cell["id"]] = (cell_policy, read_materials(cell["references"]))
+            if 'author_skill_package' in cell:
+                skill_packages[cell['id']] = NativeSkillPackage.read(ROOT, cell['author_skill_package'])
     output.mkdir(parents=True, exist_ok=False)
     if config["schema_version"] == 1:
         write_authoring_inputs(output, policy, materials)
@@ -216,6 +226,9 @@ def prepare(config_path: Path, output: Path) -> None:
             cell_output = output / "cells" / cell["id"]
             cell_output.mkdir()
             write_authoring_inputs(cell_output, *cell_inputs[cell["id"]])
+            if cell['id'] in skill_packages:
+                with (cell_output/'author-skills.tar').open('xb') as stream:
+                    stream.write(skill_packages[cell['id']].raw_bytes)
             write(cell_output / "TASK.md", "# Task management input\n\n"
                 + "This is a prepared cell, not a frozen author Run or a permission grant. "
                 + "Read AGENTS.md and this cell's references/. The launcher delivers only this "
@@ -249,7 +262,7 @@ def prepare(config_path: Path, output: Path) -> None:
 
 # Executed on the explicitly selected node. It creates an isolated checkout at
 # the pinned commit, never edits a shared source tree or chooses a GPU itself.
-_NODE = '''import json, os, pathlib, subprocess, sys
+_NODE = '''import base64, json, os, pathlib, subprocess, sys
 p = json.load(sys.stdin)
 n = p["cell"]["node"]
 w = pathlib.Path(n["workspace"])
@@ -257,13 +270,29 @@ if not w.is_absolute() or w != w.resolve() or w.exists() or w.is_symlink():
     raise ValueError("new absolute workspace required")
 if any((x / ".git").exists() for x in w.parents):
     raise ValueError("experiment outputs must be outside source")
+if ("author_skill_package" in p["cell"]) != ("author_skill_package" in p):
+    raise ValueError("selected cell skill-package transport differs")
+skill_bytes = None
+skill_limit = __AUTHOR_SKILL_ARCHIVE_LIMIT__
+if "author_skill_package" in p:
+    encoded = p["author_skill_package"]
+    if not isinstance(encoded, str) or len(encoded) > 4 * ((skill_limit + 2) // 3):
+        raise ValueError("transported skill package exceeds its bound")
+    skill_bytes = base64.b64decode(encoded, validate=True)
+    if not 0 < len(skill_bytes) <= skill_limit:
+        raise ValueError("transported skill package size differs")
 inputs = w.with_name(w.name + "-inputs")
 source = w.with_name(w.name + "-source")
 inputs.mkdir(parents=True, exist_ok=False)
 (inputs / "AGENTS.md").write_text(p["scaffold"], encoding="utf-8")
+if skill_bytes is not None:
+    with (inputs / "author-skills.tar").open("xb") as stream:
+        stream.write(skill_bytes)
 subprocess.run(["git", "-C", n["project_root"], "worktree", "add", "--detach", str(source), p["source_commit"]], check=True)
 args = [n["python"], str(source / "tools/launch_task.py"), "--workspace", str(w),
         "--kernelctl", n["kernelctl"], "--infra-socket", n["socket"], "--agents-md", str(inputs / "AGENTS.md")]
+if skill_bytes is not None:
+    args += ["--author-skill-package", str(inputs / "author-skills.tar")]
 if "provider_executable" in n:
     args += ["--provider-executable", n["provider_executable"]]
 for field in ("qualification", "qualification_anchor"):
@@ -291,7 +320,7 @@ if "http_proxy" in n:
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
         environment[name] = n["http_proxy"]
 sys.exit(subprocess.run(args, cwd=source, env=environment).returncode)
-'''
+'''.replace('__AUTHOR_SKILL_ARCHIVE_LIMIT__', str(MAX_ARCHIVE_BYTES))
 
 
 def run_cell(workspace: Path, cell_id: str) -> int:
@@ -308,10 +337,16 @@ def run_cell(workspace: Path, cell_id: str) -> int:
     scaffold_path = (workspace / "scaffold.md" if config["schema_version"] == 1 else
                      workspace / "cells" / cell_id / "scaffold.md")
     scaffold = scaffold_path.read_text(encoding="utf-8")
+    # Prepared cells own their material. Never reopen the original source path or
+    # fall back to a root/sibling package, including before an attempted transport.
+    skill_package = (NativeSkillPackage.read(ROOT, workspace/'cells'/cell_id/'author-skills.tar')
+                     if 'author_skill_package' in cell else None)
     attempt = workspace / "launches" / cell_id
     attempt.mkdir(parents=True, exist_ok=False)
     payload = {"cell": cell, "source_commit": commit, "provider": config["provider"],
                "budget": config["budget"], "scaffold": scaffold}
+    if skill_package is not None:
+        payload['author_skill_package'] = base64.b64encode(skill_package.raw_bytes).decode('ascii')
     command = [node["python"], "-c", _NODE]
     if node["transport"] == "ssh":
         command = ["ssh", "-x", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", node["host"], shlex.join(command)]

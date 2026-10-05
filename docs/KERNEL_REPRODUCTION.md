@@ -228,7 +228,7 @@ CLI 资源查找。采用 `isolated_auth_only_v1` 的新 Codex Run 另建私有
 共享其私有 home，其他 Run 与资格验证使用各自的新 home；不复用 launcher 的个人技能或
 会话目录。该策略的原实现与边界见 [ADR 0081](adr/0081-isolate-codex-author-home-per-run.md)。
 
-这不是完整 skill 发现隔离的证明。当前代码保留宿主 `HOME`，检查范围集中在私有
+这不是完整 skill 发现隔离的证明。auth-only 策略保留宿主 `HOME`，检查范围集中在私有
 `CODEX_HOME`；Codex 还会从用户 `HOME/.agents/skills`、工作目录祖先、admin 与 system
 位置发现技能，见[官方加载规则](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。
 任务文本快照也不等于原生 skill runtime。受控技能包需要另验：允许材料确实可见，宿主与
@@ -237,6 +237,59 @@ CLI 资源查找。采用 `isolated_auth_only_v1` 的新 Codex Run 另建私有
 
 这里没有关闭 sandbox、修复历史环境或资格。新模型、effort、工具或作者环境需要相应的
 两轮 qualification。旧行为及失败记录仍按固定提交保留；换绑定必须创建新输入和运行目录。
+
+## 按任务准备完整原生技能包
+
+`isolated_skill_package_v1` 为 Codex 的 known-kernel 作者准备私有 `HOME` 与完整技能材料。
+当前只开放材料准备和可执行替身的 CPU qualification；原生技能发现、实际请求投递及
+initial/resume 等价仍未获资格。真实 qualification、正式 Run/Campaign 和正式回放均拒绝
+该策略，直接 Lab 入口或旧收据也不能放行。软件准备成功不代表已经能运行带技能的实验。
+
+包是一个未压缩 tar，包含原生技能目录，例如：
+
+```text
+skills/
+  cake-exploration/
+    SKILL.md
+    scripts/check.py
+    references/metal.md
+    assets/example.bin
+```
+
+每个顶层条目需要非空 UTF-8 `SKILL.md`；其 front matter 由原生 loader 解释，包检查不
+另造 YAML 或依赖格式，也不证明 Codex 已接受这些技能。脚本、引用资料、二进制资源和
+可执行意图完整保留。包只接纳普通文件与目录，拒绝链接、路径穿越、重复项、文件/目录
+冲突及特殊条目。上限为 64 MiB tar、32 MiB 文件内容、8 MiB 单文件、2048 个条目及
+32 个技能目录。源码与包放在各自授权位置，实验产物继续在 checkout 外。
+
+schema v2 的 cell 可显式增加：
+
+```json
+{"author_skill_package": "/absolute/reviewed/author-skills.tar"}
+```
+
+`prepare` 先读取并检查所有所选材料，再把原包保存为该 cell 的 `author-skills.tar`。
+本地和 SSH 传输均读取这个准备快照，在节点的 `run-inputs/` 中重建同一包，传给
+`launch_task.py --author-skill-package`。源文件后续修改不进入已准备 cell；缺少自己的
+快照就拒绝，不向管理根目录或其他 cell 回退。schema v1 不接纳此字段。当前传输接线可做
+CPU 验证，真正启动仍在 launcher 的原生资格门前拒绝；`--preflight-only` 不是豁免。
+
+Run 的 provider 声明持有唯一原包引用；TaskPackage、技能投影和保留证据使用同一份已读取
+快照。正文只投递位置与“已准备、原生投递未验证”的元数据，不把脚本或二进制塞进提示。
+软件资格保存原始 tar 到既有 evidence role `native_skill_package`，可据此重建完整投影；
+这不开放正式 Run 的回放域。Provider 配置从已有包引用派生内容身份：相同包字节放在不同
+Run 路径时仍是同一材料条件，内容变化则不能复用原资格；每个 Run 的可写状态始终独立。
+
+私有 `HOME/.agents/skills` 接收只读投影，另一个私有 `CODEX_HOME` 保留原来的凭据与
+会话生命周期。初次调用与 resume 核对同一绑定，内容、文件集合或权限漂移会拒绝继续。
+依赖与工具说明仍由原生技能文档持有；投递文件不会安装依赖、启用插件或增加工具权限。
+依赖是否可用、祖先/admin/system/plugin 来源是否受控、文件读取范围和模型是否真正使用
+技能，仍须独立验收。私有 HOME 本身不能证明全文件系统的读取隔离。
+
+开发者可在现有**可执行替身**资格命令上使用 `--fixture-only --author-skill-package
+/absolute/reviewed/author-skills.tar`，同时提供既有 fixture 凭据与输出参数；包参数选择上述
+新策略。省略 `--fixture-only` 会在读取凭据、启动 provider 或创建输出前拒绝。生成的
+fixture 收据只证明其实际检查的软件行为，不能授权真实模型或 GPU 实验。
 
 ## Native tensor Program correctness qualification
 

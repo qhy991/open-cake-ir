@@ -1,11 +1,13 @@
 """CPU protocol tests; no GPU or provider qualification is inferred."""
 from copy import deepcopy
+import base64
 import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -291,6 +293,101 @@ class ExperimentInputTests(unittest.TestCase):
             else:
                 self.assertEqual(command[command.index(flag) + 1], str(value))
         return command
+
+    def _skill_archive(self, name):
+        source = self.root / (name + '.tar')
+        with tarfile.open(source, 'w') as archive:
+            for path, data in (
+                (f'skills/{name}/SKILL.md', f'---\nname: {name}\ndescription: fixture\n---\n{name} body'.encode()),
+                (f'skills/{name}/scripts/check.py', f'print({name!r})'.encode()),
+                (f'skills/{name}/assets/table.bin', bytes(range(256))),
+            ):
+                item = tarfile.TarInfo(path)
+                item.size = len(data)
+                archive.addfile(item, io.BytesIO(data))
+        return source
+
+    def test_v2_skill_packages_use_selected_snapshots_for_local_and_ssh_node(self):
+        config = self._per_cell_config()
+        expected = {}
+        for cell in config['cells']:
+            source = self._skill_archive(cell['id'])
+            cell['author_skill_package'] = str(source)
+            expected[cell['id']] = source.read_bytes()
+        config['cells'][1]['node'].update(transport='ssh', host='fixture-host')
+        with patch.object(kernel_experiment.NativeSkillPackage, 'read',
+                          wraps=kernel_experiment.NativeSkillPackage.read) as reads:
+            output = self._prepare_experiment(config)
+        self.assertEqual(reads.call_count, 2)
+        for cell in config['cells']:
+            Path(cell['author_skill_package']).unlink()
+            payload = self._launch_payload(output, cell['id'])
+            self.assertEqual(base64.b64decode(payload['author_skill_package']), expected[cell['id']])
+            self.assertNotIn(f"{cell['id']} body", payload['scaffold'])
+            with patch('sys.stdin', io.StringIO(json.dumps(payload))), \
+                 patch('subprocess.run', return_value=SimpleNamespace(returncode=0)) as execute:
+                with self.assertRaises(SystemExit) as result:
+                    exec(kernel_experiment._NODE, {})
+            self.assertEqual(result.exception.code, 0)
+            self.assertEqual(execute.call_count, 2)
+            command = execute.call_args.args[0]
+            material = Path(command[command.index('--author-skill-package') + 1])
+            workspace = Path(cell['node']['workspace'])
+            self.assertEqual(material, workspace.with_name(workspace.name + '-inputs')/'author-skills.tar')
+            self.assertEqual(material.read_bytes(), expected[cell['id']])
+            self.assertNotIn(cell['author_skill_package'], command)
+
+    def test_missing_skill_snapshot_refuses_before_attempt_without_source_or_sibling_fallback(self):
+        config = self._per_cell_config()
+        source = self._skill_archive('shared')
+        for cell in config['cells']:
+            cell['author_skill_package'] = str(source)
+        output = self._prepare_experiment(config)
+        first = config['cells'][0]['id']
+        (output/'cells'/first/'author-skills.tar').unlink()
+        (output/'author-skills.tar').write_bytes(source.read_bytes())
+        with patch.object(kernel_experiment, 'checkout_commit', return_value=COMMIT), \
+             patch.object(kernel_experiment.subprocess, 'run') as launch:
+            with self.assertRaises((OSError, ValueError)):
+                kernel_experiment.run_cell(output, first)
+        launch.assert_not_called()
+        self.assertFalse((output/'launches'/first).exists())
+
+    def test_skill_prepare_refuses_invalid_material_before_output_and_v1_stays_closed(self):
+        config = self._per_cell_config()
+        source = self.root/'invalid.tar'
+        source.write_bytes(b'not an archive')
+        config['cells'][0]['author_skill_package'] = str(source)
+        with self.assertRaises(ValueError):
+            self._prepare_experiment(config)
+        self.assertFalse((self.root/'experiment').exists())
+        for invalid in (deepcopy(self.config), config):
+            invalid['cells'][0]['author_skill_package'] = str(source)
+            if invalid['schema_version'] == 2:
+                invalid['provider']['harness'] = 'claude-code'
+            with self.assertRaises(ValueError):
+                kernel_experiment.validate(invalid)
+
+    def test_node_refuses_missing_invalid_and_oversized_skill_payload_before_side_effects(self):
+        cell = deepcopy(self.config['cells'][0])
+        cell['author_skill_package'] = '/unread/original.tar'
+        payload = {'cell': cell, 'source_commit': COMMIT, 'scaffold': 'rules',
+                   'provider': self.config['provider'], 'budget': self.config['budget']}
+        # Exercise the generated transport with a smaller memory bound. The
+        # production string derives its limit from the same package owner.
+        bounded_node = kernel_experiment._NODE.replace(
+            f'skill_limit = {kernel_experiment.MAX_ARCHIVE_BYTES}', 'skill_limit = 8')
+        for value in (None, 'not-base64!', base64.b64encode(b'123456789').decode(),
+                      'A' * 16):
+            selected = dict(payload)
+            if value is not None:
+                selected['author_skill_package'] = value
+            with self.subTest(value=value), patch('sys.stdin', io.StringIO(json.dumps(selected))), \
+                 patch('subprocess.run') as execute:
+                with self.assertRaises(ValueError):
+                    exec(bounded_node, {})
+            execute.assert_not_called()
+            self.assertFalse((self.root/'node-run-inputs').exists())
 
     def _resolved_budget(self, command, *, refusal=None):
         # Exercise the real CLI parser and budget owner; stop before stack admission.

@@ -42,6 +42,8 @@ def validate_declarations(arms: Mapping[str, object]) -> None:
         if not isinstance(arm, Mapping):
             raise ValueError(f"arm {name} must be an Authoring Environment")
         reference_access(arm, f"arms.{name}")
+        from .native_skills import author_skill_reference
+        author_skill_reference(arm)
 
 
 def incomplete_schedule(workload, case_id: str, lowering_route: Mapping[str, object]) -> dict:
