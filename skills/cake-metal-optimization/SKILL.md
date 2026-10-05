@@ -44,6 +44,10 @@ public Metal text interface established by this task. A metallib or binary archi
 is not itself readable instruction evidence. Inspect AIR or machine code only when
 the exact toolchain and task provide it; otherwise mark that layer unobserved.
 
+For a task that grants the matching offline Xcode toolchain, use the bounded
+[AIR inspection recipe](references/air-inspection.md) to inspect your own generated
+source. The recipe does not grant tool execution or access to other artifacts.
+
 Shorter MSL and fewer logical live values do not prove fewer physical registers,
 absence of spills or faster execution. Use external-oracle correctness, qualified
 timing and profiler observations for the measured claims they actually cover.

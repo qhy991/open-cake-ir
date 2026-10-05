@@ -1,6 +1,8 @@
 # Metal 演进实验：TASK.md / AGENTS.md 与 Run 后提炼
 
 状态：完整技能包软件准备与平台规划已由 PR #327 合入 `metal@25f1faf2`；原生技能资格及演进 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
+2026-10-06：六任务 FP32 starter 的真实 M4 数值检查已通过；RMSNorm A/A 未通过原测量质量门，正式性能搜索仍未启动，详见总计划的真实资格记录。
+
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。
 

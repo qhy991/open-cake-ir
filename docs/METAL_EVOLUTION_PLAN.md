@@ -448,7 +448,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    在一致的后继环境上完成 G0/G1 和固定基线。代码编写前检查冻结与 source owner。
    当前离线任务与结构表达已完成；下一步优先解决主机声明/工具链的一致性，以及 G2 原生语义，
    不先扩大 dtype 或增加 primitive。用户已选择临时子进程回环直连，CPU 技能探针的
-   initial/resume 投递已观察；工具链是独立待定事项，不因网络通过而获得资格。
+   initial/resume 投递已观察；用户随后批准了仅作用于子进程的现有 Xcode 配套工具链；新环境观察见下，不因网络通过而获得设备资格。
 2. **共享反馈修复与两轮经验验收。** PR #319 已将 `main@354a670f` 的默认 bundle、
    候选归因、peer 结果、Run 内历史和任务资料隔离经 CPU 集成验证合入 Metal；本机 custody
    条件和真实资格保持各自未验证状态。继续按
@@ -495,12 +495,50 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G0 环境 | 用户选择的 Xcode16/SDK15 后继 CPU 54/1；M4 零 dispatch 与 host capture 通过；旧失败保留 | 后继 host 提交与原生 archive、设备测量、provider 各自准入 | `metal-xcode16-20261006/`；旧 `readiness.md`、`followup-readiness.md` |
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 原生/oracle/设备；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
-| G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
+| G3 测量 | RMSNorm 同产物 A/A 数值正确但 20/20 cohort 的 relative IQR 超过 0.05；独立工作量与 timestamp 控制通过 | 测量稳定性未获资格；不启动性能搜索或声称收益 | `metal-xcode16-20261006/g3-rmsnorm-*`；F-2026-10-06-001 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
 | G4 技能软件准备 | PR #335/#337 完成轮次与拒绝回放；PR #339 从保留材料重建资格两轮输入及当前正文 | PR #340 收据/anchor/admission 组件正在验收；运行入口及真实作者资格未完成 | `native-skill-qualification-b6ba8dc6/report.json`；旧失败记录保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | admin/插件哨兵、脚本/依赖、真实模型使用与正式 provider 资格未完成 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
 | 平台软件集成 | PR #338 合入 metal@f404dbf5，三版本 CPU CI 各 2790/35；本任务吸收 PR #339 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-fault-7fa4ac02/report.json`；后继记录另列 |
+
+### 2026-10-06：真实 M4 资格实验
+
+用户批准的独立后继环境固定 Xcode 16 / macOS SDK 15，主机为实际 M4、
+`apple_gpu_family9`，源码固定 `2b34d17d`。环境变量只传给子进程，系统
+`xcode-select` 未改变。旧 CLT/SDK 链接失败与脚本失败记录均保留。
+以下记录位于 `/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-xcode16-20261006/`，
+每个任务有自己的目录；这是有界资格探针，不是正式 Ralph Run。
+
+- **静态与数值**：完整 Corpus 181/181；其目标覆盖仍以原 case 集为限。
+  `g1-native/` 中 SiLU、RMSNorm、Softmax、bias-gradient reduction、AdamW、GEMM+SiLU
+  六个 FP32 starter 均经原生编译、archive-only 严格重载，再对各自原有 5 种输入分布
+  校验，共 30 次 dispatch 全部正确。只资格化这些 starter，结构替代程序尚未逐个上设备。
+- **A/A**：`g3-rmsnorm-aa/` 固定 R128 C1024、同一封存 archive、10 个 AB/BA pair、
+  每 cohort 3 次预热加 25 次计时、每 sample 64 次 dispatch。580 个 command buffer、
+  35,860 次 dispatch 数值均正确；20/20 cohort 的 inclusive IQR/median 为
+  0.1870–0.8139，超过原门槛 0.05，故 `measurement_quality_failed`。
+  pooled baseline/candidate 比值 0.97794 不能据此称为合格 close-null 或性能结论。
+  当前协议使用 relative IQR；CV 仅为描述量。没有删样本、放宽门槛或重跑到通过。
+- **独立控制**：`g3-rmsnorm-work_control/` 同一 kernel 每 command buffer 编码
+  16/256 次 dispatch，580 个 command buffer、76,180 次 dispatch 全部正确；
+  command-buffer median 比值 15.2337，说明对工作量敏感，绝非 kernel 加速比。
+  `g3-rmsnorm-profile/` 的 5 次数值预检与 1 次采样均通过，compute-stage timestamp
+  差为 208750 raw device units，仅用于归因；occupancy、带宽、指令计数未采集。
+  两个控制不覆盖 A/A 稳定性失败。
+- **低层可观察性**：`low-level/rmsnorm-macos.air.ll` 是从本次自有 MSL 用固定 Xcode
+  离线生成的可读 AIR/LLVM IR，可见 scalar load/store、`air.simd_sum.f32`、
+  `air.rsqrt.f32`、`air.simd_broadcast.f32` 和 5 个 32-float private alloca。
+  它不是实际 runtime archive 的反汇编；不能据此报告物理寄存器、spill 或机器 ISA。
+
+GPU 阶段使用现有 local broker 的短生命周期 lease；CPU oracle 在取得 lease 前准备。
+该锁是同用户合作式互斥，不排除系统或其他应用 GPU 活动。正式 launcher 的所有原生
+构建/检查阶段仍需完成统一 lease 边界接线，不能把探针的显式包装视为生产路径已修复。
+
+本次首先产生 Evaluation Finding **F-2026-10-06-001**。根因未证实，不把一次测量失败
+改写成 Compiler 缺口。受限 FP32 starter 基础已有设备证据；可比较的优化闭环仍缺
+G3 稳定计时、原生技能真实两轮作者资格，以及正式运行的 phase-boundary 验收。
+Codex `gpt-6.1-sol / xhigh` 的 Ralph 搜索尚未启动，不能从这些探针推断 agent 学习效果。
 
 ## 8. 走向更完整的 Metal 工具
 
