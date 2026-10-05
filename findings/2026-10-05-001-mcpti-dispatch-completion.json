@@ -52,6 +52,27 @@
       "audit": "All43 retained paired observations replay through the frozen1b18e15b common owner and match their saved summaries.43000 kernel records have matching launch correlations and no sample-duration derivation mismatches. Five end timestamps depart from the observed256ns grid, including records whose cohorts otherwise pass; that pattern is not an admission rule.",
       "diagnostic_lead": "The installed MCPTI SDK documents that forced flush may return incomplete records. Kernel8 completed timestamp and raw-prefix/lifecycle diagnostics were not retained. This leaves a collection-completeness uncertainty; it does not prove the0.770us sample cause.",
       "disposition": "Keep experiments stopped and PR305 open. Require explicit uniform controls in a successor and bounded collection diagnostics before further hardware qualification. No sample deletion, modulo rule, CV relaxation or promotion."
+    },
+    {
+      "date": "2026-10-05",
+      "kind": "completed_record_successor_verification",
+      "implemented_in": "d3d4c696958f541f797cd0356728b85f470a7848",
+      "evidence": "c550-2:/root/open-cake-runs-reviewed/c550-completed-capture-20261005",
+      "locators": [
+        "admission-sdk-paths/cpu-preflight-result.json",
+        "cpu-build-result.json",
+        "controls-plan.json",
+        "controls-results.jsonl",
+        "controls-exit.json",
+        "collection-forensics.json",
+        "observations/aa-serial-softmax-1/timing_samples"
+      ],
+      "source_change": "Accepted collection uses SDK completed-record flush0; forced flush1 is rejected-session teardown only. Retain completed timestamp, grid id,112-byte native prefix, callback buffer attribution and host flush lifecycle. Completed timestamp is diagnostic information, not a boolean admission condition.",
+      "software": "117 MetaX contracts and failed-worker transport contracts pass at the frozen C550 successor; Corpus181 matches. The installed Kernel8 layout probe confirms completed32,gridId96,name104,full size200. Initial probe invocation omitted the installed mcr include directory; preserve its failure and the separate corrected-command admission. No runtime package repair or GPU calls occurred during CPU gates. Python3.10/3.11/3.12 CI passes at d3d4c696.",
+      "device": "21 strict timing controls and four profiles were predeclared.16 of17 attempted timing comparisons pass uniform population CV0.05: twelve serial/queued A/A and four signed controls. Positive output partition controls reproduce15.872->4.608us(3.4444x) at R128K256N32 and32.000->8.192us(3.90625x) at R256K256N64. Full unroll controls remain slower. No new Agent comparison or combined-pass speedup is claimed.",
+      "failure": "The17th Softmax A/A comparison passes correctness but cohort0 baseline CV0.078802917239899 and candidate CV0.065401516379315 exceed0.05. Slowest samples are baseline index13=5.376us and candidate index1=5.120us; this is not evidence of a first-timed-sample-only warmup defect. The stop leaves four timing controls and all four profiles unattempted; no replacement or sample deletion.",
+      "audit": "All17 comparisons replay identically through the frozen common owner.340 cohorts contain17000 kernel records with no raw-prefix projection mismatch and no forced flush in timed captures. The failed capture has no dropped records or pending buffers. Completed-record acquisition therefore does not establish global timestamp stability or explain the former0.770us outlier.",
+      "disposition": "Collector coverage and diagnostics improved; global uniform5% readiness remains unestablished. Keep the finding deferred and PR305 open pending timing-readiness investigation. No cost-model calibration or primary GLM experiment resumed."
     }
   ]
 }
