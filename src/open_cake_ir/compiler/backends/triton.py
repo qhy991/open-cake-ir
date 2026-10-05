@@ -401,11 +401,16 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "access_maps",
         "the Triton backend requires access maps",
     )
+    parents = schedule.loop_parent()
+    # The operation order already owns each contiguous root region. Independent
+    # sibling regions may carry values to later regions without introducing a
+    # deeper nesting contract. Nested emission remains the qualified two-deep slice.
+    sibling_regions = not parents
     add(
-        len(schedule.tile_loops) <= 2,
+        sibling_regions or len(schedule.tile_loops) <= 2,
         "TRITON_TILE_LOOP_COUNT",
         "tile_loops",
-        "the Triton backend supports at most two tile loops",
+        "Triton admits sequential sibling loop regions or at most two nested loops",
     )
     add(
         len(schedule.roles) == 1,
@@ -639,29 +644,27 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
 
     multiple_loops = len(schedule.tile_loops) > 1
     if multiple_loops:
-        parent = schedule.loop_parent()
         depths = sorted(schedule.loop_depth(loop.name) for loop in schedule.tile_loops)
         add(
-            len(schedule.tile_loops) == 2
-            and ((len(parent) == 1 and depths == [0, 1])
-                 or (not parent and depths == [0, 0])),
+            sibling_regions or (len(schedule.tile_loops) == 2
+                                and len(parents) == 1 and depths == [0, 1]),
             "TRITON_LOOP_NEST_UNSUPPORTED",
             "tile_loops",
-            "the two-loop Triton slice requires one outer/inner pair or two sibling loops",
+            "Triton admits sequential sibling regions or one outer/inner loop pair",
         )
         for index, loop in enumerate(schedule.tile_loops):
             add(
                 loop.stop is None,
                 "TRITON_NESTED_LOOP_STOP",
                 f"tile_loops[{index}].stop",
-                "two-loop Triton emission currently requires static extents",
+                "multi-region Triton emission currently requires static extents",
             )
             for option in ("flatten", "warp_specialize"):
                 add(
                     not getattr(loop.range_options, option),
                     "TRITON_NESTED_LOOP_OPTION",
                     f"tile_loops[{index}].range_options.{option}",
-                    f"two-loop Triton emission does not implement {option}=true",
+                    f"multi-region Triton emission does not implement {option}=true",
                 )
 
     for index, operation in enumerate(schedule.operations):
@@ -685,7 +688,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 },
                 "TRITON_NESTED_OPERATION_UNSUPPORTED",
                 f"operations[{index}].kind",
-                f"the two-loop Triton slice does not implement {operation.kind.value!r}",
+                f"the multi-region Triton slice does not implement {operation.kind.value!r}",
             )
             if operation.kind is OperationKind.MMA:
                 add(

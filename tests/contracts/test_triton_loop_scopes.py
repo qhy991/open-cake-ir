@@ -5,6 +5,7 @@ import ast
 import copy
 import itertools
 import json
+import math
 import operator
 import unittest
 from pathlib import Path
@@ -170,8 +171,11 @@ class _Tile:
     def __mul__(self, x): return self.binary(x, operator.mul)
     __rmul__ = __mul__
     def __sub__(self, x): return self.binary(x, operator.sub)
+    def __truediv__(self, x): return self.binary(x, operator.truediv)
+    def __rtruediv__(self, x): return self.binary(x, lambda a,b: b/a)
     def __lt__(self, x): return self.binary(x, operator.lt)
     def __eq__(self, x): return self.binary(x, operator.eq)
+    def __ne__(self, x): return self.binary(x, operator.ne)
     def __and__(self, x): return self.binary(x, operator.and_)
     def __or__(self, x): return self.binary(x, operator.or_)
     def to(self, dtype): return self
@@ -270,6 +274,13 @@ class _TL:
         assert k == kb
         return _Tile((m, n), [sum(a.at((i, t)) * b.at((t, j)) for t in range(k))
                               for i in range(m) for j in range(n)])
+
+    @staticmethod
+    def exp(a):
+        def hardware_exp(value):
+            try:return math.exp(value)
+            except OverflowError:return float('inf')
+        return _Tile(a.shape, map(hardware_exp, a.values))
 
     @staticmethod
     def sum(a, axis):

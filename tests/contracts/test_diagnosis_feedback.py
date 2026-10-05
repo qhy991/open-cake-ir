@@ -218,6 +218,26 @@ class DiagnosisRunTests(unittest.TestCase):
                     self.assertFalse(lab._replay_matched_run(store, audit, lock))
 
 
+class CompilerDiagnosisOwnershipTests(unittest.TestCase):
+    def test_existing_storage_and_coordinate_repair_are_not_missing_ir(self):
+        for code,path in (('TRITON_ELEMENTWISE_STORAGE','operations[1].reads[0]'),
+                          ('TRITON_LOOP_STORE_OWNERSHIP','operations[16]')):
+            route=route_rejection({'stage':'assessment','findings':[{'code':code,'path':path,
+                'blocks_acceptance':False,'blocks_lowering':True}]})
+            self.assertEqual(route.destination,'candidate')
+            self.assertIn('declaration change',route.reason)
+
+    def test_loop_topology_omission_is_backend_owned_and_route_qualification_is_explicit(self):
+        route=route_rejection({'stage':'assessment','findings':[{'code':'TRITON_LOOP_NEST_UNSUPPORTED',
+            'path':'tile_loops','blocks_acceptance':False,'blocks_lowering':True}]})
+        self.assertEqual(route.destination,'backend_lowering')
+        for code in ('MACA_REGISTER_BUDGET_UNQUALIFIED','MACA_WARP_COUNT_UNQUALIFIED'):
+            route=route_rejection({'stage':'assessment','findings':[{'code':code,'path':'roles',
+                'blocks_acceptance':False,'blocks_lowering':True}]})
+            self.assertEqual(route.destination,'backend_triage')
+            self.assertIn('qualification',route.reason)
+            self.assertIn('expressible',route.reason)
+
 class DiagnosisSummaryTests(unittest.TestCase):
     def test_cross_root_counts_are_read_only_deduplicated_and_policy_scoped(self):
         import os

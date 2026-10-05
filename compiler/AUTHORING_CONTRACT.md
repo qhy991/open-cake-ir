@@ -219,3 +219,33 @@ the assessment reports `total_execution_groups`. Backend ISA names and Triton
 `num_warps` remain native toolchain terms. Version 1 and the `warps` field are refused;
 historical records replay at their pinned commit. This schema migration changes document
 identity, not the assigned groups, target, or lowering decisions.
+
+## Sequential Triton regions and pointwise output tiles
+
+A Schedule may declare any finite sequence of sibling tile loops. Their contiguous
+operation intervals determine execution order; declaration order does not. Each loop
+initializes and finalizes its own carried state, and an explicit live-out may feed a
+later loop. The admitted multi-region slice uses fixed extents and retains the existing
+operation/effect guards; query stops, flattening, warp specialization and deeper
+nesting do not gain support from this change. The existing one outer/inner pair remains
+admitted. No range option is discarded or replaced.
+
+`Compiler.tile_pointwise_outputs(..., output_tile=..., schedule_id=..., entry_point=...)`
+is an explicit candidate rewrite. It matches a loop-free, single-role, whole-row rank-2
+pointwise graph over ordinary nonaliasing global/register buffers. All public outputs
+share a shape and have one writer; arithmetic uses aligned column-vector register values.
+The rewrite adds a column program tile, resizes only internal vectors, and updates direct
+load/store accesses with tail masking. It preserves the operation graph, dtype, public
+ABI and metadata. Reductions, contractions, scans, atomics, synchronization, state,
+explicit storage and cross-axis broadcasting are outside its independence proof.
+
+A valid input refused only for a whole-column Triton arange may enter this rewrite: the
+new power-of-two tile is the intended repair, and the result must pass the normal complete
+assessment and lowering. The rewrite never applies implicitly. The complete-Program
+interface exposes `tile_pointwise_outputs` on one selected stage without changing its
+public bindings. Lab owns parameter search, applicability recipes and performance acceptance;
+no new route qualification, physical register guarantee or speedup is inferred.
+
+Lowering diagnostics distinguish a declaration the author can repair from an unemitted
+loop topology and an unqualified route control. Shared/register operand and affine loop
+store-coordinate requirements remain blocking; accurate owner routing does not relax them.
