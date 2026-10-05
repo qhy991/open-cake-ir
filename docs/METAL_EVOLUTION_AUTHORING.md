@@ -1,6 +1,6 @@
 # Metal 演进实验：TASK.md / AGENTS.md 与 Run 后提炼
 
-状态：平台规划及技能观察边界已合入 `metal@229c1293`；演进文本 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
+状态：完整技能包软件准备与平台规划已由 PR #327 合入 `metal@25f1faf2`；原生技能资格及演进 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。
 
@@ -98,6 +98,16 @@ context，已见 `host_skills.instructions` 与 `world_state.host_skills.body` �
 原始软件探针与只读投影分别见外部台账的 `codex-skill-exec-probe-v2/report.json` 和
 `codex-skill-exec-inspection-v2/report.json`；它们不构成 Provider qualification。
 
+独立诊断后继只增加故障 stdout/stderr 的私有保留，原版本、配置、网络边界和 45 秒上限
+保持不变。它复现了超时，并在同进程输出中观察到 thread/turn 开始及四次请求连接失败；
+本地 Responses 服务仍为零请求，未执行 resume 或无仓库案例。记录见
+`codex-skill-exec-diagnostic-20261005/inspection.json`。这把失败缩小到请求连接阶段，
+尚不能确定实际连接目的地或底层原因；没有修环境重跑，也没有获得输入投递资格。
+同版本公开源码的 [Responses 重试分支](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core/src/responses_retry.rs)
+与该等待文案一致：连接错误可走独立重试路径，普通 request/stream 重试上限不能据此
+解释为整个 exec 只尝试一次。这是源码对应分析，不证明安装二进制的字节来源；外层有限
+时限继续生效，延长时限或更换网络条件都不能算旧检查通过。
+
 最小后继应沿现有 `author_home` / `ProviderInvocation` / qualification owner：为每 Run
 绑定私有用户 HOME 与明确技能包，initial/resume 使用相同绑定，保留既有独立
 CODEX_HOME；旧 auth-only 策略不改，也不把 user skills 塞入其禁止的位置。完整包保留原生
@@ -111,7 +121,8 @@ SKILL.md、脚本、引用资料和二进制资源，依赖说明继续由技能
 分别报告；前两项不计为已经完成用户要求的独立 skill 环境。
 
 通用软件后继 [PR #325](https://github.com/qhy991/open-cake-ir/pull/325) 已合入
-`main@53f5aa70`，本计划分支已同步，平台集成验证另列。材料入口接纳完整原生 tar 包，
+`main@53f5aa70`，并由 [PR #327](https://github.com/qhy991/open-cake-ir/pull/327) 集成到
+`metal@25f1faf2`。材料入口接纳完整原生 tar 包，
 v2 cell 保存并发送自己的快照；
 两个私有 home、初次/续轮绑定和漂移检查沿用 Lab owner。fixture qualification 保留原包
 并能重建投影；正式 Run/Campaign/回放仍明确拒绝新策略。
@@ -125,7 +136,17 @@ v2 cell 保存并发送自己的快照；
 使用方法和准确边界由共享 `docs/KERNEL_REPRODUCTION.md` 持有，平台不复制实现。
 本地、首轮失败和修复结果分别见 `native-skill-preparation-8a937973/report.json`、
 `native-skills-ci-37310854818/report.json` 与 `native-skill-repair-225e9e6e/report.json`；
-主线合并与完整 CI 见 `native-skill-main-225e9e6e/report.json`。这些软件结果不替代原生输入验收。
+主线合并与完整 CI 见 `native-skill-main-225e9e6e/report.json`；平台集成的三版本 CI 各
+2749 通过、35 跳过，见 `metal-skill-integration-e68aa623/report.json`。这些软件结果不替代原生输入验收。
+
+**真实启用还缺一个软件后继，不是仅缺一次命令执行。** 当前
+`author_home.require_live_skill_qualification` 对新策略无条件拒绝，现有 qualifier 也只允许
+`--fixture-only`。先在实际 initial/resume invocation 上证明可用的输入观测，再沿原
+qualifier、证据与 admission/replay owner 同步接入验证；不能删拒绝分支后直接沿用旧收据。
+负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察，以及
+旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
+不填补缺口。已有包、home 与 cell owner 继续复用，不再造安装器或第二套资格流程。
+固定源码入口审计见 `native-skill-qualification-readiness-e68aa623/report.json`。
 
 技能资格的最小验收步骤：
 
