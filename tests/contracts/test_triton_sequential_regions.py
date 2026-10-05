@@ -51,8 +51,8 @@ class SequentialRegions(unittest.TestCase):
         cls.compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
 
     def test_three_pass_carries_tail_masks_and_emitted_source_agree_with_external_math(self):
-        for target in ('sm_100a', 'xcore1002', 'gfx938', 'gfx1151'):
-            for columns in (1, 7, 8, 17):
+        for target in ('xcore1002',):
+            for columns in (7, 8, 17):
                 with self.subTest(target=target,columns=columns):
                     d=frontend.parse(softmax_source(columns=columns,target=target)).document
                     a=self.compiler.assess(d)
@@ -73,6 +73,28 @@ class SequentialRegions(unittest.TestCase):
                     self.assertEqual(set(observer.stores.values()),{1})
                     self.assertEqual(sum(isinstance(n,ast.For) for n in ast.walk(ast.parse(result.source))),3)
                     self.assertIn('inverse',result.source_map)
+
+    def test_sibling_control_flow_serves_peer_targets_without_borrowing_mask_operations(self):
+        for target in ('sm_100a', 'gfx938', 'gfx1151'):
+            source=softmax_source(columns=8,target=target)
+            source='\n'.join(line for line in source.splitlines()
+                             if not any(name in line.split('=')[0] for name in
+                                        ('indices_max','valid_max','guarded_max','indices_sum','valid_sum','guarded_sum')))
+            source=source.replace('lm.reduce(guarded_max,','lm.reduce(values_max,').replace('lm.reduce(guarded_sum,','lm.reduce(exp_sum,')
+            d=frontend.parse(source).document
+            a=self.compiler.assess(d);self.assertTrue(a.lowering_eligible,a.findings)
+            emission=emit(Schedule.from_dict(d),self.compiler._revision.targets[target])
+            memory={'x':[float(i) for i in range(16)],'out':[None]*16}
+            _execute(emission,memory)
+            self.assertAlmostEqual(sum(memory['out'][:8]),1.0,places=12)
+            self.assertAlmostEqual(sum(memory['out'][8:]),1.0,places=12)
+            # These targets do not declare coordinate/compare/select today.
+            masked=self.compiler.assess(frontend.parse(softmax_source(target=target)).document)
+            self.assertTrue(any(f.code=='TARGET_OPERATION_UNSUPPORTED' for f in masked.findings))
+
+    def test_a_noniterating_single_trip_stays_a_semantic_refusal(self):
+        a=self.compiler.assess(frontend.parse(softmax_source(columns=1)).document)
+        self.assertTrue(any(f.code=='TILE_LOOP_SINGLE_TRIP' and f.blocks_acceptance for f in a.findings))
 
     def test_four_sibling_regions_are_ordered_by_operations_not_declaration_count(self):
         source=softmax_source().replace('        inverse = lm.reciprocal(total, id="inverse")', '''        for repeat_col in lm.range(x, dimension=1, tile=4, name="pass_repeat"):

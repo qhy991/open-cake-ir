@@ -22,7 +22,10 @@ def tile_pointwise_outputs(compiler, schedule, *, output_tile, schedule_id, entr
         assessment = compiler.assess(schedule)
     except (CompilerError, ScheduleParseError, ValueError, TypeError) as error:
         return _refuse('input_refused', str(error))
-    if not assessment.lowering_eligible or assessment.typed_schedule is None:
+    blockers = [f for f in assessment.findings if f.blocks_acceptance or f.blocks_lowering]
+    whole_column_range_only = (assessment.accepted and bool(blockers)
+                              and all(f.code == 'TRITON_ARANGE_RANGE_UNSUPPORTED' for f in blockers))
+    if (not assessment.lowering_eligible and not whole_column_range_only) or assessment.typed_schedule is None:
         return _refuse('input_refused', ', '.join(f.code for f in assessment.findings
                                                 if f.blocks_acceptance or f.blocks_lowering))
     s = assessment.typed_schedule

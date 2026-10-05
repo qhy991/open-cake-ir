@@ -175,6 +175,7 @@ class _Tile:
     def __rtruediv__(self, x): return self.binary(x, lambda a,b: b/a)
     def __lt__(self, x): return self.binary(x, operator.lt)
     def __eq__(self, x): return self.binary(x, operator.eq)
+    def __ne__(self, x): return self.binary(x, operator.ne)
     def __and__(self, x): return self.binary(x, operator.and_)
     def __or__(self, x): return self.binary(x, operator.or_)
     def to(self, dtype): return self
