@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "id": "F-2026-10-05-002",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "executor_revision": "xcore1002@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "title": "Sequential Softmax regions are rejected by the Triton two-loop admission cap",
+  "decision": "proposed",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/matrix-v1/softmax/run-evidence",
+    "rejection_events": [99, 100],
+    "candidate_action_event": 95,
+    "action_ordinals": [0, 2],
+    "inspection": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/exact-gap-schedule-inspection-parsed.json",
+    "successor_cpu_compilation": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/compiler-successor-4d7258a2/offline-build-v2/results.json"
+  },
+  "observation": "Two exact retained R128/C1024 Softmax candidates declare three sibling loops: max, sum and output, each tiled by512, with stages1 or2. Their localized refusals are TRITON_TILE_LOOP_COUNT and TRITON_LOOP_NEST_UNSUPPORTED. The common model already represents their contiguous regions and carried live-outs; the existing emitter walks root loops in operation order. This is an admission restriction, not a missing IR primitive. Both unchanged candidate documents assess and compile to MCFATBIN under successor4d7258a2 using the isolated CPU-only MACA3.6 route. No device launch or performance confirmation was performed.",
+  "proposed_change": "Admit flat sibling sequences through the existing regional emitter, keeping the previously supported outer/inner pair and refusing deeper or mixed nesting. Preserve dependency, carried-state, memory-coordinate and range-option guards. CPU semantic tests must exercise max/sum live-outs, initialization and finalization, masked tails, operation order independent of declaration order, and owning counterexample refusals. Route unsupported topology to backend lowering; keep author-repairable storage and output-coordinate declarations separate from unqualified route controls.",
+  "implemented_in": "4d7258a22b75c6ca430493f246901e8ba8b0b2f1",
+  "verified_by": null,
+  "software_verification": {
+    "commit": "4d7258a22b75c6ca430493f246901e8ba8b0b2f1",
+    "contracts": "99 affected CPU contracts pass in a detached worktree; emitted-source interpretation agrees with external stable Softmax arithmetic and observes one store per public element. Existing nested-loop and peer-target refusal tests remain valid.",
+    "corpus": "181/181 unchanged Corpus expectations match;97 lowerable source snapshots match.",
+    "offline_build": "Unchanged retained Softmax99/100 and an independently masked C17/tile4 fixture compile through IsolatedTritonCompiler. The initial external verification driver incorrectly passed the host wrapper to kernel-only admission; its failed observations remain in offline-build. The corrected driver uses the canonical project_triton_kernel owner and records success separately in offline-build-v2.",
+    "limits": "CPU interpretation is not FP32 device correctness. Offline compilation supplies no timing, profiler or successor hardware qualification. Target documents and original Run evidence are unchanged."
+  },
+  "promotion_disposition": "Reviewable successor implementation with software verification only. Capability finding remains open pending independent review and a qualified successor Run; no new GPU batch is authorized or launched by this record. No performance promotion."
+}

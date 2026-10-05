@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-10-05-006",
+  "kind": "capacity",
+  "date": "2026-10-05",
+  "title": "gfx938 target admission omits device-executed register broadcasts and resident scans",
+  "backend": "triton",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@f2c3d89ca229e0647750d7940822572dfc04f58f",
+  "executor_revision": "existing per-user bw1100-bench HCU gateway; component qualification, not a canonical Lab Executor",
+  "evidence": {
+    "workspace": "/data3/testuser01/experiments/bw1100-cake-compiler-completion-20261005",
+    "record": "values/manifest.json and values/device-result.json",
+    "run_id": "bw-ac46a77edbb3",
+    "receipt": ".local/value-probes-001-admission-terminal.json"
+  },
+  "observation": "The current exact gfx938 Target refused 25 typed register-value Schedules with TARGET_OPERATION_UNSUPPORTED. A separate explicit proposed Target with the same route, dtype, resource and instruction facts verified and emitted those Schedules; 63 exact device checks passed. This establishes a bounded Target-admission omission, rather than a missing generic layout algebra or a whole-task performance ceiling.",
+  "proposed_change": "Declare coordinate, compare, select, broadcast_in_dim and resident scan in the exact gfx938 document; retain five reachable Corpus cases and dtype/shape/effect counterexamples. Preserve the original188 expectations and all frozen campaigns. Shared primitive semantics/schema/effects/work stay on the shared branch.",
+  "decision": "proposed",
+  "implemented_in": "cf7f5e59",
+  "verified_by": null,
+  "partial_verification": {
+    "source_commit": "f2c3d89ca229e0647750d7940822572dfc04f58f",
+    "kind": "bounded proposed-Target device component qualification",
+    "sources": 25,
+    "exact_checks": 63,
+    "cleanup": "exit0, terminal completed, HCU2 VRAM0%, no visible KFD or running container",
+    "scope": "INT32/FP32 inclusive resident scan, lengths1/33/65/129 forward and reverse, signed wrap and values beyond2^24; outer product and neutralized biased masked-row tails3/5/7; bit-preserving broadcasts in FP32/FP16/BF16/INT32/FP8E4M3. No all-bit-pattern/NaN-payload, arbitrary-rank/shape, global-carry, loop, stable-sort, Task-speed or peak-rate claim.",
+    "software": "Target count193,106 snapshots; original188 case expectations unchanged; independent read-only target/effect/device-receipt review passed after explicit count contract repair"
+  },
+  "remaining_acceptance": "Current integration gates and a bounded unchanged-Workload operator replay against the frozen strong community baseline; component checks alone do not close this capability Finding."
+}

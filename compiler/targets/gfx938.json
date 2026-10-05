@@ -19,7 +19,12 @@
     "mma",
     "reduce",
     "store",
-    "atomic_rmw"
+    "atomic_rmw",
+    "coordinate",
+    "compare",
+    "select",
+    "broadcast_in_dim",
+    "scan"
   ],
   "warp_size": 64,
   "resource_limits": {
@@ -107,6 +112,11 @@
       "kind": "device_observation",
       "source": "Cake-generated INT32 atomic fetch-add on BW1100-1, DTK Triton 3.6.0 hcu backend",
       "locator": "/data3/testuser01/experiments/bw1100-cake-atomic-successor-20261003/results/atomic-001/device-result.json at Compiler d7d37fa4. Three shapes [8,8],[256,8],[2048,8], five input scenarios and ten rounds each pass150/150: returned-old-value uniqueness under contention, signed initial counters, unchanged indices, invalid-index zero and exact final counts. Actual native assembly emits buffer_atomic_add with returned value. Scope is INT32 relaxed device-scope fetch-add with bounded indices, not general scatter, int32 scan or complete stable sort. Job bw-03df593adfc7 completed/released; observed2026-10-03."
+    },
+    {
+      "kind": "device_observation",
+      "source": "Cake-generated proposed-Target register-value probes on exact gfx938, DTK Triton3.6.0",
+      "locator": "/data3/testuser01/experiments/bw1100-cake-compiler-completion-20261005/values/manifest.json and device-result.json at Compiler f2c3d89c; job bw-ac46a77edbb3 terminal completed, HCU2 VRAM0, no container or visible KFD. 25 emitted sources pass63 exact checks: forward/reverse resident INT32 and FP32 prefix at lengths1,33,65,129 including signed wrapping and values beyond2^24; explicit outer and INT32 validity-predicate broadcasts with biased masked-row tails3,5,7; bit-preserving broadcasts in FP32,FP16,BF16,INT32,FP8E4M3. No global scan carry, stable-sort, arbitrary-loop, Task speed or calibrated-rate claim; observed2026-10-05."
     }
   ]
 }

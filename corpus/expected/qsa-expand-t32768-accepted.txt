@@ -38,6 +38,8 @@ def _cake_qsa_expand_t32768_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_qsa_expand_t32768 = _cake_qsa_expand_t32768_kernel[(32768, 1, 1)]
+
 def cake_qsa_expand_t32768(block_indices, out=None):
     for tensor, shape, dtype in (
         (block_indices, (32768, 512), torch.int32),
@@ -52,11 +54,12 @@ def cake_qsa_expand_t32768(block_indices, out=None):
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((32768, 2048), dtype=torch.int32, device=block_indices.device)
-    if tuple(out.shape) != (32768, 2048) or out.dtype != torch.int32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != block_indices.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
-    _cake_qsa_expand_t32768_kernel[(32768, 1, 1)](
+    else:
+        if tuple(out.shape) != (32768, 2048) or out.dtype != torch.int32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != block_indices.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
+    _cake_launch_cake_qsa_expand_t32768(
         block_indices,
         out,
         N_QUERY=32768,

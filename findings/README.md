@@ -43,12 +43,19 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-05-006 — gfx938 register broadcasts/coordinate predicates and resident INT32/FP32 scans pass63 exact component checks on25 proposed-Target sources; admission and five Corpus cases added without changing188 prior expectations. Whole-task strong-baseline replay remains pending.
+
 - F-2026-10-03-004 — exact gfx938 INT32 relaxed device-scope fetch-add is device-qualified150/150 with native buffer_atomic_add; original malformed histogram still refuses its edge/output guards. No scan, scatter or stable-sort performance claim.
 
 - F-2026-10-03-005 — gfx938 target admission omits existing cast and BF16/FP32 dot. Successor component qualification passes eleven device checks with native BF16 v_mmac; full operator campaign and independent integration review remain pending.
 
 This integration assigns the DCU cast/BF16 record first published as F-2026-10-03-001 on dcu to F-2026-10-03-005. The original record remains at f0f465f6:findings/2026-10-03-001-gfx938-cast-bf16-admission.json; its device receipts and implementation history remain unchanged. Main retains F-2026-10-03-001 for the distinct native-cohort custody observation.
+- F-2026-10-05-002 — three sibling Softmax regions expose the Triton two-loop cap; flat-region admission is software verified, including isolated compilation of retained events99/100. Device qualification remains open.
+- F-2026-10-05-003 — confirmed SiLU column partition motivates an explicit guarded pointwise rewrite; public ABI, tail effects and refusal ownership are software verified. Original candidate performance does not qualify the successor pass.
+- F-2026-10-05-004 — exact retained maxnreg,16-group, pipelined-unroll and warp-specialization requests remain deferred MACA route qualifications; fixed single-stage Softmax unroll is separately lowerable under the existing main repair. No new hardware qualification.
+- F-2026-10-05-005 — RMSNorm event57's two-stage Program lowers, but common MACA optimization-Run timing and attribution cover one dispatch. Defer the Lab/Executor measurement gap; standalone Program attribution does not qualify the Run.
 
+- F-2026-10-04-005 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
 
 - F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.
 

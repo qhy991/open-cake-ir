@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from open_cake_ir.compiler.diagnostics import (AUTHOR_FIXABLE_LOWERING_CODES,
-                                               BACKEND_LOWERING_GAP_CODES)
+                                               BACKEND_LOWERING_GAP_CODES, ROUTE_QUALIFICATION_GAP_CODES)
 
 CANDIDATE = "candidate"
 VERIFIER = "verifier"
@@ -124,6 +124,13 @@ def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -
                 f"Cake IR accepts this Schedule, but the selected backend cannot lower: "
                 f"{', '.join(backend_codes)}",
             )
+        qualification_codes = sorted(str(item.get('code')) for item in blocking
+                                     if item.get('code') in ROUTE_QUALIFICATION_GAP_CODES)
+        if qualification_codes and len(qualification_codes) == len(blocking):
+            return Route(BACKEND_TRIAGE,
+                         "the declared control is expressible, but the assigned route "
+                         "requires realization or device qualification: "
+                         + ', '.join(qualification_codes))
         if blocking:
             return Route(
                 BACKEND_TRIAGE,
