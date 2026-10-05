@@ -172,6 +172,7 @@ class _Tile:
     def __sub__(self, x): return self.binary(x, operator.sub)
     def __lt__(self, x): return self.binary(x, operator.lt)
     def __eq__(self, x): return self.binary(x, operator.eq)
+    def __ne__(self, x): return self.binary(x, operator.ne)
     def __and__(self, x): return self.binary(x, operator.and_)
     def __or__(self, x): return self.binary(x, operator.or_)
     def to(self, dtype): return self
@@ -257,6 +258,11 @@ class _TL:
                 key = (id(pointer.memory), offset)
                 self.stores[key] = self.stores.get(key, 0) + 1
                 pointer.memory[offset] = value
+
+    @staticmethod
+    def broadcast_to(a, shape):
+        # Reference broadcasting, independent of the emitter's axis spelling.
+        return a.binary(_Tile(tuple(shape), [None] * _size(shape)), lambda value, _: value)
 
     @staticmethod
     def trans(a):

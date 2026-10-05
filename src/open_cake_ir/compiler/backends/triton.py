@@ -113,6 +113,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COORDINATE: "_emit_coordinate",
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
+    OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
@@ -131,6 +132,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COORDINATE: "_emit_coordinate",
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
+    OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
@@ -1763,6 +1765,15 @@ class _TritonEmitter:
             ),
             declares=(operation.writes[0],),
         )
+
+    def _emit_broadcast_in_dim(self, operation, pad: str) -> None:
+        result = self.schedule.buffer(operation.writes[0])
+        _require(result is not None, "broadcast result is undeclared")
+        axes = operation.parameters.dimensions
+        index = ", ".join(":" if axis in axes else "None" for axis in range(len(result.shape)))
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{result.name} = tl.broadcast_to({operation.reads[0]}[{index}], {tuple(result.shape)})",
+                  declares=(result.name,))
 
     def _emit_scan(self, operation, pad: str) -> None:
         """Accumulate one inclusive prefix along the declared resident axis."""
