@@ -127,8 +127,8 @@ CODEX_HOME；旧 auth-only 策略不改，也不把 user skills 塞入其禁止�
 做了 D2 的 CPU 绑定检查：模型为 `gpt-6.1-sol/xhigh`，完整说明与报告列出的预算上限被绑定。
 confirmatory 配额仍为 8，执行逻辑最终只确认一个提名；正式冻结时再核对完整 RunSpecification。
 记录位于外部规划根目录的 `authoring-treatment-1b2920/composition-report.json`，完整
-文件为同目录 `AGENTS.md`。这不是已冻结 Run，也没有真实 TaskPackage 交付、provider、
-原生编译或 GPU 执行；schema v2 管理预算入口仍按总计划的共享后继处理。
+文件为同目录 `AGENTS.md`。这是初版 CPU 观察，不是已冻结 Run 或真实 TaskPackage 交付。
+管理预算入口已由 PR #321 实现并集成，参数及完整验证范围见总计划。
 
 当前 CLI 作者的正常生命周期保留上轮 `candidate-set.py`，resume 要求该文件存在，
 沿用原 thread 与 cwd；读取提交和封存原始文件不会把它清空或移走。但下一请求不会重新
@@ -136,7 +136,11 @@ confirmatory 配额仍为 8，执行逻辑最终只确认一个提名；正式�
 因此附录增加“更新前按既有权限读取当前文件”的要求，只携带少量有效观察，再替换本轮
 有序候选；不把旧完整候选累加以越过候选上限。现有文件可读不等于 agent 已读取，G4
 仍需真实两轮行为证据。上述 `1b2920b7` 初版组合文件没有这条后继要求，不能直接作为
-最终 treatment；正式冻结前须从待验收提交重新组合完整说明。
+最终 treatment。后继已从固定 `8cc264f0` 重新组合，并通过原有 input owner 绑定
+`generated_source_v1`、精确模型、预算与每轮 3 次搜索；报告和完整文件分别为
+`authoring-treatment-8cc264f0/composition-report.json` 与同目录 `AGENTS.md`。它包含上述
+重读要求，可作为待验收的完整任务材料；仍没有创建正式 Run 或实际作者/设备资格。
+正式冻结时引用这份完整文件及实际 Run 权限，不能只传附录。
 
 ## TASK.md 负责“做什么、如何判断”
 
@@ -344,7 +348,7 @@ Ralph；真实 provider/GPU 接入在对应门通过后单独执行。
 
 ## 接入验收与开发边界
 
-第一轮采用后继 scaffold 的文本要求，与已实现的源码反馈开关，在适用资格通过后用两个代表任务检查
+第一轮绑定后继 scaffold 与已实现的源码反馈开关；适用资格通过后，用两个代表任务检查
 Cake 探索与低层对照的实际行为。只有文本而缺少源码时，可验收可见反馈的利用，不能
 据此验收“作者结合低层实现优化”。后继接入按以下边界推进：
 

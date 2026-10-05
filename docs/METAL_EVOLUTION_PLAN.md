@@ -73,7 +73,7 @@ H1/H2 是同类算子迁移，H3 是不同收缩语义；这些不能声称是�
 | G1 任务与 Compiler | 六个 starter 构造、assess、lower、原生编译；已有 Corpus Gate 与适用合同测试通过；oracle 覆盖完整输入 | 区分 frontend、verifier、lowering、任务 ABI；按 owner 修复后作为后继验证 |
 | G2 可搜索性 | 每任务至少两个非改名、非纯 group 调参的结构策略可表达；至少两个代表任务验证完整策略对 | 若只有一种实现可走，先补关键表达能力，不能通过奖励调参掩盖 |
 | G3 设备与测量 | 封存基线全部输入正确；A/A 对照、已知慢化对照、配对顺序、时间戳与独立确认通过 | 无可信计时就只报正确性/覆盖，不能开启性能研究 |
-| G4 两轮系统验收 | 候选绑定的结果与 MSL/operation 对应实际交付并可回放；作者探索 Cake 并核对低层机制；受保护文件、预算、确认预留正确；经验摘要可追溯 | 结果归因与源码投递已在 main 通过 CPU CI；待最终平台集成、真实作者和设备资格 |
+| G4 两轮系统验收 | 候选绑定的结果与 MSL/operation 对应实际交付并可回放；作者探索 Cake 并核对低层机制；受保护文件、预算、确认预留正确；经验摘要可追溯 | 结果归因、源码投递和预算入口已集成；待真实作者、skill 输入和设备资格 |
 | G5 冻结 | Workload、固定基线、提交、每任务 scaffold/资料、Codex gpt-6.1-sol/xhigh、作者环境、参考权限、预算、经验和 pass grants 完整 | 独立 Run 目录与状态；技能发现按实证范围声明；不使用浮动 main 或自动更新 incumbent |
 
 G1 要覆盖所有发现任务的 starter；G2 先以 D2、D6 做完整机制对演练，其他任务再逐项扩展。
@@ -283,10 +283,22 @@ verifier；真实表达缺口进 IR/lowering；测量缺口进 Evaluation；反�
 可执行候选。当前 `task_run_inputs` 生成的 confirmatory 配额为 `turns`，执行逻辑最终只确认
 一个提名；冻结时核对实际 RunSpecification，不能把“执行一次”误写成“配额字段已设为一”。
 
-**管理入口的预算尚未齐全。** 当前 schema v2 的顶层 budget 只接纳 `turns`、`wall_seconds`
-和 `token_budget`；不能传入计划需要的 `searches_per_turn=3`、`max_compilations=24` 或
-`confirmation_seconds=600`，节点会沿用单任务默认值。先补共享 launcher 后继，或由现有
-单任务入口显式绑定对应参数后核对 Run；不能从 scaffold 文字推断这些预算已经生效。
+**管理预算入口已补齐。** [PR #321](https://github.com/qhy991/open-cake-ir/pull/321) 已合入
+`main@08e89422`，本页配套提交已集成。schema v2 在原有预算之外，独立接纳
+`max_candidates`、`searches_per_turn`、`max_compilations` 与 `confirmation_seconds`；
+省略项仍由固定提交的单任务 CLI 决定，v1 保持原语义。准备快照、节点参数和实际
+`task_run_inputs` 的 CPU 检查已证明下面的输入映射；它不是正式 Run 或执行资格：
+
+```json
+{"turns": 8, "token_budget": 150000, "wall_seconds": 3600,
+ "max_candidates": 3, "searches_per_turn": 3,
+ "max_compilations": 24, "confirmation_seconds": 600}
+```
+
+完整参数关系由既有 Run budget owner 在 provider qualification / GPU 评测前验证；
+prepare 成功不表示已冻结或必能启动。独立覆盖与 CLI 默认冲突时，运行入口会拒绝。
+原始和集成检查、完整 CI 记录见外部 `experiment-budget-7a74fa2c/report.json`。
+不能从 scaffold 文字推断实际预算，仍需在正式冻结时核对 RunSpecification。
 
 **第二步：只改变 Compiler。** 冻结 C0 后发现一个重复缺口，审查实现 C1。以相同任务、
 同一 scaffold、无额外经验、相同 pass grants（第一轮建议均为空）分别运行 C0/C1，每格
@@ -349,7 +361,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 2. **共享反馈修复与两轮经验验收。** PR #319 已将 `main@354a670f` 的默认 bundle、
    候选归因、peer 结果、Run 内历史和任务资料隔离经 CPU 集成验证合入 Metal；本机 custody
    条件和真实资格保持各自未验证状态。继续按
-   [authoring 规划](METAL_EVOLUTION_AUTHORING.md)完成 PR #320 源码反馈的最终平台集成，
+   [authoring 规划](METAL_EVOLUTION_AUTHORING.md)使用已集成的 PR #320 源码反馈与 PR #321 预算入口，
    绑定完整 scaffold 和显式源码权限；每轮更新前重读当前候选文件，保留少量有效观察。
    按每任务独立材料与 Run 状态组织目录，
    以 `gpt-6.1-sol / xhigh` 完成适用资格，核对 skill 发现边界。验证作者引用真实区域并根据可见反馈
@@ -379,8 +391,8 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 原生/oracle/设备；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
-| G4 经验接入 | PR #319 已同步历史/材料；PR #320 源码投递已合 main 并通过完整 CI；初版 scaffold 已做 CPU 输入绑定 | 最终平台集成与后继完整 scaffold；真实作者行为；native skill 实际输入观测 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-1b2920/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G5 冻结与发现批次 | 未启动 | 前置门通过、完整有限预算和权限冻结 | 无 Run / Study |
+| G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
+| G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
 
 ## 8. 走向更完整的 Metal 工具
 
