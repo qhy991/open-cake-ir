@@ -116,6 +116,7 @@ class NativeSkillEntrypointTests(unittest.TestCase):
             harness='codex', model='fixture-model', effort='xhigh', max_candidates=1,
             source_file=True, auth_source=Path('/unread-skill-fixture/auth.json'),
             author_skill_package=Path('/unread-skill-fixture/skills.tar'),
+            native_skill_name=['cake', 'cake:metal'],
             response_model_alias=[], wall_seconds=30)
         responses = [subprocess.CompletedProcess([], 0, stdout='fixture-provider', stderr=''),
                      subprocess.CompletedProcess([], 0, stdout='', stderr='')]
@@ -127,6 +128,31 @@ class NativeSkillEntrypointTests(unittest.TestCase):
         command = run.call_args_list[1].args[0]
         self.assertEqual(command[command.index('--author-home-policy') + 1], ISOLATED_SKILL_PACKAGE_V1)
         self.assertEqual(command[command.index('--author-skill-package') + 1], str(arguments.author_skill_package))
+        self.assertEqual([command[i+1] for i, value in enumerate(command) if value == '--native-skill-name'],
+                         arguments.native_skill_name)
+
+    def test_invalid_native_names_refuse_before_launch_preparation(self):
+        for names in (['bad name'], ['cake', 'cake'], ['x']*33):
+            options = [item for name in names for item in ('--native-skill-name', name)]
+            with self.subTest(names=names), mock.patch.object(launch_task, '_new_workspace') as workspace, \
+                 mock.patch.object(launch_task, '_codex_auth_source') as auth, \
+                 contextlib.redirect_stderr(io.StringIO()) as stderr:
+                with self.assertRaises(SystemExit):
+                    launch_task.main(self.launch_args() + ['--baseline-only'] + options)
+                self.assertIn('native skill selection differs', stderr.getvalue())
+                workspace.assert_not_called()
+                auth.assert_not_called()
+
+    def test_qualification_selection_is_checked_before_existing_receipt_or_process(self):
+        for names in ([], ['cake', 'cake'], ['bad name']):
+            arguments = SimpleNamespace(author_skill_package=Path('/unread/skills.tar'),
+                native_skill_name=names, qualification=Path('/unread/receipt.json'))
+            with self.subTest(names=names), mock.patch.object(launch_task, 'external_file') as read, \
+                 mock.patch.object(launch_task.subprocess, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'native skill selection'):
+                    launch_task._qualify(ROOT, Path('/unwritten'), arguments, Path('/unread/codex'), None)
+                read.assert_not_called()
+                run.assert_not_called()
 
     def test_retained_invocation_and_resume_bind_both_home_and_original_package(self):
         package = SimpleNamespace(reference={'path': '/fixture/skills.tar', 'sha256': '0' * 64})

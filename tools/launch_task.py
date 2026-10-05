@@ -30,6 +30,7 @@ from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
 from open_cake_ir.lab.providers import ProviderQualificationReceipt
+from open_cake_ir.lab.native_skill_qualification import selection_instruction, verify_qualification_evidence
 from open_cake_ir.tasks.compose import execute_run_from_config
 from open_cake_ir.tasks.preparation import prepare_task_run
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
@@ -473,9 +474,17 @@ def _prepare_baseline(root, workspace, compiler, executor, host, workload, autho
 
 
 def _qualify(root, workspace, args, executable, source_path):
+    names = getattr(args, "native_skill_name", [])
+    if getattr(args, "author_skill_package", None) is not None:
+        selection_instruction(names)
+    elif names:
+        raise ValueError("native skill names require their explicit package")
     if args.qualification is not None:
         receipt_path = external_file(root, str(args.qualification), "provider qualification")
         anchor_path = external_file(root, str(args.qualification_anchor), "provider qualification anchor")
+        if getattr(args, "author_skill_package", None) is not None:
+            verify_qualification_evidence(qualification=ProviderQualificationReceipt.load(receipt_path),
+                anchor=json.loads(anchor_path.read_bytes()), requested_names=names)
         return receipt_path, anchor_path
     version = subprocess.run([str(executable), "--version"], check=True, capture_output=True, text=True, timeout=30)
     if not version.stdout.strip():
@@ -501,6 +510,8 @@ def _qualify(root, workspace, args, executable, source_path):
                         '--auth-source', str(args.auth_source)))
         if skill_package is not None:
             command.extend(('--author-skill-package', str(skill_package)))
+            for name in names:
+                command.extend(('--native-skill-name', name))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -559,6 +570,8 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--native-skill-name', action='append', default=[],
+                        help='exact native skill name to verify in both qualification turns; repeat for multiple skills')
     parser.add_argument('--author-skill-package', type=Path,
                         help='controlled native skill package for a private Codex HOME; live discovery and delivery remain unqualified')
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
@@ -621,6 +634,13 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if args.native_skill_name:
+        if args.author_skill_package is None:
+            parser.error('--native-skill-name requires --author-skill-package')
+        try:
+            selection_instruction(args.native_skill_name)
+        except ValueError as error:
+            parser.error(str(error))
     if args.author_skill_package is not None:
         if args.harness != 'codex' or args.reference_access != 'known_kernel_reproduction':
             parser.error('--author-skill-package requires Codex known-kernel authoring')

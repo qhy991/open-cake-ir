@@ -27,6 +27,33 @@ from .pairing import native_source, native_block, backend_policy
 from .provider_policy import provider_configuration, provider_harness
 
 
+def admit_native_skill_authoring(*, authoring, project_root):
+    """Admit native authoring before credentials, factories, evidence or early returns.
+
+    Qualifications cover environment kinds, not arbitrary Run/condition identifiers.
+    The full receipt/configuration/schema and anchored native inputs keep their
+    existing admission owners; no caller-supplied validation flag is accepted.
+    """
+    from .author_home import ISOLATED_SKILL_PACKAGE_V1
+    from .provider_policy import execution_configuration
+    provider = authoring.get('provider', {})
+    if provider.get('author_home_policy') != ISOLATED_SKILL_PACKAGE_V1:
+        return None
+    if (not isinstance(provider.get('qualification'), Mapping)
+        or not isinstance(provider.get('qualification_anchor'), Mapping)):
+        raise ValueError('native skill discovery and actual initial/resume delivery are not qualified; receipt and anchor are required')
+    kind = authoring.get('environment_kind')
+    if not isinstance(kind, str) or not kind:
+        raise ValueError('native authoring lacks its environment kind')
+    configuration = execution_configuration(provider)
+    scope = ('live_two_turn_current_provider'
+             if configuration.get('event_contract', 'closed_file_change_v1') == 'closed_file_change_v1'
+             else 'live_two_turn_tool_rich_provider')
+    return validate_provider_binding(provider=provider, project_root=project_root,
+        expected_provider_configuration=configuration, admitted_scopes={scope},
+        required_environment_kinds=(kind,))
+
+
 def validate_provider(*, open_cake, policy, project_root, study):
     """Matched-Study input policy; runtime qualification has an independent owner."""
     claim_scope = str(study.document['claim_scope'])
@@ -36,12 +63,14 @@ def validate_provider(*, open_cake, policy, project_root, study):
         validate_provider_binding(provider=provider, project_root=project_root,
             expected_provider_configuration=configuration,
             admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
-            require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
+            require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol,
+            required_environment_kinds=(arm['environment_kind'],))
     return claim_scope
 
 
 def validate_provider_binding(*, provider, project_root, expected_provider_configuration,
-                              admitted_scopes, require_native_pair=False, evaluation_protocol=None):
+                              admitted_scopes, require_native_pair=False, evaluation_protocol=None,
+                              required_environment_kinds=()):
     """Check provider receipt, retained qualification evidence and delivered schema."""
     provider_revision = _name(provider.get('revision'), 'provider.revision')
     if provider_harness(provider) == 'responses':
@@ -75,9 +104,7 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
         "study.arms.provider.qualification.path",
     )
     qualification = ProviderQualificationReceipt.load(qualification_path)
-    from .author_home import CODEX_HOME_POLICIES, require_live_skill_qualification
-    if qualification.scope != 'zero_gpu_contract_fixture_only':
-        require_live_skill_qualification(provider.get('author_home_policy'))
+    from .author_home import CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1
     if (provider.get('author_home_policy') in CODEX_HOME_POLICIES
         and (qualification.system_skills_sha256 is None
              or provider.get('system_skills_sha256')
@@ -179,6 +206,11 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
             != sha256(_canonical_json_bytes(anchor)).hexdigest()
         ):
             raise ValueError("provider qualification anchor evidence differs")
+    if (provider.get('author_home_policy') == ISOLATED_SKILL_PACKAGE_V1
+        and qualification.scope != 'zero_gpu_contract_fixture_only'):
+        from .native_skill_qualification import verify_qualification_evidence
+        verify_qualification_evidence(qualification=qualification, anchor=anchor,
+            required_environment_kinds=required_environment_kinds)
     if provider.get('isolation_policy') is not None:
         if qualification.scope == 'zero_gpu_contract_fixture_only':
             raise ValueError('isolated Claude scientific authoring requires live isolation evidence')
@@ -522,5 +554,6 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
              else 'live_two_turn_tool_rich_provider')
     qualification = validate_provider_binding(provider=provider, project_root=project_root,
         expected_provider_configuration=configuration,
-        admitted_scopes={'zero_gpu_contract_fixture_only', scope})
+        admitted_scopes={'zero_gpu_contract_fixture_only', scope},
+        required_environment_kinds=(specification.environment_kind,))
     return workload, qualification
