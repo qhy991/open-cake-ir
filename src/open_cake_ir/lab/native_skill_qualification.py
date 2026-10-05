@@ -12,6 +12,7 @@ from .author_home import ISOLATED_SKILL_PACKAGE_V1
 from .native_skill_observation import _unique
 from .native_skill_run import validate_run_input, _path
 from .native_skills import NativeSkillPackage
+from .provider_documents import NATIVE_SKILL_QUALIFICATION_V1
 from .provider_events import parse_codex_turn_events
 from .provider_policy import execution_configuration
 from .task_package import TaskPackage, render_task_request
@@ -43,7 +44,7 @@ def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, re
     context = authority.get('native_skill_context')
     if (not isinstance(context, dict)
         or set(context) != {'kind', 'executable', 'output_schema', 'arms', 'selected_names'}
-        or context['kind'] != 'native_skill_qualification_v1'):
+        or context['kind'] != NATIVE_SKILL_QUALIFICATION_V1):
         raise ValueError('native qualification lacks its frozen context')
     instruction = selection_instruction(context['selected_names'])
     arms = authority.get('arms')
@@ -162,3 +163,48 @@ def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, re
             result[arm].append(observation)
             previous_input, previous_binding = native_input, binding
     return result
+
+
+def verify_qualification_evidence(*, qualification, anchor):
+    """Open actual sealed evidence and verify the receipt's native-input capability.
+
+    Scope admission and the external anchor reference belong to admission. This
+    verifier preserves the receipt's own scope: fixture evidence remains fixture
+    evidence. A capability name or an immediate-audit flag cannot replace this check.
+    """
+    from open_cake_ir.evidence import EvidenceStore
+    if qualification.native_skill_input_contract != NATIVE_SKILL_QUALIFICATION_V1:
+        raise ValueError('native skill input capability is not qualified by this receipt')
+    if (not isinstance(anchor, dict)
+        or anchor.get('kind') != 'codex_provider_qualification_evidence_anchor'
+        or anchor.get('qualification_receipt_sha256') != qualification.canonical_sha256
+        or not isinstance(anchor.get('run_id'), str) or not anchor['run_id']
+        or not isinstance(anchor.get('evidence_root'), str) or not anchor['evidence_root']):
+        raise ValueError('native qualification anchor differs from receipt')
+    evidence = EvidenceStore.open(anchor['evidence_root'])
+    audit = evidence.audit_run(anchor['run_id'])
+    if (not audit.archive_integrity or not audit.filesystem_custody_verified
+        or audit.authority_sha256 != anchor.get('authority_sha256')
+        or audit.terminal_seal_sha256 != anchor.get('terminal_seal_sha256')
+        or audit.protocol_adherence != 'adhered' or audit.endpoint_observation != 'qualified'
+        or not isinstance(audit.endpoint, dict)):
+        raise ValueError('native qualification archive integrity, custody or outcome is unverified')
+    authority = evidence.replay_authority(audit.run_id)
+    endpoint = audit.endpoint
+    if (endpoint.get('qualification_receipt_sha256') != qualification.canonical_sha256
+        or endpoint.get('qualification_scope') != qualification.scope
+        or endpoint.get('arms_qualified') != authority.get('arms')
+        or endpoint.get('harness') != 'codex'
+        or endpoint.get('gpu_execution_authorized') is not False
+        or any(endpoint.get(key) is not True for key in (
+            'add_observed', 'update_observed', 'thread_continuity_observed', 'usage_observed',
+            'sandbox_observed', 'cwd_observed', 'candidate_changed', 'reference_visibility_observed'))
+        or any(endpoint.get(key) != authority.get(key) for key in (
+            'event_contract', 'feature_policy', 'submission_contract', 'maximum_candidates_per_turn'))):
+        raise ValueError('native qualification terminal endpoint differs')
+    events = evidence.replay_events(audit.run_id)
+    observations = [event['payload'] for event in events if event['kind'] == 'provider_qualification_observed']
+    if len(observations) != 1 or any(event['kind'] == 'provider_qualification_failed' for event in events):
+        raise ValueError('native qualification must retain exactly one successful observation')
+    return reconstruct_qualification_inputs(evidence=evidence, run_id=audit.run_id,
+        authority=authority, payload=observations[0], receipt=qualification)

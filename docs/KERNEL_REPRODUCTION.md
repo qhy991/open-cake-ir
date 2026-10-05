@@ -394,7 +394,19 @@ single Cake arm.
 `lab/native_skill_qualification.py` reuses Run invocation/native validation against the
 frozen qualification paths and policy, retained task projection, actual provider thread,
 complete package and existing system-tree snapshot. Replay reads no original HOME,
-installation or task files. This is a semantic evidence check: receipt versions 1/2
-gain no new admission capability, fixture scope stays fixture-only, and live native-skill
-qualification/Run gates remain closed pending receipt/anchor/admission integration.
-Historical Evidence custody is a separate prerequisite; reconstruction cannot supply it.
+installation or task files. Receipt version 3 explicitly names the `native_skill_qualification_v1` input contract.
+Versions 1/2 load without that capability. The qualifier can publish version 3 only after
+the retained semantic reconstruction and the existing post-seal custody audit succeed;
+the executable CPU fixture keeps its `zero_gpu_contract_fixture_only` scope.
+
+Live-scope native admission opens the anchor's actual Evidence and requires archive
+integrity, historical filesystem custody, matching authority/receipt/terminal, one
+successful qualification observation and successful native reconstruction. An
+`immediate_audit_integrity` flag alone is insufficient. `EvidenceStore.replay_authority`
+reads the audited authority without following links; it does not replace the audit.
+
+The live qualifier, preparation, direct execution, provider construction, factory and
+replay entry gates remain closed while their end-to-end integration is unfinished.
+This admission component is not authorization to start a native-skill Run. Actual
+model qualification, zero-turn/initial-fault entrances and runtime credential ordering
+remain separate acceptance work; no fixture archive establishes a real model capability.

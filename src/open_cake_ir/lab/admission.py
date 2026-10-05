@@ -75,9 +75,7 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
         "study.arms.provider.qualification.path",
     )
     qualification = ProviderQualificationReceipt.load(qualification_path)
-    from .author_home import CODEX_HOME_POLICIES, require_live_skill_qualification
-    if qualification.scope != 'zero_gpu_contract_fixture_only':
-        require_live_skill_qualification(provider.get('author_home_policy'))
+    from .author_home import CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1
     if (provider.get('author_home_policy') in CODEX_HOME_POLICIES
         and (qualification.system_skills_sha256 is None
              or provider.get('system_skills_sha256')
@@ -179,6 +177,10 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
             != sha256(_canonical_json_bytes(anchor)).hexdigest()
         ):
             raise ValueError("provider qualification anchor evidence differs")
+    if (provider.get('author_home_policy') == ISOLATED_SKILL_PACKAGE_V1
+        and qualification.scope != 'zero_gpu_contract_fixture_only'):
+        from .native_skill_qualification import verify_qualification_evidence
+        verify_qualification_evidence(qualification=qualification, anchor=anchor)
     if provider.get('isolation_policy') is not None:
         if qualification.scope == 'zero_gpu_contract_fixture_only':
             raise ValueError('isolated Claude scientific authoring requires live isolation evidence')
