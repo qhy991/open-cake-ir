@@ -398,3 +398,19 @@ installation or task files. This is a semantic evidence check: receipt versions 
 gain no new admission capability, fixture scope stays fixture-only, and live native-skill
 qualification/Run gates remain closed pending receipt/anchor/admission integration.
 Historical Evidence custody is a separate prerequisite; reconstruction cannot supply it.
+
+
+For native-skill qualification, each schema-2 experiment cell declares
+`native_skill_names` alongside `author_skill_package`. These are exact native names,
+not package directory names. The manager snapshots the selection in the cell's TASK
+and experiment input, transports only that cell's names/package, and passes repeated
+`--native-skill-name` arguments through `launch_task` to the qualifier. Local and SSH
+node transport use the same pure selection validator before creating inputs or starting
+a process. No frontmatter parser or native-name guess is introduced.
+
+This completes selection transport, not live enablement. The live guards remain
+closed. Runtime integration must check any requested selection against the retained
+qualification when reusing an existing receipt; a matching package alone does not
+establish that a different named body's delivery was observed. Existing prepared native
+experiments without an explicit selection remain at their original source commit; use
+a new prepared experiment for this successor interface.
