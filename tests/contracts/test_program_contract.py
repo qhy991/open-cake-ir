@@ -56,7 +56,7 @@ class ProgramContractTest(unittest.TestCase):
             ProgramContract.load(ROOT, self.path, self.compiler)
 
     def test_current_program_successor_preserves_the_frozen_workload_and_composition(self) -> None:
-        path = ROOT / "contracts/programs/qsa-prefill-t32768-v4.json"
+        path = ROOT / "contracts/programs/qsa-prefill-t32768-v5.json"
         program = ProgramContract.load(ROOT, path, self.compiler)
         self.assertEqual(program.implementation.outputs, program.public_outputs)
         self.assertEqual([stage.name for stage in program.implementation.stages],
@@ -67,6 +67,9 @@ class ProgramContractTest(unittest.TestCase):
         successor = json.loads(path.read_text())
         self.assertEqual(program.program_id, successor["program_id"])
         self.assertNotEqual(successor["program_id"], previous["program_id"])
+        v4 = ROOT / "contracts/programs/qsa-prefill-t32768-v4.json"
+        with self.assertRaisesRegex(ValueError, "lowering source differs"):
+            ProgramContract.load(ROOT, v4, self.compiler)
         successor["program_id"] = previous["program_id"]
         for old_node, new_node in zip(previous["nodes"], successor["nodes"]):
             for field in ("schedule_sha256", "lowering_source_sha256"):
