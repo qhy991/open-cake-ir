@@ -11,6 +11,7 @@ from .routing import route_rejection
 from .selection import _empirical_filter
 from .compilation import CompilationRecorder
 from .faults import CompilationBudgetExceeded
+from .diagnoses import findings_feedback
 
 
 def _build_filter_candidates(
@@ -55,6 +56,7 @@ def _build_filter_candidates(
             "disposition": built[index][1].disposition,
             "cost": None,  # Retained event vocabulary; structural ranking is retired.
             "semantic_sha256": built[index][1].semantic_sha256,
+            "diagnostics": findings_feedback(built[index][1].feedback.get('findings', [])),
             **({"empirical_cost": (
                 dict(built[index][1].empirical_cost)
                 if built[index][1].empirical_cost is not None else None

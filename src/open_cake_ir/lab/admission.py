@@ -212,11 +212,19 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
     return qualification
 
 
-def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,baseline_lowering,manifest_parser):
-    """One owner for the selected baseline's source, launch and incumbent relation."""
+def admit_paired_baseline_artifact(*, project_root, workload, evaluation, execution, route):
+    """Admit one sealed opponent and its existing selection policy.
+
+    Return whether the selected opponent may be independent of current starter
+    emission. CUBIN keeps its existing source/launch/ABI checks with the caller;
+    author route identity is not evidence of an old binary's argument contract.
+    This software check establishes no successor device or measurement readiness.
+    """
     fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
     sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
-    validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+    manifests = validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+    if fixed['candidate'] != candidate_identity(sealed_baseline):
+        raise ValueError('fixed baseline identity differs from its sealed artifact')
     selection = fixed.get('selection')
     incumbent_baseline = False
     if selection is not None:
@@ -225,13 +233,46 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
             case_id=str(evaluation['case_id']), backend=str(route['backend']),
             evaluation_protocol=evaluation,
         )
-    if fixed['candidate'] != candidate_identity(sealed_baseline):
-        raise ValueError('fixed baseline identity differs from its sealed artifact')
-    if incumbent_baseline:
-        # Its complete executable contract was audited before promotion and its
-        # exact current registry identity and Workload ABI were checked above.
-        # It may be a Program or native kernel, independent of the starter source.
+    explicit = selection is not None and selection['policy'] == 'explicit_fixed_bundle'
+    independent_explicit = False
+    if explicit:
+        from open_cake_ir.compiler.target import CodeObject
+        _, target_path = source_reference_path(project_root,
+            f'compiler/targets/{workload.target}.json', 'paired baseline target')
+        target = Target.load(target_path)
+        independent_explicit = target.code_object in {
+            CodeObject.MCFATBIN, CodeObject.HSACO, CodeObject.METAL_BINARY_ARCHIVE}
+        # Retain the native argument/family checks for the two inspected binary
+        # formats. Their facts come from this Target and this sealed artifact, not
+        # from the successor Compiler's new launch shape or source.
+        if not sealed_baseline.is_program and target.code_object in {CodeObject.MCFATBIN, CodeObject.HSACO}:
+            from open_cake_ir.compiler.backends.triton import target_route_facts
+            facts = {'target': target.target_id, **target_route_facts(target)}
+            manifest = manifests['baseline']
+            native_route = triton_route(facts)
+            if not {native_route.text_role, native_route.binary_role} <= set(sealed_baseline.artifact_payloads):
+                raise ValueError('fixed baseline lacks native argument inspection artifacts')
+            expected_hidden = _hidden_pointers(native_route, sealed_baseline.artifact_payloads,
+                len(manifest.tensor_abi), codegen_arch=facts.get('codegen_arch'),
+                kernel_name=manifest.kernel_name)
+            if manifest.hidden_null_pointer_parameters != expected_hidden:
+                raise differs('fixed baseline hidden pointer commitments differ',
+                    expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters)
+    return sealed_baseline, bool(incumbent_baseline or independent_explicit)
+
+
+def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,baseline_lowering,manifest_parser):
+    """One owner for the selected baseline's source, launch and incumbent relation."""
+    fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
+    sealed_baseline, independent = admit_paired_baseline_artifact(
+        project_root=project_root, workload=workload, evaluation=evaluation,
+        execution=execution, route=route)
+    if independent:
+        # The current incumbent or an explicitly selected fixed bundle can differ
+        # from the current starter. Neither selection grants author reference access.
         return
+    if baseline_lowering is None:
+        raise ValueError('starter baseline requires the frozen Compiler lowering')
     requirements = baseline_lowering.toolchain_requirements
     source = sealed_baseline.artifact_payloads.get('lowered_source')
     if source is None:
@@ -381,11 +422,17 @@ def validate_evaluation(
 
 
 def admit_run_inputs(specification, *, project_root, workload_loader):
-    """The complete Run dependency boundary, before provider/Evidence side effects."""
+    """The complete Run dependency boundary, before provider/Evidence side effects.
+
+    Sealed opponent and selection admission is common to both entry paths. Source
+    equality, when independent admission is not granted, remains with task
+    preparation and legacy Study preflight, which own the current baseline
+    Schedule. This boundary retains its existing sealed-bundle/ABI scope; it does
+    not independently prove a CUBIN's source or hidden-pointer contract.
+    """
     from .executor import ExecutorRevision
     from .provider_policy import execution_configuration
-    from .bindings import load_baseline_bundle
-    from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates, validation_case_ids, paired_protocol
+    from open_cake_ir.evaluation.paired import validation_case_ids, paired_protocol
 
     from .bindings import _resolve_compiler_reference
     from .reference_access import validate_reference_handoff
@@ -412,11 +459,12 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if validation_case_ids(protocol) != tuple(workload.case_ids):
             raise ValueError('Run evaluation omits Workload validation cases')
     if paired_protocol(protocol) is not None:
-        fixed = _object(execution.get('fixed_baseline'), 'run.execution.fixed_baseline')
-        baseline = load_baseline_bundle(project_root, fixed.get('bundle_path'))
-        if candidate_identity(baseline) != fixed.get('candidate'):
-            raise ValueError('Run baseline artifact differs from its frozen selection')
-        validate_pair_candidates(baseline, baseline, workload, protocol['case_id'])
+        baseline_route = authoring.get('lowering_route')
+        if baseline_route is None:
+            from .toolchains import toolchain_for_arm
+            baseline_route = {'backend': toolchain_for_arm(specification.environment_kind).backend.value}
+        admit_paired_baseline_artifact(project_root=project_root, workload=workload,
+            evaluation=protocol, execution=execution, route=baseline_route)
     validate_reference_handoff(project_root, {'author': authoring}, workload=workload, case_id=protocol['case_id'])
     from .python_reference import read_skeleton_reference
     for name in ('scaffold', * (('launch_contract', 'candidate_skeleton') if specification.environment_kind == 'direct_cuda' else ())):

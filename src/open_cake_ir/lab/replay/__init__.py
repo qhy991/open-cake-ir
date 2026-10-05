@@ -26,6 +26,8 @@ from .refusals import ReplayRefusal, ReplayResult, refuse
 from .selection import _replay_candidate_selection
 from .nomination import replay_nomination
 from .compilations import replay_compilations
+from .feedback import replay_feedback
+from .history import replay_optimization_history
 
 _REQUIRED_FAULT_FIELDS = frozenset({
     "fault", "exception_type", "turn", "stage", "terminal_provider_tokens",
@@ -183,6 +185,9 @@ def _replay_matched_run(
                 checkpoint_events=checkpoint_events,cumulative_by_turn={},fault_terminal_tokens=None,faults=(),
                 lock=lock,observations=(),receipts={},searches_per_turn=protocol.get('searches_per_turn',1),
                 confirmation=confirmation,search_state=search_state)
+            replay_feedback(events=events, evidence=evidence, specification=lock)
+            replay_optimization_history(events=events, evidence=evidence, receipts={},
+                                        arm=lock.environment_kind, specification=lock)
             return
         _replay_provider_fault(
             audit=audit,
@@ -193,6 +198,9 @@ def _replay_matched_run(
             expected_task_package=(task_package(lock, audit.run_id)
                 if lock.document['authoring'].get('provider', {}).get('harness') == 'responses' else None),
         )
+        replay_feedback(events=events, evidence=evidence, specification=lock)
+        replay_optimization_history(events=events, evidence=evidence, receipts={},
+                                    arm=lock.environment_kind, specification=lock)
         return
     replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
     maximum_candidates_per_turn = int(
@@ -323,6 +331,8 @@ def _replay_matched_run(
         workload_sha256=workload_sha256,
     )
     launchables, receipts, receipt_order, rejected = candidates
+    replay_optimization_history(events=events, evidence=evidence, receipts=receipts,
+                                arm=lock.environment_kind, specification=lock)
     try:
         invocation_counts = replay_evaluation_invocations(events, receipts=receipts,
             budget=replay_budget, protocol=lock.document["evaluation_protocol"])
@@ -344,6 +354,9 @@ def _replay_matched_run(
         rejected=rejected,
     )
     observations, searches_per_turn, attribution_evaluation = selected
+    replay_feedback(events=events, evidence=evidence, specification=lock,
+        provider_candidates_by_turn=provider_candidates_by_turn, receipts=receipts,
+        rejected=rejected, fault_turn=fault_turn)
     confirmation, search_state = replay_nomination(events=events, observations=observations,
         launchables=launchables, receipts=receipts,budget=replay_budget,protocol=lock.document['evaluation_protocol'],
         compilation_count=compilation_count,

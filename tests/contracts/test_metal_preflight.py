@@ -108,6 +108,19 @@ class MetalPreflightTests(unittest.TestCase):
                      patch.object(admission,'load_baseline_bundle',return_value=changed):
                     with self.assertRaisesRegex(ValueError,'fixed baseline differs from the frozen Compiler'):
                         prepare()
+                    selection.update(policy='explicit_fixed_bundle', source='explicit')
+                    with patch('open_cake_ir.tasks.preparation.prepare_schedule',
+                               side_effect=AssertionError('opaque baseline must not be re-lowered')):
+                        frozen = prepare()
+                    self.assertEqual(frozen.document['execution']['fixed_baseline']['candidate'],
+                                     candidate_identity(changed))
+                    # The ordinary Run entry reads the same selection contract.
+                    self.assertEqual(TaskLab(ROOT).preflight_run(frozen).document, frozen.document)
+                    with patch.object(admission, 'validate_provider_binding',
+                                      side_effect=ValueError('successor qualification missing')):
+                        with self.assertRaisesRegex(ValueError, 'successor qualification missing'):
+                            prepare()
+                    selection.update(policy='starter_reference', source='starter_reference')
                 inputs['evaluation_protocol']['validation_case_ids'].pop()
                 with self.assertRaisesRegex(ValueError,'omits Workload validation'):
                     prepare()

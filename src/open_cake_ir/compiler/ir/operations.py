@@ -271,7 +271,12 @@ class ReduceParameters:
 
 @dataclass(frozen=True)
 class ScanParameters:
-    """An inclusive running prefix along one declared axis."""
+    """An inclusive resident prefix; integer sum wraps in signed INT32.
+
+    Floating inputs accumulate in FP32. INT32 inputs retain INT32 and sum
+    modulo 2**32, interpreted as signed two's-complement. No carry between
+    independently launched tiles or tile-loop iterations is implied.
+    """
 
     op: ScanOp
     axis: int
@@ -414,6 +419,13 @@ class SelectParameters:
 
 
 @dataclass(frozen=True)
+class BroadcastInDimParameters:
+    """Source-axis positions in the declared result; shape has one buffer owner."""
+
+    dimensions: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class StoreParameters:
     coalesced: bool
 
@@ -424,7 +436,7 @@ class FenceProxyParameters:
 
 
 OperationParameters = Union[
-    CoordinateParameters, CompareParameters, SelectParameters,
+    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters,
     LoadParameters,
     MmaParameters,
     EpilogueParameters,
@@ -468,6 +480,12 @@ def _operation_parameters(
         if "scalar" in obj and type(scalar) not in {int, float}:
             raise ScheduleParseError(f"{context}.scalar must be a number")
         return CompareParameters(obj["op"], scalar)
+    if kind is OperationKind.BROADCAST_IN_DIM:
+        obj = _strict_object(value, required={"dimensions"}, context=context)
+        values = _object_list(obj["dimensions"], f"{context}.dimensions", allow_empty=False)
+        return BroadcastInDimParameters(tuple(
+            _nonnegative_int(axis, f"{context}.dimensions[{i}]") for i, axis in enumerate(values)
+        ))
     if kind is OperationKind.SELECT:
         obj = _strict_object(value, required=set(), optional={"false_value"}, context=context)
         fallback = obj.get("false_value")

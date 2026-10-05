@@ -218,7 +218,153 @@ class DiagnosisRunTests(unittest.TestCase):
                     self.assertFalse(lab._replay_matched_run(store, audit, lock))
 
 
+class CompilerDiagnosisOwnershipTests(unittest.TestCase):
+    def test_existing_storage_and_coordinate_repair_are_not_missing_ir(self):
+        for code,path in (('TRITON_ELEMENTWISE_STORAGE','operations[1].reads[0]'),
+                          ('TRITON_LOOP_STORE_OWNERSHIP','operations[16]')):
+            route=route_rejection({'stage':'assessment','findings':[{'code':code,'path':path,
+                'blocks_acceptance':False,'blocks_lowering':True}]})
+            self.assertEqual(route.destination,'candidate')
+            self.assertIn('declaration change',route.reason)
+
+    def test_loop_topology_omission_is_backend_owned_and_route_qualification_is_explicit(self):
+        route=route_rejection({'stage':'assessment','findings':[{'code':'TRITON_LOOP_NEST_UNSUPPORTED',
+            'path':'tile_loops','blocks_acceptance':False,'blocks_lowering':True}]})
+        self.assertEqual(route.destination,'backend_lowering')
+        for code in ('MACA_REGISTER_BUDGET_UNQUALIFIED','MACA_WARP_COUNT_UNQUALIFIED'):
+            route=route_rejection({'stage':'assessment','findings':[{'code':code,'path':'roles',
+                'blocks_acceptance':False,'blocks_lowering':True}]})
+            self.assertEqual(route.destination,'backend_triage')
+            self.assertIn('qualification',route.reason)
+            self.assertIn('expressible',route.reason)
+
 class DiagnosisSummaryTests(unittest.TestCase):
+    def test_transform_refusals_keep_permissions_guards_and_source_locators_separate(self):
+        import os
+        import shutil
+        import tempfile
+        from hashlib import sha256
+        from open_cake_ir.compiler.frontend import parse
+        from open_cake_ir.compiler.ir import Program
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.evidence import EvidenceStore
+        from open_cake_ir.lab.actions import ActionResolution, resolve_action
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.tasks.contraction.authoring import starter_source
+        from open_cake_ir.tasks.contraction.workload import workload_document
+        from tools.summarize_diagnoses import summarize
+
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(workload_document(
+            'pairwise_sqdist', rows=64, depth=256, columns=32, backend='triton-metax'))
+        program = Program.from_schedule(parse(starter_source(workload)).document)
+        program_bytes = canonical_json_bytes(program.document)
+        transform = 'tile_squared_difference'
+        parameters = {'stage': program.stages[0].name, 'k_tile': 3,
+                      'schedule_id': 'proposed', 'entry_point': 'proposed'}
+        baseline = 'baseline:starter/a~b'
+        context = {'environment_kind': 'open_cake', 'transformations': (transform,),
+                   'candidates': {}, 'baselines': {'starter/a~b': program_bytes},
+                   'compiler_factory': lambda: compiler}
+        submitted = resolve_action(program_bytes, **context)
+        parent = submitted.document['candidate_sha256']
+        context['candidates'][parent] = program_bytes
+        requests = [
+            {'action': 'transform', 'parent': baseline, 'transformation': 'not_granted',
+             'parameters': parameters},
+            {'action': 'transform', 'parent': 'unavailable-parent', 'transformation': transform,
+             'parameters': parameters},
+            {'action': 'transform', 'parent': baseline, 'transformation': transform,
+             'parameters': {**parameters, 'stage': 'not_a_stage'}},
+            {'action': 'transform', 'parent': parent, 'transformation': transform,
+             'parameters': parameters},
+            {'action': 'transform', 'parent': baseline, 'transformation': transform,
+             'parameters': {**parameters, 'k_tile': 64}},
+        ]
+        resolutions = [resolve_action(canonical_json_bytes(value), **context) for value in requests]
+        self.assertEqual([row.reason for row in resolutions],
+                         ['transform_not_granted', 'parent_not_authorized', 'stage_selection',
+                          'tile_extent', 'applied'])
+        # A future archived reason and a wrapped refusal require owner judgement.
+        resolutions.extend(ActionResolution('f' * 64, 'transform', None, baseline,
+                           transform, reason, 'Unresolved historical refusal')
+                           for reason in ('future_reason', 'result_refused'))
+        resolutions.append(ActionResolution('e' * 64, 'submit', None,
+                                           reason='author_format', message='Not a transform'))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch.dict(os.environ, {'OPEN_CAKE_CUSTODY_DIRECTORY': str(root / 'registry')}):
+                store = EvidenceStore.create(root / 'evidence')
+                authority = {'campaign_id': 'fixture-transform-reader', 'execution': {
+                    'executor_revision': {'executor_id': 'fixture-source'}},
+                    'reference_inputs': {'baseline_programs': {'starter/a~b': program.document}},
+                    'resolved_inputs': {'evidence_policy': {'event_vocabulary': 'fixture'}}}
+                run = store.start_run('open_cake-1', authority=authority,
+                    authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
+                obj = store.put(program_bytes, media_type='application/json')
+                run.append('author_actions_resolved', {'turn': 1, 'actions': [
+                    {'ordinal': 0, **submitted.document, 'objects': [obj.reference('resolved_candidate')]}]})
+                references = [store.put(b'# retained raw author source\n', media_type='text/x-python')
+                              .reference('provider_source_file')]
+                for index, value in enumerate(requests):
+                    references.append(store.put(canonical_json_bytes(value), media_type='application/json')
+                                      .reference(f'candidate_submission_{index:04d}'))
+                run.append('provider_turn_completed', {'turn': 2, 'objects': references})
+                run.append('author_actions_resolved', {'turn': 2, 'actions': [
+                    {'ordinal': index, **row.document, 'objects': (
+                        [store.put(row.candidate, media_type='application/json').reference('resolved_candidate')]
+                        if row.candidate is not None else [])}
+                    for index, row in enumerate(resolutions)]})
+                run.seal(protocol_adherence='adhered', endpoint_observation='observed',
+                         endpoint={'kind': 'archive-reader-fixture'})
+                mirror = root / 'mirror'
+                shutil.copytree(store.root, mirror)
+                before = {path: (path.read_bytes(), path.stat().st_mode)
+                          for base in (store.root, mirror) for path in base.rglob('*') if path.is_file()}
+                plain = summarize([store.root, mirror])
+                result = summarize([store.root, mirror], compiler_gaps=True)
+                self.assertNotIn('transform_refusals', plain)
+                self.assertEqual(result['groups'], plain['groups'])
+                self.assertEqual(result['runs'], plain['runs'])
+                self.assertEqual(result['compiler_gaps'], [])
+                self.assertEqual(result['groups'][0]['counts'], {})
+                self.assertEqual(len(result['runs']), 1)
+                leads = result['transform_refusals']
+                self.assertEqual([row['action_index'] for row in leads], [0, 1, 2, 3, 5, 6])
+                self.assertEqual([row['triage_owner'] for row in leads],
+                    ['lab_permissions', 'lab_permissions', 'author_api', 'compiler_guard', 'unknown', 'unknown'])
+
+                def dereference(document, pointer):
+                    for part in pointer.split('/')[1:]:
+                        part = part.replace('~1', '/').replace('~0', '~')
+                        document = document[int(part)] if isinstance(document, list) else document[part]
+                    return document
+
+                for lead in leads:
+                    retained = EvidenceStore.open(lead['evidence_root'])
+                    events = {event['sequence']: event for event in retained.replay_events(lead['run_id'])}
+                    locator = lead['action_locator']
+                    action = dereference(events[locator['event_sequence']], locator['json_pointer'])
+                    self.assertEqual(action['reason'], lead['reason'])
+                    self.assertEqual(action['message'], lead['message'])
+                    self.assertEqual(action['parent'], lead['parent'])
+                    self.assertEqual(action['transformation'], lead['transformation'])
+                    for locator in lead['submission_locators']:
+                        ref = dereference(events[locator['event_sequence']], locator['json_pointer'])
+                        self.assertEqual(ref['role'], locator['role'])
+                        self.assertTrue(retained.read_object(ref))
+                    locator = lead['parent_locator']
+                    if lead['reason'] == 'parent_not_authorized':
+                        self.assertIsNone(locator)
+                    elif 'file' in locator:
+                        document = json.loads((Path(lead['evidence_root']) / locator['file']).read_text())
+                        self.assertEqual(dereference(document, locator['json_pointer']), program.document)
+                    else:
+                        refs = dereference(events[locator['event_sequence']], locator['json_pointer'])
+                        self.assertEqual(retained.read_object(refs[0]), program_bytes)
+                self.assertNotIn('sha256', json.dumps(leads))
+                self.assertEqual(before, {path: (path.read_bytes(), path.stat().st_mode) for path in before})
+
     def test_cross_root_counts_are_read_only_deduplicated_and_policy_scoped(self):
         import os
         import shutil
