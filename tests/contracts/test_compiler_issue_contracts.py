@@ -160,7 +160,10 @@ class CompilerIssueContracts(unittest.TestCase):
             def __getitem__(self, grid):
                 return lambda *args, **kwargs: calls.append((grid, args, kwargs))
         env = {'torch': SimpleNamespace(float32='fp32'), '_' + changed['lowering']['entry_point'] + '_kernel': Launch()}
-        exec(compile(ast.Module(body=[wrapper], type_ignores=[]), '<valid-wrapper>', 'exec'), env)
+        binding = next(node for node in ast.parse(lowered.source).body
+                       if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                           and target.id.startswith('_cake_launch_') for target in node.targets))
+        exec(compile(ast.Module(body=[binding, wrapper], type_ignores=[]), '<valid-wrapper>', 'exec'), env)
         self.assertIs(env[wrapper.name](fake, out=fake), fake)
         self.assertEqual(len(calls), 1)
 
