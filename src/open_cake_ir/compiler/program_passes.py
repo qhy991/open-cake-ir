@@ -108,7 +108,7 @@ TRANSFORMATIONS = (
     Transformation('tile_squared_difference', ('stage', 'k_tile', 'schedule_id', 'entry_point'),
                    'Tile a pure FP32 row squared-difference sum over K; retain subtraction before square. k_tile is a power of two below K. Requires loop-free ordinary row/centroid loads and one output store.'),
     Transformation('fuse_pointwise_epilogue', ('producer', 'epilogue', 'schedule_id', 'entry_point'),
-                   'Fuse a private rounded row intermediate into its only pointwise consumer.'),
+                   'Fuse a private rounded row intermediate or pure FP32 copy into its only pointwise consumer.'),
     Transformation('specialize_triton_warps', ('stage', 'num_warps', 'schedule_id', 'entry_point'),
                    'Choose an explicit CTA width within the pass\'s qualified domain.'),
     Transformation('specialize_output_columns', ('stage', 'schedule_id', 'entry_point'),
