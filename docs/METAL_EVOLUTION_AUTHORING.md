@@ -232,7 +232,7 @@ provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HO
 
 [PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交收据 v3 与实际归档准入组件，
 未作为本页已验证能力。其反例包括旧收据、scope 替换、过期 anchor、custody-false 与语义不符
-的封存归档；真实运行入口接线和零轮/首轮故障覆盖仍待完成。软件反事实归档只用于测试，
+的封存归档；真实运行入口接线和零轮/首轮故障覆盖有后继工作提交，仍待验收。软件反事实归档只用于测试，
 不能列为真实模型资格。准备与 provider 构造必须在缺失资格时先拒绝，再考虑读取凭据。
 首轮 Python 3.12 CI 有一项新夹具失败：provider 把仓库内 schema 写成绝对外部引用；
 资格重建检查已通过，随后由原有路径规则正确拒绝。后继夹具改用仓库相对引用，原资格
@@ -240,6 +240,21 @@ provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HO
 修正后 CI `37363906158` 的三个 hosted job 均未取得 runner，测试没有执行；本次环境
 失败另存 `native-admission-runner-d4fae808/`，不覆盖夹具失败，也不重跑或替换环境。
 
+
+运行接线的源码后继为 `task/core-native-skill-runtime@316ffcc2`，依赖尚未验收的收据、
+选择和复用改动。库入口通过 `admit_native_skill_authoring` 统一核对真实归档、配置、
+schema、live scope 与环境覆盖；覆盖对象是 `environment_kind`，不能使用任意 Run ID
+或 Study condition 名称代替。prepare、Study/Run preflight、Campaign 与 provider 构造
+均传递其实际环境集合，通用输出 schema 不扩展资格覆盖。未认证或 fixture 收据在 runtime
+配置读取前拒绝；完整配置/归档不匹配在凭据读取前拒绝。早期字段检查仅用于拒绝，不是授权。
+
+首轮返回的原生输入被拒绝时，原回放提前返回分支只为 Responses 取得 TaskPackage，
+不能满足原生拒绝重建的上下文要求；后继按实际保留的 native rejection role 延迟取得它。
+未观察到输入的调用失败仍保留原有缺失语义。已编写真实 Run 引擎的零轮、首轮调用失败、
+跨 Run 输入拒绝及整条回放反例，均要求不进入 Evaluation；入口正例和缺失资格拒绝顺序
+也有覆盖。十三个 Python 文件语法检查与 diff 检查通过，合同测试尚未执行。
+这只是工作提交，未发布或合入，不是实际作者资格。成功两轮的整体组合与完整合同矩阵
+仍须验收；命令行 qualifier/launcher 的显式关闭门尚未移除。
 
 资格接入沿现有 owner 进行，验收范围如下，不新增并行资格流程：
 

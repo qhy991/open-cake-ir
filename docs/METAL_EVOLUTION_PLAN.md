@@ -14,8 +14,8 @@ FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `met
 [PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交该组件；后继 CI `37363906158`
 三个 hosted job 也因未取得 runner 而终止，未执行测试，记录见
 `native-admission-runner-d4fae808/`。本项未作为已验证基线。其后仍须连接准备、
-provider 构造、Run/Campaign、factory 与回放入口，
-覆盖零轮、首轮故障和读取凭据前的拒绝顺序，再开放策略并取得实际作者资格。
+provider 构造、Run/Campaign、factory 与回放入口的完整验收，
+覆盖零轮、首轮故障和读取凭据前的拒绝顺序，再开放命令行策略并取得实际作者资格。
 [PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 已提交每 cell 原生名字的显式选择、
 快照和 local/SSH 传递。CI `37363612900` 已终止：三个 hosted job 均未分配到 runner，
 没有执行测试，不是代码测试失败；记录见 `native-selection-runner-5946faf1/`。
@@ -25,7 +25,14 @@ provider 构造、Run/Campaign、factory 与回放入口，
 的 initial/resume 当前输入中都有包内正文，缺失诊断定位到 arm、轮次和名字；复用原有
 归档重建，不新增资格名单。源码语法与 diff 检查通过，三个新合同测试方法尚未执行。
 该分支以未验收的 #340/#341 为依赖，只是可审查的工作提交，尚未推送或并入 main/metal。
-正式入口仍拒绝技能策略。CPU fixture 与软件检查不授予实际作者或 Metal 设备资格。
+运行入口后继已准备在 `task/core-native-skill-runtime@316ffcc2`：用同一个证据准入 owner
+连接库入口，按 `environment_kind` 检查资格覆盖，读取凭据前核对配置与归档；provider
+构造必须取得实际 anchor。首轮技能输入拒绝的回放也已补入所需 TaskPackage。
+七个新增测试方法包含真实 Run 引擎中的零轮停止、首轮调用失败与跨 Run 输入拒绝，
+要求零次 Evaluation；目前仅完成语法和 diff 检查，合同测试尚未执行。
+两个后继工作分支均未推送或合入；已集成版本与工作分支的命令行资格/launch 门仍关闭。
+下一步先验收这些改动与成功两轮的完整组合，再开放命令行和取得真实作者资格。
+CPU fixture 与软件检查不授予实际作者或 Metal 设备资格。
 
 采集前失败如实记为技能输入未验证，保留诊断和可见费用，不授权候选；不要求为缺失输入
 制造证明。本机工具链、资源分配和测量门分别待验收，不因回环网络已通过而放行。
