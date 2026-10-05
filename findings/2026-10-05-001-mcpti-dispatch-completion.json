@@ -11,9 +11,21 @@
   "decision": "deferred",
   "evidence": {
     "original_root": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/matrix-v1",
-    "original_events": ["softmax:228,229", "residual_rmsnorm:380,381"],
+    "original_events": [
+      "softmax:228,229",
+      "residual_rmsnorm:380,381"
+    ],
     "successor_root": "c550-2:/root/open-cake-runs-reviewed/c550-mechanism-combination-20261004/control-successor-20261004",
-    "locators": ["../retained-failure-replay.json", "controls-plan.json", "controls-qualified.json", "controls-results.jsonl", "comparison-plan.json", "combinations-results.jsonl", "observations/combination-test1-n4-k32-u1-session2/timing_samples", "startup-result-summary.json"],
+    "locators": [
+      "../retained-failure-replay.json",
+      "controls-plan.json",
+      "controls-qualified.json",
+      "controls-results.jsonl",
+      "comparison-plan.json",
+      "combinations-results.jsonl",
+      "observations/combination-test1-n4-k32-u1-session2/timing_samples",
+      "startup-result-summary.json"
+    ],
     "software_before": "962db954",
     "software_successor": "1b18e15bc7bce8c3af33530ce4f891e9c3c8957e",
     "pull_request": "https://github.com/qhy991/open-cake-ir/pull/305"
@@ -27,5 +39,19 @@
     "device": "32 A/A, four signed controls and four profiles qualify at the successor; six additional paired observations pass quality. The seventh is retained as quality failure and the batch stops.",
     "scope": "Captured C550-2/MACA3.8/Triton3.6 cadence, exact Workloads and local-serialized physicalGPU0. External activity is not excluded. No global SDK repair, compiler-mechanism promotion, completed factorial study, held-out, Agent-treatment or application claim."
   },
-  "promotion_disposition": "No Compiler optimization promotion. Completion-boundary source change has bounded device evidence; the broader timing-reliability finding remains deferred. Preserve all old Runs and the successor's negative and failed observations."
+  "promotion_disposition": "No Compiler optimization promotion. Completion-boundary source change has bounded device evidence; the broader timing-reliability finding remains deferred. Preserve all old Runs and the successor's negative and failed observations.",
+  "review_addenda": [
+    {
+      "date": "2026-10-05",
+      "kind": "measurement_review_correction",
+      "evidence": "c550-2:/root/open-cake-runs-reviewed/c550-mechanism-combination-20261004/control-successor-20261004/continued-review-result-20261005.json",
+      "corrections": [
+        "The frozen contract uses population CV0.173162189864085 for the failed baseline cohort. The earlier0.1767329199624791 was a sample-standard-deviation calculation, not the contract value. The quality refusal is unchanged.",
+        "Twelve timing controls used inherited CV0.15;24 timing controls used CV0.05. Four attribution controls have no timing gate. Every0.15 control would fail a hypothetical uniform0.05 gate. Preserve their original per-policy outcomes; uniform5% readiness is not established."
+      ],
+      "audit": "All43 retained paired observations replay through the frozen1b18e15b common owner and match their saved summaries.43000 kernel records have matching launch correlations and no sample-duration derivation mismatches. Five end timestamps depart from the observed256ns grid, including records whose cohorts otherwise pass; that pattern is not an admission rule.",
+      "diagnostic_lead": "The installed MCPTI SDK documents that forced flush may return incomplete records. Kernel8 completed timestamp and raw-prefix/lifecycle diagnostics were not retained. This leaves a collection-completeness uncertainty; it does not prove the0.770us sample cause.",
+      "disposition": "Keep experiments stopped and PR305 open. Require explicit uniform controls in a successor and bounded collection diagnostics before further hardware qualification. No sample deletion, modulo rule, CV relaxation or promotion."
+    }
+  ]
 }
