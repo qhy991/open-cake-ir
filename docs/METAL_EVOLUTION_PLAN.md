@@ -5,6 +5,8 @@
 共享更新由 [PR #322](https://github.com/qhy991/open-cake-ir/pull/322) 集成；技能观察边界由
 [PR #324](https://github.com/qhy991/open-cake-ir/pull/324) 合入 `metal@229c1293`，保留
 `main@08e89422` 的祖先。#324 的三个 Python CI 版本各 2704 通过、35 跳过。
+本计划分支已继续同步 `main@53f5aa70` 的技能包准备后继（PR #325）；其主线 PR 三版本 CI
+各 2742 通过、35 跳过，平台集成检查另列，不借用主线结果宣称 Metal 设备资格。
 以下分别标注旧探针与当前实现；旧证据在原提交回放，不自动升级为同步后的资格。验证记录见外部准入台账。
 本页是开发计划，不是实验报告或验收记录。模板见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
 
@@ -104,6 +106,9 @@ capture 和 archive 构建自身不申请 Evaluation lease；GPU Infra 的 submi
 封存产物，不能用它引导首次 archive。后继环境必须明确这些接触设备阶段的既有资源绑定，
 不能声称 Evaluation 的 allocator 自动覆盖全过程。Metal 目前也在取得 lease 后准备 CPU
 oracle/input；若调整这个边界，须在 Executor/source 后继中实现并验证原测量合同。
+本次同步的 `LOCAL_DEVICE_LEASES.md` 所述按设备编号并行和分配前 CPU 准备不适用于当前
+Metal 路径；Metal 不支持 `--local-lock-scope device`。其中编译不占用 lease 的说明也
+不代表 Metal archive 编译无需设备资源准入。
 capture CLI 会写入所选 checkout 的 `runtime/hosts/<target>.json`，既不是只读盘点，也不是
 默认写到外部报告。只指定另一份 `swiftc` 不能保证 SDK 一致：archive helper 可显式接收
 SDK，observer 编译和 host capture 还依赖各自工具链选择。`--baseline-only` 会访问设备和
@@ -425,7 +430,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | PR #325 的包/home/cell 软件检查已通过；首轮 CI 两项架构回归已修，225e9e6e 的 16 项定点检查通过 | 后继完整 CI/main 集成；原生发现、投递、使用与依赖另验；本计划不以 auth-only 替代 | `native-skill-preparation-8a937973/report.json`、`native-skills-ci-37310854818/report.json`、`native-skill-repair-225e9e6e/report.json` |
+| G4 技能软件准备 | PR #325 已合入 main 并同步本计划分支；修复后的完整三版本 CI 各 2742/35，含完整包证据 fixture | 平台集成；原生发现、投递、使用与依赖另验；本计划不以 auth-only 替代 | `native-skill-main-225e9e6e/report.json`；首轮失败另保留在 `native-skills-ci-37310854818/report.json` |
 | G4 原生技能观察 | 新软件 fixture 的 initial retained context 已有任务/私有 HOME 的 catalog；未见正文；未观察到请求，45 秒超时后停止 | 超时归因未知；实际投递、resume 与其他来源覆盖未验证；没有资格通过 | `codex-skill-exec-probe-v1/report.json`、`codex-skill-exec-probe-v2/report.json`、`codex-skill-exec-inspection-v2/report.json` |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
 | 平台软件集成 | PR #322 合入 metal；全套三版本 CPU CI 通过 | 这些软件检查不授予主机、设备或作者资格 | `metal-treatment-8c5a5632/report.json` |

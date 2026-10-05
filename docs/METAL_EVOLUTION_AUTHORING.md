@@ -71,7 +71,7 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 或旧 auth-only 资格来声称满足独立 skill 环境。通用 Cake 规则与每任务提示分开审阅后
 组成完整输入，同一比较的独立重复保持相同材料边界。
 
-原生 skill 环境是另一项需要资格验证的后继。当前 main 仍保留宿主 `HOME`；Codex
+原生 skill 环境是另一项需要资格验证的后继。默认 auth-only 策略仍保留宿主 `HOME`；Codex
 还会从 `$HOME/.agents/skills`、工作目录祖先、admin 与 system 来源发现技能，见
 [官方技能加载规则](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。
 仅检查 `CODEX_HOME/skills` 不足以证明全部发现来源受控。后继需绑定允许的技能说明、
@@ -110,20 +110,22 @@ SKILL.md、脚本、引用资料和二进制资源，依赖说明继续由技能
 进程补出“隔离通过”。实现完成、CPU 检查通过、原生输入资格、模型实际使用和设备收益
 分别报告；前两项不计为已经完成用户要求的独立 skill 环境。
 
-通用软件后继已提交为 [PR #325](https://github.com/qhy991/open-cake-ir/pull/325)，当前待后继
-完整 CI 与 main 集成。现有材料入口接纳完整原生 tar 包，v2 cell 保存并发送自己的快照；
+通用软件后继 [PR #325](https://github.com/qhy991/open-cake-ir/pull/325) 已合入
+`main@53f5aa70`，本计划分支已同步，平台集成验证另列。材料入口接纳完整原生 tar 包，
+v2 cell 保存并发送自己的快照；
 两个私有 home、初次/续轮绑定和漂移检查沿用 Lab owner。fixture qualification 保留原包
 并能重建投影；正式 Run/Campaign/回放仍明确拒绝新策略。
 固定 `8a937973` 的 31 项技能测试及 33 项管理器测试通过。首轮完整 CI 的技能/证据 fixture
 通过，但两个既有架构合同失败：纯路径拒绝丢失优先次序、旧零 provider 回放过早要求配置。
 修复提交 `225e9e6e` 恢复这些合同；原测试未改，其独立固定 checkout 的 5 项架构及 11 项
 技能入口检查通过，也有新策略不能借零 provider 早退的负例。后继完整 CI 为
-[37313625439](https://github.com/qhy991/open-cake-ir/actions/runs/37313625439)，尚待结论。
+[37313625439](https://github.com/qhy991/open-cake-ir/actions/runs/37313625439)，三个 Python
+版本各 2742 通过、35 跳过，包含完整包证据 fixture；首轮失败仍保留原记录。
 本机缺少 ruff，未安装工具或修环境；CI 自带的现有 lint gate 已通过。
 使用方法和准确边界由共享 `docs/KERNEL_REPRODUCTION.md` 持有，平台不复制实现。
 本地、首轮失败和修复结果分别见 `native-skill-preparation-8a937973/report.json`、
 `native-skills-ci-37310854818/report.json` 与 `native-skill-repair-225e9e6e/report.json`；
-这些软件结果不替代上面的原生输入验收。
+主线合并与完整 CI 见 `native-skill-main-225e9e6e/report.json`。这些软件结果不替代原生输入验收。
 
 技能资格的最小验收步骤：
 
