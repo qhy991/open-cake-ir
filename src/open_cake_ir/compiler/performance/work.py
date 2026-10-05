@@ -421,6 +421,11 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
         return 0  # Integer coordinates/predicates and selection are not floating arithmetic.
     if operation.kind in _NON_ARITHMETIC_KINDS:
         return 0
+    if operation.kind is OperationKind.SCAN:
+        source = schedule.buffer(operation.reads[0]) if operation.reads else None
+        if source is not None and source.dtype is DType.INT32:
+            # Integer scan costs issue slots but performs no floating arithmetic.
+            return 0
     if operation.kind in _UNCOUNTABLE_KINDS:
         return None
 

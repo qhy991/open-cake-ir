@@ -102,6 +102,15 @@ class ResidentIntegerScan(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertIn(code,{f.code for f in self.compiler.assess(document).findings})
 
+    def test_integer_scan_has_zero_floating_work_while_float_scan_stays_unknown(self):
+        from open_cake_ir.compiler.performance.work import work_bound
+        integer = work_bound(Schedule.from_dict(parse(SOURCE).document))
+        self.assertEqual(integer.flops, 0)
+        self.assertTrue(integer.flops_exact)
+        floating = work_bound(Schedule.from_dict(parse(SOURCE.replace('"int32"', '"fp32"')).document))
+        self.assertFalse(floating.flops_exact)
+        self.assertEqual(floating.uncounted_arithmetic, ('prefix',))
+
     def test_no_backend_fallback_is_added_for_integer_scan(self):
         for backend in ['metal','native_cuda','cutlass_cute_dsl']:
             d=parse(SOURCE).document
