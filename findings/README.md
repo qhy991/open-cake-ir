@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-05-007 — multi-candidate author feedback lacked candidate identity; bounded result attribution and independent feedback replay prepared at 5453a4f5 with CPU contracts. Proposed protocol successor; no hardware or learning qualification.
+
 - F-2026-10-05-002 — three sibling Softmax regions expose the Triton two-loop cap; flat-region admission is software verified, including isolated compilation of retained events99/100. Device qualification remains open.
 - F-2026-10-05-003 — confirmed SiLU column partition motivates an explicit guarded pointwise rewrite; public ABI, tail effects and refusal ownership are software verified. Original candidate performance does not qualify the successor pass.
 - F-2026-10-05-004 — exact retained maxnreg,16-group, pipelined-unroll and warp-specialization requests remain deferred MACA route qualifications; fixed single-stage Softmax unroll is separately lowerable under the existing main repair. No new hardware qualification.

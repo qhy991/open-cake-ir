@@ -42,12 +42,12 @@ def replay_feedback(*, events, evidence, specification,
                     rejected=None, fault_turn=None):
     """Verify every delivered and terminal projection without running an author.
 
-Candidate selection closes a completed Turn. An interrupted search Turn leaves
-the preceding feedback intact; confirmation never changes search feedback.
-The empty maps also handle zero-Turn budget stops and first-provider faults.
-Other replay owners validate the rows, receipts, action resolutions and terminal
-order before this consumer reconstructs their author-visible projection.
-"""
+    Candidate selection closes a completed Turn. An interrupted search Turn leaves
+    the preceding feedback intact; confirmation never changes search feedback.
+    The empty maps also handle zero-Turn budget stops and first-provider faults.
+    Other replay owners validate the rows, receipts, action resolutions and terminal
+    order before this consumer reconstructs their author-visible projection.
+    """
     provider_candidates_by_turn = provider_candidates_by_turn or {}
     receipts = receipts or {}
     rejected = rejected or {}
@@ -56,8 +56,6 @@ order before this consumer reconstructs their author-visible projection.
     actions = {}
     seen_searches = {}
     seen_attributions = {}
-    protocol = specification.document["evaluation_protocol"]
-    profile_each = protocol.get("attribution_evaluation") == _ATTRIBUTION_EVALUATION
     provider = specification.document["authoring"].get("provider", {})
 
     for ordinal, event in enumerate(events):
@@ -85,7 +83,9 @@ order before this consumer reconstructs their author-visible projection.
             key = (origin, purpose, identity)
             if purpose == "search":
                 seen_searches.setdefault(origin, {})[identity] = receipts[key]
-            elif (purpose == "attribution" and profile_each
+            # A first-provider fault has no Evaluation dependency to resolve.
+            elif (purpose == "attribution"
+                  and specification.document["evaluation_protocol"].get("attribution_evaluation") == _ATTRIBUTION_EVALUATION
                   and "source_turn" not in payload):
                 seen_attributions.setdefault(origin, {})[identity] = receipts[key]
         elif kind == "candidate_selected" and turn != fault_turn:
