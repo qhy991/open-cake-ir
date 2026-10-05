@@ -60,7 +60,14 @@ class JointSquaredDifference(unittest.TestCase):
     def test_tail_masks_carry_reset_and_exactly_one_store_on_both_routes(self):
         # K=15 has four ceil trips at tile4; N=7 has a partial final output tile.
         for depth, columns in ((16, 8), (15, 7), (9, 5)):
-            seed, _ = self.seed(depth=depth, columns=columns)
+            seed, _ = self.seed()
+            # Synthetic Schedule domain test: the existing task's Workload
+            # admission still requires power-of-two widths. Do not change that
+            # contract or claim these shapes as admitted device workloads.
+            for buffer in seed['buffers']:
+                buffer['shape'] = [depth if n == 16 else columns if n == 8 else n
+                                   for n in buffer['shape']]
+            seed['schedule_id'] = 'synthetic_tail_seed'
             for target, factor in itertools.product(('xcore1002', 'sm_100a'), (1, 2)):
                 if ((depth + 3) // 4) % factor:
                     continue
