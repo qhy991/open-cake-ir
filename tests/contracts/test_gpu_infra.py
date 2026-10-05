@@ -219,6 +219,7 @@ class ExperimentInputTests(unittest.TestCase):
         self.assertEqual((output / "AGENTS.md").read_bytes(), kernel_experiment.POLICY.read_bytes())
         self.assertIn("reviewed reference", (output / "scaffold.md").read_text())
         self.assertIn("sm_103a", (output / "TASK.md").read_text())
+        self.assertFalse((output / "cells").exists())
         with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT), \
              patch.object(kernel_experiment.subprocess, "run", return_value=SimpleNamespace(returncode=255)) as launch:
             self.assertEqual(kernel_experiment.run_cell(output, "b300"), 255)
@@ -228,10 +229,156 @@ class ExperimentInputTests(unittest.TestCase):
             self.assertIn("B300-M2", argv)
             payload = json.loads(launch.call_args.kwargs["input"])
             self.assertEqual(payload["cell"]["node"]["provider_executable"], "/opt/codex/bin/codex")
+            self.assertEqual(payload["scaffold"], (output / "scaffold.md").read_text())
             with self.assertRaises(FileExistsError):
                 kernel_experiment.run_cell(output, "b300")
         receipt = json.loads((output / "launches/b300/transport.json").read_bytes())
         self.assertEqual(receipt["observation"], "failed_or_unknown_no_retry")
+
+    def _per_cell_config(self):
+        config = deepcopy(self.config)
+        config["schema_version"] = 2
+        references = config.pop("references")
+        first = config["cells"][0]
+        first.update(id="rmsnorm-r1", references=references)
+        second = deepcopy(first)
+        second.update(id="silu-r1", task="silu")
+        second["node"]["workspace"] = str(self.root / "silu-run")
+        reference = self.root / "silu-reference.py"
+        reference.write_text("# silu-only mechanism\n")
+        second["references"] = [{"path": str(reference), "source": "silu reference at fixture commit"}]
+        config["cells"].append(second)
+        return config
+
+    def _prepare_experiment(self, config, name="experiment"):
+        config_path = self.root / f"{name}.json"
+        config_path.write_text(json.dumps(config))
+        output = self.root / name
+        with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT):
+            kernel_experiment.prepare(config_path, output)
+        return output
+
+    def _launch_payload(self, output, cell_id):
+        with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT), \
+             patch.object(kernel_experiment.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as launch:
+            self.assertEqual(kernel_experiment.run_cell(output, cell_id), 0)
+        launch.assert_called_once()
+        return json.loads(launch.call_args.kwargs["input"])
+
+    def test_v2_delivers_selected_task_snapshots_and_custom_policy_only(self):
+        config = self._per_cell_config()
+        custom = self.root / "rmsnorm-AGENTS.md"
+        custom.write_text("# Task-specific instructions\nUse the RMSNorm-only tactic.\n")
+        first, second = config["cells"]
+        first["agents_md"] = str(custom)
+        original_custom = custom.read_text()
+        original_policy = kernel_experiment.POLICY.read_text()
+        output = self._prepare_experiment(config)
+        self.assertEqual((output / "AGENTS.md").read_text(), original_policy)
+        self.assertFalse((output / "scaffold.md").exists())
+        self.assertFalse((output / "references").exists())
+        for cell in config["cells"]:
+            self.assertIn(cell["id"], (output / "TASK.md").read_text())
+            directory = output / "cells" / cell["id"]
+            self.assertTrue((directory / "TASK.md").is_file())
+            self.assertTrue((directory / "references").is_dir())
+            self.assertTrue((directory / "scaffold.md").is_file())
+        first_inputs = output / "cells" / first["id"]
+        second_inputs = output / "cells" / second["id"]
+        self.assertEqual((first_inputs / "AGENTS.md").read_text(), original_custom)
+        self.assertEqual((second_inputs / "AGENTS.md").read_text(), original_policy)
+
+        # The external originals are not runtime authorities after preparation.
+        for cell in config["cells"]:
+            Path(cell["references"][0]["path"]).write_text("changed after preparation\n")
+        custom.write_text("changed after preparation\n")
+        first_payload = self._launch_payload(output, first["id"])
+        second_payload = self._launch_payload(output, second["id"])
+        self.assertEqual(first_payload["cell"]["task"], "rmsnorm")
+        self.assertEqual(second_payload["cell"]["task"], "silu")
+        self.assertEqual(first_payload["scaffold"], (first_inputs / "scaffold.md").read_text())
+        self.assertEqual(second_payload["scaffold"], (second_inputs / "scaffold.md").read_text())
+        self.assertIn("reviewed reference", first_payload["scaffold"])
+        self.assertNotIn("silu-only mechanism", first_payload["scaffold"])
+        self.assertIn(original_custom, first_payload["scaffold"])
+        self.assertNotIn(original_policy, first_payload["scaffold"])
+        self.assertIn("silu-only mechanism", second_payload["scaffold"])
+        self.assertNotIn("reviewed reference", second_payload["scaffold"])
+        self.assertNotIn("RMSNorm-only tactic", second_payload["scaffold"])
+        self.assertIn(original_policy, second_payload["scaffold"])
+        for payload in (first_payload, second_payload):
+            self.assertNotIn("changed after preparation", payload["scaffold"])
+
+    def test_v2_shares_material_only_when_each_cell_lists_it(self):
+        config = self._per_cell_config()
+        common = self.root / "common.md"
+        common.write_text("Shared FP32 numerical guidance.\n")
+        declared = {"path": str(common), "source": "reviewed common guidance"}
+        for cell in config["cells"]:
+            cell["references"].append(deepcopy(declared))
+        unlisted = deepcopy(config["cells"][1])
+        unlisted["id"] = "silu-r2-without-common"
+        unlisted["node"]["workspace"] = str(self.root / "silu-run-two")
+        unlisted["references"] = unlisted["references"][:1]
+        config["cells"].append(unlisted)
+        output = self._prepare_experiment(config)
+        for cell in config["cells"]:
+            payload = self._launch_payload(output, cell["id"])
+            if cell["id"] == unlisted["id"]:
+                self.assertNotIn("Shared FP32 numerical guidance", payload["scaffold"])
+            else:
+                self.assertIn("Shared FP32 numerical guidance", payload["scaffold"])
+
+    def test_v2_missing_cell_scaffold_never_falls_back_or_launches(self):
+        config = self._per_cell_config()
+        output = self._prepare_experiment(config)
+        (output / "cells" / config["cells"][0]["id"] / "scaffold.md").unlink()
+        (output / "scaffold.md").write_text("Root fallback must not be used.\n")
+        with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT), \
+             patch.object(kernel_experiment.subprocess, "run") as launch:
+            with self.assertRaises((OSError, ValueError)):
+                kernel_experiment.run_cell(output, config["cells"][0]["id"])
+        launch.assert_not_called()
+        self.assertFalse((output / "launches" / config["cells"][0]["id"]).exists())
+
+    def test_reference_schema_versions_refuse_mixed_or_missing_authority(self):
+        cases = []
+        for field in ("references", "agents_md"):
+            config = deepcopy(self.config)
+            config["cells"][0][field] = (deepcopy(config["references"]) if field == "references"
+                                        else str(self.root / "custom-AGENTS.md"))
+            cases.append((f"v1-cell-{field}", config))
+        config = self._per_cell_config()
+        config["references"] = deepcopy(self.config["references"])
+        cases.append(("v2-root-references", config))
+        config = self._per_cell_config()
+        del config["cells"][0]["references"]
+        cases.append(("v2-missing-cell-references", config))
+        for references in ([], None, "reference.py", [{}]):
+            config = self._per_cell_config()
+            config["cells"][0]["references"] = references
+            cases.append((f"v2-invalid-references-{references!r}", config))
+        for name, config in cases:
+            with self.subTest(case=name), self.assertRaises(ValueError):
+                kernel_experiment.validate(config)
+
+    def test_v2_custom_policy_requires_an_absolute_regular_file(self):
+        for path in ("", "relative.md", "/tmp/../AGENTS.md", None):
+            config = self._per_cell_config()
+            config["cells"][0]["agents_md"] = path
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                kernel_experiment.validate(config)
+        custom = self.root / "custom-AGENTS.md"
+        custom.write_text("Reviewed task instructions.\n")
+        link = self.root / "linked-AGENTS.md"
+        link.symlink_to(custom)
+        directory = self.root / "policy-directory"
+        directory.mkdir()
+        for index, path in enumerate((self.root / "missing-AGENTS.md", link, directory)):
+            config = self._per_cell_config()
+            config["cells"][0]["agents_md"] = str(path)
+            with self.subTest(path=path), self.assertRaises((OSError, ValueError)):
+                self._prepare_experiment(config, name=f"invalid-policy-{index}")
 
     def test_codex_home_binding_is_absolute_and_provider_specific(self):
         for home in ("relative", ""):

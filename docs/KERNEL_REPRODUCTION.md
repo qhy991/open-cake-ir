@@ -28,14 +28,14 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "objective": "复现参考 RMSNorm 的执行结构，并解释性能差距",
-  "provider": {"harness": "codex", "model": "YOUR_MODEL", "effort": "high"},
+  "provider": {"harness": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"},
   "budget": {"turns": 8, "token_budget": 300000, "wall_seconds": 7200},
-  "references": [{"path": "/absolute/reference/kernel.py", "source": "repository commit and original path"}],
   "cells": [{
     "id": "rmsnorm-b300", "task": "rmsnorm", "backend": "triton-b300",
     "rows": 128, "columns": 4096,
+    "references": [{"path": "/absolute/reference/kernel.py", "source": "repository commit and original path"}],
     "node": {"transport": "ssh", "host": "B300-M2",
       "project_root": "/absolute/open-cake-ir", "python": "/absolute/venv/bin/python",
       "kernelctl": "/absolute/gpu-infra/bin/kernelctl", "socket": "/absolute/kernel-infra.sock",
@@ -43,6 +43,26 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
   }]
 }
 ```
+
+模型与 effort 是显式输入；示例按当前实验选择 `gpt-6.1-sol` / `xhigh`，不是 launcher
+全局默认值，也不证明该 CLI/模型组合已经通过资格。初始与续轮均使用同一绑定。
+
+schema v2 为每个 cell 创建 `cells/<id>/TASK.md`、`AGENTS.md`、`references/` 和
+`scaffold.md`。每项必须声明自己的 `references`；没有顶层资料继承或缺失文件回退。
+共同材料也要显式出现在各自列表中。`run --cell` 只传该 cell 的准备快照，后续修改原始
+资料不会悄悄进入它。旧 schema v1 继续使用顶层 `references` 与同一 scaffold，不能同时
+混入 v2 字段；旧实验仍从其固定提交执行。
+
+cell 可选 `agents_md: "/absolute/reviewed-task-AGENTS.md"`，完整替换该 cell 的默认复现
+规范，其快照写入该 cell 的 `AGENTS.md`。这可承载任务专属的 Cake/Metal 技能说明，但
+不会安装 CLI skill、运行依赖脚本或扩大工具权限。`references` 正文仍是数据，不是指令。
+实际 Run 的 TASK/AGENTS 仍由 Lab 根据冻结权限生成；准备目录里的 TASK 只指导管理 Agent。
+模板与脚本依赖若需作为原生 skill 自动发现，须另行声明和验证作者环境策略。
+
+重复实验使用不同 cell id 和外部 `node.workspace`，例如
+`/absolute/experiments/rmsnorm/C0/r01/run` 与 `.../r02/run`。对应 `run-inputs/` 和
+`run-source/` 由既有入口创建在同一 replica 目录。每个 Run 保留自己的作者目录、预算、
+证据与报告；同一任务的相同工具链可以复用固定安装，无需重复安装一套 Compiler。
 
 Claude-compatible 网关若有已核对的响应模型别名，可在 `provider` 中明确声明
 `response_model_aliases` 列表；入口将其逐个传给单任务 launcher，沿用已有 qualification
@@ -156,10 +176,21 @@ worktree 验证，再用后继 Campaign 测量。无需新建 Study kind 或第�
 ## 多节点 Codex 状态目录
 
 可在 cell 的 node 中显式绑定 `codex_home`，指向该节点上已准备好的绝对目录。
-入口仅为该 cell 的 launcher 设置 `CODEX_HOME`，initial/resume 及资格验证共享此绑定。
-使用节点本地目录可隔离跨主机共享 HOME 下的临时 helper 和会话状态；它不会关闭 sandbox，
-也不会自动复制凭据、修复旧运行或创建目录。身份与初始/恢复行为仍需新的两轮 qualification。
-旧运行的失败记录不重分类；换绑定后必须准备新实验输入与运行目录。
+入口仅为该 cell 的 launcher 设置 `CODEX_HOME`；该目录影响 launcher 的默认凭据来源与
+CLI 资源查找。采用 `isolated_auth_only_v1` 的新 Codex Run 另建私有
+`actors/.codex-homes/<run-id>/`，按既有私密性规则只复制凭据。同一 Run 的 initial/resume
+共享其私有 home，其他 Run 与资格验证使用各自的新 home；不复用 launcher 的个人技能或
+会话目录。该策略的原实现与边界见 [ADR 0081](adr/0081-isolate-codex-author-home-per-run.md)。
+
+这不是完整 skill 发现隔离的证明。当前代码保留宿主 `HOME`，检查范围集中在私有
+`CODEX_HOME`；Codex 还会从用户 `HOME/.agents/skills`、工作目录祖先、admin 与 system
+位置发现技能，见[官方加载规则](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。
+任务文本快照也不等于原生 skill runtime。受控技能包需要另验：允许材料确实可见，宿主与
+邻任务材料未进入实际 catalog，初始与续轮策略一致，并且脚本依赖及工具范围明确。
+不向现有 auth-only home 填入 user skills/plugins 绕过其拒绝规则。
+
+这里没有关闭 sandbox、修复历史环境或资格。新模型、effort、工具或作者环境需要相应的
+两轮 qualification。旧行为及失败记录仍按固定提交保留；换绑定必须创建新输入和运行目录。
 
 ## Native tensor Program correctness qualification
 
