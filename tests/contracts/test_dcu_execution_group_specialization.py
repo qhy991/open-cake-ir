@@ -132,9 +132,14 @@ class ExecutionGroupSpecialization(unittest.TestCase):
         document = self.gemm('sm_100a')
         shape = next(b['shape'] for b in document['buffers'] if b['name'] == 'c')
         document['buffers'].append(dict(name='lengths', space='global', dtype='int32',
-                                       shape=[shape[0]], mode='input'))
+                                       shape=[3], mode='input'))
         output = next(b for b in document['buffers'] if b['name'] == 'c')
+        output['shape'] = [3] + shape
         output['valid_extent'] = dict(dimension=1, buffer='lengths', indexed_by=[0])
+        document['program_map']['axes'].append(dict(name='batch', axis=2,
+            buffer='c', dimension=0, tile=1))
+        store = next(a for a in document['access_maps'] if a['operation'] == 'store_c')
+        store['indices'].insert(0, dict(source='program', name='batch'))
         self.assertTrue(self.compiler.assess(document).lowering_eligible)
         result = self.apply(document)
         self.assertTrue(result.applied, result.message)
