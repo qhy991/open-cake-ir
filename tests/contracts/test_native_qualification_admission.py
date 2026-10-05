@@ -121,7 +121,10 @@ class NativeQualificationAdmissionTests(unittest.TestCase):
             'author_home_policy', 'native_skill_package', 'web_search')}
         provider.update(revision=receipt.provider_revision, executable_sha256=receipt.executable_sha256,
             system_skills_sha256=receipt.system_skills_sha256, cwd_policy='independent_task_workspace',
-            output_schema={'path': authority['native_skill_context']['output_schema'],
+            # A new Run's in-repository reference is relative; the retained
+            # qualification invocation keeps its own original absolute path.
+            output_schema={'path': str(Path(authority['native_skill_context']['output_schema'])
+                                       .relative_to(fixtures.ROOT)),
                            'sha256': authority['output_schema_sha256']},
             qualification={'path': str(receipt_path), 'canonical_sha256': receipt.canonical_sha256},
             qualification_anchor={'path': str(anchor_path),
