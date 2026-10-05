@@ -248,13 +248,25 @@ CLI 资源查找。采用 `isolated_auth_only_v1` 的新 Codex Run 另建私有
 解析；不会因目录名推断原生技能名称。
 
 结果保留在 `ProviderTurn.native_skill_input`，fixture qualifier 将其写入既有 Evidence
-中的每 arm/initial/resumed `native_skill_input` role。只保留技能片段及其原生 turn 绑定，
-不复制完整 prompt、凭据、工具输出或 reasoning 日志。历史正文不算本轮加载；未加载正文
+中的每 arm/initial/resumed `native_skill_input` role。v2 同时保留用于重建的最小原生
+session、轮次、context、world-state 与技能输入字段，以及原始行位置；不复制完整 prompt、
+凭据、工具输出或 reasoning 日志。历史正文保留为来源事实，但不算本轮加载；未加载正文
 如实保留空列表。system 文件树身份仍由既有 author-home owner 检查，不新增逐文件身份目录。
+
+`native_skill_observation.replay_observation` 从保留事实重建投影，调用方显式提供线程、
+workspace、模型/effort、轮次、冻结包正文与已安装 system 入口。既有 qualifier 在保存后
+重新读取 Evidence，依次重建每 arm 的 initial/resume；不依赖原生日志或私有 HOME 仍存在。
+缺失、重复、串轮、投影与来源不一致或包正文漂移均拒绝。旧 v1 观察没有这些来源事实，
+不能冒充 v2；历史证据仍在原提交回放。
+
+离线回放只验证保留的技能语义与其前缀连续性。未保留的日志行用空位置表示，不能证明
+完整原始日志字节未改写；后者仍是采集时的检查。该接口要求调用方按顺序验证前轮，并从
+自身的冻结调用和材料取得预期值；从观察本身复制预期值不是资格验证。正式 Run 的调用
+绑定、每轮归档/回放，以及正式资格收据/准入仍待接通，不能以这项 fixture 检查放行。
 
 这是 retained native input 的版本限定观察，**不是生产资格**。与实际请求的一致性须以
 同版本原生 fixture 验证，不能把生成的摘要视为 wire capture。当前不支持 compaction、
-rollback、目录中缺席的 explicit-only/disabled 技能，也未观察脚本或引用资源的读取、
+rollback、目录中缺席的包内 explicit-only/disabled 技能，也未观察脚本或引用资源的读取、
 模型使用或文件读取隔离。未知版本、缺记录、来源漂移或错误绑定会拒绝候选接收。
 正式 qualifier/admission/replay 仍拒绝此策略；启用前须一起接入保留证据的独立校验与收据。
 
