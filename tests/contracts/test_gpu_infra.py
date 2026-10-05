@@ -1,10 +1,13 @@
 """CPU protocol tests; no GPU or provider qualification is inferred."""
 from copy import deepcopy
+import base64
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -219,6 +222,7 @@ class ExperimentInputTests(unittest.TestCase):
         self.assertEqual((output / "AGENTS.md").read_bytes(), kernel_experiment.POLICY.read_bytes())
         self.assertIn("reviewed reference", (output / "scaffold.md").read_text())
         self.assertIn("sm_103a", (output / "TASK.md").read_text())
+        self.assertFalse((output / "cells").exists())
         with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT), \
              patch.object(kernel_experiment.subprocess, "run", return_value=SimpleNamespace(returncode=255)) as launch:
             self.assertEqual(kernel_experiment.run_cell(output, "b300"), 255)
@@ -228,10 +232,378 @@ class ExperimentInputTests(unittest.TestCase):
             self.assertIn("B300-M2", argv)
             payload = json.loads(launch.call_args.kwargs["input"])
             self.assertEqual(payload["cell"]["node"]["provider_executable"], "/opt/codex/bin/codex")
+            self.assertEqual(payload["scaffold"], (output / "scaffold.md").read_text())
             with self.assertRaises(FileExistsError):
                 kernel_experiment.run_cell(output, "b300")
         receipt = json.loads((output / "launches/b300/transport.json").read_bytes())
         self.assertEqual(receipt["observation"], "failed_or_unknown_no_retry")
+
+    def _per_cell_config(self):
+        config = deepcopy(self.config)
+        config["schema_version"] = 2
+        references = config.pop("references")
+        first = config["cells"][0]
+        first.update(id="rmsnorm-r1", references=references)
+        second = deepcopy(first)
+        second.update(id="silu-r1", task="silu")
+        second["node"]["workspace"] = str(self.root / "silu-run")
+        reference = self.root / "silu-reference.py"
+        reference.write_text("# silu-only mechanism\n")
+        second["references"] = [{"path": str(reference), "source": "silu reference at fixture commit"}]
+        config["cells"].append(second)
+        return config
+
+    def _prepare_experiment(self, config, name="experiment"):
+        config_path = self.root / f"{name}.json"
+        config_path.write_text(json.dumps(config))
+        output = self.root / name
+        with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT):
+            kernel_experiment.prepare(config_path, output)
+        return output
+
+    def _launch_payload(self, output, cell_id):
+        with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT), \
+             patch.object(kernel_experiment.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as launch:
+            self.assertEqual(kernel_experiment.run_cell(output, cell_id), 0)
+        launch.assert_called_once()
+        return json.loads(launch.call_args.kwargs["input"])
+
+    def _budget_command(self, budget, *, version=2, name="budget"):
+        config = deepcopy(self.config) if version == 1 else self._per_cell_config()
+        config["cells"] = config["cells"][:1]
+        config["cells"][0]["node"]["workspace"] = str(self.root / f"{name}-run")
+        config["budget"] = budget
+        output = self._prepare_experiment(config, name)
+        self.assertEqual(json.loads((output / "experiment.json").read_bytes())["budget"], budget)
+        payload = self._launch_payload(output, config["cells"][0]["id"])
+        self.assertEqual(payload["budget"], budget)
+        self.assertEqual(json.loads((output / "launches" / config["cells"][0]["id"]
+                                    / "request.json").read_bytes())["budget"], budget)
+        with patch("sys.stdin", io.StringIO(json.dumps(payload))), \
+             patch("subprocess.run", return_value=SimpleNamespace(returncode=0)) as execute:
+            with self.assertRaises(SystemExit) as result:
+                exec(kernel_experiment._NODE, {})
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(execute.call_count, 2)  # source checkout, then the task launcher
+        command = execute.call_args.args[0]
+        for key, value in budget.items():
+            flag = "--" + key.replace("_", "-")
+            if value is None:
+                self.assertNotIn(flag, command)
+            else:
+                self.assertEqual(command[command.index(flag) + 1], str(value))
+        return command
+
+    def _skill_archive(self, name):
+        source = self.root / (name + '.tar')
+        with tarfile.open(source, 'w') as archive:
+            for path, data in (
+                (f'skills/{name}/SKILL.md', f'---\nname: {name}\ndescription: fixture\n---\n{name} body'.encode()),
+                (f'skills/{name}/scripts/check.py', f'print({name!r})'.encode()),
+                (f'skills/{name}/assets/table.bin', bytes(range(256))),
+            ):
+                item = tarfile.TarInfo(path)
+                item.size = len(data)
+                archive.addfile(item, io.BytesIO(data))
+        return source
+
+    def test_v2_skill_packages_use_selected_snapshots_for_local_and_ssh_node(self):
+        config = self._per_cell_config()
+        expected = {}
+        for cell in config['cells']:
+            source = self._skill_archive(cell['id'])
+            cell['author_skill_package'] = str(source)
+            expected[cell['id']] = source.read_bytes()
+        config['cells'][1]['node'].update(transport='ssh', host='fixture-host')
+        with patch.object(kernel_experiment.NativeSkillPackage, 'read',
+                          wraps=kernel_experiment.NativeSkillPackage.read) as reads:
+            output = self._prepare_experiment(config)
+        self.assertEqual(reads.call_count, 2)
+        for cell in config['cells']:
+            Path(cell['author_skill_package']).unlink()
+            payload = self._launch_payload(output, cell['id'])
+            self.assertEqual(base64.b64decode(payload['author_skill_package']), expected[cell['id']])
+            self.assertNotIn(f"{cell['id']} body", payload['scaffold'])
+            with patch('sys.stdin', io.StringIO(json.dumps(payload))), \
+                 patch('subprocess.run', return_value=SimpleNamespace(returncode=0)) as execute:
+                with self.assertRaises(SystemExit) as result:
+                    exec(kernel_experiment._NODE, {})
+            self.assertEqual(result.exception.code, 0)
+            self.assertEqual(execute.call_count, 2)
+            command = execute.call_args.args[0]
+            material = Path(command[command.index('--author-skill-package') + 1])
+            workspace = Path(cell['node']['workspace'])
+            self.assertEqual(material, workspace.with_name(workspace.name + '-inputs')/'author-skills.tar')
+            self.assertEqual(material.read_bytes(), expected[cell['id']])
+            self.assertNotIn(cell['author_skill_package'], command)
+
+    def test_missing_skill_snapshot_refuses_before_attempt_without_source_or_sibling_fallback(self):
+        config = self._per_cell_config()
+        source = self._skill_archive('shared')
+        for cell in config['cells']:
+            cell['author_skill_package'] = str(source)
+        output = self._prepare_experiment(config)
+        first = config['cells'][0]['id']
+        (output/'cells'/first/'author-skills.tar').unlink()
+        (output/'author-skills.tar').write_bytes(source.read_bytes())
+        with patch.object(kernel_experiment, 'checkout_commit', return_value=COMMIT), \
+             patch.object(kernel_experiment.subprocess, 'run') as launch:
+            with self.assertRaises((OSError, ValueError)):
+                kernel_experiment.run_cell(output, first)
+        launch.assert_not_called()
+        self.assertFalse((output/'launches'/first).exists())
+
+    def test_skill_prepare_refuses_invalid_material_before_output_and_v1_stays_closed(self):
+        config = self._per_cell_config()
+        source = self.root/'invalid.tar'
+        source.write_bytes(b'not an archive')
+        config['cells'][0]['author_skill_package'] = str(source)
+        with self.assertRaises(ValueError):
+            self._prepare_experiment(config)
+        self.assertFalse((self.root/'experiment').exists())
+        for invalid in (deepcopy(self.config), config):
+            invalid['cells'][0]['author_skill_package'] = str(source)
+            if invalid['schema_version'] == 2:
+                invalid['provider']['harness'] = 'claude-code'
+            with self.assertRaises(ValueError):
+                kernel_experiment.validate(invalid)
+
+    def test_node_refuses_missing_invalid_and_oversized_skill_payload_before_side_effects(self):
+        cell = deepcopy(self.config['cells'][0])
+        cell['author_skill_package'] = '/unread/original.tar'
+        payload = {'cell': cell, 'source_commit': COMMIT, 'scaffold': 'rules',
+                   'provider': self.config['provider'], 'budget': self.config['budget']}
+        # Exercise the generated transport with a smaller memory bound. The
+        # production string derives its limit from the same package owner.
+        bounded_node = kernel_experiment._NODE.replace(
+            f'skill_limit = {kernel_experiment.MAX_ARCHIVE_BYTES}', 'skill_limit = 8')
+        for value in (None, 'not-base64!', base64.b64encode(b'123456789').decode(),
+                      'A' * 16):
+            selected = dict(payload)
+            if value is not None:
+                selected['author_skill_package'] = value
+            with self.subTest(value=value), patch('sys.stdin', io.StringIO(json.dumps(selected))), \
+                 patch('subprocess.run') as execute:
+                with self.assertRaises(ValueError):
+                    exec(bounded_node, {})
+            execute.assert_not_called()
+            self.assertFalse((self.root/'node-run-inputs').exists())
+
+    def _resolved_budget(self, command, *, refusal=None):
+        # Exercise the real CLI parser and budget owner; stop before stack admission.
+        captured = []
+        original = launch_task.task_run_inputs
+        def inputs(*args, **kwargs):
+            value = original(*args, **kwargs)
+            captured.append(value)
+            return value
+        with patch.object(launch_task, "_provider_executable", return_value=Path("/fixture/provider")), \
+             patch.object(infra, "preflight", return_value={}), \
+             patch.object(launch_task, "task_run_inputs", side_effect=inputs), \
+             patch.object(launch_task, "_admit_stack", side_effect=RuntimeError("stop before execution")) as admit, \
+             patch.object(launch_task, "_prepare_baseline") as baseline, \
+             patch.object(launch_task, "_qualify") as qualify, \
+             patch.object(launch_task, "execute_run_from_config") as run:
+            with self.assertRaisesRegex(ValueError if refusal else RuntimeError,
+                                        refusal or "stop before execution"):
+                launch_task.main(command[2:])
+            if refusal:
+                admit.assert_not_called()
+            else:
+                admit.assert_called_once()
+            baseline.assert_not_called()
+            qualify.assert_not_called()
+            run.assert_not_called()
+        return captured[0]["budget"] if captured else None
+
+    def test_v2_explicit_budget_survives_prepare_transport_and_real_task_inputs(self):
+        budget = {"turns": 8, "token_budget": 150000, "wall_seconds": 3600,
+                  "max_candidates": 3, "searches_per_turn": 3,
+                  "max_compilations": 24, "confirmation_seconds": 600}
+        observed = self._resolved_budget(self._budget_command(budget))
+        self.assertEqual(observed, {"unit": "provider_tokens", "limit": 150000,
+            "checkpoints": [150000], "maximum_turns": 8, "maximum_candidates_per_turn": 3,
+            "maximum_compilations": 24, "confirmation_wall_time_seconds": 600.0,
+            "wall_time_seconds": 3600, "active_authoring_time_seconds": 1800.0,
+            "evaluation_limits": {"search": 24, "attribution": 24, "confirmatory": 8}})
+
+    def test_omitted_v2_controls_preserve_v1_cli_defaults_and_null_tokens(self):
+        budget = {**self.config["budget"], "token_budget": None}
+        legacy = self._budget_command(budget, version=1, name="legacy")
+        current = self._budget_command(budget, name="current")
+        for command in (legacy, current):
+            for flag in ("--max-candidates", "--searches-per-turn", "--max-compilations", "--confirmation-seconds"):
+                self.assertNotIn(flag, command)
+        observed = self._resolved_budget(current)
+        self.assertEqual(observed, self._resolved_budget(legacy))
+        self.assertIsNone(observed["limit"])
+        self.assertEqual(observed["checkpoints"], [])
+
+    def test_v2_budget_controls_can_each_override_one_cli_default(self):
+        base = self.config["budget"]
+        defaults = self._resolved_budget(self._budget_command(base, name="defaults"))
+        for field, value, projected in (
+            ("max_candidates", 4, "maximum_candidates_per_turn"),
+            ("searches_per_turn", 1, "evaluation_limits"),
+            ("max_compilations", 7, "maximum_compilations"),
+            ("confirmation_seconds", 12.5, "confirmation_wall_time_seconds"),
+        ):
+            with self.subTest(field=field):
+                command = self._budget_command({**base, field: value}, name=field)
+                observed = self._resolved_budget(command)
+                expected = deepcopy(defaults)
+                expected[projected] = ({"search": base["turns"], "attribution": base["turns"],
+                                        "confirmatory": base["turns"]}
+                                       if field == "searches_per_turn" else value)
+                self.assertEqual(observed, expected)
+
+    def test_partial_override_conflicts_are_refused_by_real_budget_owner_before_execution(self):
+        for field, value in (("max_candidates", 1), ("searches_per_turn", 4)):
+            with self.subTest(field=field):
+                command = self._budget_command({**self.config["budget"], field: value}, name=field)
+                self.assertIsNone(self._resolved_budget(command,
+                    refusal="searches per Turn must fit the candidate budget"))
+
+    def test_v1_rejects_v2_budget_controls(self):
+        for field in ("max_candidates", "searches_per_turn", "max_compilations", "confirmation_seconds"):
+            config = deepcopy(self.config)
+            config["budget"][field] = 1
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                kernel_experiment.validate(config)
+
+    def test_v2_budget_rejects_invalid_explicit_values_and_pairs(self):
+        config = self._per_cell_config()
+        for field in ("turns", "wall_seconds", "token_budget", "max_candidates", "searches_per_turn", "max_compilations"):
+            for value in (True, 0, -1, "3", 1.5, float("nan"), float("inf"), None):
+                if field == "token_budget" and value is None:
+                    continue
+                invalid = deepcopy(config)
+                invalid["budget"][field] = value
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    kernel_experiment.validate(invalid)
+        for value in (True, None, "10", 0, -1, float("nan"), float("inf"), -float("inf"), 120, 121, 10 ** 400):
+            invalid = deepcopy(config)
+            invalid["budget"]["confirmation_seconds"] = value
+            with self.subTest(confirmation_seconds=value), self.assertRaises(ValueError):
+                kernel_experiment.validate(invalid)
+        config["budget"].update(max_candidates=2, searches_per_turn=3)
+        with self.assertRaisesRegex(ValueError, "searches_per_turn must fit max_candidates"):
+            kernel_experiment.validate(config)
+
+    def test_v2_delivers_selected_task_snapshots_and_custom_policy_only(self):
+        config = self._per_cell_config()
+        custom = self.root / "rmsnorm-AGENTS.md"
+        custom.write_text("# Task-specific instructions\nUse the RMSNorm-only tactic.\n")
+        first, second = config["cells"]
+        first["agents_md"] = str(custom)
+        original_custom = custom.read_text()
+        original_policy = kernel_experiment.POLICY.read_text()
+        output = self._prepare_experiment(config)
+        self.assertEqual((output / "AGENTS.md").read_text(), original_policy)
+        self.assertFalse((output / "scaffold.md").exists())
+        self.assertFalse((output / "references").exists())
+        for cell in config["cells"]:
+            self.assertIn(cell["id"], (output / "TASK.md").read_text())
+            directory = output / "cells" / cell["id"]
+            self.assertTrue((directory / "TASK.md").is_file())
+            self.assertTrue((directory / "references").is_dir())
+            self.assertTrue((directory / "scaffold.md").is_file())
+        first_inputs = output / "cells" / first["id"]
+        second_inputs = output / "cells" / second["id"]
+        self.assertEqual((first_inputs / "AGENTS.md").read_text(), original_custom)
+        self.assertEqual((second_inputs / "AGENTS.md").read_text(), original_policy)
+
+        # The external originals are not runtime authorities after preparation.
+        for cell in config["cells"]:
+            Path(cell["references"][0]["path"]).write_text("changed after preparation\n")
+        custom.write_text("changed after preparation\n")
+        first_payload = self._launch_payload(output, first["id"])
+        second_payload = self._launch_payload(output, second["id"])
+        self.assertEqual(first_payload["cell"]["task"], "rmsnorm")
+        self.assertEqual(second_payload["cell"]["task"], "silu")
+        self.assertEqual(first_payload["scaffold"], (first_inputs / "scaffold.md").read_text())
+        self.assertEqual(second_payload["scaffold"], (second_inputs / "scaffold.md").read_text())
+        self.assertIn("reviewed reference", first_payload["scaffold"])
+        self.assertNotIn("silu-only mechanism", first_payload["scaffold"])
+        self.assertIn(original_custom, first_payload["scaffold"])
+        self.assertNotIn(original_policy, first_payload["scaffold"])
+        self.assertIn("silu-only mechanism", second_payload["scaffold"])
+        self.assertNotIn("reviewed reference", second_payload["scaffold"])
+        self.assertNotIn("RMSNorm-only tactic", second_payload["scaffold"])
+        self.assertIn(original_policy, second_payload["scaffold"])
+        for payload in (first_payload, second_payload):
+            self.assertNotIn("changed after preparation", payload["scaffold"])
+
+    def test_v2_shares_material_only_when_each_cell_lists_it(self):
+        config = self._per_cell_config()
+        common = self.root / "common.md"
+        common.write_text("Shared FP32 numerical guidance.\n")
+        declared = {"path": str(common), "source": "reviewed common guidance"}
+        for cell in config["cells"]:
+            cell["references"].append(deepcopy(declared))
+        unlisted = deepcopy(config["cells"][1])
+        unlisted["id"] = "silu-r2-without-common"
+        unlisted["node"]["workspace"] = str(self.root / "silu-run-two")
+        unlisted["references"] = unlisted["references"][:1]
+        config["cells"].append(unlisted)
+        output = self._prepare_experiment(config)
+        for cell in config["cells"]:
+            payload = self._launch_payload(output, cell["id"])
+            if cell["id"] == unlisted["id"]:
+                self.assertNotIn("Shared FP32 numerical guidance", payload["scaffold"])
+            else:
+                self.assertIn("Shared FP32 numerical guidance", payload["scaffold"])
+
+    def test_v2_missing_cell_scaffold_never_falls_back_or_launches(self):
+        config = self._per_cell_config()
+        output = self._prepare_experiment(config)
+        (output / "cells" / config["cells"][0]["id"] / "scaffold.md").unlink()
+        (output / "scaffold.md").write_text("Root fallback must not be used.\n")
+        with patch.object(kernel_experiment, "checkout_commit", return_value=COMMIT), \
+             patch.object(kernel_experiment.subprocess, "run") as launch:
+            with self.assertRaises((OSError, ValueError)):
+                kernel_experiment.run_cell(output, config["cells"][0]["id"])
+        launch.assert_not_called()
+        self.assertFalse((output / "launches" / config["cells"][0]["id"]).exists())
+
+    def test_reference_schema_versions_refuse_mixed_or_missing_authority(self):
+        cases = []
+        for field in ("references", "agents_md"):
+            config = deepcopy(self.config)
+            config["cells"][0][field] = (deepcopy(config["references"]) if field == "references"
+                                        else str(self.root / "custom-AGENTS.md"))
+            cases.append((f"v1-cell-{field}", config))
+        config = self._per_cell_config()
+        config["references"] = deepcopy(self.config["references"])
+        cases.append(("v2-root-references", config))
+        config = self._per_cell_config()
+        del config["cells"][0]["references"]
+        cases.append(("v2-missing-cell-references", config))
+        for references in ([], None, "reference.py", [{}]):
+            config = self._per_cell_config()
+            config["cells"][0]["references"] = references
+            cases.append((f"v2-invalid-references-{references!r}", config))
+        for name, config in cases:
+            with self.subTest(case=name), self.assertRaises(ValueError):
+                kernel_experiment.validate(config)
+
+    def test_v2_custom_policy_requires_an_absolute_regular_file(self):
+        for path in ("", "relative.md", "/tmp/../AGENTS.md", None):
+            config = self._per_cell_config()
+            config["cells"][0]["agents_md"] = path
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                kernel_experiment.validate(config)
+        custom = self.root / "custom-AGENTS.md"
+        custom.write_text("Reviewed task instructions.\n")
+        link = self.root / "linked-AGENTS.md"
+        link.symlink_to(custom)
+        directory = self.root / "policy-directory"
+        directory.mkdir()
+        for index, path in enumerate((self.root / "missing-AGENTS.md", link, directory)):
+            config = self._per_cell_config()
+            config["cells"][0]["agents_md"] = str(path)
+            with self.subTest(path=path), self.assertRaises((OSError, ValueError)):
+                self._prepare_experiment(config, name=f"invalid-policy-{index}")
 
     def test_codex_home_binding_is_absolute_and_provider_specific(self):
         for home in ("relative", ""):

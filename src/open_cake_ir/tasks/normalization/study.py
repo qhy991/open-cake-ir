@@ -147,7 +147,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
                    agents_md: Path | None = None, response_aliases=(),
                    reference_access: str = 'known_kernel_reproduction',
-                   lowering_route=None, source_file: bool = False) -> dict:
+                   lowering_route=None, source_file: bool = False,
+                   generated_source_feedback: bool = False,
+                   native_skill_package: Path | None = None) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -157,8 +159,17 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     validate_workload_document(workload.document)
     if reference_access not in {'clean_start', 'known_kernel_reproduction'}:
         raise ValueError('Cake task authoring requires clean_start or known_kernel_reproduction')
+    if (type(generated_source_feedback) is not bool
+        or generated_source_feedback and reference_access != 'known_kernel_reproduction'):
+        raise ValueError('generated source feedback requires explicit known-kernel authoring')
     if harness not in {"codex", "claude-code"} or any(not isinstance(v, str) or not v.strip() or v != v.strip() for v in (model, effort)):
         raise ValueError("exact harness, model and effort are required")
+    skill_package_reference = None
+    if native_skill_package is not None:
+        if harness != 'codex' or reference_access != 'known_kernel_reproduction':
+            raise ValueError('native skill packages require Codex known-kernel authoring')
+        from open_cake_ir.lab.native_skills import NativeSkillPackage
+        skill_package_reference = NativeSkillPackage.bind(root, native_skill_package)
     if type(searches_per_turn) is not int or type(maximum_candidates) is not int or not 1 <= searches_per_turn <= maximum_candidates:
         raise ValueError("searches per Turn must fit the candidate budget")
     if source_file and (reference_access != 'known_kernel_reproduction'
@@ -224,11 +235,14 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         provider.update(harness=harness, permission_mode="acceptEdits", sandbox="none", safe_mode=True,
                         tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
     else:
-        from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1
+        from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1
         provider.update(sandbox="workspace-write", service_tier="default", disabled_features=[],
-                        author_home_policy=ISOLATED_AUTH_ONLY_V1,
+                        author_home_policy=(ISOLATED_SKILL_PACKAGE_V1 if skill_package_reference is not None
+                                            else ISOLATED_AUTH_ONLY_V1),
                         event_contract="tool_rich_candidate_v1", code_mode_host=dict(CAMPAIGN_BINDING),
                         output_schema={"path": OUTPUT_SCHEMA, "sha256": sha256((root / OUTPUT_SCHEMA).read_bytes()).hexdigest()})
+        if skill_package_reference is not None:
+            provider['native_skill_package'] = skill_package_reference
     evaluation = evaluation_policy(workload, searches_per_turn=searches_per_turn,
                                    dispatches_per_sample=dispatches_per_sample,
                                    maximum_cv=maximum_cv, required_pair_wins=required_pair_wins)
@@ -251,7 +265,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
             # limitation, and an arm that still advertised `qualified_timing` and
             # `profile` would promise an author two kinds of feedback nothing on this
             # device can produce.
-            "feedback": arm_feedback(evaluation),
+            "feedback": arm_feedback(evaluation) + (['generated_source_v1'] if generated_source_feedback else []),
             "toolchain_sha256": dict(CAMPAIGN_BINDING),
         },
         "budget": budget,

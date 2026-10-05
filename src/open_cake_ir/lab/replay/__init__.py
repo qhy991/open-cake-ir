@@ -100,6 +100,11 @@ def _replay_matched_run(
     task_package: Callable,
 ) -> None:
     from ..bindings import load_compiler_reference
+    from ..native_skills import author_skill_reference
+    from ..author_home import require_live_skill_qualification
+    # Validate even the zero-provider and initial-fault paths before their early returns.
+    author_skill_reference(lock.document['authoring'])
+    require_live_skill_qualification(lock.document['authoring'].get('provider', {}).get('author_home_policy'))
     compiler_ref = _identity_reference(lock.document["compiler_revision"], "compiler_revision")
     load_compiler_reference(project_root, compiler_ref, "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)
@@ -356,7 +361,8 @@ def _replay_matched_run(
     observations, searches_per_turn, attribution_evaluation = selected
     replay_feedback(events=events, evidence=evidence, specification=lock,
         provider_candidates_by_turn=provider_candidates_by_turn, receipts=receipts,
-        rejected=rejected, fault_turn=fault_turn)
+        rejected=rejected, fault_turn=fault_turn,
+        launchables=launchables, authored=provider_candidate_bytes)
     confirmation, search_state = replay_nomination(events=events, observations=observations,
         launchables=launchables, receipts=receipts,budget=replay_budget,protocol=lock.document['evaluation_protocol'],
         compilation_count=compilation_count,

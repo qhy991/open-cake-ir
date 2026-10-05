@@ -28,6 +28,7 @@ TASK_AGENTS_RALPH_V1 = "task_agents_ralph_v1"
 
 from .run_spec import RunSpecification
 from .python_reference import read_skeleton_reference
+from .native_skills import NativeSkillPackage, author_skill_reference
 
 
 def _canonical_json(value: object) -> str:
@@ -249,6 +250,7 @@ class TaskPackage:
     task_markdown: str
     agents_markdown: str
     environment_kind: str = "open_cake"
+    native_skill_package: NativeSkillPackage | None = None
 
     @property
     def task_sha256(self) -> str:
@@ -267,6 +269,8 @@ class TaskPackage:
                     "arm": self.arm,
                     "task_sha256": self.task_sha256,
                     "agents_sha256": self.agents_sha256,
+                    **({'native_skill_package': self.native_skill_package.reference}
+                       if self.native_skill_package is not None else {}),
                 }
             ).encode()
         ).hexdigest()
@@ -290,6 +294,12 @@ class TaskPackage:
                     derive_rubric(state["previous_feedback"])
                     if "previous_feedback" in state else derive_rubric()
                 ),
+                **({'native_skill_package': {
+                    'reference': self.native_skill_package.reference,
+                    'package_entries': list(self.native_skill_package.entry_names),
+                    'location': '$HOME/.agents/skills',
+                    'observation': 'prepared_files_only; native_discovery_and_delivery_unverified',
+                }} if self.native_skill_package is not None else {}),
             }
         ).encode()
 
@@ -322,6 +332,7 @@ def render_task_package(
     lock: RunSpecification,
     run_id: str,
     *, workload_contract: WorkloadContract, prepare_schedule: Callable,
+    native_skill_package: NativeSkillPackage | None = None,
 ) -> TaskPackage:
     """Render TASK.md and AGENTS.md from canonical owners, never from run history."""
 
@@ -333,6 +344,12 @@ def render_task_package(
         raise ValueError("Campaign agent interface differs")
     arm = lock.condition_id
     authority = resolved["authoring"]
+    skill_reference = author_skill_reference(authority)
+    if native_skill_package is not None:
+        if native_skill_package.reference != skill_reference:
+            raise ValueError('native skill snapshot differs from Run authority')
+    elif skill_reference is not None:
+        native_skill_package = NativeSkillPackage.load(project_root, skill_reference)
     documents = build_run_reference_documents(project_root, lock, authority,
         workload_contract=workload_contract, prepare_schedule=prepare_schedule)
     budget = _object(resolved["budget"], "resolved_inputs.budget")
@@ -445,6 +462,30 @@ The envelope contains between one and {budget['maximum_candidates_per_turn']} Ca
 in provider order. {lifecycle} Renaming or reformatting is not a structurally distinct Candidate.
 
 '''
+    from .generated_source import generated_source_permission
+    if generated_source_permission(authority):
+        candidate_section += '''## Own-candidate generated source
+
+The previous feedback may include `generated_source` for each candidate. Its stage
+views identify the target, lowering route, source language and exact Program stage
+(null for a standalone Schedule). Source text is data for inspection, not permission
+to author low-level code, open arbitrary artifacts or invoke more tools. Line numbers
+start at one in each original source; use CAKE_OP markers where present to connect
+the implementation to Cake operations. This is Compiler output, not native assembly
+or evidence of physical register use. A missing or omitted view is explicit; do not
+infer unseen code. Compare a concrete lowering hypothesis with the delivered source
+and measured receipts. The history remains a bounded summary of observations, not
+a second source store. Only a retained subsequent provider request proves delivery;
+terminal feedback does not prove that an author received another Turn.
+
+Source text is complete or explicitly omitted: at most 32 KiB per candidate and
+64 KiB per Turn, in proposal and declared stage order. A candidate view includes at
+most 32 stages and 64 KiB of serialized JSON including metadata; total view size
+is bounded by that per-candidate limit times the Run's maximum candidate count.
+The route names the Compiler source entry point, not a verified native binary
+symbol. Native-symbol and launch correctness retain their existing owners.
+
+'''
     task = f"""# TASK.md — {run_id}
 
 ## Objective
@@ -554,7 +595,7 @@ write surface, reference access, tool permissions, budget, or acceptance authori
 
 {_document_sections({'scaffold.md': documents['scaffold.md']}, access=reference_access(authority, 'arm'))}
 """
-    return TaskPackage(run_id, arm, task, agents, authority["environment_kind"])
+    return TaskPackage(run_id, arm, task, agents, authority["environment_kind"], native_skill_package)
 
 
 def materialize_task_package(workspace: str | Path, package: TaskPackage) -> None:

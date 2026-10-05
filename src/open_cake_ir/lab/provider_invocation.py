@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Mapping
 
 from .process import sanitized_environment
-from .author_home import (ISOLATED_AUTH_ONLY_V1, system_skills_identity,
-                          system_skills_snapshot, verify_codex_home)
+from .author_home import (CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1, system_skills_identity,
+                          system_skills_snapshot, verify_codex_home, verify_user_home)
+from .native_skills import NativeSkillPackage
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
@@ -135,6 +136,8 @@ class CodexInvocationBuilder:
         author_home_policy: str | None = None,
         codex_home: Path | None = None,
         qualified_system_skills_sha256: str | None = None,
+        user_home: Path | None = None,
+        native_skill_package: NativeSkillPackage | None = None,
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -158,10 +161,20 @@ class CodexInvocationBuilder:
             ("independent_task_workspace", "workspace_task_files"),
         }:
             raise ValueError("Codex workspace/reference policy differs")
-        if author_home_policy not in {None, ISOLATED_AUTH_ONLY_V1}:
+        if author_home_policy not in {None, *CODEX_HOME_POLICIES}:
             raise ValueError('Codex author home policy differs')
         if (author_home_policy is None) != (codex_home is None):
             raise ValueError('Codex isolated author home binding differs')
+        if ((author_home_policy == ISOLATED_SKILL_PACKAGE_V1) != (user_home is not None)
+            or (user_home is None) != (native_skill_package is None)):
+            raise ValueError('Codex private HOME and native skill material binding differ')
+        if user_home is not None:
+            user_home = verify_user_home(user_home, native_skill_package)
+            if (user_home == codex_home or user_home in codex_home.parents
+                or codex_home in user_home.parents):
+                raise ValueError('Codex HOME and CODEX_HOME must be separate directories')
+        self._user_home = user_home
+        self._native_skill_package = native_skill_package
         if (qualified_system_skills_sha256 is not None and (
             author_home_policy is None or len(qualified_system_skills_sha256) != 64
             or any(char not in '0123456789abcdef' for char in qualified_system_skills_sha256))):
@@ -201,6 +214,10 @@ class CodexInvocationBuilder:
         return self._executable
 
     @property
+    def native_skill_package(self) -> NativeSkillPackage | None:
+        return self._native_skill_package
+
+    @property
     def configuration(self) -> Mapping[str, object]:
         configuration: dict[str, object] = {
             "model": self._model,
@@ -221,6 +238,12 @@ class CodexInvocationBuilder:
         configuration["submission_contract"] = self._submission_contract
         if self._author_home_policy is not None:
             configuration['author_home_policy'] = self._author_home_policy
+        if self._native_skill_package is not None:
+            # Qualification compares this configuration with its retained receipt.
+            # Reuse the already frozen material identity: an ephemeral Run input
+            # path must not force another real two-Turn provider qualification.
+            # Different bytes still select refusal; this performs no new hashing.
+            configuration['native_skill_package_sha256'] = self._native_skill_package.reference['sha256']
         return configuration
 
     @property
@@ -238,6 +261,8 @@ class CodexInvocationBuilder:
             raise ValueError("provider prompt is required")
         if thread_id is not None and _THREAD_ID.fullmatch(thread_id) is None:
             raise ValueError("provider thread_id is invalid")
+        if self._user_home is not None:
+            verify_user_home(self._user_home, self._native_skill_package)
         resolve_codex_code_mode_host(
             self._executable, expected=self._code_mode_host,
             removed_environment=self._removed_environment, codex_home=self._codex_home,
@@ -292,10 +317,14 @@ class CodexInvocationBuilder:
             thread_id=thread_id,
             codex_home=self._codex_home,
             system_skills_snapshot=self._system_skills_snapshot,
+            user_home=self._user_home,
+            native_skill_package=self._native_skill_package,
         )
 
     def remember_system_skills(self) -> None:
         """Freeze the post-first-Turn tree for qualification and continuations."""
+        if self._user_home is not None:
+            verify_user_home(self._user_home, self._native_skill_package)
         if self._codex_home is None:
             return
         verify_codex_home(self._codex_home)

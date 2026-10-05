@@ -45,6 +45,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-05-008 — maintenance reader rejected the current Run policy location; current/historical authority reading verified on14 sealed C550 Runs at27def9a2. No outcome reclassification or hardware promotion.
+
 - F-2026-10-05-007 — multi-candidate author feedback lacked candidate identity; bounded result attribution and independent feedback replay prepared at 5453a4f5 with CPU contracts. Proposed protocol successor; no hardware or learning qualification.
 
 - F-2026-10-05-002 — three sibling Softmax regions expose the Triton two-loop cap; flat-region admission is software verified, including isolated compilation of retained events99/100. Device qualification remains open.
