@@ -145,10 +145,29 @@ v2 cell 保存并发送自己的快照；
 主线合并与完整 CI 见 `native-skill-main-225e9e6e/report.json`；平台集成的三版本 CI 各
 2749 通过、35 跳过，见 `metal-skill-integration-e68aa623/report.json`。这些软件结果不替代原生输入验收。
 
+**同次调用的生产适配器采集已实现。** [PR #331](https://github.com/qhy991/open-cake-ir/pull/331)
+在 `main@2a420ca3` 接入 `CodexProviderAdapter` 与既有 fixture qualifier 的
+Evidence 保存路径，未开放正式技能策略。采集器限定 CLI `0.159.2`，检查线程、workspace、
+模型/effort、恰好一个完整新 turn、resume 前缀及 world-state/catalog 一致性，核对本轮
+包内正文与冻结材料；只保留技能片段，不复制完整 prompt、工具输出或 reasoning 记录。
+精确合同与限制由 [共享使用说明](KERNEL_REPRODUCTION.md#按任务准备完整原生技能包)持有。
+
+固定采集实现 `2d3a86b0` 的完整 CPU 路径已通过：外部 tar → 只读私有 HOME → 原生
+initial/resume → 实际本地 Responses 请求 → 同次调用采集器。两个目录布局共 4 次调用，
+每次观察到两项本轮正文；无真实模型、凭据或 GPU。另有 8 个既有请求的目录投影比对。
+记录见 `native-skill-collector-2d3a86b0/report.json`，其中保留初始化参数错误、旧采集假设
+失败和本地缺 pytest 的环境事实；没有通过改环境回写旧记录。
+
+安装清单与实际投递不能混用：这次原生 CLI 安装了 5 项 system skills，目录只投递 4 项。
+`review-agent` 的原生策略为 `allow_implicit_invocation: false`。采集器要求任务包入口完整，
+同时记录未投递的 system 入口；既有 owner 继续绑定整个 system 树。两者都是冻结审查
+需要的事实，不能把磁盘上存在解释为 agent 已看到，也不能把未投递解释为不存在。
+
 **真实启用还缺一个软件后继，不是仅缺一次命令执行。** 当前
 `author_home.require_live_skill_qualification` 对新策略无条件拒绝，现有 qualifier 也只允许
-`--fixture-only`。先在实际 initial/resume invocation 上证明可用的输入观测，再沿原
-qualifier、证据与 admission/replay owner 同步接入验证；不能删拒绝分支后直接沿用旧收据。
+`--fixture-only`。当前已能采集并在 fixture 证据中保存输入，下一步是沿原 qualifier、
+证据与 admission/replay owner 一起验证这些记录，更新资格收据及准入；不能删拒绝分支
+后直接沿用旧收据。资格和每轮 Run 都须核对同一合同，证据丢失或互换时拒绝。
 负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察、
 把历史 skill 正文当成本轮加载，以及旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
 不填补缺口。已有包、home 与 cell owner 继续复用，不再造安装器或第二套资格流程。
