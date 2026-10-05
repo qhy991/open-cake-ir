@@ -9,53 +9,35 @@ FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `met
 编译通过。现有 Metal 本地 broker 下的零 dispatch 检查和后继 host capture 通过，
 观察到 Apple M4 / macOS 27.0 (26A428) / family9，counter 能力可用。
 `runtime/hosts/apple_gpu_family9.json` 现记录该后继环境；旧提交及旧失败保持原状。
-这不是设备正确性、计时或 profiler 实测通过。外部记录目录为
+上述零 dispatch 检查本身不证明数值或计时；随后真实结果见下文。外部记录目录为
 `~/.local/share/open-cake-ir/planning/metal-xcode16-20261006/`。
 
-[PR #342](https://github.com/qhy991/open-cake-ir/pull/342) 已提交完整原生技能运行整合，
-CI `37386721687` 在官方确认 Actions 恢复后实际取得 runner，完整合同正在执行；
-同时在上述独立环境验证 macOS 子进程与证据回放。以下 #340/#341 失败仍作为历史保留，
-不把新验收写回旧记录。真实作者与 GPU 优化 Run 仍须各自剩余门通过。
+[PR #342](https://github.com/qhy991/open-cake-ir/pull/342) 已合入 `main@5b4be89d`，
+包含 #340/#341、资格复用与完整运行入口的证据准入。固定 head `59a15feb` 的
+CI `37389739785` 三个 Python 版本各 **2816 passed、35 skipped**，完整 Corpus
+181/181；定向后继回归 56 项、238 个子测试通过。完整测试此前暴露的 Executor/arm
+夹具缺字段、非隔离 Codex 路径的局部 import 和旧 mock 参数均已修正，旧失败保留。
+共享修复已同步到本 Metal 任务分支，平台 PR #344 的整合 CI 另行验收。
 
-当前平台基线：[PR #338](https://github.com/qhy991/open-cake-ir/pull/338) 已将技能拒绝证据
-与故障回放合入 `metal@f404dbf5`，三个 Python CI 版本各 2790 通过、35 跳过。
-本次吸收 [PR #339](https://github.com/qhy991/open-cake-ir/pull/339) 的 `main@58d668c4`：
-资格工具从保留材料重建两轮实际技能输入，明确点名原生技能并检查当前轮正文。
-主线三个 Python CI 版本各 2791 通过、35 跳过；记录见
-`native-skill-qualification-b6ba8dc6/report.json`。本次平台集成另行验收。
+prepare、provider 构造、Run/Campaign、factory 与回放按真实环境类别验证 anchor 的
+实际归档和两轮包内正文；缺失、旧版、fixture 收据、材料/配置错配与零轮早退均有覆盖。
+成功两轮 CPU 夹具经过真实 invocation builder、子进程 adapter、输入采集、反馈和
+完整回放，验证历史进入第二轮请求；它不是实际模型的学习证据。
+**命令行 qualifier/launcher 的显式关闭门仍保留。** 下一后继开放入口并完成真实
+Codex `gpt-6.1-sol / xhigh` 两轮资格，性能 Run 还必须通过测量与设备 phase 门。
 
-下一道软件门是资格收据、anchor 与 admission 的共同验收。
-[PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交该组件；后继 CI `37363906158`
-三个 hosted job 也因未取得 runner 而终止，未执行测试，记录见
-`native-admission-runner-d4fae808/`。本项未作为已验证基线。其后仍须连接准备、
-provider 构造、Run/Campaign、factory 与回放入口的完整验收，
-覆盖零轮、首轮故障和读取凭据前的拒绝顺序，再开放命令行策略并取得实际作者资格。
-[PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 已提交每 cell 原生名字的显式选择、
-快照和 local/SSH 传递。CI `37363612900` 已终止：三个 hosted job 均未分配到 runner，
-没有执行测试，不是代码测试失败；记录见 `native-selection-runner-5946faf1/`。
-保留该失败，不重跑或替换环境，尚未作为已验证基线。
-
-资格复用后继已准备在 `task/core-native-skill-reuse@6fa33d5e`：请求名字必须在各声明 arm
-的 initial/resume 当前输入中都有包内正文，缺失诊断定位到 arm、轮次和名字；复用原有
-归档重建，不新增资格名单。源码语法与 diff 检查通过，三个新合同测试方法尚未执行。
-该分支以未验收的 #340/#341 为依赖，只是可审查的工作提交，尚未推送或并入 main/metal。
-运行入口后继已准备在 `task/core-native-skill-runtime@316ffcc2`：用同一个证据准入 owner
-连接库入口，按 `environment_kind` 检查资格覆盖，读取凭据前核对配置与归档；provider
-构造必须取得实际 anchor。首轮技能输入拒绝的回放也已补入所需 TaskPackage。
-后继 `5ee786b8` 补齐成功两轮测试：真实调用构造器、CPU 子进程夹具、输入采集、候选
-评测夹具和完整回放；核对线程续跑、token 增量、两轮当前正文与首轮评测历史进入第二轮。
-运行模块共八个新增测试方法，另含零轮停止、首轮调用失败与跨 Run 输入拒绝的零 Evaluation
-断言。十五个 Python 文件语法与 diff 检查通过，合同测试尚未执行；不声称真实作者已经学习。
-两个后继工作分支均未推送或合入；已集成版本与工作分支的命令行资格/launch 门仍关闭。
-下一步先执行这些合同测试，再开放命令行和取得真实作者资格。
-CPU fixture 与软件检查不授予实际作者或 Metal 设备资格。
+已准备完整技能材料 `author-material-3d430a13/author-skills.tar`，包含主技能与 AIR
+参考，现有 NativeSkillPackage reader 通过。独立 quick validator 因缺 PyYAML 未运行，
+没有修环境重跑。新包尚未安装或交付真实 Run，不沿用旧材料的资格。
+后续明确绑定 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`
+（已观察 0.159.2）；PATH 上 Homebrew Codex 为 0.149.0，不是先前发现探针的 executable。
 
 此前验收停在外部服务边界：2026-10-05 20:16 UTC 查询的
 [GitHub 官方状态](https://www.githubstatus.com/api/v2/summary.json) 将 Actions 列为性能下降，
 事件 `3q1yb5m7ltvb` 正在调查 hosted runner 分配延迟，覆盖本次 CI 失败时段。
 状态摘要保留在 `github-actions-incident-3q1yb5m7ltvb-201637/`。确认外部恢复后，使用不改
 CI 配置的新整合提交进行后继验收；旧失败保持终态，不重跑、替换 runner 或重新标注。
-整合提交包含 #340/#341、资格复用和运行接线，须验证完整差异后才进入 main，再同步 metal。
+其后整合提交的完整差异已通过上述 CI 并进入 main；旧 runner 失败仍保持原判定。
 
 采集前失败如实记为技能输入未验证，保留诊断和可见费用，不授权候选；不要求为缺失输入
 制造证明。本机工具链、资源分配和测量门分别待验收，不因回环网络已通过而放行。
@@ -462,11 +444,10 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    PR #339 已用保留 invocation、TASK 投影、原生事实、完整包与 system 快照重建资格输入，
    不读取原 HOME；`--native-skill-name` 明确冻结原生选择，要求每轮当前正文。
    资格按输出合同声明的 arm 集合验证，不把两 arm 固定成 Metal 的额外要求。
-   PR #340 正在验收显式收据能力和 anchor 实际归档的 custody/语义检查；其首轮夹具
+   PR #340 已随 #342 通过显式收据能力和 anchor 实际归档的 custody/语义软件检查；其首轮夹具
    将仓库内 schema 误作绝对外部引用，已在后继提交修正引用，原失败记录保留。
    PR #341 补齐每 cell `native_skill_names` → 节点 → launch → qualifier 的传递；
-   两项后继都通过并集成后，
-   继续连接全部运行入口。旧收据及 fixture scope 不得获得新能力。直接入口、零轮和首轮故障路径须验证不会借
+   两项与全部库运行入口已随 #342 合入 main；命令行开放仍待后继。旧收据及 fixture scope 不得获得新能力。直接入口、零轮和首轮故障路径须验证不会借
    缺输入或早退放行候选；采集前失败保留原诊断与已消耗费用，不冒充已验证投递。
    反例必须在实际准入入口拒绝，通过之后再开放策略。
    当前真实入口仍明确拒绝新策略。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
@@ -493,11 +474,11 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | 项目 | 已观察 | 剩余条件 | 原始记录 |
 | --- | --- | --- | --- |
 | G0 环境 | 用户选择的 Xcode16/SDK15 后继 CPU 54/1；M4 零 dispatch 与 host capture 通过；旧失败保留 | 后继 host 提交与原生 archive、设备测量、provider 各自准入 | `metal-xcode16-20261006/`；旧 `readiness.md`、`followup-readiness.md` |
-| G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 原生/oracle/设备；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
-| G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
+| G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 六 starter 原生/oracle 通过见下；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
+| G2 表达 | 六个发现任务均有结构替代程序 | 六 starter 与两结构替代数值通过；其余代表策略仍待设备验证 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | RMSNorm 同产物 A/A 数值正确但 20/20 cohort 的 relative IQR 超过 0.05；独立工作量与 timestamp 控制通过 | 测量稳定性未获资格；不启动性能搜索或声称收益 | `metal-xcode16-20261006/g3-rmsnorm-*`；F-2026-10-06-001 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | PR #335/#337 完成轮次与拒绝回放；PR #339 从保留材料重建资格两轮输入及当前正文 | PR #340 收据/anchor/admission 组件正在验收；运行入口及真实作者资格未完成 | `native-skill-qualification-b6ba8dc6/report.json`；旧失败记录保留 |
+| G4 技能软件准备 | PR #335/#337 完成轮次与拒绝回放；PR #339 从保留材料重建资格两轮输入及当前正文 | PR #342 已合 main；CLI 开放与真实作者资格未完成 | `native-skill-qualification-b6ba8dc6/report.json`；旧失败记录保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | admin/插件哨兵、脚本/依赖、真实模型使用与正式 provider 资格未完成 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
 | 平台软件集成 | PR #338 合入 metal@f404dbf5，三版本 CPU CI 各 2790/35；本任务吸收 PR #339 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-fault-7fa4ac02/report.json`；后继记录另列 |

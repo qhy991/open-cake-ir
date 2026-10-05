@@ -73,7 +73,7 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 或旧 auth-only 资格来声称满足独立 skill 环境。通用 Cake 规则与每任务提示分开审阅后
 组成完整输入，同一比较的独立重复保持相同材料边界。
 
-待 [PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 验收并集成后，每个带技能包的
+[PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 已随 #342 合入 main，每个带技能包的
 v2 cell 同时显式声明 `native_skill_names`。本计划现有草案的原生名字已从 SKILL.md
 核对为 `cake-metal-optimization`，因此该 cell 的选择为 `["cake-metal-optimization"]`。
 管理 TASK/config 保存名字列表；local/SSH 节点把它逐项传成 `--native-skill-name`，
@@ -89,8 +89,7 @@ v2 cell 同时显式声明 `native_skill_names`。本计划现有草案的原生
 每个名字须唯一解析为包内 entry，并在本轮加载记录中匹配其路径。目录名不同于原生名字
 的正例、两个 arm 各自首轮/续跑缺正文的反例，以及 launcher 不启动进程的复用检查已编写。
 原资格仅点名 `cake`、额外正文为 `cake:metal` 的夹具能把复用规则与原资格规则分开检查。
-目前只做了语法与 diff 检查，未执行合同测试；fixture scope、配置/材料准入与正式入口门
-保持原有职责。此提交依赖尚未验收的 #340/#341，尚未成为平台能力。
+上述复用合同已随 #342 在完整三版本 CI 中通过；fixture scope、配置/材料准入保持原有职责。共享代码已同步到本平台任务分支；CLI 开放与真实作者资格仍待后继。
 
 
 原生 skill 环境是另一项需要资格验证的后继。默认 auth-only 策略仍保留宿主 `HOME`；Codex
@@ -233,8 +232,8 @@ provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HO
 记录见 `native-skill-qualification-b6ba8dc6/report.json`。这不授予旧收据新能力。
 
 [PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交收据 v3 与实际归档准入组件，
-未作为本页已验证能力。其反例包括旧收据、scope 替换、过期 anchor、custody-false 与语义不符
-的封存归档；真实运行入口接线和零轮/首轮故障覆盖有后继工作提交，仍待验收。软件反事实归档只用于测试，
+已随 #342 完成软件验收并合入 main。其反例包括旧收据、scope 替换、过期 anchor、custody-false 与语义不符
+的封存归档；库运行入口接线和零轮/首轮故障覆盖已在后继完整 CI 中通过。软件反事实归档只用于测试，
 不能列为真实模型资格。准备与 provider 构造必须在缺失资格时先拒绝，再考虑读取凭据。
 首轮 Python 3.12 CI 有一项新夹具失败：provider 把仓库内 schema 写成绝对外部引用；
 资格重建检查已通过，随后由原有路径规则正确拒绝。后继夹具改用仓库相对引用，原资格
@@ -243,7 +242,7 @@ provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HO
 失败另存 `native-admission-runner-d4fae808/`，不覆盖夹具失败，也不重跑或替换环境。
 
 
-运行接线的源码后继为 `task/core-native-skill-runtime@316ffcc2`，依赖尚未验收的收据、
+运行接线起于 `316ffcc2`，最终 head `59a15feb` 随 #342 合入 `main@5b4be89d`，包含收据、
 选择和复用改动。库入口通过 `admit_native_skill_authoring` 统一核对真实归档、配置、
 schema、live scope 与环境覆盖；覆盖对象是 `environment_kind`，不能使用任意 Run ID
 或 Study condition 名称代替。prepare、Study/Run preflight、Campaign 与 provider 构造
@@ -259,9 +258,10 @@ schema、live scope 与环境覆盖；覆盖对象是 `environment_kind`，不�
 生成 CPU 候选与原生输入夹具，进入 Run 引擎、既有 CPU evaluator 和完整语义回放。
 断言同线程续跑、累计费用转增量、每轮对应包内正文、原始 TASK 交付，以及第一轮评测
 历史实际存在于第二轮保留输入中；这证明链路的测试范围，不证明模型阅读或行为学习。
-十五个 Python 文件语法检查与 diff 检查通过，所有新增合同测试尚未执行。
-这是未发布、未合入的工作提交；完整合同矩阵仍须验收，命令行 qualifier/launcher 的显式
-关闭门尚未移除。GitHub 官方 Actions runner 分配事件仍在调查，外部恢复前不启动新验收。
+最终 CI `37389739785` 的 Python 3.10/3.11/3.12 各 2816 passed、35 skipped，
+Corpus 181/181；定向回归 56 项、238 子测试通过。此前原夹具、局部 import 与 mock
+失败均保留，后继修复未弱化拒绝断言。代码已合入 main 并同步本 Metal 任务分支，
+命令行 qualifier/launcher 的显式关闭门尚未移除，真实模型 initial/resume 资格尚未执行。
 
 资格接入沿现有 owner 进行，验收范围如下，不新增并行资格流程：
 
