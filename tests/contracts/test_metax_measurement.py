@@ -308,6 +308,119 @@ class DispatchCompletionBoundary(unittest.TestCase):
 
 
 class RejectedCaptureEvidence(unittest.TestCase):
+    @staticmethod
+    def benchmark_with_old_calibration():
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        benchmark = object.__new__(McptiDispatchBenchmark)
+        benchmark.manifest = SimpleNamespace(kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1))
+        benchmark.l2_cache_bytes = 8388608
+        benchmark.last_activity = {'previous_cohort': True}
+        benchmark.non_target_dispatches = 0
+        benchmark.resolution_us = 0.256
+        benchmark._reset_record = kernel('fill', 1, 1000)
+        benchmark._reset_activity = capture(benchmark._reset_record)
+        benchmark._reset = SimpleNamespace(fill_=lambda value: None)
+        def calibrated():
+            benchmark.last_activity = {'phase': 'reset_calibration', 'activity': benchmark._reset_activity}
+        benchmark._prepare_reset = calibrated
+        return benchmark
+
+    def test_begin_and_finish_failures_replace_stale_calibration_with_current_snapshot(self):
+        from types import SimpleNamespace
+        for failed_method in ('begin', 'finish'):
+            with self.subTest(failed_method=failed_method):
+                benchmark = self.benchmark_with_old_calibration()
+                raw = {**capture(kernel('cake', 9, 9000)), 'collection_errors': ['incomplete capture']}
+                error = ValueError('collector failed')
+                error.activity_snapshot = raw
+                def fail(): raise error
+                benchmark._collector = SimpleNamespace(begin=fail if failed_method == 'begin' else lambda: None,
+                    finish=fail if failed_method == 'finish' else lambda: raw)
+                torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: None))
+                with patch.dict('sys.modules', {'torch': torch}), patch(
+                        'open_cake_ir.evaluation.metax_benchmark.dispatch_samples') as derive:
+                    with self.assertRaises(ValueError) as caught:
+                        benchmark(lambda: None, dry_run_iters=1, repeat_iters=2,
+                                  cold_l2_cache=True, use_cuda_graph=False)
+                    derive.assert_not_called()
+                self.assertIs(caught.exception, error)
+                self.assertIs(benchmark.last_activity['activity'], raw)
+                self.assertEqual(benchmark.last_activity['phase'], 'failed_timing_cohort')
+                self.assertIsNone(benchmark.non_target_dispatches)
+                self.assertIsNone(benchmark.resolution_us)
+
+    def test_failed_cohort_without_snapshot_does_not_reuse_calibration(self):
+        from types import SimpleNamespace
+        benchmark = self.benchmark_with_old_calibration()
+        error = RuntimeError('collector unavailable')
+        def begin(): raise error
+        benchmark._collector = SimpleNamespace(begin=begin, finish=lambda: None)
+        torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: None))
+        with patch.dict('sys.modules', {'torch': torch}), self.assertRaises(RuntimeError) as caught:
+            benchmark(lambda: None, dry_run_iters=1, repeat_iters=2,
+                      cold_l2_cache=True, use_cuda_graph=False)
+        self.assertIs(caught.exception, error)
+        self.assertIsNone(benchmark.last_activity)
+
+    def test_failed_launch_retains_successful_or_failed_drain_without_deriving_partial_samples(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.loaders import LifecycleError
+        for failed_drain in (False, True):
+            with self.subTest(failed_drain=failed_drain):
+                benchmark = self.benchmark_with_old_calibration()
+                raw = capture(kernel('cake', 9, 9000))
+                primary = ValueError('second launch failed')
+                teardown = RuntimeError('drain failed')
+                teardown.activity_snapshot = raw
+                def finish():
+                    if failed_drain: raise teardown
+                    return raw
+                benchmark._collector = SimpleNamespace(begin=lambda: None, finish=finish)
+                calls = []
+                def launch():
+                    calls.append(None)
+                    if len(calls) == 3: raise primary  # One warmup, one completed sample, then failure.
+                torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: None))
+                with patch.dict('sys.modules', {'torch': torch}), patch(
+                        'open_cake_ir.evaluation.metax_benchmark.dispatch_samples') as derive:
+                    with self.assertRaises(LifecycleError if failed_drain else ValueError) as caught:
+                        benchmark(launch, dry_run_iters=1, repeat_iters=2,
+                                  cold_l2_cache=True, use_cuda_graph=False)
+                    derive.assert_not_called()
+                if failed_drain:
+                    self.assertIs(caught.exception.primary, primary)
+                    self.assertIs(caught.exception.__cause__, primary)
+                    self.assertEqual(caught.exception.teardown_errors, (teardown,))
+                else:
+                    self.assertIs(caught.exception, primary)
+                self.assertIs(caught.exception.activity_snapshot, raw)
+                self.assertIs(benchmark.last_activity['activity'], raw)
+                self.assertEqual(benchmark.last_activity['phase'], 'failed_timing_cohort')
+                self.assertIsNone(benchmark.non_target_dispatches)
+                self.assertIsNone(benchmark.resolution_us)
+
+    def test_primary_and_cleanup_synchronization_failures_keep_finished_capture(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        from open_cake_ir.evaluation.loaders import LifecycleError
+        benchmark = object.__new__(McptiDispatchBenchmark)
+        raw = capture(kernel('cake', 9, 9000))
+        primary, cleanup = RuntimeError('post-launch sync failed'), RuntimeError('cleanup sync failed')
+        calls = []
+        def synchronize():
+            calls.append(None)
+            if len(calls) == 2: raise primary
+            if len(calls) == 3: raise cleanup
+        benchmark._collector = SimpleNamespace(begin=lambda: None, finish=lambda: raw)
+        torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=synchronize))
+        with patch.dict('sys.modules', {'torch': torch}), self.assertRaises(LifecycleError) as caught:
+            benchmark._collect(lambda: None)
+        self.assertIs(caught.exception.primary, primary)
+        self.assertIs(caught.exception.__cause__, primary)
+        self.assertEqual(caught.exception.teardown_errors, (cleanup,))
+        self.assertIs(caught.exception.activity_snapshot, raw)
+
     def test_a_rejected_cohort_retains_its_actual_activity_not_the_previous_success(self):
         from types import SimpleNamespace
         from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
