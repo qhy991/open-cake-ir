@@ -11,8 +11,10 @@ FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `met
 `native-skill-qualification-b6ba8dc6/report.json`。本次平台集成另行验收。
 
 下一道软件门是资格收据、anchor 与 admission 的共同验收。
-[PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交该组件，尚在 CI，未作为
-本页已验证基线。其后仍须连接准备、provider 构造、Run/Campaign、factory 与回放入口，
+[PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交该组件；后继 CI `37363906158`
+三个 hosted job 也因未取得 runner 而终止，未执行测试，记录见
+`native-admission-runner-d4fae808/`。本项未作为已验证基线。其后仍须连接准备、
+provider 构造、Run/Campaign、factory 与回放入口，
 覆盖零轮、首轮故障和读取凭据前的拒绝顺序，再开放策略并取得实际作者资格。
 [PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 已提交每 cell 原生名字的显式选择、
 快照和 local/SSH 传递。CI `37363612900` 已终止：三个 hosted job 均未分配到 runner，

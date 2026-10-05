@@ -230,13 +230,15 @@ provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HO
 实际 qualifier 的单 arm、首轮或 resume 只有目录无正文，以及离线重建/材料互换反例已验收。
 记录见 `native-skill-qualification-b6ba8dc6/report.json`。这不授予旧收据新能力。
 
-[PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 正在验收收据 v3 与实际归档准入组件，
+[PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交收据 v3 与实际归档准入组件，
 未作为本页已验证能力。其反例包括旧收据、scope 替换、过期 anchor、custody-false 与语义不符
 的封存归档；真实运行入口接线和零轮/首轮故障覆盖仍待完成。软件反事实归档只用于测试，
 不能列为真实模型资格。准备与 provider 构造必须在缺失资格时先拒绝，再考虑读取凭据。
 首轮 Python 3.12 CI 有一项新夹具失败：provider 把仓库内 schema 写成绝对外部引用；
 资格重建检查已通过，随后由原有路径规则正确拒绝。后继夹具改用仓库相对引用，原资格
 调用仍保留绝对路径，没有修环境或放宽检查。原日志见 `native-admission-failure-1e5a236e/`。
+修正后 CI `37363906158` 的三个 hosted job 均未取得 runner，测试没有执行；本次环境
+失败另存 `native-admission-runner-d4fae808/`，不覆盖夹具失败，也不重跑或替换环境。
 
 
 资格接入沿现有 owner 进行，验收范围如下，不新增并行资格流程：
