@@ -1,8 +1,12 @@
 # Open Cake Technical Report: English Reading Guide
 
+The [TeX-compiled PDF](../open-cake-ir-technical-report.pdf) is the technical report;
+this page is a companion reading guide. See the [TeX source](../open-cake-ir-technical-report.tex)
+and [citation guidance](../README.md#引用--citation).
+
 For native CUDA/PTX schedules and their exact compile boundary, see the [native backend guide](../NATIVE_CUDA.md).
 
-[中文](../zh-CN/README.md) · [Complete bilingual catalog](../README.md) · [Repository home](../../README.md)
+[中文](../zh-CN/README.md) · [Complete bilingual catalog](../catalog.md) · [Repository home](../../README.md)
 
 See the [B300 guide](B300.md) for the three Python operator starting points.
 
@@ -10,7 +14,19 @@ See the [B300 guide](B300.md) for the three Python operator starting points.
 
 A Workload defines the problem, a Schedule describes workers and data, the Compiler checks and translates it, Evaluation checks outputs and measurements, and Evidence preserves observations. A Study fixes a research question and fair comparison before execution.
 
-## News
+## Quick lookup
+
+| Purpose | Direct links |
+|---|---|
+| Inspect results and external-reference gaps | [Hardware results](../RESULTS.md) · [FlashInfer experimental status and English summary](../results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550 evidence](../metax-c550.md) |
+| Choose a platform or experiment workflow | [Platform and method catalog](../catalog.md) · [Lab workflow](wiki/experiments.md) |
+| Read or cite the technical report | [PDF report](../open-cake-ir-technical-report.pdf) · [TeX source](../open-cake-ir-technical-report.tex) · [Citation](../README.md#引用--citation) |
+| Locate implementation owners | [Source navigation](../../README.md#源码与文档结构) · [Development branches](../DEVELOPMENT_BRANCHES.md) |
+
+<details>
+<summary>Historical checkpoints — 2026-09-16</summary>
+
+These dated notes retain their original scope. Current status and results are linked above.
 
 - **2026-09-16 — the Hygon DCU (gfx938) is a third target that runs.** A Triton-lowered kernel
   compiles to an HSACO inside the DTK container, loads through `evaluation/hip_driver.py`,
@@ -26,6 +42,8 @@ A Workload defines the problem, a Schedule describes workers and data, the Compi
 - **2026-09-16 — source identity is the git commit ([ADR 0065](../adr/0065-source-identity-is-the-commit.md)).**
   A Compiler is `open-cake-ir@<commit>` and an Executor is `<target>@<commit>`, so one shared
   source change no longer retires every other host's Executor.
+
+</details>
 
 ## Start here
 
@@ -63,7 +81,7 @@ The [FlashInfer-Bench experimental status](../results/nvidia/FLASHINFER_STATUS.m
 | The 677-row review and 56 qualified fixed instances | [AKA review](AKA_QUALIFIED_IR_REVIEW_AND_LAB_PLAN_20260903.md) |
 | A complete eight-output GPU example | [Affine check](AFFINE_PARENT_B200_CANARY_20260906.md) |
 | Current released authorities | [Generated status](../../reports/current/STATUS.md) |
-| Surveys, history, and every language pair | [Complete catalog](../README.md) |
+| Surveys, history, and every language pair | [Complete catalog](../catalog.md) |
 
 Metal uses `simd_program_tile` with 32 lanes per threadgroup and runs normalization tasks through the existing TaskLab/Ralph evaluation path. Host construction, warmed host calls and GPU command-buffer intervals are recorded separately; reported gains require the recorded noise controls to pass.
 
@@ -72,15 +90,17 @@ Original documents retain their paths. Chinese reading companions for English or
 ## Research design
 
 [Executable optimization knowledge transfer](OPTIMIZATION_TRANSFER.md) describes the proposed
-cross-hardware mechanism and its explanation-versus-rewrite ablation.
+cross-hardware mechanism and its explanation-versus-rewrite ablation. Domestic-accelerator work
+is separated into target admission, direct target-architecture optimization, and the measured
+incremental value of NVIDIA-derived mechanism material; none of these claims is implied by the
+others.
 
 ## Citation
 
-These documents are the English reading edition of Haiyan Qin's open-cake-ir technical report.
-The [report entry point](../README.md) defines its scope and provides the recommended citation,
-BibTeX, and instructions for citing a fixed commit. Machine-readable metadata is maintained in
-[CITATION.cff](../../CITATION.cff). Language companions may summarize the original chapters;
-they do not define separate publications or independent experimental evidence.
+These documents are English companions to Haiyan Qin's [PDF technical report](../open-cake-ir-technical-report.pdf).
+The [report entry point](../README.md) provides the recommended citation, BibTeX, and instructions
+for citing a fixed commit. Machine-readable metadata is maintained in [CITATION.cff](../../CITATION.cff).
+Companion pages add navigation and explanations without defining independent experimental evidence.
 
 For experimental results, retain the experiment's own source commit, target, workload, and
-timing boundary in addition to the report chapter you cite.
+timing boundary in addition to the report page you cite.

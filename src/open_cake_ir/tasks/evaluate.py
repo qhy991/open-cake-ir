@@ -86,6 +86,22 @@ def _write_new(path: Path, value: object) -> None:
     write_new(path, _canonical_json_bytes(value), _PROFILE_OUTPUT_OWNER)
 
 
+def _retain_failure_artifacts(result, error, request_root):
+    payloads = getattr(error, 'artifact_payloads', None)
+    if not payloads:
+        return
+    from open_cake_ir.evaluation.failures import failure_artifacts
+    paths = {role:f'failure-{role}.bin' for role in payloads}
+    updated = {**result,'schema_version':2,'failure_artifacts':paths}
+    failure_artifacts(updated)
+    from open_cake_ir.lab.ncu_process import write_new
+    for role,payload in payloads.items():
+        if type(payload) is not bytes:
+            raise ValueError('failed Evaluation diagnostic must be sealed bytes')
+        write_new(request_root/paths[role],payload,_PROFILE_OUTPUT_OWNER)
+    result.update(updated)
+
+
 def _base_result(job_id: str) -> dict[str, object]:
     # The prefix names the allocator that issued the job, and each allocator has one
     # mode; the placeholder the worker starts with is the cluster allocator's.
@@ -410,6 +426,8 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     passed = True
     metrics = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
     correctness_calls = 0
+    assays = {}
+    active_position = None
     def accumulate(check):
         nonlocal passed
         passed = passed and check['passed']
@@ -451,6 +469,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             for index, order in enumerate(protocol.pair_order):
                 row = {'pair_index': index, 'order': list(order), 'arms': {}}
                 for position, role in enumerate(order):
+                    active_position = {'pair_index':index,'position':position,'arm':role}
                     samples, check = _fresh_tile_cohort(loaded[(role, authority.case_id)], assays[role],
                         authority.workload, inputs, expected,
                         samples_per_cohort=protocol.samples_per_cohort,
@@ -509,6 +528,24 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'kernel_calls': authority.manifest.kernels_per_call, 'fallback_calls': 0, 'timing': timing,
             'artifacts': {'correctness_output': 'correctness-output.json',
                           'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
+    except Exception as error:
+        # Retain the failed native cohort before module teardown and before the
+        # common broker discards its temporary worker directory. A diagnostic
+        # snapshot is not a receipt and cannot qualify timing or correctness.
+        snapshots = {role: deepcopy(assay.last_activity) for role, assay in assays.items()
+                     if getattr(assay, 'last_activity', None) is not None}
+        if snapshots:
+            raw = {'kind':'failed_paired_activity_v1','position':active_position,
+                   'job_id':admission.broker_job_id,'purpose':authority.request['purpose'],
+                   'case_id':authority.case_id,'target':authority.candidate.target,
+                   'evaluation_protocol':dict(evaluation),'completed_pairs':measurements,
+                   'native_activity':snapshots,'correctness_observations':checks,
+                   'launch_manifests':{role:manifest.as_dict() for role,manifest in manifests.items()},
+                   'error':str(error),'error_class':type(error).__name__}
+            retained = dict(getattr(error, 'artifact_payloads', {}))
+            retained['paired_activity'] = _canonical_json_bytes(raw)
+            error.artifact_payloads = retained
+        raise
     finally:
         counters['kernel_calls'] = sum(item.loaded.launch_calls for item in loaded.values())
         pending_error = sys.exc_info()[1]
@@ -1367,9 +1404,13 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--local-kind", choices=LOCAL_KINDS,
                         help="prepare tensor inputs/oracles before requesting this local broker")
+    parser.add_argument("--local-device", type=int, help="physical ordinal selected by the local broker after CPU preparation")
+    parser.add_argument("--local-queue-seconds", type=float, default=0)
     parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.local_kind is None and (args.local_device is not None or args.local_queue_seconds != 0):
+        parser.error('local device and queue settings require --local-kind')
     request_path = args.request.resolve(strict=True)
     # The allocator that admitted this process names its job in its own variable: the
     # local broker in METAL_JOB_ID under the family's prefix, the cluster allocator in
@@ -1382,7 +1423,9 @@ def main() -> int:
             if args.profile_child or args.profile_admission is not None:
                 raise ValueError('local CPU preparation cannot run as a profiler child')
             authority = _prepare_local_tensor_work(authority, args.local_kind)
-            job = admit_local_job(args.local_kind)
+            job = (admit_local_job(args.local_kind)
+                   if args.local_device is None and args.local_queue_seconds == 0 else
+                   admit_local_job(args.local_kind, device=args.local_device, queue_seconds=args.local_queue_seconds))
             result = _base_result(job)
         if os.environ.get("GPUQ_BACKEND"):
             from open_cake_ir.evaluation.gpuq import observe_allocation
@@ -1468,6 +1511,7 @@ def main() -> int:
         result["error"] = "evaluator_failed"
         result["failure_class"] = type(error).__name__
         result["receipt"] = None
+        _retain_failure_artifacts(result,error,request_path.parent)
         print(f'{type(error).__name__}: {error}', file=sys.stderr)
     _write_new(args.output, result)
     return 0

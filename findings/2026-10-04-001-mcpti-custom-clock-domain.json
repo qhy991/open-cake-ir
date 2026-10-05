@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-04",
+  "id": "F-2026-10-04-001",
+  "kind": "protocol",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@e38b555fc3b11ca57dadbe3bcdbc3d10d6383387",
+  "executor_revision": "xcore1002@e38b555fc3b11ca57dadbe3bcdbc3d10d6383387",
+  "title": "The captured MCPTI custom-clock interface does not preserve device intervals in a monotonic domain",
+  "decision": "deferred",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-experiments/c550-native-clock-controls-20261004/",
+    "locators": [
+      "binding.json",
+      "host-summary.json",
+      "sdk_default/capture-0.json",
+      "cake_wall_time/capture-0.json",
+      "cake_monotonic/capture-0.json",
+      "cake_relative_monotonic/capture-0.json"
+    ],
+    "related_paired_rejections": [
+      "c550-clock-v2-diag-20261003/fresh-confirmation/attempt-1-failure_paired_activity",
+      "c550-clock-v3-diag-20261003/fresh-confirmation/attempt-1-failure_paired_activity"
+    ]
+  },
+  "observation": "On the same C550-2 SDK18 / MACA3.8 observer, five SDK-default captures and five native C wall-clock captures each had positive device intervals. All five native C absolute-monotonic and five native C relative-monotonic captures were refused because the device interval was zero-width. The prior Python callbacks showed the same refusal. Final retained FP32 fill outputs were correct in all four controls. The native callbacks use uint64(void), are registered before activity enable, and have no Python callback. This establishes a bounded custom-clock/device-mapping limitation; it does not establish the cause of every old overlap/reset-order failure. Default epoch timestamps remain quantized in the retained records. These clock controls are diagnostics, not Workload or paired-timing qualifications.",
+  "proposed_change": "Keep the SDK default clock for production and strict interval/reset/correlation checks. Retain calibration failures before admission and expose explicit diagnostic clocks with native controls. A new timer or SDK mapping repair needs its own successor host/source qualification, including A/A and the original paired measurement/oracle contract; neither zero durations nor overlapping intervals may be accepted.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "No promotion of monotonic clocks. Native metadata reporting and failed-reset custody may integrate separately. The original timing inconsistency remains a bounded SDK investigation; no empirical latency is inferred from rejected records."
+}

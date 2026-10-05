@@ -7,7 +7,7 @@ from .checkpoints import TurnObservation
 def nominate(observations, *, provider_token_limit):
     """Fixed search rule; equal measurements prefer the earliest completed turn."""
     eligible = [row for row in observations if row.search_qualified
-                and row.cumulative_provider_tokens <= provider_token_limit]
+                and (provider_token_limit is None or row.cumulative_provider_tokens <= provider_token_limit)]
     return min(eligible, key=lambda row: (row.search_latency_ms, row.turn)) if eligible else None
 
 

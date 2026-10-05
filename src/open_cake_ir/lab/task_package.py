@@ -11,10 +11,12 @@ from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler
 from ._documents import _object
+from .bindings import source_reference_path
 from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
 from .python_reference import bind_python_reference
 from .reference_access import document_role, reference_access, validate_reference_handoff
+from .provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
 from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
@@ -91,7 +93,8 @@ def build_run_reference_documents(
     resolved = lock.document
     if arm != resolved["authoring"]:
         raise ValueError("task package Authoring Environment differs from the frozen arm")
-    validate_reference_handoff(root, {"author": arm})
+    validate_reference_handoff(root, {"author": arm}, workload=workload_contract,
+                               case_id=lock.document['evaluation_protocol']['case_id'])
     # External task instructions may change after preflight. Verify the actual
     # payload once at delivery, against the existing frozen reference, and reuse
     # those bytes below rather than reopening the file after the check.
@@ -123,6 +126,7 @@ def build_run_reference_documents(
         "run_protocol": resolved["run_protocol"],
         "evaluation_protocol": lock.document["evaluation_protocol"],
         "execution": lock.document["execution"],
+        "granted_transformations": lock.document["knowledge"]["transformations"],
     }
     documents: dict[str, bytes] = {
         "run-authority.json": _canonical_json(run_authority).encode(),
@@ -134,34 +138,52 @@ def build_run_reference_documents(
     knowledge = lock.document['knowledge']
     if knowledge['materials']:
         documents['optimization-knowledge.json'] = _canonical_json(knowledge['materials']).encode()
-    if knowledge['transformations']:
-        documents['transformation-api.json'] = _canonical_json(transformation_surface(knowledge['transformations'])).encode()
+    # E1 exposes the same semantic API contract with or without P. Permissions
+    # remain the Run's actual grants, enforced by action resolution.
+    visible = list(dict.fromkeys(knowledge['transformations'] +
+        [name for unit in knowledge['materials'] for name in unit['transformations']]))
+    if visible:
+        documents['transformation-api.json'] = _canonical_json(transformation_surface(visible)).encode()
     baselines = lock.document['reference_inputs'].get('baseline_programs', {})
     if baselines:
         documents['authorized-programs.json'] = _canonical_json(baselines).encode()
     environment_kind = arm.get("environment_kind")
     if environment_kind == "open_cake":
-        skeleton_ref = _object(arm["schedule_skeleton"], "arm.schedule_skeleton")
-        skeleton_bytes, skeleton = read_skeleton_reference(root, skeleton_ref)
-        python_starter = str(skeleton_ref['path']).endswith('.py')
-        if skeleton.get('lowering') != arm.get('lowering_route'):
-            raise ValueError('Schedule skeleton lowering route differs')
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
-        skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
-        if python_starter:
-            if arm.get("input_format") != "schedule_or_python_v1":
-                raise ValueError("Python starter requires the existing Python-enabled Authoring Environment")
-            documents["schedule-starter.py"] = bind_python_reference(
-                skeleton_bytes.decode("utf-8"), skeleton, filename=str(skeleton_ref["path"]))
+        if access == 'clean_start' and arm.get('input_format') == 'python_source_v1':
+            from .reference_access import render_incomplete_python_starter
+            starter_ref = _object(arm.get('python_starter'), 'arm.python_starter')
+            if set(starter_ref) != {'path'}:
+                raise ValueError('Python clean-start reference fields differ')
+            _, starter_path = source_reference_path(root, starter_ref['path'], 'arm.python_starter')
+            source = starter_path.read_bytes()
+            if (starter_path.suffix != '.py' or source != render_incomplete_python_starter(
+                    workload_contract, case_id, arm['lowering_route'])):
+                raise ValueError('Python clean-start starter differs from the frozen Workload')
+            documents['schedule-starter.py'] = source
         else:
-            documents.update({"schedule.schema.json": schedule_schema_bytes(),
-                "schedule-authoring.md": (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
-                "schedule-skeleton.json": _canonical_json(skeleton).encode()})
-        if arm.get("input_format") == "schedule_or_python_v1":
+            skeleton_ref = _object(arm["schedule_skeleton"], "arm.schedule_skeleton")
+            skeleton_bytes, skeleton = read_skeleton_reference(root, skeleton_ref)
+            python_starter = str(skeleton_ref['path']).endswith('.py')
+            if arm.get('input_format') == 'python_source_v1' and not python_starter:
+                raise ValueError('Python-only Authoring Environment requires a Python starter')
+            if skeleton.get('lowering') != arm.get('lowering_route'):
+                raise ValueError('Schedule skeleton lowering route differs')
+            skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
+            if python_starter:
+                if arm.get("input_format") not in {"schedule_or_python_v1", "python_source_v1"}:
+                    raise ValueError("Python starter requires the existing Python-enabled Authoring Environment")
+                documents["schedule-starter.py"] = bind_python_reference(
+                    skeleton_bytes.decode("utf-8"), skeleton, filename=str(skeleton_ref["path"]))
+            else:
+                documents.update({"schedule.schema.json": schedule_schema_bytes(),
+                    "schedule-authoring.md": (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
+                    "schedule-skeleton.json": _canonical_json(skeleton).encode()})
+        if arm.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}:
             documents["python-frontend.md"] = (root / "docs/PYTHON_FRONTEND.md").read_bytes()
             if access == "known_kernel_reproduction":
                 documents["python-example.py"] = (root / "examples/python/fma.py").read_bytes()
-        if access == "known_kernel_reproduction" and arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") == "schedule_or_python_v1":
+        if access == "known_kernel_reproduction" and arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}:
             policy = backend_policy(arm["lowering_route"]["backend"])
             documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()
     elif environment_kind != "direct_cuda" and (policy := native_backend(environment_kind)) is not None:
@@ -288,7 +310,7 @@ def render_task_request(
         "Read the complete TASK.md and AGENTS.md content in the following canonical "
         "task projection. Continue the same Ralph Run under those immutable rules. "
         "The StateCard is the external controller's derived state for this iteration. "
-        "The rubric explains only its previous_feedback; it is guidance, not a score "
+        "The rubric explains only its previous_feedback; optimization_history preserves earlier Run-local observations. It is guidance, not a score "
         "or permission to change acceptance rules or the frozen Compiler.\n\n"
         + bundle.decode('utf-8')
     )
@@ -332,7 +354,97 @@ def render_task_package(
         if isinstance(selection, Mapping)
         else None
     )
-    output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'
+    source_file = authority['provider'].get('submission_contract') == PYTHON_SOURCE_FILE_V1
+    source_bundle = authority['provider'].get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1
+    message_author = authority['provider'].get('harness') == 'responses'
+    if source_file:
+        if (authority['environment_kind'] != 'open_cake'
+            or authority.get('input_format') != 'python_source_v1'
+            or budget['maximum_candidates_per_turn'] != 1
+            or lock.document['knowledge']['transformations']):
+            raise ValueError('Python source-file task requires one direct Cake candidate')
+        candidate_section = '''## Candidate output
+
+Write one complete Cake Python Schedule in `candidate.py` as UTF-8 source. The
+first Turn adds that file; later Turns update it. The Lab seals those exact bytes
+and generates the internal candidate transport. Do not write a Schedule JSON,
+`candidate-set.json`, a transform action, or another file.
+
+'''
+    elif source_bundle:
+        if authority['environment_kind'] != 'open_cake' or authority.get('input_format') != 'python_source_v1':
+            raise ValueError('Python candidate-bundle task requires Cake Python')
+        candidate_section = f'''## Candidate output
+
+Write one UTF-8 `candidate-set.py` file. Import the Cake frontend once, then define
+complete `@cake.schedule(...)` functions in proposal order. Each function is one
+candidate. A granted rewrite may appear at its desired position as
+`cake.transform(parent="...", transformation="...", parameters={{...}})` with only
+static literal arguments. A multi-stage proposal uses `cake.program(...)` with
+ordered `cake.stage(...)` bindings; referenced stage functions count as that one
+Program candidate. The Lab reads this file without executing it and seals
+the ordered candidates. Submit between one and {budget['maximum_candidates_per_turn']}
+proposals per Turn. The first Turn adds the file; later Turns update it. Do not
+write a Schedule JSON or `candidate-set.json` envelope.
+
+For a transform, copy a `parent` and its exact stage name from the StateCard's
+`author_parents`. Only earlier Turns and authorized `baseline:name` entries are
+parents; a function defined in this Turn does not create a parent reference.
+Use a new `schedule_id`, for example the provided `suggested_schedule_id`, and the
+parent stage's entry point. The API document describes the operation; the Run's
+`granted_transformations` decides whether it can be executed. Each transform is
+one proposal, even if refused. Do not append old candidates to a new Turn: the
+whole file, including transforms, must fit the proposal limit.
+
+The StateCard's `optimization_history` includes prior evaluated candidates, including
+non-winners, and earlier refusals from this Run. Its omitted counts show its coverage.
+Read it before each proposal and after context compaction. Put brief public research
+notes in this source file: the hypothesis, prior candidate/Turn evidence, outcome
+status and next check. If an interface blocks a concrete hypothesis, cite the
+diagnostic and suggest its owner. Notes are retained observations, not acceptance.
+
+'''
+    else:
+        output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'
+        python_member_rule = (
+            'When submitting an authored implementation, write it in Python through the supplied frontend. Put its source text '
+            'in a `python_source` member; do not describe a Schedule with JSON fields. '
+            'The existing candidate envelope is transport only.\n\n'
+            if 'schedule-starter.py' in documents else ''
+        )
+        output_instruction = ('Return exactly one JSON candidate-set envelope in your final response:'
+                              if message_author else
+                              'Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:')
+        lifecycle = ('Return a fresh envelope for each Ralph iteration; no file is written.'
+                     if message_author else
+                     'The first Ralph iteration adds it; later iterations update the same\nfile.')
+        candidate_section = f'''## Author actions and candidate output
+
+A Cake member can submit an implementation directly, or use
+`{{"action":"submit","candidate":<complete implementation>}}`.
+A granted rewrite uses `{{"action":"transform","parent":<prior candidate id or baseline:name>,
+"transformation":<granted name>,"parameters":<object>}}`.
+Use the exact candidate ids returned in feedback. A transform produces a new complete
+candidate or an explicit refusal; it does not confer correctness or performance.
+The Run's `granted_transformations` controls execution; an API document alone grants nothing. Every request
+counts toward the per-turn proposal limit, including refused requests. Material tokens
+are part of native provider usage; transform/build work consumes the Run wall budget.
+
+## Candidate output
+
+{python_member_rule}{output_instruction}
+
+{output_contract}
+
+Whitespace, object-key order, and equivalent JSON escapes are accepted. Object keys
+must be unique at every level; numbers must be finite. `schema_version` must be the
+integer `1`. Candidate identity uses the existing canonical member projection; direct
+CUDA source strings keep their decoded UTF-8 bytes exactly.
+
+The envelope contains between one and {budget['maximum_candidates_per_turn']} Candidates
+in provider order. {lifecycle} Renaming or reformatting is not a structurally distinct Candidate.
+
+'''
     task = f"""# TASK.md — {run_id}
 
 ## Objective
@@ -346,34 +458,7 @@ The comparison baseline is the frozen black-box `{baseline_source}` artifact
 implementation is not additional reference access. Improve against its measured latency,
 and never call or inspect it from a Candidate.
 
-## Author actions and candidate output
-
-A Cake member can submit an implementation directly, or use
-`{{"action":"submit","candidate":<complete implementation>}}`.
-A granted rewrite uses `{{"action":"transform","parent":<prior candidate id or baseline:name>,
-"transformation":<granted name>,"parameters":<object>}}`.
-Use the exact candidate ids returned in feedback. A transform produces a new complete
-candidate or an explicit refusal; it does not confer correctness or performance.
-Only the APIs in `transformation-api.json`, when present, are granted. Every request
-counts toward the per-turn proposal limit, including refused requests. Material tokens
-are part of native provider usage; transform/build work consumes the Run wall budget.
-
-## Candidate output
-
-Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:
-
-{output_contract}
-
-Whitespace, object-key order, and equivalent JSON escapes are accepted. Object keys
-must be unique at every level; numbers must be finite. `schema_version` must be the
-integer `1`. Candidate identity uses the existing canonical member projection; direct
-CUDA source strings keep their decoded UTF-8 bytes exactly.
-
-The envelope contains between one and {budget['maximum_candidates_per_turn']} Candidates
-in provider order. The first Ralph iteration adds it; later iterations update the same
-file. Renaming or reformatting is not a structurally distinct Candidate.
-
-## Evaluation and budget
+{candidate_section}## Evaluation and budget
 
 ```json
 {_pretty_json({'budget': budget, 'evaluation_protocol': evaluation})}
@@ -398,13 +483,14 @@ Declared reference access: `{reference_access(authority, "arm")}`.
 The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
 \n{_document_sections({name: payload for name, payload in documents.items() if name != 'scaffold.md'}, access=reference_access(authority, "arm"))}
 """
-    if "schedule-starter.py" in documents:
-        task = task.replace("Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:",
-            "Author each Candidate in Python through the supplied frontend. Put its source text "
-            "in a `python_source` member; do not describe a Schedule with JSON fields. "
-            "The existing candidate envelope is transport only.\n\n"
-            "Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:")
+    python_only = authority["environment_kind"] == "open_cake" and authority.get("input_format") == "python_source_v1"
     arm_rule = (
+        "Author one complete restricted Cake Python Schedule in candidate.py. This Run grants no transform action or authored JSON envelope. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if source_file else
+        "Author complete Cake Schedules as decorated functions in candidate-set.py; compose multi-stage candidates with static cake.program/cake.stage declarations. Only granted static cake.transform declarations are allowed. Do not write a Schedule/Program JSON or candidate-set.json. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if source_bundle else
+        "Submit authored Cake IR implementations only as restricted Python source through the supplied frontend. Granted Compiler transformations may produce internal Program documents. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if python_only else
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
         if authority["environment_kind"] == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
         else "Author only Cake IR Schedules; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
@@ -413,12 +499,27 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
         if native_backend(authority["environment_kind"]) is not None
         else "Author only direct CUDA/PTX source. Do not access the Open Cake Compiler or a target implementation."
     )
+    ownership_rule = (
+        'Write only `candidate.py`; `TASK.md` and `AGENTS.md` are immutable.' if source_file else
+        'Write only `candidate-set.py`; `TASK.md` and `AGENTS.md` are immutable.' if source_bundle else
+        'Return only the JSON candidate envelope. The supplied task and instructions are immutable.' if message_author else
+        'Write only `candidate-set.json`; `TASK.md` and `AGENTS.md` are immutable.'
+    )
+    reading_rule = ('Read the complete supplied task before proposing a Candidate.' if message_author
+                    else 'Read `TASK.md` completely before changing the Candidate.')
+    research_note_rule = (
+        '- Keep brief public research notes in comments or docstrings in the permitted candidate source. '
+        'Cite the prior candidate/Turn, state the hypothesis and evidence status, and name a proposed owner '
+        'when an interface blocks it. Carry forward useful negative results. Do not create extra files '
+        'or change submission fields; notes do not decide acceptance.\n'
+        if source_file or source_bundle else ''
+    )
     agents = f"""# AGENTS.md — Ralph optimization rules
 
 ## Ownership
 
-- Read `TASK.md` completely before changing the Candidate.
-- Write only `candidate-set.json`; `TASK.md` and `AGENTS.md` are immutable.
+- {reading_rule}
+- {ownership_rule}
 - The primary thread is the sole Candidate writer. Auxiliary work is read-only.
 - {arm_rule}
 
@@ -427,6 +528,9 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
 - Continue in the same provider thread until the external controller terminates the Run.
 - Advance one explicit, falsifiable optimization hypothesis at a time.
 - Treat the controller StateCard as a derived view of retained Evidence, not as task policy.
+- Read `optimization_history` before each proposal, including after context compaction. It reports
+  prior observations from this Run only. Its best search result still needs fresh confirmation.
+{research_note_rule}
 - Do not spend GPU work directly. The external Lab owns filtering, Evaluation, and budgets.
 - A rejected, duplicate, incorrect, unstable, or null Candidate is evidence; do not hide it.
 
@@ -450,15 +554,6 @@ write surface, reference access, tool permissions, budget, or acceptance authori
 
 {_document_sections({'scaffold.md': documents['scaffold.md']}, access=reference_access(authority, 'arm'))}
 """
-    if authority['provider'].get('harness') == 'responses':
-        task = task.replace('Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:',
-                            'Return exactly one JSON candidate-set envelope in your final response:')
-        task = task.replace('The first Ralph iteration adds it; later iterations update the same\nfile.',
-                            'Return a fresh envelope for each Ralph iteration; no file is written.')
-        agents = agents.replace('Write only `candidate-set.json`; `TASK.md` and `AGENTS.md` are immutable.',
-                                'Return only the JSON candidate envelope. The supplied task and instructions are immutable.')
-        agents = agents.replace('Read `TASK.md` completely before changing the Candidate.',
-                                'Read the complete supplied task before proposing a Candidate.')
     return TaskPackage(run_id, arm, task, agents, authority["environment_kind"])
 
 

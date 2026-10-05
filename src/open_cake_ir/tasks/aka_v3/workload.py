@@ -54,7 +54,7 @@ TASKS = {
 # Only these contracts have a complete starter on the common tensor execution path.
 # The prefix distinguishes the AKA ABI from similarly named, different Workloads.
 LAUNCHABLE_TASKS = {f"aka_{name}": name for name in (
-    "residual_layernorm", "gemm_nt_bias", "row_gather", "momentum_sgd",
+    "residual_layernorm", "gemm_nt_bias", "row_gather", "momentum_sgd", "histogram", "max_pool1d",
 )}
 
 
@@ -70,11 +70,16 @@ def _admit_starter(task_name: str, backend: str, *, columns: int, depth: int, el
         kinds += ("reduce",)
     if task_name == "momentum_sgd":
         kinds += ("cast",)
+    if task_name in {"histogram", "max_pool1d"}:
+        kinds += ("compare", "select", "coordinate", "reduce")
+    if task_name == "histogram":
+        kinds += ("cast",)
+        admit_width(backend, elements)
     admit_operations(backend, kinds)
     admit_dtype(backend, "fp32")
-    if task_name in {"row_gather", "momentum_sgd"}:
+    if task_name in {"row_gather", "momentum_sgd", "histogram", "max_pool1d"}:
         admit_dtype(backend, "int32")
-    if task_name != "momentum_sgd":
+    if task_name not in {"momentum_sgd", "histogram"}:
         admit_width(backend, columns)
     if task_name == "gemm_nt_bias":
         admit_width(backend, depth)
@@ -116,6 +121,18 @@ CASES = {
 EPSILON = 1e-5
 
 
+def _admit_selection_geometry(task_name, shape, window):
+    if task_name == 'histogram':
+        if shape['B'] & (shape['B'] - 1) or max(shape['B'], shape['E']) > 2**24:
+            raise ValueError('histogram starter requires power-of-two bins and exact FP32 counts')
+    elif task_name == 'max_pool1d':
+        if (window['pad'] >= window['kernel_size']
+                or (shape['Y'] - 1) * window['stride'] - window['pad'] >= shape['X']
+                or max(shape['N'] * shape['X'] * shape['C'], shape['N'] * shape['Y'] * shape['C'],
+                       shape['Y'] * window['stride'] + window['kernel_size'], window['pad']) >= 2**31):
+            raise ValueError('max-pool starter requires nonempty windows and signed int32 linear indices')
+
+
 def _task(task_name: str) -> tuple[str, str, str, str]:
     if not isinstance(task_name, str) or task_name not in TASKS:
         raise ValueError("unsupported AKA v3 migration task")
@@ -147,7 +164,8 @@ def workload_document(
             output_length, channels, kernel_size, stride, elements)) or type(pad) is not int or pad < 0:
         raise ValueError("AKA v3 task dimensions must be positive integers")
     if revision == "2":
-        _admit_starter(task_name, backend, columns=columns, depth=depth, elements=elements)
+        _admit_starter(task_name, backend, columns=channels if task_name == 'max_pool1d' else columns,
+                       depth=depth, elements=elements)
     if task_name == "gemm_nt_bias" and (rows * depth + columns * depth + rows * columns) * 4 > 2**31 - 1:
         raise ValueError("GEMM buffers exceed the standalone FP32 ABI")
     if task_name != "gemm_nt_bias" and rows * columns * 4 > 2**31 - 1:
@@ -231,6 +249,8 @@ def workload_document(
         definition = "m[i] = mu*moment[i]+lr*grad[i]; param_out[i] = param[i]-m[i] if nesterov=0 else param[i]-(1+mu)*m[i]+mu*moment[i]; moment_out[i] = m[i]"
         arithmetic = {"values": "fp32", "state": "out_of_place_parameter_and_momentum", "nesterov": "int32_zero_or_one", "output": "fp32"}
 
+    if revision == '2':
+        _admit_selection_geometry(task_name, shape, {'kernel_size': kernel_size, 'stride': stride, 'pad': pad})
     for name, descriptor in tensors.items():
         descriptor.update(dtype="int32" if name in {"output_row_to_input_row", "nesterov"} else "fp32",
                           layout="contiguous_row_major")

@@ -63,6 +63,9 @@ def _sync(name: str, realizes: BarrierMechanism | None) -> InstructionContract:
     return InstructionContract(name, ContractKind.SYNCHRONIZATION, realizes=realizes)
 
 
+COMPENSATED_FP8_MMA = "maca.simt.fp8e4m3_compensated_fp32"
+
+
 _RECORDS = (
     # NVIDIA tensor-core atoms that place their operands.
     _mma("tcgen05.mma.cta_group::1.kind::f16", {DType.BF16, DType.FP16}, places=True),
@@ -77,10 +80,19 @@ _RECORDS = (
     # in fp32; neither carries a scale operand.
     _mma("triton.dot.fp16_fp32", {DType.FP16}),
     _mma("triton.dot.fp8e4m3_fp32", {DType.FP8_E4M3}),
+    # C550's measured software route: decoded FP32 products with compensated
+    # accumulation. It is deliberately not named as a native FP8 dot atom.
+    _mma(COMPENSATED_FP8_MMA, {DType.FP8_E4M3}),
     InstructionContract("triton.atomic_add.i32.relaxed.gpu", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),
+    _elementwise("maca.fma.f32", ElementwiseOp.FMA, DType.FP32),
+    # Explicit result-rounding choices on the same ternary FP32 primitive.
+    # Registration does not admit a contract on any Target.
+    _elementwise("maca.fma.rz.f32", ElementwiseOp.FMA, DType.FP32),
+    _elementwise("maca.fma.rd.f32", ElementwiseOp.FMA, DType.FP32),
+    _elementwise("maca.fma.ru.f32", ElementwiseOp.FMA, DType.FP32),
     # Metal's own named-precision spelling; the fast:: namespace is a different function.
     _elementwise("metal.precise.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("metal.fma.f32", ElementwiseOp.FMA, DType.FP32),

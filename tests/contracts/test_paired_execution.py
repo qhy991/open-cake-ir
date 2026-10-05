@@ -626,13 +626,19 @@ class PairedExecutionTests(unittest.TestCase):
     def test_external_preflight_binds_stable_study_and_rejects_runtime_or_baseline_drift(self):
         self._external_preflight_contract(TEMPLATE, self.workload, 'native_triton')
 
+    def test_python_paired_preflight_binds_distinct_arm_qualifications(self):
+        template = ROOT / 'contracts/studies/matched-search-triton-b300-optimization-python-template.json'
+        self._external_preflight_contract(template, self.workload, 'native_triton',
+                                          python_transport=True)
+
     def test_cute_external_preflight_binds_stable_study_and_rejects_runtime_or_baseline_drift(self):
         from tests.contracts.test_native_cute_pairing import baseline
         workload = load_workload(ROOT / 'contracts/workloads/gemm-bias-bf16-fp32-v2.json')
         template = ROOT / 'contracts/studies/matched-search-cute-b300-gemm-optimization-template.json'
         self._external_preflight_contract(template, workload, 'native_cute_dsl', schedule=baseline(workload))
 
-    def _external_preflight_contract(self, template_path, workload, comparison, schedule=None):
+    def _external_preflight_contract(self, template_path, workload, comparison, schedule=None,
+                                     python_transport=False):
         from open_cake_ir.lab.pairing import native_backend, native_block
         policy = native_backend(comparison)
         # Independent CPU fixture: a real committed host capture and the real resolver.
@@ -666,7 +672,8 @@ class PairedExecutionTests(unittest.TestCase):
         commit_project(project)
         executor_ref = dict(ExecutorRevision.for_target(project, 'sm_103a').reference)
         draft = DraftCompilerFixture()
-        schedule = bind_baseline(json.loads((project / study.document['arms']['open_cake']['schedule_skeleton']['path']).read_bytes()),
+        from open_cake_ir.lab.python_reference import read_skeleton
+        schedule = bind_baseline(read_skeleton(project / study.document['arms']['open_cake']['schedule_skeleton']['path']),
                                  workload, 'primary')
         lowering = draft.lower(draft.assess(schedule))
         requirements = lowering.toolchain_requirements
@@ -689,28 +696,40 @@ class PairedExecutionTests(unittest.TestCase):
         helper = executable.with_name('codex-code-mode-host')
         helper.write_bytes(b'CPU Code Mode host fixture')
         helper.chmod(0o700)
-        provider = study.document['arms']['open_cake']['provider']
-        configuration = {key: provider[key] for key in ('model', 'reasoning_effort', 'service_tier',
-            'removed_environment', 'sandbox', 'cwd_policy', 'reference_visibility', 'disabled_features', 'web_search')}
-        configuration['code_mode_host'] = {'path': str(helper.resolve()), 'sha256': sha256(helper.read_bytes()).hexdigest()}
-        configuration['output_schema_sha256'] = provider['output_schema']['sha256']
-        configuration['submission_contract'] = 'candidate_set_envelope_v1'
-        qualification = json.loads((ROOT / 'contracts/providers/fixture-provider-candidate-set-ralph-v1.json').read_bytes())
-        qualification.update(scope='live_two_turn_current_provider',
-            executable_sha256=sha256(executable.read_bytes()).hexdigest(),
-            configuration_sha256=sha256(encoded(configuration)).hexdigest())
-        qp = self.output / 'qualification.json'; qp.write_bytes(encoded(qualification))
-        anchor = {'schema_version':1, 'kind':'codex_provider_qualification_evidence_anchor',
-            'run_id':'CPU-fixture', 'evidence_root':str(self.output / '提供器证据'),
-            'authority_sha256':'a'*64, 'qualification_receipt_sha256':sha256(encoded(qualification)).hexdigest(),
-            'immediate_audit_integrity':True, 'terminal_seal_sha256':'b'*64}
-        ap = self.output / 'anchor.json'; ap.write_bytes(encoded(anchor))
+        from open_cake_ir.lab.provider_policy import execution_configuration
+        qualifications = {}
+        for name in (study.document['arms'] if python_transport else ('open_cake',)):
+            provider = dict(study.document['arms'][name]['provider'])
+            provider['code_mode_host'] = {'path': str(helper.resolve()),
+                                          'sha256': sha256(helper.read_bytes()).hexdigest()}
+            configuration = execution_configuration(provider)
+            qualification = json.loads((ROOT / 'contracts/providers/fixture-provider-candidate-set-ralph-v1.json').read_bytes())
+            qualification.update(scope='live_two_turn_current_provider',
+                executable_sha256=sha256(executable.read_bytes()).hexdigest(),
+                configuration_sha256=sha256(encoded(configuration)).hexdigest())
+            if python_transport:
+                from open_cake_ir.lab.author_home import system_skills_identity
+                qualification.update(schema_version=2,
+                    system_skills_sha256=system_skills_identity(()))
+            suffix = name if python_transport else ''
+            qp = self.output / f'qualification{suffix}.json'; qp.write_bytes(encoded(qualification))
+            anchor = {'schema_version':1, 'kind':'codex_provider_qualification_evidence_anchor',
+                'run_id':'CPU-fixture', 'evidence_root':str(self.output / '提供器证据'),
+                'authority_sha256':'a'*64, 'qualification_receipt_sha256':sha256(encoded(qualification)).hexdigest(),
+                'immediate_audit_integrity':True, 'terminal_seal_sha256':'b'*64}
+            ap = self.output / f'anchor{suffix}.json'; ap.write_bytes(encoded(anchor))
+            qualifications[name] = (qp, ap)
         config = {'schema_version':1,
             'provider':{'executable':str(executable),'workspace_root':str(self.output / 'new-author-workspaces')},
             'toolchain':{'python':'fixture-python','bubblewrap':'fixture-bwrap','runtime_roots':[],'build_environment':{},
                          'triton_version':'fixture','timeout_seconds':30},
             'broker':{'command':['fixture-broker'],'cwd':str(project),'timeout_seconds':30,
                       'service_user':'fixture','service_group':'fixture'}}
+        if python_transport:
+            auth_source = self.output/'auth-source.json'
+            auth_source.write_bytes(b'fixture credential')
+            auth_source.chmod(0o600)
+            config['provider']['auth_source'] = str(auth_source)
         if comparison == 'native_cute_dsl':
             config['toolchain'].pop('triton_version')
             # The declared jail environment is the Triton toolchain's field; the CuTe one
@@ -721,9 +740,17 @@ class PairedExecutionTests(unittest.TestCase):
         baseline_selection = {'schema_version':1, 'policy':'starter_reference',
             'source':'starter_reference', 'incumbent_key':None,
             'promotion_run_id':None, 'registry_root':None}
-        bindings = {'schema_version':2, 'qualification_path':str(qp), 'qualification_anchor_path':str(ap),
-                    'runtime_config_path':str(rp), 'fixed_baseline_bundle_path':str(bundle),
-                    'fixed_baseline_selection':baseline_selection}
+        if python_transport:
+            bindings = {'schema_version':3,
+                        'qualification_paths':{name:str(paths[0]) for name,paths in qualifications.items()},
+                        'qualification_anchor_paths':{name:str(paths[1]) for name,paths in qualifications.items()},
+                        'runtime_config_path':str(rp), 'fixed_baseline_bundle_path':str(bundle),
+                        'fixed_baseline_selection':baseline_selection}
+        else:
+            qp, ap = qualifications['open_cake']
+            bindings = {'schema_version':2, 'qualification_path':str(qp), 'qualification_anchor_path':str(ap),
+                        'runtime_config_path':str(rp), 'fixed_baseline_bundle_path':str(bundle),
+                        'fixed_baseline_selection':baseline_selection}
         bp = self.output / 'bindings.json'; bp.write_bytes(encoded(bindings))
         gate = SimpleNamespace(compiler_revision_id='fixture',passed=True)
         compiler_ref = {'revision_id':'fixture','path':'compiler/revision.json'}
@@ -769,10 +796,15 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(lock.document['resolved_inputs']['arm_environments'][comparison]['provider']['model'], 'gpt-5.6-sol')
             self.assertFalse((self.output / 'new-author-workspaces').exists())
             self.assertEqual(CampaignLock.from_dict(lock.document).canonical_sha256, lock.canonical_sha256)
+            if python_transport:
+                for run_id in lock.run_order:
+                    self.assertEqual(lock.run_specification(run_id).document['compiler_revision']['revision_id'],
+                                     'fixture')
             for arm in ('open_cake', comparison):
                 package = Lab(project).task_package(lock, arm + '-1')
                 self.assertIn('"sm_103a"', package.task_markdown)
-                self.assertIn('candidate-set.json', package.agents_markdown)
+                self.assertIn('candidate-set.py' if python_transport and arm == 'open_cake'
+                              else 'candidate-set.json', package.agents_markdown)
                 self.assertNotIn('prompt_template', package.task_markdown)
                 def frozen_json(name):
                     section = package.task_markdown.split(f"## Frozen reference: `{name}`\n", 1)[1]
@@ -780,11 +812,15 @@ class PairedExecutionTests(unittest.TestCase):
                 self.assertEqual(frozen_json("target.json")["target_id"], "sm_103a")
                 self.assertEqual(frozen_json("run-authority.json")["execution"]["target"], "sm_103a")
                 if arm == "open_cake":
-                    self.assertEqual(frozen_json("schedule-skeleton.json")["target"], "sm_103a")
+                    if python_transport:
+                        self.assertIn('schedule-starter.py', package.task_markdown)
+                    else:
+                        self.assertEqual(frozen_json("schedule-skeleton.json")["target"], "sm_103a")
                 if arm == comparison:
                     self.assertIn(policy.baseline_file, package.task_markdown)
                 else:
-                    self.assertIn('restricted Python', package.agents_markdown)
+                    self.assertIn('complete Cake Schedules' if python_transport
+                                  else 'restricted Python', package.agents_markdown)
 
             # Each independently allocated Run binds fresh provider state through
             # the production factory. Frozen toolchain identity remains common.
@@ -808,6 +844,15 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(len({id(value['provider']) for value in components.values()}),len(lock.run_order))
             for run_id,value in components.items():
                 self.assertEqual(set(value['provider']._builders),{run_id})
+                if python_transport:
+                    self.assertEqual(value['provider'].configuration['author_home_policy'],
+                                     'isolated_auth_only_v1')
+                    self.assertTrue((self.output/'new-author-workspaces'/'.codex-homes'/run_id/'auth.json').is_file())
+                    from open_cake_ir.lab.execution_admission import validate_run_bindings
+                    with patch('open_cake_ir.lab.bindings._resolve_compiler_reference',
+                               return_value=(gate, compiler_ref['path'], compiler_ref)):
+                        validate_run_bindings(lock.run_specification(run_id), project_root=project,
+                            workload_loader=load_workload, task_package=lambda *_: None, **value)
 
             if comparison == 'native_triton':
                 invalid_workload = workload.document

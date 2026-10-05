@@ -18,6 +18,10 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .triton_selection import top_k_selection_structure
+from .triton_output_domain import output_tile_domain
+from .metax import (emit_compensated_fp8_mma, streaming_compensated_loop,
+                    emit_streaming_compensated_state, emit_streaming_compensated_step,
+                    emit_streaming_compensated_finalize)
 from .common import PythonNamespace, emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
@@ -38,7 +42,7 @@ from ..ir import (
     Schedule,
     TileLoop,
 )
-from ..ir.instruction_contracts import ContractKind, contracts_of
+from ..ir.instruction_contracts import COMPENSATED_FP8_MMA, ContractKind, contracts_of
 from ..target import CodeObject, Target
 from ..diagnostics import Finding
 
@@ -99,7 +103,7 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
 }
 
 SCANS: dict[ScanOp, str] = {
-    ScanOp.SUM: "{out} = tl.cumsum({src}.to(tl.float32), axis={axis}, reverse={reverse})",
+    ScanOp.SUM: "{out} = tl.cumsum({src}.to({acc_dtype}), axis={axis}, reverse={reverse})",
 }
 
 
@@ -109,6 +113,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COORDINATE: "_emit_coordinate",
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
+    OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
@@ -127,6 +132,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COORDINATE: "_emit_coordinate",
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
+    OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
@@ -177,7 +183,7 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 # and the Compiler refuses a Target whose code object is neither before preflight.
 PYTHON_NAMESPACE = PythonNamespace(
     reserved_names=frozenset({"tl", "torch", "triton"}),
-    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work"),
+    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_", "_cake_launch_"),
 )
 
 
@@ -195,6 +201,13 @@ def validate_input(document: Mapping[str, object]) -> None:
 
 
 CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN})
+
+# C550 can compile the same FP32 GEMM+bias source at 1/2/4/8 warps, while the
+# 16-warp launch reaches MACA's mcErrorRecompile before its first kernel call.
+# This is a route qualification boundary, not the physical Target maximum (which
+# remains 16 warps); keep it here so an unqualified author choice is refused before
+# GPU allocation and can be routed back to the candidate.
+_METAX_QUALIFIED_MAX_WARPS = 8
 
 
 def _power_of_two(value: int) -> bool:
@@ -390,11 +403,16 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "access_maps",
         "the Triton backend requires access maps",
     )
+    parents = schedule.loop_parent()
+    # The operation order already owns each contiguous root region. Independent
+    # sibling regions may carry values to later regions without introducing a
+    # deeper nesting contract. Nested emission remains the qualified two-deep slice.
+    sibling_regions = not parents
     add(
-        len(schedule.tile_loops) <= 2,
+        sibling_regions or len(schedule.tile_loops) <= 2,
         "TRITON_TILE_LOOP_COUNT",
         "tile_loops",
-        "the Triton backend supports at most a two-deep tile-loop nest",
+        "Triton admits sequential sibling loop regions or at most two nested loops",
     )
     add(
         len(schedule.roles) == 1,
@@ -424,6 +442,14 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             f"the declared role has {warp_count} warps. Choose the role explicitly; "
             "the Compiler does not round the launch size.",
         )
+        if target.target_id == "xcore1002" and warp_count > _METAX_QUALIFIED_MAX_WARPS:
+            findings.append(refusal(
+                "MACA_WARP_COUNT_UNQUALIFIED",
+                "roles[0].execution_groups",
+                "C550 evidence qualifies Triton launches through 8 warps; larger MetaX "
+                "launches are refused before device allocation until a successor route "
+                "qualifies them",
+            ))
 
     counts = {
         kind: sum(operation.kind is kind for operation in schedule.operations)
@@ -539,7 +565,9 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             add(
                 instruction is None
                 or instruction.contract not in target.instruction_contracts
-                or instruction.contract in _TRITON_MMA_CONTRACTS,
+                or instruction.contract in _TRITON_MMA_CONTRACTS
+                or (target.code_object is CodeObject.MCFATBIN
+                    and instruction.contract == COMPENSATED_FP8_MMA),
                 "TRITON_MMA_INSTRUCTION_UNSUPPORTED",
                 f"operations[{index}].parameters.instruction.contract",
                 "the Triton backend does not implement instruction contract "
@@ -616,30 +644,29 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             "scalar program axis",
         )
 
-    nested = len(schedule.tile_loops) > 1
-    if nested:
-        parent = schedule.loop_parent()
+    multiple_loops = len(schedule.tile_loops) > 1
+    if multiple_loops:
+        depths = sorted(schedule.loop_depth(loop.name) for loop in schedule.tile_loops)
         add(
-            len(schedule.tile_loops) == 2
-            and len(parent) == 1
-            and sorted(schedule.loop_depth(loop.name) for loop in schedule.tile_loops) == [0, 1],
+            sibling_regions or (len(schedule.tile_loops) == 2
+                                and len(parents) == 1 and depths == [0, 1]),
             "TRITON_LOOP_NEST_UNSUPPORTED",
             "tile_loops",
-            "the nested Triton slice requires one outer loop with one inner loop",
+            "Triton admits sequential sibling regions or one outer/inner loop pair",
         )
         for index, loop in enumerate(schedule.tile_loops):
             add(
                 loop.stop is None,
                 "TRITON_NESTED_LOOP_STOP",
                 f"tile_loops[{index}].stop",
-                "nested Triton loops currently require static extents",
+                "multi-region Triton emission currently requires static extents",
             )
             for option in ("flatten", "warp_specialize"):
                 add(
                     not getattr(loop.range_options, option),
                     "TRITON_NESTED_LOOP_OPTION",
                     f"tile_loops[{index}].range_options.{option}",
-                    f"nested Triton loops do not implement {option}=true",
+                    f"multi-region Triton emission does not implement {option}=true",
                 )
 
     for index, operation in enumerate(schedule.operations):
@@ -654,7 +681,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             f"operations[{index}].kind",
             f"the Triton backend has no {operation.kind.value!r} body at this loop position",
         )
-        if nested and chain:
+        if multiple_loops and chain:
             add(
                 operation.kind not in {
                     OperationKind.REDUCE_ARGMIN,
@@ -663,7 +690,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 },
                 "TRITON_NESTED_OPERATION_UNSUPPORTED",
                 f"operations[{index}].kind",
-                f"the two-deep Triton slice does not implement nested {operation.kind.value!r}",
+                f"the multi-region Triton slice does not implement {operation.kind.value!r}",
             )
             if operation.kind is OperationKind.MMA:
                 add(
@@ -674,7 +701,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     ),
                     "TRITON_NESTED_MMA_OPERAND",
                     f"operations[{index}].reads",
-                    "the bounded nested MMA backend requires two directly loaded operands; "
+                    "the bounded two-loop MMA backend requires two directly loaded operands; "
                     "casted operands remain outside this nested emission slice",
                 )
                 add(
@@ -1167,6 +1194,10 @@ class _TritonEmitter:
         kernel = f"_{entry}_kernel"
         self._emit_header()
         self._emit_kernel(kernel)
+        # grid is a static Schedule fact. Retain the lightweight JIT launch
+        # callable once, without retaining any caller tensor or its pointer.
+        self.line(f"_cake_launch_{entry} = {kernel}[{self.grid()}]")
+        self.line("")
         self._emit_host(entry, kernel)
         source = "\n".join(self.lines) + "\n"
         if self.check_namespace:
@@ -1221,11 +1252,15 @@ class _TritonEmitter:
         self.line("import torch")
         self.line("import triton")
         self.line("import triton.language as tl")
+        from .metax import DIRECTED_FMA_FUNCTIONS
         if any(
             operation.kind is OperationKind.ELEMENTWISE
-            and operation.parameters.op is ElementwiseOp.TANH
             and operation.parameters.instruction is not None
-            and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
+            and (operation.parameters.op is ElementwiseOp.TANH
+                 and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
+                 or self.target.code_object is CodeObject.MCFATBIN
+                 and operation.parameters.op is ElementwiseOp.FMA
+                 and operation.parameters.instruction.contract in DIRECTED_FMA_FUNCTIONS)
             for operation in self.schedule.operations
         ):
             self.line("from triton.language.extra import libdevice")
@@ -1254,6 +1289,14 @@ class _TritonEmitter:
             for axis in program_map.axes:
                 self.line(f"    {axis.name} = tl.program_id({axis.axis})", declares=(axis.name,))
         pad = self._body_pad()
+        domain = output_tile_domain(self.schedule)
+        if domain is not None:
+            # Every output store has the same mask; outside this prefix the
+            # program has no global effects. Partial tiles keep normal masks.
+            self.line(f"{pad}# Skip only a provably empty output tile.")
+            self.line(f"{pad}_cake_output_length = tl.load({domain.lengths} + {domain.group})")
+            self.line(f"{pad}if {domain.tile_axis} * {self._tile(domain.tile_axis)} < _cake_output_length:")
+            pad += "    "
         for axis in self.schedule.program_map.axes:
             if axis.is_tiled:
                 tile = self._tile(axis.name)
@@ -1437,6 +1480,10 @@ class _TritonEmitter:
                 )
                 self.line()
             elif operation.kind is OperationKind.MMA and self.schedule.mma_accumulates_over(operation, loop):
+                if streaming_compensated_loop(self.schedule, operation) is not None:
+                    emit_streaming_compensated_state(self.line, pad=pad)
+                    self.line()
+                    continue
                 # A contraction summed across the loop needs its accumulator before the
                 # loop, for the same reason a fold does: the first iteration adds to it.
                 accumulator = self.schedule.buffer(operation.writes[0])
@@ -1472,6 +1519,27 @@ class _TritonEmitter:
         options = loop.range_options
         extent = self._loop_stop(loop)
         tile = self._tile(loop.name)
+        if self.target.code_object is CodeObject.MCFATBIN:
+            from .metax import loop_range, partial_unroll_factor
+            factor = partial_unroll_factor(loop, self.schedule)
+            if factor is not None:
+                base = f"_maca_unroll_{loop.iterator}_base"
+                lane = f"_maca_unroll_{loop.iterator}_lane"
+                self.line(f"{pad}for {base} in tl.range(0, {extent}, {tile} * {factor}, num_stages=1):")
+                self.line(f"{pad}    for {lane} in tl.static_range(0, {factor}):")
+                self.line(f"{pad}        {loop.iterator} = {base} + {lane} * {tile}",
+                          declares=(loop.iterator,))
+                self._emit_loop_body(loop, pad + "    ", tile, finalize=False)
+                self._emit_loop_finalize(loop, pad)
+                return
+            maca_range = loop_range(loop, self.schedule, extent, tile)
+            if maca_range is not None:
+                self.line(
+                    f"{pad}for {loop.iterator} in {maca_range}:",
+                    declares=(loop.iterator,),
+                )
+                self._emit_loop_body(loop, pad, tile)
+                return
         knobs = [f"num_stages={options.num_stages}"]
         if options.disallow_acc_multi_buffer:
             knobs.append("disallow_acc_multi_buffer=True")
@@ -1489,6 +1557,9 @@ class _TritonEmitter:
             + "):",
             declares=(loop.iterator,),
         )
+        self._emit_loop_body(loop, pad, tile)
+
+    def _emit_loop_body(self, loop: TileLoop, pad: str, tile: str, *, finalize: bool = True) -> None:
         self.line(
             f"{pad}    {loop.iterator}_offsets = "
             f"{loop.iterator} + tl.arange(0, {tile})"
@@ -1501,8 +1572,14 @@ class _TritonEmitter:
             operation = self.schedule.operation(op_id)
             _require(operation is not None, f"loop body names unknown operation {op_id!r}")
             self._emit_operation(operation, pad + "    ", inside=True)
+        if finalize:
+            self._emit_loop_finalize(loop, pad)
+
+    def _emit_loop_finalize(self, loop: TileLoop, pad: str) -> None:
         for op_id in loop.body:
             operation = self.schedule.operation(op_id)
+            if operation is not None and streaming_compensated_loop(self.schedule, operation) is not None:
+                emit_streaming_compensated_finalize(self.line, output=operation.writes[0], pad=pad)
             if operation is not None and operation.kind is OperationKind.ONLINE_SOFTMAX:
                 self._emit_online_softmax_finalize(operation, pad)
             if (
@@ -1586,6 +1663,14 @@ class _TritonEmitter:
 
     def _emit_select(self, operation, pad):
         p = operation.parameters
+        if self.target.code_object is CodeObject.MCFATBIN:
+            from .metax import comparison_magnitude_input
+            source = comparison_magnitude_input(self.schedule, operation)
+            if source is not None:
+                dtype = self.schedule.buffer(operation.writes[0]).dtype
+                self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+                self.line(f"{pad}{operation.writes[0]} = tl.abs({source}).to({_TL_DTYPE[dtype]})", declares=(operation.writes[0],))
+                return
         false_value = ('float("-inf")' if p.false_value == "negative_infinity" else repr(p.false_value)) if p.false_value is not None else operation.reads[2]
         dtype = self.schedule.buffer(operation.writes[0]).dtype
         if p.false_value is not None and dtype is DType.INT32:
@@ -1608,12 +1693,20 @@ class _TritonEmitter:
             operands.append(repr(int(parameters.scalar) if integer else parameters.scalar))
         if parameters.op is ElementwiseOp.FMA:
             instruction = parameters.instruction
-            _require(
-                instruction is not None
-                and instruction.contract == "ptx.fma.rn.f32",
-                "the Triton fma body requires ptx.fma.rn.f32",
-            )
-        if parameters.op is ElementwiseOp.TANH:
+            contract = instruction.contract if instruction is not None else None
+            if contract == "ptx.fma.rn.f32" and self.target.code_object is CodeObject.CUBIN:
+                expression = self._ELEMENTWISE_TEXT[ElementwiseOp.FMA].format(
+                    a=operands[0], b=operands[1], c=operands[2]
+                )
+            elif contract == "maca.fma.f32" and self.target.code_object is CodeObject.MCFATBIN:
+                expression = f"tl.fma({operands[0]}, {operands[1]}, {operands[2]})"
+            else:
+                from .metax import DIRECTED_FMA_FUNCTIONS
+                function = DIRECTED_FMA_FUNCTIONS.get(contract)
+                if self.target.code_object is not CodeObject.MCFATBIN or function is None:
+                    raise EmitError("the Triton fma body requires its target's admitted FMA contract")
+                expression = f"libdevice.{function}({operands[0]}, {operands[1]}, {operands[2]})"
+        elif parameters.op is ElementwiseOp.TANH:
             instruction = parameters.instruction
             _require(
                 instruction is not None
@@ -1680,6 +1773,22 @@ class _TritonEmitter:
             declares=(operation.writes[0],),
         )
 
+    def _emit_broadcast_in_dim(self, operation, pad: str) -> None:
+        result = self.schedule.buffer(operation.writes[0])
+        _require(result is not None, "broadcast result is undeclared")
+        axes = operation.parameters.dimensions
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, "broadcast source is undeclared")
+        # Canonical [1] may be a native rank-zero reduction or scalar load.
+        # Both rank-zero and one-element block values broadcast directly.
+        value = operation.reads[0]
+        if not source.is_scalar:
+            index = ", ".join(":" if axis in axes else "None" for axis in range(len(result.shape)))
+            value += f"[{index}]"
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{result.name} = tl.broadcast_to({value}, {tuple(result.shape)})",
+                  declares=(result.name,))
+
     def _emit_scan(self, operation, pad: str) -> None:
         """Accumulate one inclusive prefix along the declared resident axis."""
 
@@ -1688,12 +1797,20 @@ class _TritonEmitter:
         axis = operation.parameters.axis
         _require(axis < len(source.shape), f"scan axis {axis} is outside {source.name!r}")
         reverse = operation.parameters.direction is ScanDirection.REVERSE
+        acc_dtype = "tl.int32" if source.dtype is DType.INT32 else "tl.float32"
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if source.is_scalar:
+            # Canonical [1] may be a native rank-zero scalar load. Its inclusive
+            # prefix is itself; do not apply a rank-one cumsum to a scalar value.
+            self.line(f"{pad}{operation.writes[0]} = {operation.reads[0]}.to({acc_dtype})",
+                      declares=(operation.writes[0],))
+            return
         self.line(
             pad
             + SCANS[operation.parameters.op].format(
                 out=operation.writes[0],
                 src=operation.reads[0],
+                acc_dtype=acc_dtype,
                 axis=axis,
                 reverse=reverse,
             ),
@@ -1775,6 +1892,17 @@ class _TritonEmitter:
         instruction = operation.parameters.instruction
         contract = instruction.contract if instruction is not None else None
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if contract == COMPENSATED_FP8_MMA:
+            _require(self.target.code_object is CodeObject.MCFATBIN,
+                     "the compensated FP8 SIMT body requires a MACA code object")
+            _require(len(operation.reads) == 2 and len(tiles) == 2,
+                     "the compensated FP8 SIMT body takes two staged operands")
+            if streaming_compensated_loop(self.schedule, operation) is not None:
+                emit_streaming_compensated_step(self.line, left=tiles[0], right=tiles[1], pad=pad)
+            else:
+                emit_compensated_fp8_mma(self.line, left=tiles[0], right=tiles[1],
+                                         output=operation.writes[0], pad=pad)
+            return
         if contract == "triton.dot.fp8e4m3_block_scale_fp32":
             _require(
                 len(operation.reads) == 4 and len(tiles) == 4,
@@ -2397,7 +2525,7 @@ class _TritonEmitter:
         self.line(f"    if any(t.device != {inputs[0].name}.device for t in ({names},)):")
         self.line("        raise ValueError(\"every input must share one device\")")
         self._emit_output_binding(outputs, inputs[0].name)
-        self.line(f"    {kernel}[{self.grid()}](")
+        self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
         self.line("    )")
@@ -2421,9 +2549,10 @@ class _TritonEmitter:
     def _emit_output_binding(self, outputs: list[Buffer], anchor: str) -> None:
         """Allocate and check the caller's output tensors.
 
-        One output binds the name `out` directly; several bind a sequence. The single
-        case keeps its exact emitted bytes because the corpus pins the lowered source
-        digest of every case, so drift there is a corpus-wide break for no gain.
+        Fresh outputs are constructed by torch.empty with the declared ABI and
+        need no repeated shape/device checks. Caller-owned outputs still receive
+        every check; in particular a retained graph workspace is not trusted by
+        object identity. One output binds out directly; several bind a sequence.
 
         Both host wrappers route through here. They did not before, and the consequence
         was that the multi-output launch defect existed twice -- once per copy.
@@ -2436,13 +2565,14 @@ class _TritonEmitter:
                 f"        out = torch.empty({tuple(output.shape)}, "
                 f"dtype={TORCH_DTYPES[output.dtype]}, device={anchor}.device)"
             )
+            self.line("    else:")
             self.line(
-                f"    if tuple(out.shape) != {tuple(output.shape)} "
+                f"        if tuple(out.shape) != {tuple(output.shape)} "
                 f"or out.dtype != {TORCH_DTYPES[output.dtype]}:"
             )
-            self.line("        raise ValueError(\"out differs from the frozen output contract\")")
-            self.line(f"    if out.device != {anchor}.device or not out.is_contiguous():")
-            self.line("        raise ValueError(\"out must be contiguous on the input device\")")
+            self.line("            raise ValueError(\"out differs from the frozen output contract\")")
+            self.line(f"        if out.device != {anchor}.device or not out.is_contiguous():")
+            self.line("            raise ValueError(\"out must be contiguous on the input device\")")
             return
         self.line("    if out is None:")
         self.line("        out = (")
@@ -2452,24 +2582,25 @@ class _TritonEmitter:
                 f"dtype={TORCH_DTYPES[buffer.dtype]}, device={anchor}.device),"
             )
         self.line("        )")
-        self.line("    out = tuple(out)")
-        self.line(f"    if len(out) != {len(outputs)}:")
+        self.line("    else:")
+        self.line("        out = tuple(out)")
+        self.line(f"        if len(out) != {len(outputs)}:")
         self.line(
-            f"        raise ValueError(\"out must provide {len(outputs)} output tensors\")"
+            f"            raise ValueError(\"out must provide {len(outputs)} output tensors\")"
         )
-        self.line("    for tensor, shape, dtype in (")
+        self.line("        for tensor, shape, dtype in (")
         for index, buffer in enumerate(outputs):
             self.line(
-                f"        (out[{index}], {tuple(buffer.shape)}, "
+                f"            (out[{index}], {tuple(buffer.shape)}, "
                 f"{TORCH_DTYPES[buffer.dtype]}),"
             )
-        self.line("    ):")
-        self.line("        if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
+        self.line("        ):")
+        self.line("            if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
         self.line(
-            "            raise ValueError(\"out differs from the frozen output contract\")"
+            "                raise ValueError(\"out differs from the frozen output contract\")"
         )
-        self.line(f"        if tensor.device != {anchor}.device or not tensor.is_contiguous():")
-        self.line("            raise ValueError(\"out must be contiguous on the input device\")")
+        self.line(f"            if tensor.device != {anchor}.device or not tensor.is_contiguous():")
+        self.line("                raise ValueError(\"out must be contiguous on the input device\")")
 
     def _emit_launch_arguments(
         self, globals_in_order: list[Buffer], outputs: list[Buffer]
@@ -2523,7 +2654,7 @@ class _TritonEmitter:
         )
         self.line('        raise ValueError("every input and state must share one device")')
         self._emit_output_binding(outputs, anchor)
-        self.line(f"    {kernel}[{self.grid()}](")
+        self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
         self.line("    )")

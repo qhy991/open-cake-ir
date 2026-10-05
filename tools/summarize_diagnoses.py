@@ -10,11 +10,93 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from open_cake_ir.evidence import EvidenceStore
+from open_cake_ir.compiler.diagnostics import BACKEND_LOWERING_GAP_CODES
 from open_cake_ir.lab.routing import DESTINATIONS
 from open_cake_ir.serialization import canonical_json_bytes
 
 
-def summarize(roots) -> dict[str, object]:
+def _transform_triage_owner(reason: str) -> str:
+    """Reading hints only; the pinned action replay owns the historical decision."""
+    if reason in {"transform_not_granted", "parent_not_authorized"}:
+        return "lab_permissions"
+    if reason in {"action_shape", "author_format", "parent_not_program", "unknown_transform",
+                  "transform_parameters", "stage_selection", "result_identity"}:
+        return "author_api"
+    if reason in {"execution_commitments", "execution_controls", "unsupported_effects",
+                  "target_route", "tile_extent", "output_extent", "unroll_extent",
+                  "stage_order", "composition_boundary", "public_intermediate",
+                  "intermediate_consumers", "binding_view", "intermediate_abi",
+                  "rounding_boundary", "row_ownership", "tile_ownership", "coordinate_owner",
+                  "arithmetic_domain", "operation_domain", "storage_domain", "access_domain",
+                  "output_domain", "epilogue_domain", "broadcast_domain", "program_shape",
+                  "coupled_output_axis", "value_shape", "output_ownership", "value_storage"}:
+        return "compiler_guard"
+    # In particular, input_refused/result_refused can wrap unrelated failures.
+    return "unknown"
+
+
+def _event_locator(event, pointer):
+    return {"event_sequence": event["sequence"], "event_kind": event["kind"],
+            "json_pointer": pointer}
+
+
+def _transform_refusal_leads(events, authority, *, root, run_id):
+    """Locate existing action/source records without copying source or digest lists."""
+    providers, parents, leads = {}, {}, []
+    for event in events:
+        payload = event["payload"]
+        if event["kind"] == "provider_turn_completed":
+            providers[payload["turn"]] = event
+        if event["kind"] != "author_actions_resolved":
+            continue
+        actions = payload.get("actions")
+        if not isinstance(actions, list):
+            raise ValueError("retained author actions differ")
+        # Same-turn candidates are never parents of this Turn's transforms.
+        current = {}
+        for index, action in enumerate(actions):
+            if not isinstance(action, dict) or action.get("ordinal") != index:
+                raise ValueError("retained author action index differs")
+            candidate = action.get("candidate_sha256")
+            if candidate is not None:
+                current[candidate] = _event_locator(event, f"/payload/actions/{index}/objects")
+                continue
+            if action.get("kind") != "transform":
+                continue
+            if any(not isinstance(action.get(key), str) for key in ("reason", "message")):
+                raise ValueError("retained transformation refusal differs")
+            parent = action.get("parent")
+            transformation = action.get("transformation")
+            if any(value is not None and not isinstance(value, str) for value in (parent, transformation)):
+                raise ValueError("retained transformation names differ")
+            source_locators = []
+            provider = providers.get(payload["turn"])
+            if provider is not None:
+                for ordinal, reference in enumerate(provider["payload"].get("objects", [])):
+                    role = reference.get("role")
+                    if role in {"provider_source_file", "provider_submission_envelope",
+                                f"candidate_submission_{index:04d}"}:
+                        source_locators.append({"role": role,
+                            **_event_locator(provider, f"/payload/objects/{ordinal}")})
+            parent_locator = parents.get(parent)
+            if isinstance(parent, str) and parent.startswith("baseline:"):
+                name = parent.removeprefix("baseline:")
+                if name in authority.get("reference_inputs", {}).get("baseline_programs", {}):
+                    escaped = name.replace("~", "~0").replace("/", "~1")
+                    parent_locator = {"file": f"runs/{run_id}/authority.json",
+                        "json_pointer": f"/authority/reference_inputs/baseline_programs/{escaped}"}
+            leads.append({"evidence_root": str(root), "run_id": run_id,
+                "event_sequence": event["sequence"], "event_kind": event["kind"],
+                "turn": payload["turn"], "action_index": index, "parent": parent,
+                "transformation": transformation, "reason": action["reason"],
+                "message": action["message"], "triage_owner": _transform_triage_owner(action["reason"]),
+                "action_locator": _event_locator(event, f"/payload/actions/{index}"),
+                "submission_locators": source_locators, "parent_locator": parent_locator})
+        parents.update(current)
+    return leads
+
+
+def summarize(roots, *, compiler_gaps: bool = False) -> dict[str, object]:
     """Archive integrity is checked; counts are archived decisions, not new findings.
 
     Semantic replay remains owned by each Campaign's pinned Executor. Custody is
@@ -22,6 +104,8 @@ def summarize(roots) -> dict[str, object]:
     """
     groups = {}
     runs = []
+    gaps = []
+    transform_refusals = []
     seen = {}
     for root in sorted({Path(value).resolve(strict=True) for value in roots}):
         evidence = EvidenceStore.open(root)
@@ -50,7 +134,11 @@ def summarize(roots) -> dict[str, object]:
             group = groups.setdefault(key, {**provenance, "counts": Counter(), "run_count": 0})
             group["run_count"] += 1
             counts = Counter()
-            for event in evidence.replay_events(audit.run_id):
+            events = evidence.replay_events(audit.run_id)
+            if compiler_gaps:
+                transform_refusals.extend(_transform_refusal_leads(
+                    events, authority, root=root, run_id=audit.run_id))
+            for event in events:
                 if event["kind"] not in {"candidate_rejected", "diagnosis_routed"}:
                     continue
                 payload = event["payload"]
@@ -60,25 +148,65 @@ def summarize(roots) -> dict[str, object]:
                 # Rejections and set-level collapse/ranking diagnoses are distinct
                 # occurrences. Preserve their kind rather than inventing a combined total.
                 counts[f"{event['kind']}:{destination}"] += 1
+                if compiler_gaps and event["kind"] == "candidate_rejected":
+                    feedback = payload.get("feedback", {})
+                    if not isinstance(feedback, dict):
+                        raise ValueError("retained Compiler gap feedback differs")
+                    findings = feedback.get("findings", [])
+                    if not isinstance(findings, list):
+                        raise ValueError("retained Compiler gap findings differ")
+                    known_backend = [item for item in findings if isinstance(item, dict)
+                                     and item.get("code") in BACKEND_LOWERING_GAP_CODES
+                                     and item.get("blocks_lowering") is True]
+                    if destination in {"backend_lowering", "backend_triage", "ir_vocabulary"} or known_backend:
+                        # A candidate may also violate an acceptance rule. Its backend
+                        # gap remains visible, but cannot justify implementing this
+                        # particular Schedule as if it had passed admission.
+                        relevant = (findings if destination != "candidate" else known_backend)
+                        gaps.append({
+                            "evidence_root": str(root), "run_id": audit.run_id,
+                            "event_sequence": event["sequence"], "destination": destination,
+                            "candidate_admission_blocked": any(
+                                isinstance(item, dict) and item.get("blocks_acceptance")
+                                for item in findings),
+                            "findings": [{"code": item.get("code"), "path": item.get("path")}
+                                         for item in relevant if isinstance(item, dict)],
+                        })
             group["counts"].update(counts)
             runs.append({"root": str(root), "run_id": audit.run_id,
                          "campaign_id": authority.get("campaign_id"),
                          "archive_integrity": True,
                          "filesystem_custody_verified": audit.filesystem_custody_verified,
                          "counts": dict(sorted(counts.items()))})
-    return {"schema_version": 1,
+    result = {"schema_version": 1,
             "domain": "archive-integrity-checked retained diagnosis counts; no semantic reclassification or promotion",
             "semantic_replay": "use each Campaign's pinned Executor audit",
             "groups": [{**groups[key], "counts": dict(sorted(groups[key]["counts"].items()))}
                        for key in sorted(groups)], "runs": runs}
+    if compiler_gaps:
+        result["compiler_gap_domain"] = (
+            "retained routes plus current Compiler code hints for co-occurring blocking gaps; "
+            "leads for agent curation, not a replay decision or capability claim"
+        )
+        result["compiler_gaps"] = gaps
+        result["transform_refusal_domain"] = (
+            "retained transformation refusals with current reason-based triage hints; "
+            "separate from Compiler gap counts, not backend/IR defects or Findings. "
+            "Inspect the pinned action, parent Program and source; an unknown or absent "
+            "locator is unresolved evidence, not permission to substitute another Run."
+        )
+        result["transform_refusals"] = transform_refusals
+    return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("evidence_roots", nargs="+", type=Path)
+    parser.add_argument("--compiler-gaps", action="store_true",
+                        help="list retained Compiler gaps and separate transformation-refusal triage leads")
     args = parser.parse_args()
     try:
-        result = summarize(args.evidence_roots)
+        result = summarize(args.evidence_roots, compiler_gaps=args.compiler_gaps)
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.exit(1, f"diagnosis summary refused: {error}\n")
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))

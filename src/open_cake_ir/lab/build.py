@@ -10,6 +10,7 @@ from hashlib import sha256
 from typing import Mapping, Protocol, Callable
 
 from open_cake_ir.compiler import Finding, FindingCategory, FindingSeverity
+from open_cake_ir.compiler.target import CodeObject
 from open_cake_ir.compiler.toolchain import (project_triton_kernel, triton_route,
                                              validate_triton_kernel)
 from open_cake_ir.evaluation import LaunchableCandidate
@@ -94,7 +95,8 @@ def invoke_compiler(request, *, compiler, variant, operation):
     return request.compilation(request, compiler=compiler, variant=variant, operation=operation)
 
 
-def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> int:
+def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int, *, codegen_arch=None,
+                     kernel_name=None) -> int:
     """Pointers the kernel takes beyond the Workload's tensors, from the kernel itself."""
     if route.gpu_backend == "cuda":
         # Triton's two CUDA scratch pointers, the count every retained CUDA manifest
@@ -102,10 +104,14 @@ def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> i
         # relation on a path nothing has reported a problem with.
         return 2
     if route.gpu_backend == "maca":
-        from open_cake_ir.compiler.metax_toolchain import pointer_parameters
+        from open_cake_ir.compiler.metax_toolchain import pointer_parameters, native_pointer_parameters
         if pointer_parameters(stages[route.text_role]) != tensor_count:
             raise ValueError("MACA kernel arguments differ from the Workload tensors")
-        return 0
+        native = native_pointer_parameters(stages[route.binary_role], codegen_arch, kernel_name)
+        hidden = native - tensor_count
+        if hidden not in (0, 2):
+            raise ValueError("MACA native launcher scratch pointer count is unqualified")
+        return hidden
     if route.gpu_backend != "hip":
         raise ValueError(f"no kernel argument inspector is registered for {route.gpu_backend!r}")
     from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
@@ -183,8 +189,6 @@ class TritonToolchainBuilder:
     def build_stage(self, request: BuildRequest, tensor_abi):
         """Build a Program stage without inventing a stage Workload or oracle."""
         from dataclasses import replace
-        if self._pointer_alignment is not None:
-            raise ValueError('Program stages do not yet admit alignment dispatcher variants')
         return self.build(replace(request, tensor_abi=tuple(tensor_abi)))
 
 
@@ -218,7 +222,8 @@ def seal_triton_compilation(request,compilation,*,workload,case_id):
         # uninitialized kernarg memory. The CUDA route keeps its own literal, which
         # every retained CUDA manifest has replayed through.
         "hidden_null_pointer_parameters": _hidden_pointers(
-            route, stages, len(request.tensor_abi if request.tensor_abi is not None else workload.tensor_abi(case_id))),
+            route, stages, len(request.tensor_abi if request.tensor_abi is not None else workload.tensor_abi(case_id)),
+            codegen_arch=requirements.get('codegen_arch'), kernel_name=kernel_name),
     }
     if requirements.get('pointer_alignments'):
         launch['pointer_alignments'] = dict(requirements['pointer_alignments'])
@@ -241,6 +246,13 @@ def seal_triton_compilation(request,compilation,*,workload,case_id):
         **{role: stages[role] for role in route.artifact_roles if role != "source"},
         "launch_manifest": manifest_bytes,
     }
+    if route.code_object is CodeObject.MCFATBIN:
+        from open_cake_ir.compiler.metax_toolchain import native_allocation
+        report = native_allocation(stages['mcfatbin'], requirements['codegen_arch'], kernel_name)
+        payloads['toolchain_resource_report'] = canonical_json_bytes({
+            **report, 'target': request.target,
+            'launch': {'threads_per_cta': compilation.threads_per_cta,
+                       'dynamic_shared_bytes': compilation.dynamic_shared_bytes}})
     if request.tensor_abi is not None:
         payloads['stage_compilation'] = canonical_json_bytes({
             'schema_version': 1, 'kind': 'triton_stage_compilation',
@@ -260,6 +272,33 @@ def seal_triton_compilation(request,compilation,*,workload,case_id):
         launch_spec_sha256=sha256(manifest_bytes).hexdigest(),
         artifact_payloads=payloads,
     )
+
+
+def compiled_allocation_feedback(launchable):
+    """Project a sealed native report; do not interpret absent allocation as zero."""
+    from open_cake_ir.evaluation.platforms import platform_for
+    from open_cake_ir.compiler.target import declared_target
+    target=declared_target(launchable.target)
+    if platform_for(target).code_object is not CodeObject.MCFATBIN:
+        return {}
+    payload = launchable.artifact_payloads.get('toolchain_resource_report')
+    if payload is None:
+        return {'compiled_allocation': {'kind':'compiled_allocation_unavailable',
+                'reason':'Toolchain supplied no native allocation observation.'}}
+    report = json.loads(payload)
+    if not isinstance(report,dict):
+        raise ValueError('sealed native allocation report is not an object')
+    from open_cake_ir.compiler.metax_toolchain import native_allocation
+    manifest=TensorLaunchManifest.from_dict(json.loads(launchable.artifact_payloads['launch_manifest']))
+    if manifest.target != target.target_id or tuple(manifest.block[1:]) != (1,1):
+        raise ValueError('sealed native allocation launch target or thread block differs')
+    expected={**native_allocation(launchable.artifact_payloads['mcfatbin'],target.architecture,
+                                 manifest.kernel_name),
+              'target':launchable.target,'launch':{'threads_per_cta':manifest.block[0],
+                         'dynamic_shared_bytes':manifest.dynamic_shared_memory_bytes}}
+    if report != expected or launchable.entry_point != manifest.kernel_name:
+        raise ValueError('sealed native allocation report differs from its binary or launch')
+    return {'compiled_allocation': report}
 
 
 def _ptxas_finding_rows(

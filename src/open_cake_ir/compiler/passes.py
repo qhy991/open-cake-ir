@@ -61,10 +61,10 @@ def _whole_dimension(index, dimension: int) -> bool:
             and index.offset == 0 and index.extent is None)
 
 
-# Where the launch-width rewrite has been measured: B200 and B300 under the Triton
+# Where the launch-width rewrite has been qualified: B200, B300 and gfx938 under the Triton
 # route. An applicability set the pass declares, not a capability the Target does;
 # widening it is a qualification act on the added target.
-_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a'})
+_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a', 'gfx938'})
 
 
 def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
@@ -88,11 +88,13 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         if not assessed.lowering_eligible:
             return refused('input_refused', ', '.join(f.code for f in assessed.findings
                 if f.blocks_lowering or f.blocks_acceptance))
-        s = Schedule.from_dict(copied)
+        s = assessed.typed_schedule
+        if s is None:
+            return refused('input_refused', 'Eligible assessment has no typed Schedule.')
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', str(error))
     if s.lowering.backend is not LoweringBackend.TRITON or s.target not in _WARP_SPECIALIZATION_EVIDENCE:
-        return refused('target_route', 'This specialization has bounded NVIDIA Triton evidence only.')
+        return refused('target_route', 'This specialization requires a target with retained launch-width qualification.')
     maximum = compiler._revision.targets[s.target].resource_limits.maximum_warps_per_cta
     if num_warps > maximum:
         return refused('warp_count', f'Target {s.target} admits at most {maximum} warps per CTA.')
@@ -101,16 +103,29 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         return refused('result_identity', 'A distinct Schedule id and valid entry point are required.')
     if (len(s.roles) != 1 or s.roles[0].execution_groups != tuple(range(len(s.roles[0].execution_groups)))
         or s.roles[0].registers_per_thread is not None or s.residency is not None
-        or s.allocations or s.pipelines or s.barriers or s.tile_loops
+        or s.allocations or s.pipelines or s.barriers
         or s.program_map is None or s.program_map.persistent
         or any(op.waits or op.signals or op.pipeline for op in s.operations)
         or any(b.space not in {MemorySpace.GLOBAL, MemorySpace.REGISTER}
                or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
-               or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent for b in s.buffers)):
-        return refused('execution_commitments', 'Require one zero-based role without explicit storage, loop, synchronization or residency commitments.')
+               or b.stages != 1 or b.swizzle or b.scale_of for b in s.buffers)):
+        return refused('execution_commitments', 'Require one zero-based role without explicit storage, synchronization or residency commitments.')
+    if s.tile_loops:
+        by_id = {op.op_id: op for op in s.operations}
+        if (len(s.tile_loops) != 1
+                or s.tile_loops[0].stop is not None
+                or s.tile_loops[0].range_options.warp_specialize
+                or not any(by_id[name].kind is OperationKind.MMA for name in s.tile_loops[0].body)
+                or any(by_id[name].kind not in {OperationKind.LOAD, OperationKind.CAST, OperationKind.MMA}
+                       for name in s.tile_loops[0].body)
+                or any(by_id[name].kind is OperationKind.CAST and
+                       (by_id[name].parameters.to is not DType.FP32
+                        or s.buffer(by_id[name].reads[0]).dtype not in {DType.FP16, DType.BF16, DType.FP32})
+                       for name in s.tile_loops[0].body)):
+            return refused('loop_domain', 'Only one sequential load/FP32-widen/MMA loop is admitted; its body and trip count stay unchanged.')
     if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
-                          OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
-        return refused('operation_domain', 'Only pure tensor arithmetic, CTA reductions and ordinary loads/stores are admitted.')
+                          OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
+        return refused('operation_domain', 'Only pure tensor arithmetic, MMA, CTA reductions and ordinary loads/stores are admitted.')
     if num_warps == len(s.roles[0].execution_groups):
         return refused('unchanged', 'The requested width is already declared.')
     copied['schedule_id'] = schedule_id
@@ -152,14 +167,15 @@ def _whole_row(schedule: Schedule, op: str, buffer: str, axis: str) -> bool:
 def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Mapping, *,
                            private_intermediate: str, schedule_id: str,
                            entry_point: str) -> FusionResult:
-    """Fuse one row-owned, low-precision materialization into a unary epilogue.
+    """Fuse one row-owned materialization into a unary epilogue.
 
     This transforms the explicit composition epilogue(producer(inputs)); it cannot
     prove absence of consumers in an unseen graph. The caller must select a private
     intermediate and later bind the composed Workload. Neither source is mutated.
     Only direct-global Triton, one matching role/grid, no loops/state/synchronization,
-    an explicit BF16/FP16 producer cast and a whole-row unary epilogue are admitted.
-    FP32 materialization is refused: an identity cast is not a rounding barrier.
+    a whole-row unary epilogue, and either an explicit BF16/FP16 producer cast or
+    a pure FP32 load/store copy are admitted. FP32 arithmetic materialization is
+    refused: an identity cast is not a rounding barrier.
     """
     originals = []
     typed = []
@@ -171,7 +187,9 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
                 return _refuse('input_refused', f'{label}: ' + ', '.join(
                     f.code for f in assessed.findings if f.blocks_lowering or f.blocks_acceptance))
             originals.append(copied)
-            typed.append(Schedule.from_dict(copied))
+            if assessed.typed_schedule is None:
+                return _refuse('input_refused', f'{label}: eligible assessment has no typed Schedule.')
+            typed.append(assessed.typed_schedule)
         except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
             return _refuse('input_refused', f'{label}: {error}')
     p, e = typed
@@ -201,8 +219,8 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
             or ep_input.shape != middle.shape or ep_input.dtype != middle.dtype
             or ep_output.shape != middle.shape):
         return _refuse('intermediate_abi', 'Both stages must agree on the full rank-2 intermediate and output shape.')
-    if middle.dtype not in {DType.BF16, DType.FP16}:
-        return _refuse('rounding_boundary', 'Only an explicit BF16/FP16 rounding seam is preserved; FP32 store/load fusion is not admitted.')
+    if middle.dtype not in {DType.BF16, DType.FP16, DType.FP32}:
+        return _refuse('rounding_boundary', 'Require an explicit BF16/FP16 rounding seam or a pure FP32 copy.')
     pa, ea = _row_axis(p, middle.shape[0]), _row_axis(e, middle.shape[0])
     if pa is None or ea is None:
         return _refuse('row_ownership', 'Each stage must own one complete row per program.')
@@ -229,10 +247,24 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
     bridge, loaded = p.buffer(store.reads[0]), e.buffer(load.writes[0])
     definitions = [op for op in p.operations if bridge is not None and bridge.name in op.writes]
     if (bridge is None or loaded is None or len(definitions) != 1
-            or definitions[0].kind is not OperationKind.CAST
-            or definitions[0].parameters.to != middle.dtype
             or bridge.dtype != middle.dtype or bridge.shape != (middle.shape[1],)
             or loaded.dtype != bridge.dtype or loaded.shape != bridge.shape):
+        return _refuse('rounding_boundary', 'The forwarded register value must preserve the full intermediate dtype and row shape.')
+    definition = definitions[0]
+    if middle.dtype is DType.FP32:
+        # Removing a plain memory copy cannot join arithmetic across a FP32
+        # rounding seam. A cast, scaling operation or unused arithmetic is not
+        # evidence for this narrow domain and remains refused.
+        copied_input = p.buffer(definition.reads[0]) if definition.reads else None
+        if (len(p.operations) != 2 or p.operations[0] != definition
+                or definition.kind is not OperationKind.LOAD or len(definition.reads) != 1
+                or copied_input is None or copied_input.mode is not BufferMode.INPUT
+                or copied_input.space is not MemorySpace.GLOBAL
+                or copied_input.dtype is not DType.FP32 or copied_input.shape != middle.shape
+                or not _whole_row(p, definition.op_id, copied_input.name, pa.name)):
+            return _refuse('rounding_boundary', 'FP32 fusion admits a pure whole-row load/store copy only; arithmetic materialization keeps its rounding seam.')
+    elif (definition.kind is not OperationKind.CAST
+            or definition.parameters.to != middle.dtype):
         return _refuse('rounding_boundary', 'The forwarded value must be the explicit low-precision cast result, not its pre-round input.')
     # Reject hidden global arguments: every surviving global is a public input or output.
     if any(b.space is MemorySpace.GLOBAL and b.mode not in {BufferMode.INPUT, BufferMode.OUTPUT}
@@ -286,7 +318,9 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
     if not assessed.lowering_eligible:
         return _refuse('result_refused', ', '.join(f.code for f in assessed.findings
             if f.blocks_lowering or f.blocks_acceptance))
-    return FusionResult(assessed, 'applied', 'Removed one intermediate global store and reload; preserved the explicit low-precision cast. No performance qualification is implied.')
+    seam = 'the pure FP32 copy value' if middle.dtype is DType.FP32 else 'the explicit low-precision cast'
+    return FusionResult(assessed, 'applied',
+        f'Removed one intermediate global store and reload; preserved {seam}. No performance qualification is implied.')
 
 
 def specialize_output_columns(compiler: Compiler, schedule: Mapping, *,
@@ -320,7 +354,9 @@ def specialize_output_columns(compiler: Compiler, schedule: Mapping, *,
             return refused('input_refused', ', '.join(f.code for f in blockers))
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', f'{error}')
-    s = Schedule.from_dict(copied)
+    s = assessed.typed_schedule
+    if s is None:
+        return refused('input_refused', 'Eligible assessment has no typed Schedule.')
     if (not isinstance(schedule_id, str) or not schedule_id or schedule_id == s.schedule_id
             or not isinstance(entry_point, str) or not entry_point):
         return refused('result_identity', 'The candidate needs a new nonempty Schedule id and entry point.')

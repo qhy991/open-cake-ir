@@ -34,8 +34,10 @@ from .solx_fib import gemm as solx_fib_gemm
 from .solx_fib import workload as solx_fib_math
 from .solx_fib.authoring import starter_source as solx_fib_starter_source
 from .tinygemm import reproduction as tinygemm_reproduction
+from . import metax_fp8_gemm
 
 _TASKS = {
+    metax_fp8_gemm.OPERATOR: (metax_fp8_gemm.validate_contract, WorkloadContract),
     tinygemm_reproduction.OPERATOR: (tinygemm_reproduction.validate_contract, WorkloadContract),
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
@@ -106,6 +108,8 @@ def load_workload(path) -> WorkloadContract:
 def _tensor_math(workload: WorkloadContract):
     """Task-owned routing for the common tensor Evaluation input/oracle interface."""
     operator = workload.document["operator"]
+    if operator == metax_fp8_gemm.OPERATOR:
+        return metax_fp8_gemm
     if operator == tinygemm_reproduction.OPERATOR:
         return tinygemm_reproduction
     if operator == add_rmsnorm.TASK:
@@ -202,6 +206,13 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
     of which case is selected for authoring; all five have the same tensor ABI. GEMM
     owns a third extent because its output column count is unrolled by the Schedule.
     """
+    if task_name == metax_fp8_gemm.TASK:
+        if (backend != "triton-metax" or type(rows) is not int or rows != 64
+                or type(columns) is not int or columns != 64
+                or depth is not None and (type(depth) is not int or depth != 64)):
+            raise ValueError("MetaX FP8 GEMM requires triton-metax and fixed M=N=K=64")
+        document = metax_fp8_gemm.workload_document()
+        return document, metax_fp8_gemm.starter_source(WorkloadContract(document), case_id)
     if task_name in aka_v3_math.LAUNCHABLE_TASKS:
         name = aka_v3_math.LAUNCHABLE_TASKS[task_name]
         if any(type(value) is not int or value <= 0 for value in (rows, columns)):
@@ -212,6 +223,8 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
                       if name == "gemm_nt_bias" else
                       {"source_rows": rows, "output_rows": rows, "columns": columns}
                       if name == "row_gather" else
+                      {"elements": rows, "bins": columns} if name == 'histogram' else
+                      {"batch": rows, "channels": columns} if name == 'max_pool1d' else
                       {"elements": rows * columns}
                       if name == "momentum_sgd" else {"rows": rows, "columns": columns})
         document = aka_v3_math.workload_document(name, backend=backend, **dimensions)

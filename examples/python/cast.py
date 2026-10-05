@@ -3,7 +3,6 @@ from open_cake_ir.compiler import frontend as cake
 
 @cake.schedule(name="cast-b8-smoke-v1", target="sm_100a", backend="triton",
                entry_point="cake_cast_b8_smoke",
-               metadata={"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
                residency={"ctas_per_multiprocessor": 4, "registers_per_thread": 64})
 def cast(lm, x: cake.Tensor((8, 128), "bf16"), y: cake.Tensor((8, 128), "fp32", mode="output")):
     compute = lm.role(execution_groups=[0, 1, 2, 3])

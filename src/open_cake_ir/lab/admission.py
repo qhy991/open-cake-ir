@@ -29,13 +29,14 @@ from .provider_policy import provider_configuration, provider_harness
 
 def validate_provider(*, open_cake, policy, project_root, study):
     """Matched-Study input policy; runtime qualification has an independent owner."""
-    provider = _object(open_cake.get('provider'), 'study.arms.provider')
     claim_scope = str(study.document['claim_scope'])
-    configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
-    validate_provider_binding(provider=provider, project_root=project_root,
-        expected_provider_configuration=configuration,
-        admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
-        require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
+    for name, arm in study.document['arms'].items():
+        provider = _object(arm.get('provider'), f'study.arms.{name}.provider')
+        configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
+        validate_provider_binding(provider=provider, project_root=project_root,
+            expected_provider_configuration=configuration,
+            admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
+            require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
     return claim_scope
 
 
@@ -74,6 +75,12 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
         "study.arms.provider.qualification.path",
     )
     qualification = ProviderQualificationReceipt.load(qualification_path)
+    from .author_home import ISOLATED_AUTH_ONLY_V1
+    if (provider.get('author_home_policy') == ISOLATED_AUTH_ONLY_V1
+        and (qualification.system_skills_sha256 is None
+             or provider.get('system_skills_sha256')
+             != qualification.system_skills_sha256)):
+        raise ValueError('Provider system skills differ from the qualified author home')
     expected_configuration_sha256 = sha256(
         _canonical_json_bytes(expected_provider_configuration)).hexdigest()
     expected_qualification = {
@@ -170,6 +177,21 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
             != sha256(_canonical_json_bytes(anchor)).hexdigest()
         ):
             raise ValueError("provider qualification anchor evidence differs")
+    if provider.get('isolation_policy') is not None:
+        if qualification.scope == 'zero_gpu_contract_fixture_only':
+            raise ValueError('isolated Claude scientific authoring requires live isolation evidence')
+        from open_cake_ir.evidence import EvidenceStore
+        retained = EvidenceStore.open(anchor['evidence_root'])
+        audit = retained.audit_run(anchor['run_id'])
+        if (not audit.archive_integrity or not audit.filesystem_custody_verified
+            or audit.terminal_seal_sha256 != anchor['terminal_seal_sha256']):
+            raise ValueError('Claude isolation qualification evidence is unverified')
+        probes = [e['payload']['observation'] for e in retained.replay_events(anchor['run_id'])
+                  if e['kind'] == 'provider_read_isolation_observed']
+        from .claude_isolation import validate_probe_observation
+        if not probes:
+            raise ValueError('Claude isolation qualification lacks its actual OS probe')
+        for observation in probes: validate_probe_observation(observation)
     for field in (("output_schema",) if provider_harness(provider) == "codex" else ()):
         reference = _object(provider.get(field), f"study.arms.provider.{field}")
         if set(reference) != {"path", "sha256"}:
@@ -190,11 +212,19 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
     return qualification
 
 
-def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,baseline_lowering,manifest_parser):
-    """One owner for the selected baseline's source, launch and incumbent relation."""
+def admit_paired_baseline_artifact(*, project_root, workload, evaluation, execution, route):
+    """Admit one sealed opponent and its existing selection policy.
+
+    Return whether the selected opponent may be independent of current starter
+    emission. CUBIN keeps its existing source/launch/ABI checks with the caller;
+    author route identity is not evidence of an old binary's argument contract.
+    This software check establishes no successor device or measurement readiness.
+    """
     fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
     sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
-    validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+    manifests = validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+    if fixed['candidate'] != candidate_identity(sealed_baseline):
+        raise ValueError('fixed baseline identity differs from its sealed artifact')
     selection = fixed.get('selection')
     incumbent_baseline = False
     if selection is not None:
@@ -203,13 +233,46 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
             case_id=str(evaluation['case_id']), backend=str(route['backend']),
             evaluation_protocol=evaluation,
         )
-    if fixed['candidate'] != candidate_identity(sealed_baseline):
-        raise ValueError('fixed baseline identity differs from its sealed artifact')
-    if incumbent_baseline:
-        # Its complete executable contract was audited before promotion and its
-        # exact current registry identity and Workload ABI were checked above.
-        # It may be a Program or native kernel, independent of the starter source.
+    explicit = selection is not None and selection['policy'] == 'explicit_fixed_bundle'
+    independent_explicit = False
+    if explicit:
+        from open_cake_ir.compiler.target import CodeObject
+        _, target_path = source_reference_path(project_root,
+            f'compiler/targets/{workload.target}.json', 'paired baseline target')
+        target = Target.load(target_path)
+        independent_explicit = target.code_object in {
+            CodeObject.MCFATBIN, CodeObject.HSACO, CodeObject.METAL_BINARY_ARCHIVE}
+        # Retain the native argument/family checks for the two inspected binary
+        # formats. Their facts come from this Target and this sealed artifact, not
+        # from the successor Compiler's new launch shape or source.
+        if not sealed_baseline.is_program and target.code_object in {CodeObject.MCFATBIN, CodeObject.HSACO}:
+            from open_cake_ir.compiler.backends.triton import target_route_facts
+            facts = {'target': target.target_id, **target_route_facts(target)}
+            manifest = manifests['baseline']
+            native_route = triton_route(facts)
+            if not {native_route.text_role, native_route.binary_role} <= set(sealed_baseline.artifact_payloads):
+                raise ValueError('fixed baseline lacks native argument inspection artifacts')
+            expected_hidden = _hidden_pointers(native_route, sealed_baseline.artifact_payloads,
+                len(manifest.tensor_abi), codegen_arch=facts.get('codegen_arch'),
+                kernel_name=manifest.kernel_name)
+            if manifest.hidden_null_pointer_parameters != expected_hidden:
+                raise differs('fixed baseline hidden pointer commitments differ',
+                    expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters)
+    return sealed_baseline, bool(incumbent_baseline or independent_explicit)
+
+
+def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,baseline_lowering,manifest_parser):
+    """One owner for the selected baseline's source, launch and incumbent relation."""
+    fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
+    sealed_baseline, independent = admit_paired_baseline_artifact(
+        project_root=project_root, workload=workload, evaluation=evaluation,
+        execution=execution, route=route)
+    if independent:
+        # The current incumbent or an explicitly selected fixed bundle can differ
+        # from the current starter. Neither selection grants author reference access.
         return
+    if baseline_lowering is None:
+        raise ValueError('starter baseline requires the frozen Compiler lowering')
     requirements = baseline_lowering.toolchain_requirements
     source = sealed_baseline.artifact_payloads.get('lowered_source')
     if source is None:
@@ -239,7 +302,9 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
         if route["backend"] == "triton":
             expected_hidden = _hidden_pointers(
                 triton_route(requirements), sealed_baseline.artifact_payloads,
-                len(workload.tensor_abi(str(evaluation['case_id']))))
+                len(workload.tensor_abi(str(evaluation['case_id']))),
+                codegen_arch=requirements.get('codegen_arch'),
+                kernel_name=requirements['kernel_entry_point'])
         else:
             expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
         if manifest.hidden_null_pointer_parameters != expected_hidden:
@@ -357,11 +422,17 @@ def validate_evaluation(
 
 
 def admit_run_inputs(specification, *, project_root, workload_loader):
-    """The complete Run dependency boundary, before provider/Evidence side effects."""
+    """The complete Run dependency boundary, before provider/Evidence side effects.
+
+    Sealed opponent and selection admission is common to both entry paths. Source
+    equality, when independent admission is not granted, remains with task
+    preparation and legacy Study preflight, which own the current baseline
+    Schedule. This boundary retains its existing sealed-bundle/ABI scope; it does
+    not independently prove a CUBIN's source or hidden-pointer contract.
+    """
     from .executor import ExecutorRevision
     from .provider_policy import execution_configuration
-    from .bindings import load_baseline_bundle
-    from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates, validation_case_ids, paired_protocol
+    from open_cake_ir.evaluation.paired import validation_case_ids, paired_protocol
 
     from .bindings import _resolve_compiler_reference
     from .reference_access import validate_reference_handoff
@@ -388,12 +459,13 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if validation_case_ids(protocol) != tuple(workload.case_ids):
             raise ValueError('Run evaluation omits Workload validation cases')
     if paired_protocol(protocol) is not None:
-        fixed = _object(execution.get('fixed_baseline'), 'run.execution.fixed_baseline')
-        baseline = load_baseline_bundle(project_root, fixed.get('bundle_path'))
-        if candidate_identity(baseline) != fixed.get('candidate'):
-            raise ValueError('Run baseline artifact differs from its frozen selection')
-        validate_pair_candidates(baseline, baseline, workload, protocol['case_id'])
-    validate_reference_handoff(project_root, {'author': authoring})
+        baseline_route = authoring.get('lowering_route')
+        if baseline_route is None:
+            from .toolchains import toolchain_for_arm
+            baseline_route = {'backend': toolchain_for_arm(specification.environment_kind).backend.value}
+        admit_paired_baseline_artifact(project_root=project_root, workload=workload,
+            evaluation=protocol, execution=execution, route=baseline_route)
+    validate_reference_handoff(project_root, {'author': authoring}, workload=workload, case_id=protocol['case_id'])
     from .python_reference import read_skeleton_reference
     for name in ('scaffold', * (('launch_contract', 'candidate_skeleton') if specification.environment_kind == 'direct_cuda' else ())):
         reference = _object(authoring.get(name), f'run.authoring.{name}')
@@ -403,9 +475,28 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if sha256(path.read_bytes()).hexdigest() != reference['sha256']:
             raise ValueError(f'Run {name} bytes differ')
     if specification.environment_kind == 'open_cake':
-        _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
-        if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
-            raise ValueError('Run Schedule skeleton target or lowering route differs')
+        python_clean_start = (authoring.get('reference_access') == 'clean_start'
+                              and authoring.get('input_format') == 'python_source_v1')
+        if python_clean_start:
+            starter_reference = _object(authoring.get('python_starter'),
+                'run.authoring.python_starter')
+            if set(starter_reference) != {'path'}:
+                raise ValueError('Python clean-start Run reference fields differ')
+            _, starter_path = source_reference_path(project_root,
+                starter_reference['path'], 'run.authoring.python_starter')
+            if starter_path.suffix != '.py':
+                raise ValueError('Python clean-start Run requires a .py starter')
+        else:
+            if authoring.get('input_format') == 'python_source_v1':
+                starter_reference = _object(authoring.get('schedule_skeleton'),
+                    'run.authoring.schedule_skeleton')
+                _, starter_path = source_reference_path(project_root,
+                    starter_reference.get('path'), 'run.authoring.schedule_skeleton')
+                if starter_path.suffix != '.py':
+                    raise ValueError('Python-only Run requires a .py Schedule starter')
+            _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
+            if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
+                raise ValueError('Run Schedule skeleton target or lowering route differs')
     for name, reference in document['reference_inputs'].items():
         if name == 'baseline_programs':
             continue

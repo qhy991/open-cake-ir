@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-26-002",
+  "date": "2026-09-26",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@435b1a3c6005fd7151b60137b3f75bb320685cd5",
+  "executor_revision": "not applicable: standalone C550-2 MCPTI diagnostic under clean host source 2fbb270039d9b315282abc1190f3f1a8b0feac72; no sealed Workload candidate or Executor receipt",
+  "title": "FP64 K reduction is a promising C550 FP8 accuracy route but has no Cake vocabulary or formal Workload qualification",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "evidence": {
+    "one_row_compile_and_device": "open-cake-ir-evidence/metax-fp8-fp64-reduction-20260926/c5502-triton36/ and c5501-triton31/",
+    "one_row_device_job": "maca-d52933c85e85",
+    "paired_failed_quality": "open-cake-ir-evidence/metax-fp8-fp64-vs-compensated-20260926/attempt1/",
+    "paired_quality_passed": "open-cake-ir-evidence/metax-fp8-fp64-vs-compensated-20260926-v2/attempt2/",
+    "paired_job": "maca-fa47df57195d",
+    "two_row_offline_and_admission": "open-cake-ir-evidence/metax-fp8-fp64-m2-20260926/c5501-triton31/ and c5502-attempt1/",
+    "public_frontend_probe": "open-cake-ir-evidence/metax-fp8-fp64-ir-gap-20260926/result.json and candidate.py",
+    "frozen_reference": "open-cake-ir-evidence/metax-parity-20260920/fp8-compensated-prepared-6d997c3d-v1/fp8_compensated_fp32_tensor/spec.json"
+  },
+  "observation": "A standalone one-row Triton source decodes E4M3FN inputs to FP32, forms FP32 products, reduces K in FP64 and rounds the result to FP32. It compiled to native xcore1000 mcfatbin on C550-1 Triton 3.1 and C550-2 Triton 3.6. C550-2 broker job maca-d52933c85e85 matched all 20480 words of the original five frozen outputs plus 4096 words from the first plain-sum held-out failure matrix bitwise, with unchanged FP8 input bytes. A first same-source 10-pair MCPTI run retained all raw activity but failed the predeclared maximum CV 0.05 in one candidate cohort (0.052775); it is not a valid speedup. A fresh create-only successor, job maca-fa47df57195d, passed the quality gate, 10/10 pair wins and A/A close_null: the FP64 candidate and one-row compensated baseline pooled medians were 6.144 and 31.232 us, with 250 valid samples per arm. Repository dispatch_samples and derive_paired_timing independently replayed all 28 activity cohorts. This remains a local_serialized directional diagnostic with external GPU activity not excluded, not a registered Workload Evaluation or general performance qualification. A two-row FP64 variant compiled on both versions, but its only device attempt was refused as maca_broker_busy before any kernel call. At the clean current Compiler commit, an explicit Cake cast to fp64 is refused at the frontend because DType admits only bf16, fp16, fp32, fp8_e4m3 and int32. Thus there is no current Cake source for this internal precision route.",
+  "proposed_change": "Do not add FP64 buffers or hide an FP64 accumulator inside the existing compensated contract from this diagnostic. First register the fixed FP8 matrix Workload with the independent high-precision reference and held-out finite distributions, seal both candidates under one exact C550 runtime, and repeat correctness plus paired MCPTI confirmation. If FP64 precision and latency remain necessary, decide whether an explicit reduction-accumulator precision contract or a fully typed FP64 DType is the smaller stable owner; carry construction typing, effects, dataflow, resource/cost analyses, backend emission and refusals, Corpus counterexamples, and the exact host/toolchain requirements in the same reviewed Compiler change. A new Target capability must be based on that route's device evidence, not on successful standalone compilation alone.",
+  "principles": "P1/P3 require one canonical way to name internal reduction precision; P2 makes FP64 accumulation and timing implications visible; P4/P5/P7 require typing and every affected analysis with syntax; P6 checks positive and owned-refusal Corpus cases; P8 distinguishes compiled software lowering and bounded C550 numerics from an unobserved native FP64 instruction or broad hardware ceiling.",
+  "two_row_successor": {
+    "device_root": "open-cake-ir-evidence/metax-fp8-fp64-m2-20260926-v2/c5502-triton36/",
+    "device_job": "maca-592f5a04698b",
+    "paired_root": "open-cake-ir-evidence/metax-fp8-fp64-m2-vs-compensated-20260926/attempt1/",
+    "paired_job": "maca-b068fa1df581",
+    "observation": "The first two-row FP64 device attempt remains maca_broker_busy with zero kernel calls. A create-only successor under the same C550-2 runtime matched all 20480 frozen words and the 4096-word plain-sum held-out failure matrix bitwise, with FP8 input bytes unchanged. A same-shape two-row FP64 versus two-row FP32 Neumaier diagnostic passed the predeclared MCPTI quality gate, 10/10 reversed pair wins and four A/A control ties: 250 samples per arm yielded pooled medians of 17.152 and 42.240 us, while A/A medians were both 42.240 us. All 28 raw cohorts were independently replayed through dispatch_samples and derive_paired_timing. This strengthens the case for an explicitly named internal-precision route on the already represented rank-two tile, but it is still a standalone local_serialized diagnostic without a registered Workload, sealed candidate or excluded external activity; it neither qualifies a general speedup nor proves a native FP64 instruction."
+  },
+  "promotion_disposition": "Keep this as a proposed capacity finding. The two-row successor avoids the one-row AccessMap shape gap in principle, but no Cake contract currently names FP64 internal accumulation. Review an explicit reduction-precision or instruction contract with its typing, resource/cost analyses and exact target admission only after a frozen Workload and formal paired qualification; do not silently replace the existing FP32-compensated implementation.",
+  "two_row_heldout_successor": {
+    "root": "open-cake-ir-evidence/metax-fp8-fp64-m2-heldout-20260926/c5502-triton36/",
+    "job": "maca-d3139a67520f",
+    "observation": "A separate C550-2 broker job used seed 20260926 to generate 50 full-finite-code and 50 bounded-magnitude finite E4M3FN 64x64 matrices before device admission. The two-row FP64-reduction source matched the retained CPU float64-product-sum FP32 reference bitwise for all 409600 output words, with zero tolerance failures and no FP8 input-byte changes. The complete prepared input bytes, reference words and observed GPU output words are retained and were independently compared after collection. This materially strengthens fixed-shape numerical generalization beyond the original five cases; it does not cover all FP8 inputs, other shapes, Triton 3.1 device execution, a Cake source, a registered Workload or performance qualification."
+  }
+}

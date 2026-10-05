@@ -6,7 +6,7 @@ from .flash_kmeans.authoring import prepare_flash_schedule, validate_flash_autho
 
 
 def prepare_schedule(schedule, workload, case_id, arm):
-    if arm.get("input_format") == "schedule_or_python_v1":
+    if arm.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}:
         return bind_baseline(schedule, workload, case_id, backend=arm["lowering_route"]["backend"])
     return prepare_flash_schedule(schedule, workload, case_id)
 
@@ -14,7 +14,10 @@ def prepare_schedule(schedule, workload, case_id, arm):
 def validate_authoring(workload, arms, *, empirical_cost_model_path=None):
     comparison = comparison_arm(arms)
     empirical = "candidate_selection" in arms["open_cake"] or empirical_cost_model_path is not None
-    if empirical and (
+    from open_cake_ir.compiler.target import CodeObject
+    from open_cake_ir.evaluation.platforms import platform_for
+    mcpti = platform_for(workload.target).code_object is CodeObject.MCFATBIN
+    if empirical and not mcpti and (
         comparison != "direct_cuda" or workload.document.get("operator") != "flash_kmeans_assign"
     ):
         raise ValueError("empirical selection requires the Flash/direct-CUDA assay")

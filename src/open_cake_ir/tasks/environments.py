@@ -10,9 +10,16 @@ from .flash_kmeans.authoring import LOWERING_ROUTE
 class TaskOpenCakeEnvironment(OpenCakeEnvironment):
     def __init__(self, compiler, toolchain, *, authority_document, workload, case_id, executor=None):
         explicit = isinstance(workload.document["semantics"].get("candidate_abi"), Mapping)
-        if explicit and "candidate_selection" in authority_document:
+        from open_cake_ir.compiler.target import CodeObject
+        from open_cake_ir.evaluation.platforms import platform_for
+        if (explicit and "candidate_selection" in authority_document
+                and platform_for(workload.target).code_object is not CodeObject.MCFATBIN):
             raise ValueError("empirical selection requires the Flash/direct-CUDA assay")
         if not explicit and authority_document.get("lowering_route") != LOWERING_ROUTE:
             raise ValueError("Open Cake Authoring Environment lowering route differs")
         super().__init__(compiler, toolchain, authority_document=authority_document,
                          workload=workload, case_id=case_id, executor=executor)
+
+    def validate_candidate_semantics(self, document):
+        from .contraction.arithmetic import validate_candidate_arithmetic
+        validate_candidate_arithmetic(document, self._workload)

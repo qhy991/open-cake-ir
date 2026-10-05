@@ -43,19 +43,20 @@ class _ApiActivity(C.Structure):
 
 
 _Request = C.CFUNCTYPE(None, C.POINTER(C.c_void_p), C.POINTER(C.c_size_t), C.POINTER(C.c_size_t))
+_Timestamp = C.CFUNCTYPE(C.c_uint64)
 _Complete = C.CFUNCTYPE(None, C.c_void_p, C.c_uint32, C.c_void_p, C.c_size_t, C.c_size_t)
 
 
 class McptiActivity:
     """One process-owned callback collector bound to an admitted absolute library."""
 
-    def __init__(self, library: str):
+    def __init__(self, library: str, *, timestamp_callback=None, timestamp_source=None):
         with _CREATION:
             if _COLLECTOR is not None:
                 raise RuntimeError("MCPTI callbacks already have a process owner; use activity_collector")
-            self._initialize(library)
+            self._initialize(library, timestamp_callback=timestamp_callback, timestamp_source=timestamp_source)
 
-    def _initialize(self, library: str):
+    def _initialize(self, library: str, *, timestamp_callback=None, timestamp_source=None):
         global _COLLECTOR
         self._ready = False
         path = Path(library)
@@ -71,6 +72,13 @@ class McptiActivity:
             "mcptiActivityGetNextRecord": [C.c_void_p, C.c_size_t, C.POINTER(C.c_void_p)],
             "mcptiActivityRegisterCallbacks": [_Request, _Complete],
         }
+        if timestamp_callback is not None:
+            if (not isinstance(timestamp_callback, _Timestamp) or not bool(timestamp_callback)
+                    or not isinstance(timestamp_source, str) or not timestamp_source.strip()):
+                raise ValueError('MCPTI custom clock requires a nonnull uint64(void) callback and source')
+            signatures['mcptiActivityRegisterTimestampCallback'] = [_Timestamp]
+        elif timestamp_source is not None:
+            raise ValueError('MCPTI clock source requires its explicit callback')
         for name, args in signatures.items():
             function = getattr(self.api, name)
             function.argtypes, function.restype = args, C.c_int
@@ -87,11 +95,19 @@ class McptiActivity:
         self._enabled = []
         self._active = False
         self._owner_thread = None
+        # The SDK clock remains the default. Custom clocks are explicit diagnostics,
+        # registered before any activity and kept alive for the process lifetime.
+        self._timestamp_source = timestamp_source or 'sdk_default'
+        self._timestamp_callback = timestamp_callback
         self._requested_callback = _Request(self._requested)
         self._completed_callback = _Complete(self._completed)
         # Keep callbacks alive even if registration reports an ambiguous failure.
         _COLLECTOR = self
         self._call("mcptiActivityRegisterCallbacks", self._requested_callback, self._completed_callback)
+        if self._timestamp_callback is not None:
+            self._call('mcptiActivityRegisterTimestampCallback', self._timestamp_callback)
+        if self._errors:
+            raise ValueError(f'MCPTI timestamp registration failed: {self._errors}')
         self._ready = True
 
     def _call(self, name, *args):
@@ -211,7 +227,8 @@ class McptiActivity:
             # begin() may replace the collector's rows immediately after release.
             snapshot = {"source": "mcpti_activity", "api_version": self.version,
                         "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
-                        "records": list(self._rows)}
+                        "records": list(self._rows),
+                        "timestamp_source": getattr(self, '_timestamp_source', None)}
             if failure is not None:
                 snapshot['collection_errors'] = [*self._errors, str(failure)]
             self._active = False
@@ -232,6 +249,9 @@ def activity_collector(library: str) -> McptiActivity:
             _COLLECTOR = McptiActivity(library)
         if not _COLLECTOR._ready:
             raise RuntimeError("MCPTI callback registration did not succeed")
+        if (_COLLECTOR._timestamp_callback is not None
+                or _COLLECTOR._timestamp_source != 'sdk_default'):
+            raise ValueError('MCPTI production collection cannot reuse a diagnostic clock')
         if _COLLECTOR.library != str(Path(library).resolve(strict=True)):
             raise ValueError("MCPTI collector cannot change its admitted library in one process")
         return _COLLECTOR

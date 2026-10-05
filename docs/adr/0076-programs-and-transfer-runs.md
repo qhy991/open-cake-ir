@@ -26,6 +26,17 @@ or kernel is renamed to make it fit. Replay checks its Compiler lowering and phy
 launch against the backend's existing compilation evidence, including alignment variants.
 Programs that require actual composition retain explicit adapter capability admission.
 
+A composed Triton stage can retain the existing generic/aligned kernel dispatcher.
+Selection checks its actual public and private pointer addresses on each call; the
+public Program ABI stays unrestricted and extracted aligned leaves retain their own
+launch restrictions. Stage compilation evidence binds both variants. The Program
+manifest projects the ordered variant-bearing stage names from the sealed bundle
+so common work accounting counts loaded modules separately from executed kernels.
+Programs without variants retain their original manifest format. This composition
+adds neither an IR operation nor a layout representation, and static vectorization
+does not establish device correctness or a performance gain.
+
+
 Program syntax, use-def legality and per-stage Compiler assessment have one owner.
 Device adapters must verify contiguous storage, nonaliasing and view identity before launch.
 A transformation selects named stages in a complete Program, proves its own applicability,

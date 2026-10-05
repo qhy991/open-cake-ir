@@ -6,7 +6,8 @@ live writer, build filter or run lifecycle to authenticate its own evidence.
 from hashlib import sha256
 
 from .._documents import _canonical_json_bytes
-from ..actions import resolve_action_set
+from ..actions import resolve_action_set, author_parent_choices
+from ..provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
 from .refusals import refuse, event_location
 
 
@@ -15,10 +16,12 @@ def replay_actions(*, specification, events, evidence, provider_candidates_by_tu
     resolutions = {}
     positions = {}
     providers = {}
+    provider_payloads = {}
     for index, event in enumerate(events):
         payload = event.get('payload', {})
         if event.get('kind') == 'provider_turn_completed':
             providers[payload['turn']] = index
+            provider_payloads[payload['turn']] = payload
         if event.get('kind') != 'author_actions_resolved':
             continue
         turn = payload.get('turn')
@@ -48,11 +51,22 @@ def replay_actions(*, specification, events, evidence, provider_candidates_by_tu
                 and event.get('kind') in {'candidate_set_filtered', 'candidate_rejected', 'launchable_candidate_sealed', 'candidate_selected'}
                 and index <= positions[turn]):
                 refuse(location, 'candidate processing precedes action resolution')
+        if specification.environment_kind == 'open_cake':
+            import json
+            refs=provider_payloads[turn]['objects']
+            bundle_ref=next(ref for ref in refs if ref['role']=='provider_reference_bundle')
+            state=json.loads(evidence.read_object(bundle_ref))['state_card']
+            expected=author_parent_choices(candidates=prior,baselines=baselines,turn=turn,
+                allow_python=document['authoring'].get('input_format') in {'schedule_or_python_v1','python_source_v1'})
+            if state.get('author_parents') != expected:
+                refuse(location,'author parent choices differ from prior Run-local candidates and authorized baselines')
         raw = tuple(provider_candidate_bytes[(turn, identity)] for identity in action_ids)
         derived = resolve_action_set(raw, environment_kind=specification.environment_kind,
             transformations=document['knowledge']['transformations'], candidates=prior,
             baselines=baselines, compiler_factory=compiler_factory,
-            allow_python=document["authoring"].get("input_format") == "schedule_or_python_v1")
+            allow_python=document["authoring"].get("input_format") in {"schedule_or_python_v1", "python_source_v1"},
+            python_only=document["authoring"].get("input_format") == "python_source_v1",
+            source_bundle=document['authoring'].get('provider', {}).get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1)
         if not isinstance(rows, list) or len(rows) != len(derived):
             refuse(location, 'action coverage differs from the author submission')
         current = {}

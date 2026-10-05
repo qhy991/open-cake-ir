@@ -152,7 +152,7 @@ def audit_campaign(
                 'observed_provider_tokens':checkpoint['ralph']['cumulative_provider_tokens'],
                 'observed_provider_tokens_scope':fault.get('terminal_provider_tokens_scope','observed_total'),
                 'observed_wall_seconds':checkpoint['ralph']['elapsed_wall_seconds'],
-                "token_limit_checkpoint_state": checkpoint["checkpoints"][-1]["state"],
+                "token_limit_checkpoint_state": checkpoint["checkpoints"][-1]["state"] if checkpoint["checkpoints"] else None,
                 "observation_basis": campaign.lock.analysis_plan.get("endpoint_policy", "token_limit_checkpoint"),
                 "missing_reason": ("protocol_fault" if audit.protocol_adherence != "adhered" else
                     "token_limit_unreached" if audit.endpoint_observation == "missing" else None),
@@ -532,7 +532,7 @@ def threshold_view(
                 reference = next(value for value in payload["objects"] if value["role"] == "evaluation_receipt")
                 receipt = json.loads(evidence.read_object(reference))
                 timing = receipt["timing"]
-                if (tokens is not None and tokens <= limit and receipt["correctness_passed"] is True
+                if (tokens is not None and (limit is None or tokens <= limit) and receipt["correctness_passed"] is True
                     and type(receipt.get("kernel_calls")) is int and receipt["kernel_calls"] > 0
                     and receipt.get("fallback_calls") == 0
                     and timing is not None and timing.get("measurement_quality_passed") is True

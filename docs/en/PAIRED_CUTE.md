@@ -2,7 +2,7 @@
 
 [中文说明](../zh-CN/PAIRED_CUTE.md)
 
-Use `contracts/studies/matched-search-cute-b300-gemm-optimization-template.json`
+Use `contracts/studies/matched-search-cute-b300-gemm-optimization-python-template.json`
 for the existing `matched_search` / Ralph path. Its arms are `open_cake` and
 `native_cute_dsl`. Both begin from the same register GEMM+bias kernel and use
 `cutlass_cute_dsl` on exact `sm_103a`. The Study is stable: Compiler, Executor,
@@ -12,9 +12,8 @@ CampaignLock. Creating the template does not authorize its six-run scientific st
 The Workload is `gemm-bias-bf16-fp32-v2`: BF16 A and B, FP32 bias/output, and
 `C = A @ B.T + bias`. It owns the oracle and `atol = rtol = 0.001`. Its cases are
 primary 512×256×256, tail 3×5×65, tiny 2×3×65, zeros 1×2×65 and cancellation
-2×3×66 (M×N×K). The primary Schedule is
-`corpus/schedules/b300-cute-register-primary.json`; Lab binds the real Workload
-identity into its metadata. The Compiler fixture carries no fabricated Workload hash.
+2×3×66 (M×N×K). The Cake starter is
+`examples/python/b300_cute_gemm_bias.py`; Lab binds the real Workload identity.
 
 ## Authoring
 
@@ -25,9 +24,9 @@ Assess it through the ordinary Compiler CLI:
 PYTHONPATH=src python -m open_cake_ir.cli compiler assess --revision compiler/revision.json examples/python/b300_cute_gemm_bias.py
 ```
 
-The Cake arm submits the existing JSON Schedule member or an object containing
-`python_source`. Python parsing preserves source locations and never executes authored
-host code. Keep `lowering.backend = cutlass_cute_dsl` and the supplied entry point.
+The Cake arm writes complete Schedules or Programs to `candidate-set.py` using the
+restricted Cake Python frontend. The Lab parses it without executing authored host
+code. Keep `lowering.backend = cutlass_cute_dsl` and the supplied entry point.
 This first route supports one warp, BM=16, BN divisible by 8, BK divisible by 16,
 K>BK, one K-loop stage, explicit register operands and the BF16 warp MMA. It masks
 M/N/K tails and zeroes invalid operand lanes before collective MMA. Register/residency
@@ -35,8 +34,8 @@ caps are unsupported; `coalesced=False` makes no unproved store-coalescing promi
 
 The native arm edits `candidate-baseline.cute.json` from its TASK. It contains exactly
 `kernel_source`, `grid`, `block` and `dynamic_shared_memory_bytes`; the accompanying
-`candidate.schema.json` states the structural contract. For both arms, write the
-existing `candidate-set.json` envelope with the assigned arm and candidate members.
+`candidate.schema.json` states the structural contract. The native arm retains the
+`candidate-set.json` envelope; the Cake arm submits `candidate-set.py`.
 Generated-source comments record the initial baseline's origin; they do not prohibit
 optimizing that kernel in the native arm.
 
@@ -72,9 +71,14 @@ author's workspace and home. Linux bubblewrap is required. Compilation denies dr
 initialization, exposes no NVIDIA device nodes and retains that CPU boundary evidence.
 There is no unsandboxed fallback or automatic target downgrade.
 
-Use `tools/qualify_codex_provider.py` with
-`contracts/providers/codex-cute-optimization-output-schema-v1.json` to qualify the two
-actual arm envelopes in a zero-GPU two-turn provider run. This proves the provider
+Use `tools/qualify_codex_provider.py` twice with
+`contracts/providers/run-turn-output-schema-v1.json`: once for
+`--environment-kind open_cake --submission-contract python_candidate_bundle_v1` and
+once for `--environment-kind native_cute_dsl` with the JSON envelope. Bind both
+receipts and anchors through `schema_version: 3` execution bindings. Both
+qualifications use `--author-home-policy isolated_auth_only_v1` and an explicit
+private `--auth-source`; the runtime provider section declares `auth_source` so each
+Run gets a fresh author home. This proves the provider
 contract, not kernel correctness. Pass the external qualification receipt, anchor,
 runtime configuration and sealed fixed-baseline bundle through the ordinary
 `lab preflight --execution-bindings` path. Keep every new lock and evidence root outside

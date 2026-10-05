@@ -4,6 +4,15 @@ Append-only records between campaign evidence and Compiler/Executor changes. One
 per finding, named `YYYY-MM-DD-NNN-slug.json`. The evidence ledger already records what
 happened; a finding is the curated "so what" that a Revision decision can cite.
 
+A rejected Candidate routed to `backend_lowering` is evidence of a possible backend
+implementation gap, not an automatic approval to add an instruction. Curate its exact
+Schedule, Target, backend and localized Compiler Finding here; either implement emission
+with matching admission/analysis and counterexamples in a successor commit, or record
+why the capability is deferred. A missing Cake IR expression is separately routed to
+`ir_vocabulary`. A lowering-only Finding with unclear or mixed ownership is routed
+to `backend_triage` for explicit judgement; do not silently mark it an author error.
+Frozen Runs keep their original Compiler and measurement contract.
+
 ## Lifecycle
 
 `decision` moves `proposed -> accepted | rejected | deferred` through the normal review
@@ -34,6 +43,53 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-05-007 — multi-candidate author feedback lacked candidate identity; bounded result attribution and independent feedback replay prepared at 5453a4f5 with CPU contracts. Proposed protocol successor; no hardware or learning qualification.
+
+- F-2026-10-05-002 — three sibling Softmax regions expose the Triton two-loop cap; flat-region admission is software verified, including isolated compilation of retained events99/100. Device qualification remains open.
+- F-2026-10-05-003 — confirmed SiLU column partition motivates an explicit guarded pointwise rewrite; public ABI, tail effects and refusal ownership are software verified. Original candidate performance does not qualify the successor pass.
+- F-2026-10-05-004 — exact retained maxnreg,16-group, pipelined-unroll and warp-specialization requests remain deferred MACA route qualifications; fixed single-stage Softmax unroll is separately lowerable under the existing main repair. No new hardware qualification.
+- F-2026-10-05-005 — RMSNorm event57's two-stage Program lowers, but common MACA optimization-Run timing and attribution cover one dispatch. Defer the Lab/Executor measurement gap; standalone Program attribution does not qualify the Run.
+
+- F-2026-10-04-005 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
+
+- F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.
+
+- F-2026-10-04-002 — local MACA authoring began before shared-lock and single-device admission; broker-owned explicit selection, bounded waiting and pre-authoring device probe prepared for successor verification. Original failed batch remains unchanged.
+
+- F-2026-10-04-001 — C550 native controls preserve wall-clock intervals but reject both monotonic domains; no monotonic-clock promotion. SDK-default timing and all strict gates retained.
+
+- F-2026-10-03-001 — failed native paired cohorts lacked raw activity custody; common failed-worker transport and reset-calibration retention verified through a fresh native rejection; old missing observations stay missing.
+- F-2026-10-03-002 — Python source normalization, exact parent/stage feedback and malformed-bundle recovery implemented and software-verified; old Run classifications remain fixed.
+- F-2026-10-03-003 — explicit guarded N output partitioning qualified by fresh C550 pass-generated correctness, paired timing (3.33x, 10/10 wins) and profiler at bc7b4dee; limited to R128 K256 N32.
+
+- F-2026-10-02-002 — isolated Claude E/P admission excluded the existing v4 native compaction contract. Closed by the Study admission successor at 36e346b5 and diagnostic replay of nine retained complete C550 traces; old v3 outcomes remain unchanged.
+
+- F-2026-10-02-001 — paired MACA baseline admission omitted the lowering's native family and kernel name. Closed by the Lab caller fix at 8a1b51e3, 95 CPU contracts, the unchanged 180-case Corpus and C550-2 replay of the originally refused sealed baseline; no GPU performance claim.
+
+The 2026-10-01 integration assigns the four records first published on `metax@5f93bb6e` as local sequence 001–004 to repository-wide sequence 004–007, respectively. Their original names remain in that commit; the observations and implementation commits are unchanged.
+
+- F-2026-09-27-007 — accepted bounded MetaX FP32 FMA RZ/RD/RU lowering at aee427d9, generated-source validation at b5da553f and platform merge30d3895d/PR272 under user direction. Two native audits pass12228exact words/60NaN classes each, including disjoint initial outputs and restored ordinary RN; no performance claim. Shared main PR269 merged at 6ee0f4c7 after independent review.
+
+- F-2026-09-27-006 — closed by guarded MACA comparison-only magnitude emission at 2f44686e and generated-source qualification at 90739901: all 37 cases pass; search/confirmation repeat 1.0976x, close-null A/A and correct profile; FP16 all-encoding/FP32 boundary device audit preserves comparisons and stored negative zero. Stored/arithmetic magnitudes retain SELECT; native-source evidence remains separate.
+
+- F-2026-09-27-005 — sealed NT K-streaming FP8 compensation passes all 37 cases and repeats 22.784/155.904 us against resident source with quality-passed reversed pairs, null A/A and bounded profiles. Public K1 Schedule is legal but outside resident admission; explicit loop-state lowering and generated-source requalification remain proposed. Closed by explicit loop-owned Cake lowering: generated-source all-case replay plus 26.880/155.904 us confirmation (5.80x), null A/A and instrumented resources; authored-source 6.84x evidence remains separate.
+
+- F-2026-09-27-004 — C550-2 Triton 3.6 native ELF declares two launcher scratch pointers absent from the public TTGIR signature; the three-pointer manifest crashes at launch, while a same-artifact five-pointer primary-case control passes. Native metadata inspection and all-case Executor replay are required; no performance claim. Closed by artifact-derived pointer sealing/loader checks at 875724d4 and broker job maca-1a6e9f748221: all 37 NT v2 cases pass with unchanged inputs and no timing.
+
+- F-2026-09-27-003 — an empirical model's free-text scope listed only calibration M values while a selected run submitted two new M values; the observed two-of-six GPU cut stands, but scope-qualified savings need a structured oracle domain. The successor refuses the original wording and checks each Schedule's global-buffer shape (protocol, software replayed; new campaign pending).
+
+- F-2026-09-27-002 — the B300 correctness stage passed, but Torch profiler initialization in the numeric-UID container failed resolving its user for a cache path. Stage-local cache and account environment passes a no-GPU replay in the same pinned image (protocol, software verified; new profiler campaign pending).
+
+- F-2026-09-27-001 — B300 cost calibration assumed a broker job-id environment variable; the broker assigns a GPU but exposes the job id through GPU Infra run state. The successor binds run, stage and GPU to that state, replayed against the original failure (protocol, software verified; new device campaign pending).
+
+- F-2026-09-26-002 — one-row FP64 K reduction for the fixed C550 FP8 matrix compiles on Triton 3.1/3.6, passes bounded bitwise device checks and has a quality-passed directional MCPTI successor after one retained quality failure. Cake cannot name FP64 accumulation today; a formal Workload and reviewed precision owner are required before a Compiler or performance promotion.
+
+- F-2026-09-26-001 — a bounded C550-2 MCPTI screen favors one-row compensated FP8 over two rows, but Cake's rank-two MMA tile cannot express the one-row input. A faster one-row plain-sum composition passes the frozen cases yet fails additional finite-input precision checks, so neither timing screen qualifies a general replacement; the IR capacity question remains proposed.
+- F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
+- F-2026-09-24-002 — gfx1151 paired HIP timing has repeatable task-dependent sample spikes sixteen dispatches apart across five tasks; the cause remains unproven, and a fixed A/A device probe must precede any timer or CV-policy change (protocol, proposed).
+
+- F-2026-09-23-001 — `bw1100-1` has a distinct gfx938 Executor host closure despite the same DTK package versions; its captured successor passed software admission and bounded five-case HIP device confirmation at gfx938@4c9f4cc0 (capacity, accepted for that Workload).
+
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.
 - F-2026-09-21-003 — MACA pointer-count inspection rejected comma-adjacent TTGIR pointer types; parser repair with closed-pointer CPU replay.
@@ -53,7 +109,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - F-2026-09-20-001 — shape-preserving casts hide a loaded operand's K axis from MMA carry analysis; eight FP16-to-FP32 GEMM probes are refused by BUFFER_ESCAPES_LOOP. The query is shared by lifetime verification and emission, so both need the same coordinate proof (bug, software fix 5b452470 verified at 9696fc34 by 154 CPU contracts, 164 unchanged Corpus cases and replay of the eight probes; subsequent 967718ea B300 checks passed all 40 cases across the eight explicit-cast GEMM probes; no performance or full-shape claim).
 
-- F-2026-09-17-001 — a non-power-of-two row width closes every lowering route for RMSNorm on sm_103a: the whole row hits Triton's arange power-of-two rule, the tiled two-pass hits its loop-nest rule (siblings at depth [0,0] where it requires a [0,1] nest), and native_cuda declares reduce_argmin but not reduce; h2048 and h4096 produce eight accepted Schedules and h7168 produces five refusals (capacity, proposed; a lowering gap, not a vocabulary one -- the arange rule is faithful and stays)
+- F-2026-09-17-001 — a non-power-of-two row width originally closed every lowering route for RMSNorm on sm_103a: whole-row Triton arange requires a power of two, two sequential tiled passes were refused as non-nested, and native_cuda lacks reduce. The sibling Triton route is implemented at c4c65187; a 7168-wide two-pass slice compiled and passed bounded B300-M3 correctness, while the original RMSNorm task and native_cuda route remain unverified/open (capacity, accepted; the arange rule stays).
 - F-2026-09-16-013 — the eight FIB GEMM tasks are a dispatcher corpus: 699 of 707 kernel-plus-library candidates branch on M in code, and at n=6144/n=28672 the branch hides authored kernels measuring 0.35x/0.44x behind a library path reporting 1.14x/1.05x (behavior, proposed; contributes no IR requirement because its dominant pattern is correctly inexpressible)
 - F-2026-09-16-012 — a third of the audit's 1,839 GPU evaluations report only 'no trace produced' while the real nvcc error sits above that line in the same stderr (464 of 612); a quarter of those are the harness's own contract, including a hardcoded '::run' entry symbol that breaks exactly the three tasks declaring 'forward' (protocol, proposed)
 - F-2026-09-16-011 — RETRACTED: the 2-4x warp-specialization result was a regex matching 'producer' in comments; 4 of the 6 candidates behind it are explicitly not warp-specialized, and the 58x kernel's own header says its win is 'shape-only, math unchanged' (protocol, rejected; the expressibility fact from probing survives, the performance claim does not)
@@ -140,3 +196,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-20-010 — seven fixed-shape external comparisons and six three-way NCU profiles separate starter gains from reference gaps: 003 remains 4.73x slower despite a 1.54x starter gain; 022 row packing reduces observed concurrency, while its starter beats the supplied reference. Six external timing edges retain CV failures. Existing width/load-reuse mechanisms should be isolated before new IR; no promotion (behavior, proposed).
 
 - F-2026-09-20-011 — three retained normalization kernels compile to scalar b16 memory operations without pointer attributes; a CPU-only 16-byte-alignment hypothesis switches them to v4.b32 vector operations. The ABI does not yet guarantee this assumption, so it is not launched or promoted; align compile facts with launch checks before GPU qualification (capacity, proposed). Software implementation: PR #108; GPU verification pending.
+
+- F-2026-10-04-003 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded qualification passed; review and integration status are owned by the canonical Finding.
+
+The output-prefix pruning record first published as F-2026-10-04-002 on task/core-valid-extent-work-pruning-20261004 is assigned global sequence003 here. Original record and evidence remain at751ead87; main sequence002 belongs to the separate local-device admission observation.

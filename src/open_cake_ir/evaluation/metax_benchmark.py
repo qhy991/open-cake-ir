@@ -101,7 +101,17 @@ def dispatch_samples(activity: Mapping, *, kernel_name: str, grid, block,
             raise ValueError("MACA cache reset did not precede the matching sample on its stream")
         first = reset if reset is not None else candidate
         if previous is not None and previous > first["start_ns"]:
-            raise ValueError("MACA serialized samples overlap")
+            # Preserve the interval boundary in the worker-visible diagnostic. The
+            # activity is retained in the benchmark session, but the broker fault
+            # envelope otherwise reduced intermittent MCPTI overlap to one opaque
+            # string, making attribution impossible after the worker exited.
+            raise ValueError(
+                "MACA serialized samples overlap: "
+                f"sample={index} previous_end_ns={previous} "
+                f"next_start_ns={first['start_ns']} "
+                f"overlap_ns={previous - first['start_ns']} "
+                f"kernel={candidate['name']!r} stream={candidate['stream']}"
+            )
         previous = candidate["end_ns"]
         duration = (candidate["end_ns"] - candidate["start_ns"]) / 1e6
         if not math.isfinite(duration) or duration <= 0:
@@ -159,7 +169,20 @@ class McptiDispatchBenchmark:
             # Bytes = four times the declared L2, elements = bytes / sizeof(FP32).
             self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device="cuda:0")
             self._reset.fill_(1.0)
-            activity = self._collect(lambda: self._reset.fill_(1.0))
+            try:
+                activity = self._collect(lambda: self._reset.fill_(1.0))
+            except Exception as error:
+                activity = getattr(error, 'activity_snapshot', None)
+                if activity is not None:
+                    self.last_activity = {'phase':'reset_calibration','timer':TIMER,
+                        'l2_cache_bytes':self.l2_cache_bytes,'reset_bytes':4*self.l2_cache_bytes,
+                        'activity':activity}
+                raise
+            # Calibration can fail before the first timed cohort. Preserve its raw
+            # capture before admission so the ordinary failed-pair handoff retains it.
+            self.last_activity = {'phase':'reset_calibration','timer':TIMER,
+                'l2_cache_bytes':self.l2_cache_bytes,'reset_bytes':4*self.l2_cache_bytes,
+                'activity':activity}
             records = kernel_records(activity)
             if len(records) != 1 or records[0]["name"] == self.manifest.kernel_name:
                 raise ValueError("MACA reset is not one independently identified device fill")
@@ -202,7 +225,7 @@ def validate_cohort(record, manifest, *, sample_count: int) -> None:
     from open_cake_ir.compiler.target import CodeObject, declared_target
     target = declared_target(manifest.target)
     native = record.get('native_activity')
-    if (target.code_object is not CodeObject.MCFATBIN or manifest.hidden_null_pointer_parameters != 0
+    if (target.code_object is not CodeObject.MCFATBIN or manifest.hidden_null_pointer_parameters not in (0, 2)
             or manifest.aligned_variant or not isinstance(native, Mapping)
             or target.l2_cache_bytes is None or native.get('timer') != TIMER
             or native.get('cache_policy') != RESET or native.get('l2_cache_bytes') != target.l2_cache_bytes

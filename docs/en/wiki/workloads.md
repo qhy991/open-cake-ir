@@ -16,10 +16,17 @@ These contracts turn existing Corpus examples into standalone operators with exp
 | [RMSNorm FP32 v2](../../../contracts/workloads/rmsnorm-fp32-v2.json) | Same mathematics and six cases, explicitly targeting B300 `sm_103a`. |
 | [GEMM+bias BF16/FP32 v2](../../../contracts/workloads/gemm-bias-bf16-fp32-v2.json) | Same mathematics and five cases, explicitly targeting B300 `sm_103a`. |
 | [Indexed gather BF16 v2](../../../contracts/workloads/indexed-gather-bf16-v2.json) | Same indexing semantics and four cases, explicitly targeting B300 `sm_103a`. |
+| [Indexed gather BF16 v3](../../../contracts/workloads/indexed-gather-bf16-v3.json) | Same indexing semantics and four cases, built separately for each case ABI and explicitly targeting C550 `xcore1002`. |
 
 See the [B300 guide](../B300.md) for Python starting points and separate experiment qualification.
 
 The [tile Workload guide](../TILE_WORKLOADS.md) explains shapes, tolerances, the shared ABI and independent CPU oracle. [Baseline preparation](../../../examples/paired_triton/README.md) generates the paired native Triton source from the same IR as a declared common optimization starting point. The current delivery covers contracts, CPU references and source preparation; GPU compilation, correctness, timing, profiling and target-framework acceptance remain R2 pending.
+
+## MetaX C550 fixed FP8 GEMM
+
+The [contract](../../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1.json) fixes `M=N=K=64`, E4M3FN inputs, FP32 output, and elementwise tolerance. Task-owned byte generation covers five basic and 32 additional finite-input cases. The [independent CPU oracle](../../../src/open_cake_ir/tasks/metax_fp8_gemm.py) decodes each input, sums at high precision, and rounds once to FP32. The existing [compensated Schedule](../../../examples/python/xcore1002_fp8_compensated.py) matches the input/output ABI; this contract alone does not establish device correctness on the new cases or a performance benefit.
+
+The [v2 successor](../../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json) declares RHS storage `[N,K]` and computes `A @ B.T`, matching the resident instruction. The v1 `A @ B` contract remains intact, but this resident example is not its semantic baseline. Equal square ABI shapes do not prove orientation; v2 checks the complete transposed asymmetric RHS in its identity case.
 
 ## Flash-KMeans
 

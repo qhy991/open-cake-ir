@@ -209,3 +209,44 @@ class ProgramViewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'exact storage'):
             prepare(lambda t, shape: Tensor(shape, t.dtype, 400, t.nbytes))
         self.assertEqual(len(prepare(lambda t, shape: Tensor(shape, t.dtype, t.start, t.nbytes)).calls), 2)
+
+
+class FP32CopyProgramRewrite(unittest.TestCase):
+    fuse = CompleteProgramRewriteTests.fuse
+
+    @classmethod
+    def setUpClass(cls):
+        cls.compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
+
+    def copy_program(self):
+        from tests.contracts.test_epilogue_fusion import fp32_copy_stage
+        d=epilogue_program('fp32')
+        p=fp32_copy_stage()
+        d['stages'][0]['schedule']=p
+        d['stages'][0]['bindings']={'x':'x','mid':'mid'}
+        d['inputs']=['x']
+        d['tensors']={name: spec for name,spec in d['tensors'].items() if name not in {'a','b','bias'}}
+        d['tensors']['x']={'shape':[2,8],'dtype':'fp32'}
+        return d
+
+    def test_copy_fusion_uses_existing_transform_and_preserves_public_program_abi(self):
+        document=self.copy_program()
+        result=self.fuse(document)
+        self.assertTrue(result.applied,result.message)
+        self.assertEqual(result.program.inputs,('x',))
+        self.assertEqual(result.program.outputs,tuple(document['outputs']))
+        self.assertEqual(len(result.program.stages),1)
+        self.assertNotIn('mid',result.program.tensors)
+        self.compiler.lower_program(result.program)
+
+    def test_public_copy_and_multiple_consumers_remain_nonremovable(self):
+        document=self.copy_program()
+        document['outputs'].append('mid')
+        self.assertEqual(self.fuse(document).reason,'public_intermediate')
+        document=self.copy_program()
+        other=deepcopy(document['stages'][1]);other['name']='other'
+        output=document['outputs'][0]
+        other['bindings'][output]='other_output'
+        document['tensors']['other_output']=deepcopy(document['tensors'][output])
+        document['outputs'].append('other_output');document['stages'].append(other)
+        self.assertEqual(self.fuse(document).reason,'intermediate_consumers')

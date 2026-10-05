@@ -473,6 +473,74 @@ class OperatorShapeIndependenceTest(unittest.TestCase):
         self.assertIsInstance(parsed.body.op, ast.BitAnd)
 
 
+def _two_pass_h7168_document() -> dict:
+    """One owned source fixture for source checks and offline Triton compilation."""
+
+    document = copy.deepcopy(ROW_SUM_SCHEDULE)
+    document["schedule_id"] = "two-pass-row-normalization-h7168"
+    document["target"] = "sm_103a"
+    document["buffers"][0]["dtype"] = "fp32"
+    document["buffers"][0]["shape"] = [32, 512, 7168]
+    document["buffers"][1]["shape"] = [32, 512, 7168]
+    document["buffers"].extend([
+        {"name": "second_tile", "space": "register", "dtype": "fp32",
+         "shape": [256, 64], "mode": "scratch"},
+        {"name": "normalized", "space": "register", "dtype": "fp32",
+         "shape": [256, 64], "mode": "scratch"},
+    ])
+    document["operations"].extend([
+        {"id": "load_again", "kind": "load", "role": "compute", "reads": ["x"],
+         "writes": ["second_tile"], "parameters": {"movement": "global"}},
+        {"id": "normalize", "kind": "elementwise", "role": "compute",
+         "reads": ["second_tile", "acc"], "writes": ["normalized"],
+         "depends_on": ["load_again", "row_sum"],
+         "parameters": {"op": "mul", "broadcast_axis": 0}},
+    ])
+    store = document["operations"].pop(2)
+    store["reads"] = ["normalized"]
+    store["depends_on"] = ["normalize"]
+    document["operations"].append(store)
+    first = document["tile_loops"][0]
+    first.update(name="first_pass", iterator="first", tile=64)
+    second = copy.deepcopy(first)
+    second.update(name="second_pass", iterator="second", body=["load_again", "normalize", "store_y"])
+    document["tile_loops"].append(second)
+    document["access_maps"][0]["indices"][2]["name"] = "first"
+    document["access_maps"].insert(1, {
+        "operation": "load_again", "buffer": "x", "indices": [
+            {"source": "program", "name": "batch"},
+            {"source": "program_tile", "name": "row_block"},
+            {"source": "loop_tile", "name": "second"}],
+        "boundary": "mask_tiled_axes",
+    })
+    document["access_maps"][2]["indices"].append({"source": "loop_tile", "name": "second"})
+    return document
+
+
+class SiblingTileLoopsTest(unittest.TestCase):
+    def test_non_power_of_two_row_has_two_ordered_passes(self) -> None:
+        """A carried sum may feed a second, sibling pass over the same 7168-wide row."""
+
+        document = _two_pass_h7168_document()
+        target = Target.load(ROOT / "compiler" / "targets" / "sm_103a.json")
+        schedule = Schedule.from_dict(document)
+        from open_cake_ir.compiler.verifier import verify
+
+        self.assertFalse([finding for finding in verify(schedule, target)
+                          if finding.blocks_lowering])
+        self.assertEqual((), preflight(schedule, target))
+        source = emit(schedule, target).source
+        tree = ast.parse(source)
+        kernel = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                      and node.name == "_cake_row_sum_contract_kernel")
+        loops = [node for node in kernel.body if isinstance(node, ast.For)]
+        self.assertEqual([node.target.id for node in loops], ["first", "second"])
+        self.assertLess(source.index("acc = tl.zeros"), source.index("for first in tl.range"))
+        self.assertLess(source.index("for first in tl.range"), source.index("for second in tl.range"))
+        self.assertIn("normalized = second_tile * acc[:, None]", source)
+        self.assertIn("# CAKE_OP:store_y", source)
+
+
 class ComposedArithmeticTest(unittest.TestCase):
     """A Schedule composes arithmetic rather than naming a whole operator's formula.
 
@@ -804,7 +872,10 @@ class MultiOutputHostTest(unittest.TestCase):
         tree = ast.parse(source)
         module = {
             node.name for node in tree.body if isinstance(node, ast.FunctionDef)
-        } | {"torch", "tl", "triton"}
+        } | {"torch", "tl", "triton"} | {
+            target.id for node in tree.body if isinstance(node,ast.Assign)
+            for target in node.targets if isinstance(target,ast.Name)
+        }
         host = next(
             node
             for node in tree.body
@@ -846,7 +917,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         passed = [ast.unparse(argument) for argument in launch.args]
         self.assertEqual(passed[-2:], ["out[0]", "out[1]"])
@@ -906,7 +977,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         passed = [ast.unparse(argument) for argument in launch.args]
         # the state buffer stays caller-owned by name; only the outputs take slots
@@ -927,7 +998,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         passed = [ast.unparse(argument) for argument in launch.args]
 
@@ -952,7 +1023,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         self.assertIn("out", [ast.unparse(argument) for argument in launch.args])
 

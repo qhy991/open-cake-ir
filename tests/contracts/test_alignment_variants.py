@@ -117,6 +117,32 @@ class AlignmentVariants(unittest.TestCase):
             loaded.close(synchronize=lambda:None)
         self.assertTrue(loaded.closed)
 
+    def test_distinct_equivalent_contracts_still_admit_and_changed_contracts_refuse(self):
+        candidate, manifest, _ = self.build(16)
+        admission = CudaDeviceAdmission('NVIDIA B300',(10,3),'test-gpu','gpuq-123456789abc','exclusive')
+        def loader(item, spec, observed):
+            driver = FakeDriver();driver.attributes[6]=103
+            return LoadedCudaCandidate.load(item,item.artifact_payloads['cubin'],spec,observed,driver=driver)
+        loaded = LoadedAlignmentCandidate(candidate,manifest,admission,loader,lambda:None)
+        args = [FakeTensor(shape,dtype,(i+1)*1048576) for i,(_,shape,dtype) in enumerate(manifest.tensors)]
+        try:
+            loaded.launch(args,tensor_contract=replace(manifest),stream=0)
+            loaded.aligned.launch(args,tensor_contract=replace(loaded.aligned_manifest),stream=0)
+            self.assertEqual(loaded.launch_calls,2)
+            with self.assertRaisesRegex(ValueError,'tensor contract differs'):
+                loaded.launch(args,tensor_contract=replace(manifest,grid=(2,1,1)),stream=0)
+            with self.assertRaisesRegex(ValueError,'tensor contract differs'):
+                loaded.aligned.launch(args,tensor_contract=replace(loaded.aligned_manifest,grid=(2,1,1)),stream=0)
+            self.assertEqual(loaded.launch_calls,2)
+            args[0]._pointer += 4
+            loaded.launch(args,tensor_contract=manifest,stream=0)
+            self.assertEqual(loaded.last_variant,'generic')
+            with self.assertRaisesRegex(ValueError,'alignment contract'):
+                loaded.aligned.launch(args,tensor_contract=loaded.aligned_manifest,stream=0)
+            self.assertEqual(loaded.launch_calls,3)
+        finally:
+            loaded.close(synchronize=lambda:None)
+
     def test_incomplete_bundle_refuses_at_construction_before_any_evaluation(self):
         candidate, _, _ = self.build(16)
         payloads = dict(candidate.artifact_payloads)

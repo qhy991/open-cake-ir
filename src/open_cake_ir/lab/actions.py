@@ -10,7 +10,7 @@ from hashlib import sha256
 import json
 from collections.abc import Mapping
 
-from open_cake_ir.compiler import Program
+from open_cake_ir.compiler import Program, CompilerError
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.serialization import canonical_json_bytes
 
@@ -35,6 +35,13 @@ class ActionResolution:
 
 def candidate_program(payload, *, allow_python=True):
     document = json.loads(payload)
+    if isinstance(document, Mapping) and set(document) == {'python_program_source', 'program_id'}:
+        if not allow_python or not isinstance(document['python_program_source'], str):
+            raise ValueError('parent Python Program source is outside the authoring environment')
+        from open_cake_ir.compiler.program_frontend import parse_program
+        return parse_program(document['python_program_source'],
+                             filename='projected-program.ir.py',
+                             program_id=document['program_id']).program
     if isinstance(document, Mapping) and set(document) == {'python_source'}:
         if not allow_python:
             raise ValueError('parent Python syntax is outside the authoring environment')
@@ -45,16 +52,35 @@ def candidate_program(payload, *, allow_python=True):
 
 
 def resolve_action(payload: bytes, *, environment_kind, transformations, candidates,
-                   baselines, compiler_factory, allow_python=False) -> ActionResolution:
+                   baselines, compiler_factory, allow_python=False, python_only=False,
+                   source_bundle=False) -> ActionResolution:
     action_sha256 = sha256(payload).hexdigest()
     if environment_kind == 'direct_cuda':
         return ActionResolution(action_sha256, 'submit', payload)
+    if python_only and (environment_kind != 'open_cake' or not allow_python):
+        raise ValueError('Python-only authoring requires the Open Cake Python frontend')
     try:
         document = json.loads(payload)
     except (ValueError, UnicodeError):
         # The representation owner retains the established localized parser feedback.
-        return ActionResolution(action_sha256, 'submit', payload)
+        if not python_only:
+            return ActionResolution(action_sha256, 'submit', payload)
+        return ActionResolution(action_sha256, 'submit', None, reason='author_format',
+                                message='Author must submit Python source in a python_source member.')
+    if (source_bundle and environment_kind=='open_cake' and isinstance(document,Mapping)
+        and set(document)=={'python_bundle_error'} and isinstance(document['python_bundle_error'],str)):
+        return ActionResolution(action_sha256,'submit',None,reason='author_format',
+                                message=document['python_bundle_error'])
     if not isinstance(document, Mapping) or 'action' not in document:
+        program_source = (source_bundle and isinstance(document, Mapping)
+                          and set(document) == {'python_program_source', 'program_id'}
+                          and isinstance(document['python_program_source'], str)
+                          and isinstance(document['program_id'], str))
+        if python_only and (not isinstance(document, Mapping)
+                            or not program_source and (set(document) != {'python_source'}
+                                or not isinstance(document['python_source'], str))):
+            return ActionResolution(action_sha256, 'submit', None, reason='author_format',
+                                    message='Author must submit Python source in a python_source member.')
         return ActionResolution(action_sha256, 'submit', payload)
     kind = document.get('action')
     def refused(reason, message, *, parent=None, transformation=None):
@@ -62,6 +88,9 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
     if kind == 'submit':
         if set(document) != {'action', 'candidate'} or not isinstance(document['candidate'], Mapping):
             return refused('action_shape', 'submit requires one complete candidate object.')
+        if python_only and (set(document['candidate']) != {'python_source'}
+                            or not isinstance(document['candidate']['python_source'], str)):
+            return refused('author_format', 'Author must submit Python source in a python_source member.')
         return ActionResolution(action_sha256, 'submit', canonical_json_bytes(document['candidate']))
     if kind != 'transform' or set(document) != {'action', 'parent', 'transformation', 'parameters'}:
         return refused('action_shape', 'Use submit(candidate) or transform(parent, transformation, parameters).')
@@ -89,3 +118,25 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
 def resolve_action_set(payloads, **context):
     """All parents come from earlier turns; same-turn proposal ordering grants nothing."""
     return tuple(resolve_action(payload, **context) for payload in payloads)
+
+
+def author_parent_choices(*, candidates, baselines, turn, allow_python):
+    """Derive usable parent names and stage contracts from this Run's own bytes.
+
+    This is a Turn projection, not an alias registry or another source of authority.
+    All Cake authors receive it; transformation permission remains in Run knowledge.
+    """
+    sources = [(f'baseline:{name}', source) for name, source in baselines.items()]
+    sources.extend(candidates.items())
+    choices = []
+    for parent, source in sources:
+        try:
+            program = candidate_program(source, allow_python=allow_python)
+        except (CompilerError, TypeError, ValueError):
+            continue
+        choices.append({'parent': parent,
+            'stages': [{'name': stage.name, 'schedule_id': stage.schedule.schedule_id,
+                        'entry_point': stage.schedule.lowering.entry_point}
+                       for stage in program.stages],
+            'suggested_schedule_id': f'rewrite_turn_{turn}_parent_{len(choices)+1}'})
+    return choices
