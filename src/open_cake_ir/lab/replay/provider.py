@@ -406,6 +406,9 @@ def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None, 
     Every refusal is located under the `run_fault` event's payload.
     """
     location = "run_fault.payload"
+    from ..native_skill_fault import has_native_rejection, replay_rejection
+    if payload.get('stage') != 'provider' and has_native_rejection(payload):
+        refuse(f'{location}.native_skill_input', 'native skill rejection is outside the provider stage')
     usage_fields = {"provider_usage", "terminal_provider_tokens_scope", "provider_usage_witness_mismatch"}
     if payload.get("stage") != "provider":
         if usage_fields & set(payload):
@@ -487,4 +490,9 @@ def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None, 
         if retained_quota is not None and retained_quota != quota:
             refuse(f"{location}.observed_quota", "differs from the quota rederived from retained stdout",
                    observed=retained_quota, expected=quota)
+    try:
+        replay_rejection(payload=payload, evidence=evidence, provider=provider, run_id=run_id,
+            task_package=expected_task_package, provider_events=provider_events, observed_usage=observed)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        refuse(f'{location}.native_skill_input', str(error))
     return observed.provider_tokens if observed is not None else 0

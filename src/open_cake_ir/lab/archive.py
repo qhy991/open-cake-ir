@@ -204,10 +204,18 @@ def _archive_provider_turn(
     from .native_skill_run import validate_run_input
     if task_package is not None and (task_package.run_id != ledger.run_id or task_package.arm != arm):
         raise ValueError('native skill TaskPackage differs from Run ledger')
-    validate_run_input(native_input=provider_turn.native_skill_input,
-        binding=provider_turn.native_skill_binding, previous_input=previous_native_input,
-        previous_binding=previous_native_binding, task_package=task_package,
-        provider=provider_document, thread_id=thread_id, turn=turn_number)
+    try:
+        validate_run_input(native_input=provider_turn.native_skill_input,
+            binding=provider_turn.native_skill_binding, previous_input=previous_native_input,
+            previous_binding=previous_native_binding, task_package=task_package,
+            provider=provider_document, thread_id=thread_id, turn=turn_number)
+    except ValueError as error:
+        from .author_home import ISOLATED_SKILL_PACKAGE_V1
+        if provider_document.get('author_home_policy') != ISOLATED_SKILL_PACKAGE_V1:
+            raise
+        from .native_skill_fault import rejected_input_fault
+        raise rejected_input_fault(error, provider_turn=provider_turn,
+            run_id=ledger.run_id, arm=arm, turn=turn_number, thread_id=thread_id) from error
     native_objects = []
     if provider_turn.native_skill_input is not None:
         native_objects = [evidence.put(payload, media_type='application/json').reference(role)

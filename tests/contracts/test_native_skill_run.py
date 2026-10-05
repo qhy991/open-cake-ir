@@ -12,6 +12,7 @@ from open_cake_ir.lab.archive import _archive_provider_turn
 from open_cake_ir.lab.author_home import system_skills_identity, require_live_skill_qualification
 from open_cake_ir.lab.native_skill_observation import project_rollout
 from open_cake_ir.lab.native_skill_run import bind_invocation
+from open_cake_ir.lab.native_skill_fault import NativeSkillRunInputFault
 from open_cake_ir.lab.providers import normalize_codex_turn
 from open_cake_ir.lab.replay.provider import _replay_provider_turns, _expected_terminal_message
 from open_cake_ir.lab.replay.refusals import ReplayRefusal
@@ -123,7 +124,7 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
         turn = self.make_turn(1)
         for field, value in (('native_skill_input', None), ('native_skill_binding', None),
                              ('native_skill_binding', b'{}')):
-            with self.subTest(field=field), self.assertRaises(ValueError):
+            with self.subTest(field=field), self.assertRaises(NativeSkillRunInputFault):
                 self.archive(replace(turn, **{field: value}))
             self.assertEqual(self.events, [])
         with self.assertRaisesRegex(ValueError, 'TaskPackage'):
@@ -136,13 +137,13 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
         for field, value in mutations:
             document = deepcopy(original)
             document[field] = value
-            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'binding'):
+            with self.subTest(field=field), self.assertRaisesRegex(NativeSkillRunInputFault, 'binding'):
                 self.archive(replace(turn, native_skill_binding=canonical_json_bytes(document)))
         for field, value in [('cwd', '/foreign'), ('user_home', original['invocation']['cwd']),
                               ('provider_revision', 'foreign'), ('thread_id', native.THREAD)]:
             document = deepcopy(original)
             document['invocation'][field] = value
-            with self.subTest(field=field), self.assertRaises(ValueError):
+            with self.subTest(field=field), self.assertRaises(NativeSkillRunInputFault):
                 self.archive(replace(turn, native_skill_binding=canonical_json_bytes(document)))
         self.assertEqual(self.events, [])
 
@@ -158,7 +159,7 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
             elif variant == 'schema': argv[argv.index('--output-schema')+1] = '/foreign/schema.json'
             elif variant == 'snapshot': document['system_skills_snapshot'] = [['foreign/', 0o755, '']]
             else: document['unowned'] = True
-            with self.subTest(variant=variant), self.assertRaises(ValueError):
+            with self.subTest(variant=variant), self.assertRaises(NativeSkillRunInputFault):
                 self.archive(replace(turn, native_skill_binding=canonical_json_bytes(document)))
 
     def test_replay_requires_exactly_one_native_role_each(self):
@@ -197,11 +198,11 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
         first = self.make_turn(1)
         self.archive(first)
         second = self.make_turn(2)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(NativeSkillRunInputFault):
             self.archive(replace(second, native_skill_input=first.native_skill_input), 2)
         changed = json.loads(second.native_skill_binding)
         changed['invocation']['codex_home'] = '/new/codex-home'
-        with self.assertRaisesRegex(ValueError, 'paths changed'):
+        with self.assertRaisesRegex(NativeSkillRunInputFault, 'paths changed'):
             self.archive(replace(second, native_skill_binding=canonical_json_bytes(changed)), 2)
         self.archive(second, 2)
         self.replace_object('provider_native_skill_input', first.native_skill_input, event=1)
@@ -212,7 +213,7 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
         turn = self.make_turn(1)
         changed = fixtures.NativeSkillProviderTests.builder(self, 'changed', fixtures.archive_bytes(b'other'))[1]
         package = replace(self.package, native_skill_package=changed)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(NativeSkillRunInputFault):
             self.archive(turn, task_package=package)
         self.archive(turn)
         with self.assertRaises(ReplayRefusal):
