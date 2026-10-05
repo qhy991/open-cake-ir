@@ -80,7 +80,7 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
             configuration=self.builder.configuration, system_skills_snapshot=self.builder.remembered_system_skills)
         state = {'kind': 'ralph_state_v1', 'iteration': number,
                  'cumulative_provider_tokens': 120*(number-1), 'terminal_reason': None}
-        from open_cake_ir.lab.provider_usage import provider_token_delta
+        from open_cake_ir.lab.provider_events import provider_token_delta
         return replace(turn, reference_bundle=self.package.evidence_bundle(state),
             provider_tokens=provider_token_delta(turn.provider_tokens, provider=self.provider,
                                                  previous_tokens=120*(number-1)),
