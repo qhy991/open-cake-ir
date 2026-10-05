@@ -144,12 +144,23 @@ def resolve_executor(
     return ExecutorRevision.load_reference(root, value, f"{context}.executor_revision")
 
 
-def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anchor_path):
+def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anchor_path,
+                      environment_kinds=()):
     """Resolve the CLI provider's existing qualification into one authoring value."""
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
     from .provider_policy import provider_harness
-    from .author_home import CODEX_HOME_POLICIES, verify_auth_source, require_live_skill_qualification
-    require_live_skill_qualification(provider.get('author_home_policy'))
+    from .author_home import CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1, verify_auth_source
+    native = provider.get('author_home_policy') == ISOLATED_SKILL_PACKAGE_V1
+    if native:
+        from .native_skill_qualification import require_live_native_receipt
+        try:
+            receipt = ProviderQualificationReceipt.load(receipt_path)
+            anchor = json.loads(Path(anchor_path).read_bytes())
+        except (OSError, TypeError) as error:
+            raise ValueError('native skill discovery and actual initial/resume delivery are not qualified; receipt or anchor is unavailable') from error
+        require_live_native_receipt(qualification=receipt, anchor=anchor)
+        if not environment_kinds:
+            raise ValueError('native preparation requires its authoring environment kinds')
     harness = provider_harness(provider)
     if harness not in {'codex','claude-code'}:
         raise ValueError('CLI task preparation requires a CLI provider')
@@ -158,12 +169,14 @@ def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anch
     auth_source = config['provider'].get('auth_source')
     if isolated != (auth_source is not None):
         raise ValueError('runtime Codex credential source differs from author home policy')
-    if isolated:
+    if isolated and not native:
         verify_auth_source(external_file(project_root, auth_source, 'provider credential source'))
-    receipt = ProviderQualificationReceipt.load(receipt_path)
+    if not native:
+        receipt = ProviderQualificationReceipt.load(receipt_path)
     if isolated and receipt.system_skills_sha256 is None:
         raise ValueError('isolated Codex home requires qualified system skills')
-    anchor = json.loads(Path(anchor_path).read_bytes())
+    if not native:
+        anchor = json.loads(Path(anchor_path).read_bytes())
     executable = Path(config['provider']['executable']).resolve(strict=True)
     observed = sha256(executable.read_bytes()).hexdigest()
     if observed != receipt.executable_sha256:
@@ -178,6 +191,18 @@ def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anch
     if harness=='codex':
         bound['code_mode_host'] = resolve_codex_code_mode_host(executable,
             isolated_home=isolated)
+    if native:
+        from .native_skill_qualification import verify_live_qualification_evidence
+        from .provider_policy import execution_configuration
+        configuration = execution_configuration(bound)
+        scope = ('live_two_turn_current_provider'
+                 if configuration.get('event_contract', 'closed_file_change_v1') == 'closed_file_change_v1'
+                 else 'live_two_turn_tool_rich_provider')
+        if receipt.scope != scope:
+            raise ValueError('native provider qualification scope differs from the runtime configuration')
+        verify_live_qualification_evidence(qualification=receipt, anchor=anchor,
+            expected_configuration=configuration, required_environment_kinds=environment_kinds)
+        verify_auth_source(external_file(project_root, auth_source, 'provider credential source'))
     return bound,config
 
 
@@ -275,7 +300,8 @@ def resolve_execution_bindings(
             anchor_path = external_file(project_root, bindings['qualification_anchor_paths'][name],
                                         f'{name} qualification anchor')
             provider, config = bind_cli_provider(project_root, arm['provider'], row,
-                runtime_path=runtime_path, receipt_path=receipt_path, anchor_path=anchor_path)
+                runtime_path=runtime_path, receipt_path=receipt_path, anchor_path=anchor_path,
+                environment_kinds=(arm['environment_kind'],))
             arm['provider'] = json.loads(canonical(provider))
             configurations.append(config)
         if any(other != configurations[0] for other in configurations[1:]):
@@ -285,7 +311,8 @@ def resolve_execution_bindings(
         receipt_path = external_file(project_root, bindings['qualification_path'], 'qualification')
         anchor_path = external_file(project_root, bindings['qualification_anchor_path'], 'qualification anchor')
         provider, config = bind_cli_provider(project_root, arms['open_cake']['provider'], row,
-            runtime_path=runtime_path, receipt_path=receipt_path, anchor_path=anchor_path)
+            runtime_path=runtime_path, receipt_path=receipt_path, anchor_path=anchor_path,
+            environment_kinds=tuple(arm['environment_kind'] for arm in arms.values()))
         for arm in arms.values():
             arm['provider'] = json.loads(canonical(provider))
     executor = resolve_executor(Path(project_root),execution['executor_revision'],

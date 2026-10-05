@@ -36,7 +36,7 @@ from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, Tur
 from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .reference_access import require_qualified_clean_start_execution
-from .author_home import require_live_skill_qualification
+from .admission import admit_native_skill_authoring
 from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
 from .executor import ExecutorRevision
 from .pairing import comparison_arm, native_backend
@@ -85,7 +85,7 @@ def execute_campaign(
         role="Campaign Evidence root",
     )
     for authoring in lock.document['resolved_inputs']['arm_environments'].values():
-        require_live_skill_qualification(authoring.get('provider', {}).get('author_home_policy'))
+        admit_native_skill_authoring(authoring=authoring, project_root=project_root)
     require_qualified_clean_start_execution(
         lock.document['resolved_inputs']['arm_environments'].values())
     matched_run_arms(environments, lock.claim_scope)
@@ -144,8 +144,7 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
                 workload_loader, clock, provider, environment, evaluator, task_package, validate_run=None):
     """Execute a frozen engineering or Study-assigned Run through the same engine."""
     root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
-    require_live_skill_qualification(
-        specification.document['authoring'].get('provider', {}).get('author_home_policy'))
+    admit_native_skill_authoring(authoring=specification.document['authoring'], project_root=project_root)
     specification = RunSpecification.from_dict(specification.document)
     require_qualified_clean_start_execution((specification.document['authoring'],))
     if validate_run is not None:
@@ -164,7 +163,7 @@ def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loa
     """Keep the external Campaign archive while assembling independent Run adapters."""
     root = admit_new_campaign_path(project_root,evidence_root,role='Campaign Evidence root')
     for authoring in lock.document['resolved_inputs']['arm_environments'].values():
-        require_live_skill_qualification(authoring.get('provider', {}).get('author_home_policy'))
+        admit_native_skill_authoring(authoring=authoring, project_root=project_root)
     lock = CampaignLock.from_dict(lock.document)
     from .execution_admission import campaign_provider_bindings
     from .bindings import source_reference_path

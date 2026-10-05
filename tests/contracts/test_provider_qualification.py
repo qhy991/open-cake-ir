@@ -37,6 +37,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         mutate_helper: bool = False,
         pretty_submission: bool = False,
         omit_skill_body_in_turn: int = 0,
+        runtime_turns: bool = False,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -68,6 +69,12 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 for field, name in (("task_markdown", "TASK.md"), ("agents_markdown", "AGENTS.md")):
                     if projection[field].encode() != Path(name).read_bytes():
                         raise SystemExit(39)
+                if {runtime_turns!r} and not any(line.startswith("QUALIFICATION_PLAN_JSON=")
+                                               for line in projection["task_markdown"].splitlines()):
+                    sys.path.insert(0, {str(ROOT)!r})
+                    from tests.contracts._native_skill_fixture import emit_runtime_turn
+                    emit_runtime_turn(arguments, projection)
+                    raise SystemExit(0)
                 plan_line = next(line for line in projection["task_markdown"].splitlines()
                                  if line.startswith("QUALIFICATION_PLAN_JSON="))
                 plan = json.loads(plan_line.split("=", 1)[1])
@@ -462,7 +469,15 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     self.assertEqual(audit.protocol_adherence, 'provider_fault')
                 else:
                     self.assertEqual(completed.returncode, 0, completed.stderr.decode())
-                    self.assertEqual(ProviderQualificationReceipt.load(receipt).scope,
+                    from open_cake_ir.lab.native_skill_qualification import verify_qualification_evidence
+                    anchored = json.loads((root/'provider-qualification-anchor.json').read_bytes())
+                    qualified = ProviderQualificationReceipt.load(receipt)
+                    verify_qualification_evidence(qualification=qualified, anchor=anchored,
+                                                 required_environment_kinds=('open_cake',))
+                    with self.assertRaisesRegex(ValueError, 'no retained turns for environment: direct_cuda'):
+                        verify_qualification_evidence(qualification=qualified, anchor=anchored,
+                                                     required_environment_kinds=('direct_cuda',))
+                    self.assertEqual(qualified.scope,
                                      'zero_gpu_contract_fixture_only')
                     event = next(event for event in evidence.replay_events('single')
                                  if event['kind'] == 'provider_qualification_observed')
