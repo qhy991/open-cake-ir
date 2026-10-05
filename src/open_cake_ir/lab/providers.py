@@ -68,6 +68,10 @@ class CodexProviderAdapter:
             environment['CODEX_HOME'] = str(verify_codex_home(
                 invocation.codex_home, fresh=invocation.thread_id is None,
                 expected_system_skills=invocation.system_skills_snapshot))
+        skill_prefix = None
+        if invocation.native_skill_package is not None:
+            from .native_skill_observation import before_invocation
+            skill_prefix = before_invocation(invocation)
         try:
             completed = run_supervised(
                 invocation.argv,
@@ -98,7 +102,7 @@ class CodexProviderAdapter:
                                                      expected_thread_id=invocation.thread_id),
             )
         try:
-            return normalize_codex_turn(
+            result = normalize_codex_turn(
                 completed.stdout,
                 candidate_path=candidate_path,
                 expected_change=expected_change,
@@ -108,6 +112,11 @@ class CodexProviderAdapter:
                 arm=arm, environment_kind=environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            if invocation.native_skill_package is not None:
+                from .native_skill_observation import after_invocation
+                result = replace(result, native_skill_input=after_invocation(
+                    invocation, thread_id=result.thread_id, previous=skill_prefix))
+            return result
         except (OSError, ValueError) as error:
             raise RunProtocolFault(
                 "provider_fault",

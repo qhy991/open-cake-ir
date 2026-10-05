@@ -210,6 +210,9 @@ class ProviderTurn:
     reference_bundle: bytes | None = None
     """Exact rendered reference bytes embedded in this Turn, when one exists."""
 
+    native_skill_input: bytes | None = None
+    """Bounded same-invocation native skill frames; not a qualification receipt."""
+
 
 @dataclass(frozen=True)
 class ProviderAuxiliaryActivity:

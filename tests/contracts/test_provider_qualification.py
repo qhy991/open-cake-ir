@@ -76,6 +76,10 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     if arm != "open_cake"
                     else "01234567-89ab-cdef-0123-456789abcdef"
                 )
+                if "native_skill_package" in projection:
+                    sys.path.insert(0, {str(ROOT)!r})
+                    from tests.contracts._native_skill_fixture import append_rollout
+                    append_rollout(thread_id, arguments)
                 reported_thread_id = (
                     "fedcba98-7654-3210-fedc-ba9876543210"
                     if resumed and {break_resumed_thread!r}

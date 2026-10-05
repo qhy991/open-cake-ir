@@ -734,7 +734,9 @@ def main() -> int:
             ledger.append('provider_qualification_turn_observed', {
                 'arm':arm, 'phase':'initial', 'provider_tokens':initial.provider_tokens,
                 'objects':[evidence.put(initial.raw_events,media_type='application/x-ndjson').reference('initial_provider_events'),
-                           evidence.put(initial.raw_submission,media_type='text/plain').reference('initial_submission')]})
+                           evidence.put(initial.raw_submission,media_type='text/plain').reference('initial_submission'),
+                           *([evidence.put(initial.native_skill_input, media_type='application/json').reference(
+                               'initial_native_skill_input')] if initial.native_skill_input is not None else [])]})
             initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
@@ -781,7 +783,9 @@ def main() -> int:
             ledger.append('provider_qualification_turn_observed', {
                 'arm':arm, 'phase':'resumed', 'provider_tokens':resumed.provider_tokens,
                 'objects':[evidence.put(resumed.raw_events,media_type='application/x-ndjson').reference('resumed_provider_events'),
-                           evidence.put(resumed.raw_submission,media_type='text/plain').reference('resumed_submission')]})
+                           evidence.put(resumed.raw_submission,media_type='text/plain').reference('resumed_submission'),
+                           *([evidence.put(resumed.native_skill_input, media_type='application/json').reference(
+                               'resumed_native_skill_input')] if resumed.native_skill_input is not None else [])]})
             resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
@@ -888,6 +892,10 @@ def main() -> int:
             initial_invocation = observation["initial_invocation"]
             resumed_invocation = observation["resumed_invocation"]
             prefix = f"{arm}_"
+            for phase, observed_turn in (("initial", initial), ("resumed", resumed)):
+                if observed_turn.native_skill_input is not None:
+                    objects.append(evidence.put(observed_turn.native_skill_input,
+                        media_type="application/json").reference(f"{prefix}{phase}_native_skill_input"))
             objects.extend(
                 [
                     evidence.put(

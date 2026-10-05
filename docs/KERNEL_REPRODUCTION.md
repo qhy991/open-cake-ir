@@ -240,6 +240,24 @@ CLI 资源查找。采用 `isolated_auth_only_v1` 的新 Codex Run 另建私有
 
 ## 按任务准备完整原生技能包
 
+`CodexProviderAdapter` 对受控技能包策略另采集同次 exec 的有界原生技能输入记录。
+当前格式限定 CLI `0.159.2`：核对 session/thread、workspace、模型与 effort，以及恰好
+一个完整的新 turn；resume 要求既有日志前缀未改写。有效 catalog 必须恰好来自本包入口和
+CLI system 入口；本轮显式加载的包内正文必须与冻结原包一致。原生 frontmatter 仍由 CLI
+解析；不会因目录名推断原生技能名称。
+
+结果保留在 `ProviderTurn.native_skill_input`，fixture qualifier 将其写入既有 Evidence
+中的每 arm/initial/resumed `native_skill_input` role。只保留技能片段及其原生 turn 绑定，
+不复制完整 prompt、凭据、工具输出或 reasoning 日志。历史正文不算本轮加载；未加载正文
+如实保留空列表。system 文件树身份仍由既有 author-home owner 检查，不新增逐文件身份目录。
+
+这是 retained native input 的版本限定观察，**不是生产资格**。与实际请求的一致性须以
+同版本原生 fixture 验证，不能把生成的摘要视为 wire capture。当前不支持 compaction、
+rollback、目录中缺席的 explicit-only/disabled 技能，也未观察脚本或引用资源的读取、
+模型使用或文件读取隔离。未知版本、缺记录、来源漂移或错误绑定会拒绝候选接收。
+正式 qualifier/admission/replay 仍拒绝此策略；启用前须一起接入保留证据的独立校验与收据。
+
+
 `isolated_skill_package_v1` 为 Codex 的 known-kernel 作者准备私有 `HOME` 与完整技能材料。
 当前只开放材料准备和可执行替身的 CPU qualification；原生技能发现、实际请求投递及
 initial/resume 等价仍未获资格。真实 qualification、正式 Run/Campaign 和正式回放均拒绝
