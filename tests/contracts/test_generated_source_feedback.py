@@ -48,11 +48,11 @@ class GeneratedSourceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT)
 
-    def metal_candidate(self, name='own-candidate', *, python_envelope=False):
+    def metal_candidate(self, name='own-candidate', *, python_envelope=False, formula='canonical'):
         from tools.metal import rmsnorm
         from tests.contracts.test_metal_artifacts import abi_fixture
         workload = abi_fixture()
-        source = rmsnorm.source(3, 7, target=workload.target)
+        source = rmsnorm.source(3, 7, formula, target=workload.target)
         document = frontend.parse(source).document
         if not python_envelope:
             document['schedule_id'] = name
@@ -107,14 +107,17 @@ class GeneratedSourceTests(unittest.TestCase):
         self.assertEqual(stage['line_count'], len(stage['source'].splitlines()))
         # Change the source and all surrounding artifact seals consistently. The
         # refusal must name the Compiler relation, not borrow an outer hash check.
-        _, other, _, _ = self.metal_candidate('other-candidate')
+        _, other, _, _ = self.metal_candidate('other-candidate', formula='weight_first')
+        self.assertNotEqual(candidate.artifact_payloads['lowered_source'],
+                            other.artifact_payloads['lowered_source'])
         payloads = {**candidate.artifact_payloads, 'lowered_source': other.artifact_payloads['lowered_source']}
         manifest = MetalTensorLaunchManifest.from_dict(json.loads(payloads['launch_manifest']))
         forged = seal(payloads, candidate.candidate_sha256, candidate.target, candidate.entry_point, manifest)
         with self.assertRaisesRegex(ReplayRefusal, 'authored Schedule and frozen Compiler lowering'):
             self.replay_artifact(authored, forged, workload, policy)
-        # Existing Runs without the opt-in retain their previous replay domain.
-        self.replay_artifact(authored, forged, workload, {**policy, 'feedback': ['findings', 'correctness']})
+        # Existing valid Runs remain replayable without the opt-in. Do not require
+        # future artifact owners to accept any particular forged source.
+        self.replay_artifact(authored, candidate, workload, {**policy, 'feedback': ['findings', 'correctness']})
 
         # Source inspection binds the authored route, not a native binary symbol.
         # The latter is outside this ordinary Schedule source-replay boundary.
@@ -191,6 +194,8 @@ class GeneratedSourceTests(unittest.TestCase):
         from open_cake_ir.evaluation.program import program_components
         manifest, children, _ = program_components(candidate)
         child = children['producer']
+        self.assertNotEqual(child.artifact_payloads['lowered_source'],
+                            children['epilogue'].artifact_payloads['lowered_source'])
         replaced = {**child.artifact_payloads, 'lowered_source': children['epilogue'].artifact_payloads['lowered_source']}
         source_identity = sha256(replaced['lowered_source']).hexdigest()
         report = json.loads(replaced['stage_compilation'])
@@ -285,6 +290,8 @@ class GeneratedSourceTests(unittest.TestCase):
         # The received bundle is self-consistent; independently reconstructed
         # source provenance, not its own rendering, rejects the substituted view.
         forged = deepcopy(feedback)
+        self.assertNotEqual(forged['candidate_results'][0]['generated_source'],
+                            forged['candidate_results'][1]['generated_source'])
         forged['candidate_results'][0]['generated_source'] = forged['candidate_results'][1]['generated_source']
         records['next'] = package.evidence_bundle({'previous_feedback': forged})
         with self.assertRaisesRegex(ReplayRefusal, 'reconstructed from completed earlier'):
@@ -385,7 +392,9 @@ class GeneratedSourceTests(unittest.TestCase):
         from open_cake_ir.lab.faults import RunProtocolFault
         from open_cake_ir.lab.task_package import TaskPackage
         from tests.contracts.test_lab import FakeProvider, FakeEvaluator, _submission_envelope
-        values = [self.metal_candidate('first'), self.metal_candidate('second')]
+        values = [self.metal_candidate('first'), self.metal_candidate('second', formula='weight_first')]
+        self.assertNotEqual(values[0][1].artifact_payloads['lowered_source'],
+                            values[1][1].artifact_payloads['lowered_source'])
         payloads = tuple(item[0] for item in values)
         candidates = {item[1].candidate_sha256: item[1] for item in values}
         workload, policy = values[0][2:]
