@@ -91,8 +91,8 @@ class PythonPairedStudyTests(unittest.TestCase):
                 'fixed_baseline_bundle_path': str(paths['baseline']),
             }))
             seen = []
-            def bind(_root, provider, _row, *, runtime_path, receipt_path, anchor_path):
-                seen.append((provider.get('submission_contract'), receipt_path, anchor_path))
+            def bind(_root, provider, _row, *, runtime_path, receipt_path, anchor_path, environment_kinds):
+                seen.append((provider.get('submission_contract'), receipt_path, anchor_path, environment_kinds))
                 return {**provider, 'qualification': {'path': str(receipt_path)}}, {'same': True}
             with (patch('open_cake_ir.lab.bindings.bind_cli_provider', side_effect=bind),
                   patch('open_cake_ir.lab.bindings.resolve_executor', return_value=SimpleNamespace(reference={})),
@@ -101,6 +101,7 @@ class PythonPairedStudyTests(unittest.TestCase):
                 resolved, _ = resolve_execution_bindings(ROOT, study, bindings)
             self.assertCountEqual([item[0] for item in seen],
                                   ['python_candidate_bundle_v1', None])
+            self.assertCountEqual([item[3] for item in seen], [('open_cake',), ('native_triton',)])
             self.assertNotEqual(resolved['arms']['open_cake']['provider']['qualification'],
                                 resolved['arms']['native_triton']['provider']['qualification'])
             bindings.write_text(json.dumps({

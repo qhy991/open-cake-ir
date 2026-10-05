@@ -252,11 +252,11 @@ def run_runtime_factory(project_root, runtime_config_path):
                 author_home_policy = declared_provider.get('author_home_policy')
                 codex_home = None
                 user_home = None
+                from open_cake_ir.lab.author_home import (
+                    CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1,
+                    provision_codex_home, provision_user_home,
+                )
                 if author_home_policy is not None:
-                    from open_cake_ir.lab.author_home import (
-                        CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1,
-                        provision_codex_home, provision_user_home,
-                    )
                     if (author_home_policy not in CODEX_HOME_POLICIES
                         or 'auth_source' not in provider_config):
                         raise ValueError('Run isolated Codex home policy or credential source differs')
