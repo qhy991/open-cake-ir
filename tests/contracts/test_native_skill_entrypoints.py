@@ -160,8 +160,9 @@ class NativeSkillEntrypointTests(unittest.TestCase):
         }}})
         for entry in ('run', 'campaign', 'campaign_with_factory'):
             with self.subTest(entry=entry), contextlib.ExitStack() as stack:
+                # This is a read-only path rejection boundary, not a writer.
+                path_check = stack.enter_context(mock.patch.object(execution, 'admit_new_campaign_path'))
                 boundaries = [stack.enter_context(mock.patch.object(owner, name)) for owner, name in (
-                    (execution, 'admit_new_campaign_path'),
                     (execution.EvidenceStore, 'create'),
                     (execution.RunSpecification, 'from_dict'),
                     (execution.CampaignLock, 'from_dict'),
@@ -201,10 +202,26 @@ class NativeSkillEntrypointTests(unittest.TestCase):
                             **common, runtime_factory=callbacks['runtime_factory'],
                             task_package=callbacks['task_package'], validate_run=callbacks['validate_run'],
                             validate_authoring=callbacks['validate_authoring'])
+                path_check.assert_called_once()
                 for boundary in boundaries:
                     boundary.assert_not_called()
                 for callback in (*callbacks.values(), provider):
                     self.assertEqual(callback.mock_calls, [])
+
+    def test_declared_skill_policy_cannot_use_zero_provider_replay_early_return(self):
+        from open_cake_ir.lab.replay import _replay_matched_run
+        authoring = {'reference_access': 'known_kernel_reproduction', 'provider': {
+            'author_home_policy': ISOLATED_SKILL_PACKAGE_V1,
+            'native_skill_package': {'path': '/unread-skills.tar', 'sha256': 'a' * 64},
+        }}
+        specification = SimpleNamespace(document={'authoring': authoring})
+        evidence = mock.Mock()
+        with mock.patch('open_cake_ir.lab.bindings.load_compiler_reference') as compiler:
+            with self.assertRaisesRegex(ValueError, 'native skill discovery.*not qualified'):
+                _replay_matched_run(evidence, object(), specification, project_root=ROOT,
+                                    manifest_parser=mock.Mock(), task_package=mock.Mock())
+            compiler.assert_not_called()
+        evidence.replay_events.assert_not_called()
 
     def test_compose_run_refuses_before_paths_evidence_or_runtime_preparation(self):
         specification = SimpleNamespace(document={'authoring': {

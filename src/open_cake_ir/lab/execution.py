@@ -78,13 +78,13 @@ def execute_campaign(
 ) -> CampaignRef:
     """Own every Turn, budget, checkpoint, feedback and terminal decision."""
 
-    for authoring in lock.document['resolved_inputs']['arm_environments'].values():
-        require_live_skill_qualification(authoring.get('provider', {}).get('author_home_policy'))
     root = admit_new_campaign_path(
         project_root,
         evidence_root,
         role="Campaign Evidence root",
     )
+    for authoring in lock.document['resolved_inputs']['arm_environments'].values():
+        require_live_skill_qualification(authoring.get('provider', {}).get('author_home_policy'))
     require_qualified_clean_start_execution(
         lock.document['resolved_inputs']['arm_environments'].values())
     matched_run_arms(environments, lock.claim_scope)
@@ -141,9 +141,9 @@ def execute_campaign(
 def execute_run(specification: RunSpecification, evidence_root, *, project_root,
                 workload_loader, clock, provider, environment, evaluator, task_package, validate_run=None):
     """Execute a frozen engineering or Study-assigned Run through the same engine."""
+    root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
     require_live_skill_qualification(
         specification.document['authoring'].get('provider', {}).get('author_home_policy'))
-    root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
     specification = RunSpecification.from_dict(specification.document)
     require_qualified_clean_start_execution((specification.document['authoring'],))
     if validate_run is not None:
@@ -160,10 +160,10 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
 def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loader,clock,
                                   runtime_factory,task_package,validate_run,validate_authoring):
     """Keep the external Campaign archive while assembling independent Run adapters."""
+    root = admit_new_campaign_path(project_root,evidence_root,role='Campaign Evidence root')
     for authoring in lock.document['resolved_inputs']['arm_environments'].values():
         require_live_skill_qualification(authoring.get('provider', {}).get('author_home_policy'))
     lock = CampaignLock.from_dict(lock.document)
-    root = admit_new_campaign_path(project_root,evidence_root,role='Campaign Evidence root')
     from .execution_admission import campaign_provider_bindings
     from .bindings import source_reference_path
     campaign_provider_bindings(lock,project_root)
