@@ -158,7 +158,6 @@ def _catalog(text: str) -> list[dict]:
     return entries
 
 
-
 def _retained_records(rows: list[dict]) -> list[dict]:
     """Keep only the native fields needed for skill-input semantic reconstruction.
 
@@ -171,7 +170,7 @@ def _retained_records(rows: list[dict]) -> list[dict]:
         selected = None
         if kind == 'session_meta':
             selected = {key: payload.get(key) for key in ('id', 'cwd', 'cli_version')}
-        elif kind == 'event_msg' and payload.get('type') in {'task_started', 'task_complete'}:
+        elif kind == 'event_msg' and isinstance(payload.get('type'), str) and payload['type'] in {'task_started', 'task_complete'}:
             selected = {key: payload.get(key) for key in ('type', 'turn_id')}
         elif kind == 'turn_context':
             selected = {key: payload.get(key) for key in ('turn_id', 'cwd', 'model', 'effort')}
@@ -187,7 +186,7 @@ def _retained_records(rows: list[dict]) -> list[dict]:
             content = payload.get('content', [])
             if isinstance(content, list) and isinstance(kinds, list):
                 positions = [i for i, item_kind in enumerate(kinds)
-                             if item_kind in {'host_skills.instructions', 'skills.selected_skill_instructions'}]
+                             if isinstance(item_kind, str) and item_kind in {'host_skills.instructions', 'skills.selected_skill_instructions'}]
                 if positions:
                     selected = {'role': payload['role'],
                         'content': [{key: content[i][key] for key in ('type', 'text')} for i in positions],
@@ -344,13 +343,17 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
                 continue
             metadata = payload.get('internal_chat_message_metadata_passthrough') or {}
             kinds = metadata.get('content_item_kinds', []) if isinstance(metadata, dict) else []
+            if (isinstance(kinds, list) and len(kinds) != len(contents)
+                and any(isinstance(item, str) and item in {
+                    'host_skills.instructions', 'skills.selected_skill_instructions'} for item in kinds)):
+                raise ValueError('native skill frame metadata length differs')
             for position, content in enumerate(contents):
                 if not isinstance(content, dict):
                     continue
                 text = content.get('text', '')
                 item_kind = kinds[position] if isinstance(kinds, list) and position < len(kinds) else None
                 has_frame = isinstance(text, str) and text.startswith(('<skills_instructions>', '<skill>'))
-                is_skill = item_kind in {'host_skills.instructions', 'skills.selected_skill_instructions'}
+                is_skill = isinstance(item_kind, str) and item_kind in {'host_skills.instructions', 'skills.selected_skill_instructions'}
                 if not has_frame and not is_skill:
                     continue
                 if (not is_skill or not has_frame or active is None

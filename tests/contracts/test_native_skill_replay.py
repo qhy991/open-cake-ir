@@ -121,6 +121,15 @@ class NativeSkillReplayTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.replay(b'{"schema_version":2,"schema_version":2}')
         with self.assertRaises(ValueError): self.replay(b'{}')
 
+    def test_malformed_native_frame_metadata_is_a_semantic_refusal(self):
+        for kinds in ([{}], ['host_skills.instructions', 'skills.selected_skill_instructions']):
+            document = json.loads(self.capture())
+            frame = next(f['record']['payload'] for f in document['native_records']
+                         if f['record']['type'] == 'response_item')
+            frame['internal_chat_message_metadata_passthrough']['content_item_kinds'] = kinds
+            with self.subTest(kinds=kinds), self.assertRaises(ValueError):
+                self.replay(canonical_json_bytes(document))
+
     def test_old_projection_and_whole_transcript_are_not_replay_certificates(self):
         old = json.loads(self.capture())
         old['schema_version'] = 1
