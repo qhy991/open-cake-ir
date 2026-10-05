@@ -58,6 +58,16 @@ class StreamedMmaWidthTests(unittest.TestCase):
                     self.assertEqual(self.kernel(original),self.kernel(lower))
                     self.assertEqual(lower.toolchain_requirements['compile_options']['num_warps'],2)
                     self.assertIn('.to(tl.'+('float16' if dtype=='fp16' else 'bfloat16')+')',lower.source)
+    def test_direct_fp32_streamed_store_keeps_body(self):
+        d=document();d['buffers']=[b for b in d['buffers'] if b['name']!='rounded']
+        next(b for b in d['buffers'] if b['name']=='c')['dtype']='fp32'
+        d['operations']=[op for op in d['operations'] if op['id']!='round']
+        d['operations'][-1].update(reads=['acc'],depends_on=['dot'])
+        d['tile_loops'][0]['body'].remove('round')
+        before=self.compiler.assess(d);self.assertTrue(before.lowering_eligible)
+        result=self.apply(d);self.assertTrue(result.applied,(result.reason,result.message))
+        self.assertEqual(self.kernel(self.compiler.lower(before)),self.kernel(self.compiler.lower(result.assessment)))
+
     def test_non_streamed_repeated_output_remains_outside_domain(self):
         d=document();next(b for b in d['buffers'] if b['name']=='c')['shape']=[17,16]
         d['access_maps'][-1]['indices'][1]={'source':'dimension','dimension':1}
