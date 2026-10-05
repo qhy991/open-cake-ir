@@ -1,8 +1,9 @@
 # Metal：先验证可重复的 Kernel–Compiler 演进闭环
 
 状态：设计草案；已做离线准入探针，尚未满足正式实验执行门。2026-10-05，用户选择先验证闭环，
-再扩展 FP16/BF16、矩阵指令和真实推理子图。代码审阅基点为 `origin/metal` 的 `a2e62b08`。
-共享 Lab 后继另在 `origin/main@446c00e6` 上开发，不能把它当作已合入上述 Metal 基点。
+再扩展 FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
+本计划分支现已保留祖先地吸收 `main@354a670f`；以下分别标注旧探针与当前实现，
+旧证据仍在原提交回放，不自动升级为同步后的资格。平台合并和验证记录见外部准入台账。
 本页是开发计划，不是实验报告或验收记录。模板见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
 
 ## 1. 产品定位与当前判断
@@ -132,29 +133,31 @@ observer/snapshot 成本和封存 archive 的严格重载结果；编译源码�
 
 ## 4. Ralph 实际上做了什么，哪里还缺一环
 
-`task_package.py` 从冻结权威派生不可变 TASK.md / AGENTS.md，作者只修改 candidate envelope。
+`task_package.py` 从冻结权威派生不可变 TASK.md / AGENTS.md。当前默认 Metal 作者只修改
+`candidate-set.py`；Lab 保留完整原文件，再无执行地投影有序 Schedule/Program/transform。
+显式单源码模式才写 `candidate.py`，且是一个候选、一次 search 的不同 treatment。旧 JSON
+envelope Run 继续按旧提交运行，不能沿用其资格解释默认 bundle。
 `execution.py` 延续同一个 provider thread，每轮先处理整个候选集合、过滤和编译，再对可行
-候选按冻结的 `searches_per_turn` 上限运行外部评测，并把选中者的反馈和构建拒绝候选的有界
-诊断投影到下一轮 StateCard。超过评测上限的候选不自动得到评价。
+候选按冻结的 `searches_per_turn` 上限运行外部评测。当前下一轮反馈包含每个已评测候选的
+身份、数值和 profile，以及构建拒绝、语义折叠和未评测原因；超过上限不自动得到评价。
 `ralph.py` 管理 token、轮次、编译、评测、作者时间和墙钟；搜索结束后才进入预留确认。
 
-已验证的记忆边界：Python 假设注释经过 envelope 投影仍保留，去掉注释后的 Schedule 相同；
+旧 `a2e62b08` 的记忆探针证明 Python 假设注释经过 envelope 投影仍保留，去掉注释后的 Schedule 相同；
 `selection._matched_search_plan` 会把同轮相同程序折叠为一次 search。但原始提交字节不同，
 且 `candidate_filter` 先构建整组候选，再做评测计划；这一去重不节省前面的构建额度，
 也不跨轮记忆。相同程序下一轮仍可进入 search。必须记录重复构建/跨轮重测的成本，
 不能把“有会话上下文”当作已经有自动经验积累或全程去重。
 
-**Metal 审阅基点的 G4 有确定的反馈归因缺口。** 在共享 Lab 的两轮 CPU fixture 中，每轮三个普通
+**旧 Metal 审阅基点的 G4 曾有确定的反馈归因缺口。** 在共享 Lab 的两轮 CPU fixture 中，每轮三个普通
 submit 候选、两个被搜索，第二个候选更快。六个 fixture Run 的日志均记录它胜出，第二轮
 也收到其数值与 profile；但反馈和 StateCard 都没有胜出 candidate 身份。现有 semantic
 replay 仍通过，因为它验证了当前投影，而当前投影本身就缺少这项信息。这是共享控制流
 的离线复现，不是六个独立设备实验，也不证明真实作者已经犯错。
 
-另一个源码边界是：未胜出的已评测候选，其 correctness/计时/profile 留在 Evidence 中，
-没有交付作者；`rejected_peer_feedback` 只涵盖构建阶段拒绝。维护者因此不能把作者没有
-利用这些反证计为“不会学习”。进入发现批次前，先按 [authoring 接入要求](METAL_EVOLUTION_AUTHORING.md)
-修复候选归因和有界 peer 反馈，并同时更新独立回放与测试。这是 `task/core-*` 工作，
-不通过改 Metal Compiler、新 primitive 或收紧到单候选来避开。
+当时未胜出的已评测候选，其 correctness/计时/profile 留在 Evidence 中，却没有交付作者；
+`rejected_peer_feedback` 只涵盖构建阶段拒绝。维护者不能把作者没有利用这些反证计为
+“不会学习”。下面的共享后继已经修复这个软件缺口，仍须在同步后的固定提交与真实作者
+路径验收；不能借改 Metal Compiler、新 primitive 或收紧到单候选来避开。
 
 共享修复现已在 `task/core-feedback-binding` 的本地提交 `5453a4f5` 实现，
 零 provider 依赖修正在 `6a646140` 完成，71 项相关 CPU 合同通过。
@@ -170,8 +173,8 @@ replay 仍通过，因为它验证了当前投影，而当前投影本身就缺�
 
 这补上信息交付的软件前提。[PR #313](https://github.com/qhy991/open-cake-ir/pull/313)
 已合入 `main@af1b18ba`，三个 Python 版本的完整 CI 通过；集成记录见外部
-`feedback-main-integration.json`。尚未同步到 Metal，没有真实 provider、GPU、
-作者学习或 Compiler 收益结论。旧 fixture 与旧 Run 保持原样，不修写历史使其通过新规则。
+`feedback-main-integration.json`。本计划分支同步 `354a670f` 后已包含该实现；这不等于
+真实 provider、GPU、作者学习或 Compiler 收益结论。旧 fixture 与旧 Run 保持原样，不修写历史使其通过新规则。
 Finding `F-2026-10-05-007` 仍为 proposed；测试事实不会自动批准协议或 Compiler 演进。
 
 **任务新增明确要求：探索 Cake，并核对低层实现。** 每轮以一个可证伪机制为中心，读取
@@ -188,25 +191,30 @@ Cake 表达能力、lowering 实现和设备收益必须分别判断，负结果
 实际区域并检验假设。任务文字不能授予额外参考访问或调用编译器的权限。
 分层依据、短任务文案及交付正反例见 [authoring 合同](METAL_EVOLUTION_AUTHORING.md)。
 
-因此已有三种不同的“记忆”：
+当前有四种不同的“记忆”：
 
 1. **同 Run 会话上下文**：可帮助接续，但不是稳定的跨 Run 知识库，也不证明作者理解了反馈。
-2. **Evidence 与确定性投影**：保留候选、拒绝、收据、usage、动作和终态，适合回放。
-3. **Finding / OptimizationKnowledge / passes**：可承载跨 Run 经验，但需要整理、审查与明确授予。
+2. **Run 内 `optimization_history`**：PR #316 已加入 StateCard，保留近期已评测候选、拒绝、
+   变换与最佳合格 search；报告数量/字节截断。live 与独立 replay 都从先前事件和收据派生，
+   包括非胜出者；它没有 MSL 正文，也不含其他 Run 的经验。最佳 search 仍需新鲜确认。
+3. **Evidence 与确定性投影**：保留完整候选、原始作者文件、拒绝、收据、usage、动作和终态，
+   是有界历史之外的维护回放来源；作者不能因此自行扩大读权限。
+4. **Finding / OptimizationKnowledge / passes**：可承载跨 Run 经验，但需要整理、审查与明确授予。
 
-`tools/summarize_diagnoses.py` 已能统计保留诊断；它不生成机制解释、不重判旧事件，也不证明
-独立复现。`knowledge.py` 已支持冻结材料和变换权限。缺少的是一项稳定执行的“Run 后提炼—
+`tools/summarize_diagnoses.py --compiler-gaps` 已能统计保留诊断，并给出当前码表的缺口
+提示与单列的 transform-refusal triage。这些是维护线索，不重判旧事件、不证明根因或独立
+复现，也不批准晋升。`knowledge.py` 已支持冻结材料和变换权限。缺少的是稳定执行的“Run 后提炼—
 复现—决定是否晋升”的维护工作及其质量验收；再加一个不受约束 MEMORY.md 无法补齐它。
 
-Metal 审阅基点的 routing 把特定 backend vocabulary 拒绝分给 `ir_vocabulary`，其他 blocking Finding
-通常分给 candidate。维护者要检查实际拒绝码；`METAL_DECLARATION_UNSUPPORTED` 之类可能
-是后端能力边界，不能只按汇总计数判断作者写错。共享 main 后继已有 `backend_lowering` /
-`backend_triage` 归属，应在平台集成时核对实际 owner；旧事件保持原分类。
+旧 Metal 基点的 routing 把特定 backend vocabulary 拒绝分给 `ir_vocabulary`，其他 blocking Finding
+通常分给 candidate。当前共享后继已有 `backend_lowering` / `backend_triage` 归属，
+但维护者仍要检查实际拒绝码和适用域；`METAL_DECLARATION_UNSUPPORTED` 之类可能是后端能力
+边界，不能只按汇总计数判断作者写错。旧事件保持原分类。
 
 任务组织也要区分三个范围：任务文件夹、Codex 状态目录、作者实际可见的 skill/参考材料。
-当前 Metal 基点只已有第一项；main 的 auth-only home 后继补了部分状态隔离，仍未证明
-宿主/祖先/admin skill 来源受控。原多任务入口还把顶层参考资料共用给所有 cells。
-后继采用每 cell 自己的规范与材料快照，保留独立 judge、冻结 Compiler 和证据权限。
+旧 Metal 基点只已有第一项；已同步的 auth-only home 后继补了部分状态隔离，仍未证明
+宿主/祖先/admin skill 来源受控。PR #317 的 schema v2 已按 cell 保存、投递各自完整规范和
+参考资料；v1 保留历史共享语义。独立 judge、冻结 Compiler 和证据权限继续由原 owner 管理。
 执行绑定、KDA 当前实现的可借鉴范围与目录约定见 [authoring 规划](METAL_EVOLUTION_AUTHORING.md)。
 这些属于先固定的 authoring treatment，不能把新增技能或目录改造的收益记到 Compiler。
 
@@ -272,8 +280,11 @@ verifier；真实表达缺口进 IR/lowering；测量缺口进 Evaluation；反�
 [E/P 消融设计](OPTIMIZATION_TRANSFER_ABLATION.md)的方法：E0P0、E1P0、E0P1、E1P1。
 每个测试 cell 至少五个独立 Run，按任务/重复分块随机化顺序，材料和 pass 在测试前冻结。
 E0 的含义是无额外材料；P1 的 API 自带机制描述，不能称 E0P1 完全没有机制知识。现有
-Python 注释头仅适用于第一阶段 P0 源码作者；transform 动作产生 Program JSON，并无此
-注释载体。E/P 阶段须另审动作记录与兼容 scaffold，不能把 P1 变回手写代码来满足注释要求。
+默认 Python bundle 可在 Schedule 函数体或 `cake.transform(...)` 附近写短注释；
+逐候选 Python source 保留函数体内注释，transform 的 Program JSON 不携带注释，原始
+`provider_source_file` 仍保留对应文字。维护时按显式动作位置、parent 与 transformation 对齐，
+不能把原文件笔记冒充 IR 字段或评测事实。E/P 两组保持相同记录机会；不能把 P1 变回手写
+实现来满足笔记要求。旧 messages-only envelope 的限制另行声明，不借用 bundle 的证据。
 先导确定任务数和预算后才预注册正式研究；小任务集不生成跨任务总体结论。
 当前 `lab/study_plan.py` 强制 source / target 不同、作者为 messages-only responses，
 generalization 只接纳 unseen_shape / unseen_family。因此不能直接把同 M4 的经验积累或
@@ -287,6 +298,12 @@ generalization 只接纳 unseen_shape / unseen_family。因此不能直接把同
 - `Bref`：每任务最初封存且保持固定的外部基线产物；不随 incumbent 自动移动。
 - `Bj`：原始 starter 经 Cj 生成的结果，显示 compiler 默认实现自身变化。
 - `Aj`：该 Run 最终提名并通过新鲜确认的 agent 产物。
+
+当前入口已有显式 `--fixed-baseline-bundle`，PR #316 补充了跨 Compiler 的固定产物准入。
+Metal archive 已可显式独立于后继 Compiler 的 starter emission；精确 Target、Workload
+ABI、产物身份与原有配对检查仍保留。其他 code-object 的 native 参数检查和独立性证据
+范围不同，不能把一个平台的 CPU fixture 当作 Metal archive 的重载/设备资格。冻结 Metal
+系列前，仍需用实际封存的 Bref 验证相应 owner 接纳和目标设备上的新鲜评测。
 
 分别报告 `T(Bref)/T(Bj)`（compiler 基础收益）和 `T(Bref)/T(Aj)`（总收益）。现有 paired
 协议每次只有 candidate/baseline 两臂，固定 Bref 的单次确认不能同时给出直接配对的
@@ -312,8 +329,9 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    在一致的后继环境上完成 G0/G1 和固定基线。代码编写前检查冻结与 source owner。
    当前离线任务与结构表达已完成；下一步优先解决主机声明/工具链的一致性，以及 G2 原生语义，
    不先扩大 dtype 或增加 primitive。
-2. **共享反馈修复与两轮经验验收。** 共享修复已合入 main；接续 `main → metal` 集成，
-   在干净集成提交核对候选归因、peer 结果与独立回放；离线正反例通过后，再按
+2. **共享反馈修复与两轮经验验收。** 计划分支已吸收 `main@354a670f`，保留默认 bundle、
+   候选归因、peer 结果、Run 内历史和任务资料隔离；在干净集成提交完成静态/合同验证后进入
+   Metal 平台。继续按
    [authoring 规划](METAL_EVOLUTION_AUTHORING.md)补齐候选 MSL/operation 对应投递与回放，
    接入明确要求 Cake 探索及低层对照的新 scaffold；按每任务独立材料与 Run 状态组织目录，
    以 `gpt-6.1-sol / xhigh` 完成适用资格，核对 skill 发现边界。验证作者引用真实区域并根据可见反馈
@@ -328,7 +346,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 接口，再决定下一步；不要为了得到上升曲线继续加入不相关 primitive。这里不预设单调进步。
 
 平台专属实现走 `task/metal-* → metal`；共享 TaskPackage、诊断投影或 Study 协议走
-`task/core-* → main` 再同步。共享反馈合同的后继已独立准备，根 AGENTS 与历史证据保持原样。
+`task/core-* → main` 再同步。共享反馈合同已独立进入 main；同步带入 main 的既有根 AGENTS 更新，本任务不改历史证据。
 新 Run / Study / Evidence / 报告放在 checkout 外，不自动清理旧数据；共享合并已按用户授权执行，Compiler 发布仍由相应门负责。
 
 ### 当前准入台账
@@ -343,7 +361,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G1 静态 | 12/12 任务可生成 MSL；现有 Corpus 178/178 匹配；M4 2 正例/10 拒绝命中预期 | 原生/oracle/设备；M4 Corpus 的独立审查采纳 | `task-admission.json`、`search-space-and-corpus.json`、`m4-boundaries-and-source-notes.json` |
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
-| G4 经验接入 | 注释/同轮去重已验证；旧 fixture 复现归因缺口；共享后继的候选绑定与回放已做 CPU 正反例；MSL 交付缺口已由代码审查确认 | 有界 MSL/operation 交付与回放；Metal 集成；真实作者的 Cake 探索及低层对照、封存与回放 | `feedback-binding/observation.json`、`feedback-binding-successor/report.json` |
+| G4 经验接入 | 旧 envelope 注释/去重与归因缺口保留；计划分支已同步候选绑定、Run 内历史、Python bundle 和每任务资料 | 新 bundle 笔记传输验收；有界 MSL/operation 交付与回放；集成合同/平台 PR；真实作者行为 | `feedback-binding/observation.json`、`feedback-binding-successor/report.json`、`task-environment-integration.json` |
 | G5 冻结与发现批次 | 未启动 | 前置门通过、完整有限预算和权限冻结 | 无 Run / Study |
 
 ## 8. 走向更完整的 Metal 工具

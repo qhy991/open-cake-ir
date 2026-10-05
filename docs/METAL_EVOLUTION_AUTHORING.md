@@ -49,14 +49,14 @@ metal-evolution/
 各任务不必重复安装 Compiler；进程状态、可写缓存、候选和证据则要按 Run 分开。
 Ralph 与 GPU Infra/Evaluation 保持现有唯一执行路径，不引入第二套调度器或评测器。
 
-**同步边界不能省略。** `metal@a2e62b08` 已有 task/actor/evidence 独立目录，但没有
-ADR 0081 的 Codex author-home 后继；主线 `69a9f2a1` 已有每 Run auth-only home。
+**同步边界不能省略。** 旧 `metal@a2e62b08` 已有 task/actor/evidence 独立目录，但没有
+ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f` 的每 Run auth-only home。
 主线的该 home 只复制私有凭据，允许 CLI 自带 system skills，检查并拒绝该 CODEX_HOME 内的 user skills/plugins；
-它不是每任务任意技能包安装能力，也不是完整文件读取隔离。必须先把所需共享后继集成
-到 Metal 并验证，不能按主线文档解释旧基点的运行。
+它不是每任务任意技能包安装能力，也不是完整文件读取隔离。集成提交仍需独立验证与平台
+合并；旧基点的 Run 继续在旧提交回放，不能按新实现解释。
 
 新管理输入采用共享 `kernel_experiment.py` 的 schema v2，
-实现见 [PR #317](https://github.com/qhy991/open-cake-ir/pull/317)、提交 `d7c25360`，仍需集成到 Metal。
+实现见 [PR #317](https://github.com/qhy991/open-cake-ir/pull/317)，已合入 `main@354a670f` 并被本计划分支吸收。
 每 cell 必填自己的
 `references`，可选完整 `agents_md`，各自产生 TASK/AGENTS/资料/scaffold 快照；选中
 哪个 cell 就只发送那份 scaffold。共同资料须显式列在每个使用者的列表中。schema v1
@@ -75,6 +75,17 @@ ADR 0081 的 Codex author-home 后继；主线 `69a9f2a1` 已有每 Run auth-onl
 脚本依赖及调用权限，观察实际 catalog/输入，并以宿主、邻任务和非授权插件的哨兵材料
 验证 initial/resume 都未混入；不以 agent 口头自报作为证明。既有 auth-only 策略不容许
 塞入 user skills 后继续沿用原资格；也不因这一项完成就开放 clean-start。
+
+技能资格的最小验收步骤：
+
+1. 固定 CLI、模型/effort、技能名单/版本、依赖、参考范围、工具与预算，绑定到既有 Run owner。
+2. 留存过滤秘密后的配置/路径解析和实际 catalog、已加载正文与引用资源；CLI 若无法观察
+   相应输入，就报告未验证并先补观测，不能用模型自报补齐。
+3. 在可丢弃的资格环境检查允许技能，以及来自用户 HOME、祖先、admin、插件与邻任务的
+   哨兵材料；未覆盖的来源明确列出，不改现有宿主状态使检查通过。
+4. initial/resume 保持相同绑定；技能漂移拒绝继续或转入新资格。不同 Run 不继承前一 Run 状态。
+5. 分别报告目录/状态分离、实际作者输入符合声明、文件读取限制；前两项不证明第三项。
+   完成这些软件与真实 CLI 资格后，才比较技能对 Cake 探索和设备收益的影响。
 
 借鉴依据是 [KDA-Internal e99a6ce1 的 workspace builder](https://github.com/qhy991/KDA-Internal/blob/e99a6ce1f0ea69101bb03904b00d39ade988e708/src/kda/tasks/workspace.py)：
 每次 setup 创建独立 repo，仅复制当前任务资源，并测试其他任务资源未投递。
@@ -110,7 +121,10 @@ E0 表示没有额外经验材料，不代表 P1 API 不含机制描述。材料
 
 ## AGENTS.md 负责“怎样进行一轮”
 
-保留现有 renderer 的只写 candidate-set.json、同线程、冻结 Compiler、Lab 评测及证据规则。
+保留现有 renderer 的只写 `candidate-set.py`、同线程、冻结 Compiler、Lab 评测及证据规则。
+默认 bundle 与旧 `candidate-set.json` 是不同 treatment；显式单源码模式 `candidate.py` 也另算。
+当前 renderer 已要求读取 Run 内 `optimization_history` 并在允许的源码里留下简短公开笔记；
+下面补充的是 Cake 机制与低层证据要求，不把这些基础能力重新列为尚未实现。
 第一阶段可用一个后继 Metal scaffold 加入下面的简短要求，避免改公共 envelope/schema。
 目前它只是一份设计，尚未部署到任何 Run。
 
@@ -122,14 +136,15 @@ E0 表示没有额外经验材料，不代表 P1 API 不含机制描述。材料
 > 缺失的证据层，继续可执行的候选探索。每轮留下结果摘要，不以 API 数量或笔记数量计进步。
 > 对有反馈的上一假设给出简短结果摘要：支持、反驳或证据不足，并说明下一步改变。
 > 这些只需要可供实验审计的摘要，不要求输出内部推理过程。
-> 给每个候选的 Python source 添加下面的简短注释头，正文仍是完整合法 frontend 程序。
-> 只更新候选 envelope，不创建 MEMORY.md、诊断 JSON 或 Findings 文件，不增加 envelope 字段。
+> 给每个 Schedule 函数体开头添加下面的简短注释，正文仍是完整合法 frontend 程序。
+> 函数外笔记只保证留在完整原文件，不能假定也进入逐候选源码。
+> 只更新 `candidate-set.py`，不创建 MEMORY.md、诊断 JSON 或 Findings 文件，不增加提交字段。
 > 引用实际可见的轮次、候选 ID、诊断码或收据字段。不可见的 event sequence 留给维护者解析。
 > 若反馈没有指明对应候选，就记录归因未知，不凭提交顺序猜测哪项改动获益。
 > 区分候选错误、疑似 verifier/lowering 缺口、测量不可用和环境故障。重复出现不自动证明根因。
 > 不修改既有预算、Compiler 或 TASK/AGENTS；无法改进时提交诚实的边界说明，不假造成功。
 
-建议注释头（所有字段都是作者声明，非评测事实）：
+建议每个 Schedule 函数体内的注释（所有字段都是作者声明，非评测事实）：
 
 ```python
 # experiment: h02
@@ -149,13 +164,16 @@ E0 表示没有额外经验材料，不代表 P1 API 不含机制描述。材料
 一个程序；原始源码字节变化仍产生不同提交身份。这不等于消除构建成本：当前先构建整组，
 随后规划 search，且去重只作用于本轮。跨轮重复仍可能消耗评测额度，须在维护总结中单独统计。
 源码和既有原生输出可供 Run 后整理；消息作者和 CLI 作者都通过同一 source transport 保留摘要。
-该方式先验证是否足够；若上下文压缩导致历史丢失，再在公共 Lab owner 设计从 Evidence
-派生的有界历史投影和回放测试，不能新增一个会自行改写政策的长期记忆文件。
+这些是旧 envelope 的探针结论。当前 bundle 从装饰器到函数末行切片：函数体内注释保留，
+装饰器前注释仅在 sealed `provider_source_file` 保留。新模式须单独验证，不能套用旧结论。
+PR #316 已实现从先前事件与收据派生的有界 `optimization_history` 和独立回放，供下一轮
+及上下文压缩后读取；它不自动证明作者理解了负结果，也不授予跨 Run 经验。不能新增一个
+会自行改写政策的长期记忆文件。
 
-上述注释方案只覆盖第一阶段 P0 的 Python submit。现有 `transform` 动作字段封闭，结果
-是 Program JSON，不带 Python 注释；P1 不能直接套用“每个候选都写注释头”的要求，也不能
-为了留下笔记绕过变换 API。E/P 阶段应在共享动作 owner 设计可回放的摘要投影，或显式保留
-“动作假设未记录”的观测限制，并让两组的记录机会一致。
+当前 bundle 的 `cake.transform(...)` 附近也可以留注释，完整原文件会保留；已解析的 transform
+动作字段和结果 Program JSON 仍不带这些文字。P1 笔记应明确标注原动作位置、parent 与
+transformation，由维护者同原文件和动作事件对齐；不额外新增 schema，也不为了留下笔记
+绕过变换 API。文件笔记与逐候选源码是两个保留范围，E/P 两组的记录机会保持一致。
 
 ## Metal 低层证据与交付合同
 
@@ -199,7 +217,7 @@ G4 增加一个共享后继，沿既有 evidence 和 TaskPackage owner 实现并
 公共复现任务的 canonical 要求维护在
 `contracts/scaffolds/kernel-reproduction/AGENTS.md`，通过已有 `--agents-md` 显式绑定。
 通用规范后继见 [PR #315](https://github.com/qhy991/open-cake-ir/pull/315)，提交 `b2befbf5`；
-本平台基点尚未包含该共享后继。Metal 默认 bundle scaffold 不会因该文件修改而自动更新；
+本计划分支已包含该共享后继。Metal 默认 bundle scaffold 不会因该文件修改而自动更新；
 本页文本与低层投递均需接入
 后继 Run。修改 scaffold 与源码可见性应先作为新 treatment 冻结，再在后续 Compiler
 对照中保持一致，不能把提示词/材料的变化归因于 Compiler。
@@ -208,7 +226,7 @@ G4 增加一个共享后继，沿既有 evidence 和 TaskPackage owner 实现并
 
 `a2e62b08` 的两轮 CPU fixture 已复现：日志中的第二个候选胜出，第二轮收到数值与 profile，
 却没有候选身份；现有回放照样通过。源码还显示未胜出的已评测候选没有下一轮反馈。
-因此先做以下共享 Lab 修复，再验收真实作者。它不是 Compiler primitive 或 Metal 特例。
+以下共享 Lab 修复现已纳入本计划分支，接下来验证集成和真实作者。它不是 Compiler primitive 或 Metal 特例。
 
 1. 反馈引用原始源轮次、提交中的候选位置及已有候选身份；不计算新身份、不暴露被禁止的源码。
    胜出项有明确标识。一次反馈不能混用 A 的耗时和 B 的 Findings/profile。
@@ -228,7 +246,7 @@ Ralph；真实 provider/GPU 接入在对应门通过后单独执行。
 该合同已在独立共享后继 `5453a4f5` 实现，`6a646140` 的 71 项相关 CPU 合同通过。
 另一个广泛回归的工作树写权限前提未满足，仍为环境未验证。完整结果见外部
 `feedback-binding-successor/report.json`。共享修复已通过三版本 CI 并由 PR #313 合入
-`main@af1b18ba`；尚未集成到 Metal，也未部署本页 scaffold。
+`main@af1b18ba`；本计划分支经 `354a670f` 已包含该实现，但没有部署本页 scaffold 或启动新 Run。
 读反馈时按 `source_turn` 与每项既有候选身份对应注释，`candidate_index` 是首次动作的原始
 位置，遇到拒绝变换时可能不连续。`selected` 不等于成功：全部构建拒绝时它只是诊断选择。
 `omitted_findings` / `text_truncated` 表示有界投影的损失；需要完整诊断由维护者回到 Evidence，
@@ -243,7 +261,8 @@ Ralph；真实 provider/GPU 接入在对应门通过后单独执行。
 
 > 读取给定 Run 的独立 audit、原始候选、构建诊断、搜索/归因/确认收据、停止原因和实际 usage。
 > 先检查 archive integrity 和 filesystem custody，分别报告；不恢复 mode bits 来制造历史 custody。
-> 用现有 summarize_diagnoses 汇总已记录的路由计数；不要重写旧事件分类。
+> 用现有 summarize_diagnoses --compiler-gaps 汇总保留路由、当前码表提示与变换拒绝线索；
+> 不重写旧事件分类，不把当前 triage 提示当作当时的诊断或独立根因证明。
 > 将每个候选的简短假设与实际反馈对齐，明确哪些声明得到支持、哪些被反驳、哪些未被检验。
 > 区分提出假设、收到反馈、下一轮改变行为这三个时间点；没有后续交付证据时，不推断作者已经学习。
 > 统计相同程序的跨轮重试、同轮折叠及实际构建成本；区分预先声明的噪声复测与无效重复。
