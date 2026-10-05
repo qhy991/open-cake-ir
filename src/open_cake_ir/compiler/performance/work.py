@@ -40,6 +40,7 @@ from ..backends.triton_output_domain import output_tile_domain
 
 from ..ir import (
     AccessIndexKind,
+    DType,
     ElementwiseOp,
     ElementwiseParameters,
     MemorySpace,
