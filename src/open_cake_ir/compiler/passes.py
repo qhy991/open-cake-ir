@@ -116,16 +116,9 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
             return refused('loop_domain', 'Require one fixed sequential MMA loop.')
         loop = s.tile_loops[0]
         body = [by_id[name] for name in loop.body]
+        # Initial backend assessment already owns output-store affine coverage
+        # (TRITON_LOOP_STORE_OWNERSHIP); do not duplicate that legality rule here.
         stores = [op for op in body if op.kind is OperationKind.STORE]
-
-        def output_store(op) -> bool:
-            output = s.buffer(op.writes[0])
-            access = s.access_map(op.op_id, output.name)
-            return (output.mode is BufferMode.OUTPUT and output.space is MemorySpace.GLOBAL
-                    and access is not None
-                    and any(index.source is AccessIndexKind.LOOP_TILE
-                            and index.name == loop.iterator and index.offset == 0
-                            and index.extent is None for index in access.indices))
 
         def width_cast(op) -> bool:
             source = s.buffer(op.reads[0])
@@ -137,14 +130,13 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
             consumers = [use for use in s.operations if op.writes[0] in use.reads]
             return (source.dtype is DType.FP32 and op.parameters.to in {DType.FP16, DType.BF16}
                     and bool(consumers)
-                    and all(use in stores and output_store(use) for use in consumers))
+                    and all(use in stores for use in consumers))
 
         if (loop.stop is not None or loop.range_options.warp_specialize
                 or not any(op.kind is OperationKind.MMA for op in body)
                 or any(op.kind not in {OperationKind.LOAD, OperationKind.CAST,
                                       OperationKind.MMA, OperationKind.STORE} for op in body)
-                or any(op.kind is OperationKind.CAST and not width_cast(op) for op in body)
-                or any(not output_store(op) for op in stores)):
+                or any(op.kind is OperationKind.CAST and not width_cast(op) for op in body)):
             return refused('loop_domain', 'Require a fixed load/cast/MMA loop; optional rounded output stores must follow its tiled axis without intermediate consumers.')
     if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
                           OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):

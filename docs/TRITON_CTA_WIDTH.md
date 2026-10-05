@@ -122,8 +122,8 @@ keeping the selected mechanism and fixed baseline explicit before measuring agai
 ## Streamed MMA output tiles
 
 The explicit width rewrite also admits one fixed sequential MMA loop containing
-ordinary output stores. Each store must write a global output along that loop's
-unshifted tiled axis. An FP32-to-FP16/BF16 rounding cast is admitted only when all
+ordinary output stores. The existing backend preflight requires output stores to cover every active loop
+and program axis; the pass retains that owner and its refusal. An FP32-to-FP16/BF16 rounding cast is admitted only when all
 consumers are those stores in the same loop. Intermediate rounded MMA inputs,
 repeated non-tiled output stores, state, dynamic stops, synchronization and explicit
 resource commitments remain outside this domain.

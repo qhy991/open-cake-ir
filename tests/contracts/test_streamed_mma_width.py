@@ -61,8 +61,10 @@ class StreamedMmaWidthTests(unittest.TestCase):
     def test_non_streamed_repeated_output_remains_outside_domain(self):
         d=document();next(b for b in d['buffers'] if b['name']=='c')['shape']=[17,16]
         d['access_maps'][-1]['indices'][1]={'source':'dimension','dimension':1}
-        self.assertTrue(self.compiler.assess(d).lowering_eligible)
-        self.assertEqual(self.apply(d).reason,'loop_domain')
+        assessment=self.compiler.assess(d)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertIn('TRITON_LOOP_STORE_OWNERSHIP',[f.code for f in assessment.findings])
+        self.assertEqual(self.apply(d).reason,'input_refused')
     def test_narrow_intermediate_mma_consumer_remains_outside_domain(self):
         d=document()
         for b in d['buffers']:
