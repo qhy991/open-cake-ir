@@ -1,6 +1,6 @@
 # Metal 演进实验：TASK.md / AGENTS.md 与 Run 后提炼
 
-状态：待接入的文本设计，不是当前实验的可执行权限。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
+状态：平台规划已合入 `metal@f619a6d3`；演进文本 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。
 
@@ -52,8 +52,8 @@ Ralph 与 GPU Infra/Evaluation 保持现有唯一执行路径，不引入第二�
 **同步边界不能省略。** 旧 `metal@a2e62b08` 已有 task/actor/evidence 独立目录，但没有
 ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f` 的每 Run auth-only home。
 主线的该 home 只复制私有凭据，允许 CLI 自带 system skills，检查并拒绝该 CODEX_HOME 内的 user skills/plugins；
-它不是每任务任意技能包安装能力，也不是完整文件读取隔离。集成提交仍需独立验证与平台
-合并；旧基点的 Run 继续在旧提交回放，不能按新实现解释。
+它不是每任务任意技能包安装能力，也不是完整文件读取隔离。PR #319 已完成 CPU 集成检查
+与平台合并；真实作者与设备资格仍待验证。旧基点的 Run 在旧提交回放，不能按新实现解释。
 
 新管理输入采用共享 `kernel_experiment.py` 的 schema v2，
 实现见 [PR #317](https://github.com/qhy991/open-cake-ir/pull/317)，已合入 `main@354a670f` 并被本计划分支吸收。
@@ -93,6 +93,18 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 将 flow、模型、重复与 agent 容器交给 Humanize2；当前 KDA 源码没有证明 author skill
 的完整安装/挂载流程。因此借鉴最小任务投递、固定 runtime 和独立 judge，不把 GPU
 容器的 HOME 设置当成 author 隔离证明，也不将 CUDA 镜像与 NCU 路线照搬到 Metal。
+
+## 完整 scaffold 的准备边界
+
+当前 `--agents-md` 与 `cells[].agents_md` 都完整替换默认 scaffold；系统不会展开 Markdown
+链接、include 或 extends。把短附录单独传入会遗漏 Metal 能力约束。
+
+本次提供 [演进附录组件](../contracts/scaffolds/metal-evolution-appendix-v1.md)。冻结前，从同一
+固定提交读取完整 `python-artifact-optimization-metal-bundle-v1.md` 与该附录，按此顺序拼接，
+在 checkout 外独占创建一份完整文件，再交给现有 `--agents-md` 或 v2 cell 的 `agents_md`。
+准备后不追加；实际 Run 仍由现有 scaffold 绑定和 TaskPackage owner 验证、投递、回放。
+附录只增加行为要求，不重复形状、模型、预算等参数，不授予源码访问或工具权限。
+未实际交付生成代码的 Run 只能记录缺失，不能被算作低层代码驱动的优化验收。
 
 ## TASK.md 负责“做什么、如何判断”
 
@@ -165,7 +177,8 @@ E0 表示没有额外经验材料，不代表 P1 API 不含机制描述。材料
 随后规划 search，且去重只作用于本轮。跨轮重复仍可能消耗评测额度，须在维护总结中单独统计。
 源码和既有原生输出可供 Run 后整理；消息作者和 CLI 作者都通过同一 source transport 保留摘要。
 这些是旧 envelope 的探针结论。当前 bundle 从装饰器到函数末行切片：函数体内注释保留，
-装饰器前注释仅在 sealed `provider_source_file` 保留。新模式须单独验证，不能套用旧结论。
+装饰器前注释仅在 sealed `provider_source_file` 保留。`d3967a0d` 的独立 CPU probe 已验证
+投影位置以及注释不同而 Schedule 相同；它没有启动 provider 或证明完整 seal custody/作者学习。
 PR #316 已实现从先前事件与收据派生的有界 `optimization_history` 和独立回放，供下一轮
 及上下文压缩后读取；它不自动证明作者理解了负结果，也不授予跨 Run 经验。不能新增一个
 会自行改写政策的长期记忆文件。
