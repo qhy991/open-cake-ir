@@ -28,5 +28,13 @@
     "offline_build": "Pass-generated C32 and C35/tile16 pointwise candidates compile to MCFATBIN using the existing isolated CPU-only builder under4d7258a2.",
     "limits": "The original SiLU speedup is an author candidate result underafa75c13, not a pass-generated result under the successor. CPU source interpretation and native compilation do not qualify device correctness, a performance model, a selected tile, or transfer beyond this source mechanism."
   },
-  "promotion_disposition": "Reviewable guarded rewrite with software evidence; behavior finding remains open for independent review and separately qualified successor measurement. No automatic policy, new IR primitive, performance acceptance or GPU retry."
+  "promotion_disposition": "Reviewable guarded rewrite with software evidence; behavior finding remains open for independent review and separately qualified successor measurement. No automatic policy, new IR primitive, performance acceptance or GPU retry.",
+  "implementation_addenda": [
+    {
+      "date": "2026-10-05",
+      "implemented_in": "b70e1543",
+      "scope": "Repair the complete Program entry: only the selected semantically accepted stage may bypass a whole-column arange refusal when the explicit pointwise rewrite owns that repair. Other stages and unrelated blockers are not bypassed.",
+      "verification": "At b97719ba the C35 complete-Program regression fails input_refused while the leaf API applies. At b70e1543 it applies, preserves public tensors/bindings and lowers as a complete Program; an unselected C35 stage stays refused.91 integrated contracts including main's joint squared-difference pass,181 unchanged Corpus cases and97 source snapshots pass in a fixed detached worktree. No new emitted instruction, route qualification or device measurement."
+    }
+  ]
 }
