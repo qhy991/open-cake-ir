@@ -99,6 +99,19 @@ def candidate(lm,x:cake.Tensor((3,32),"fp32"),out:cake.Tensor((3,32),"fp32",mode
         self.assertFalse(result.applied);self.assertEqual(result.reason,'program_shape')
 
     def test_sliced_inputs_and_explicit_residency_cannot_be_silently_reinterpreted(self):
+        sliced = frontend.parse('''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="sliced-columns",target="xcore1002",backend="triton",entry_point="sliced_columns")
+def candidate(lm,x:cake.Tensor((3,64),"fp32"),out:cake.Tensor((3,32),"fp32",mode="output")):
+    compute=lm.role(execution_groups=[0])
+    row=lm.program(x,axis=0,dimension=0,tile=1)
+    with compute:
+        values=lm.load(x[row,16:48],id="load_x")
+        lm.store(out[row,:],values,coalesced=False,id="store_out")
+''').document
+        self.assertTrue(self.compiler.assess(sliced).lowering_eligible)
+        result=self.apply(sliced)
+        self.assertFalse(result.applied)
+        self.assertEqual(result.reason,'access_domain')
         source=pointwise_document()
         source['residency']={'ctas_per_multiprocessor':1}
         self.assertTrue(self.compiler.assess(source).lowering_eligible)
