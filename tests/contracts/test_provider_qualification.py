@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import contextlib
 import io
 import subprocess
@@ -35,6 +36,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         mutate_task: bool = False,
         mutate_helper: bool = False,
         pretty_submission: bool = False,
+        omit_skill_body_in_turn: int = 0,
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -79,7 +81,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 if "native_skill_package" in projection:
                     sys.path.insert(0, {str(ROOT)!r})
                     from tests.contracts._native_skill_fixture import append_rollout
-                    append_rollout(thread_id, arguments)
+                    append_rollout(thread_id, arguments,
+                                   load_body=(2 if resumed else 1) != {omit_skill_body_in_turn!r})
                 reported_thread_id = (
                     "fedcba98-7654-3210-fedc-ba9876543210"
                     if resumed and {break_resumed_thread!r}
@@ -264,7 +267,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         if auth_source is not None:
             command.extend(['--auth-source', str(auth_source)])
         if author_skill_package is not None:
-            command.extend(['--author-skill-package', str(author_skill_package)])
+            command.extend(['--author-skill-package', str(author_skill_package), '--native-skill-name', 'cake'])
         if maximum_candidates_per_turn is not None:
             command.extend(
                 [
@@ -328,6 +331,15 @@ class ProviderQualificationContractTests(unittest.TestCase):
             rebuilt = provision_user_home(root/'rebuilt-home', package)
             verify_user_home(rebuilt, package)
             self.assertEqual((rebuilt/'.agents/skills/cake/assets/table.bin').read_bytes(), bytes(range(256)))
+            from open_cake_ir.lab.native_skill_qualification import reconstruct_qualification_inputs
+            receipt = ProviderQualificationReceipt.load(receipt_path)
+            def reconstruct(*, selected_authority=authority, payload=events[0]['payload'], selected_receipt=receipt):
+                return reconstruct_qualification_inputs(evidence=evidence, run_id='skills',
+                    authority=selected_authority, payload=payload, receipt=selected_receipt)
+            with mock.patch('pathlib.Path.open', side_effect=AssertionError('reopened live qualification files')):
+                reconstructed = reconstruct()
+            self._check_retained_native_qualification_refusals(
+                evidence_root, authority, events[0]['payload'], receipt)
             homes = set()
             for arm in ('open_cake', 'direct_cuda'):
                 initial = json.loads(evidence.read_object(objects[f'{arm}_initial_invocation']))
@@ -337,34 +349,124 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 self.assertNotEqual(initial['user_home'], initial['codex_home'])
                 self.assertEqual(initial['native_skill_package'], authority['native_skill_package'])
                 self.assertEqual(initial['native_skill_package'], resumed['native_skill_package'])
-                from open_cake_ir.lab.native_skill_observation import replay_observation
-                observations = []
-                previous_input = None
-                for phase, invocation in (('initial', initial), ('resumed', resumed)):
-                    retained_input = evidence.read_object(objects[f'{arm}_{phase}_native_skill_input'])
-                    observation = replay_observation(retained_input, previous=previous_input,
-                        thread_id=events[0]['payload']['arms'][arm]['thread_id'], cwd=invocation['cwd'],
-                        model=authority['model'], effort=authority['reasoning_effort'],
-                        turn=1 if phase == 'initial' else 2,
-                        package_files={str(Path(invocation['user_home'])/'.agents'/item.path): item.payload
-                                       for item in package.files if item.path == 'skills/cake/SKILL.md'},
-                        system_paths=())
-                    previous_input = retained_input
+                observations = reconstructed[arm]
+                for phase, observation in zip(('initial', 'resumed'), observations):
                     self.assertEqual(observation['kind'], 'codex_skill_input_observation_v2')
                     self.assertEqual(observation['resumed'], phase == 'resumed')
-                    self.assertEqual(observation['cwd'], invocation['cwd'])
                     self.assertEqual(len(observation['loaded_this_turn']), 1)
                     loaded = observation['loaded_this_turn'][0]
                     self.assertEqual(loaded['turn_id'], observation['turn_id'])
-                    self.assertEqual(loaded['path'], str(Path(invocation['user_home'])/'.agents/skills/cake/SKILL.md'))
                     expected = next(item.payload for item in package.files if item.path == 'skills/cake/SKILL.md')
                     self.assertEqual(loaded['body'].encode(), expected)
                     self.assertNotIn('QUALIFICATION_PLAN_JSON=', json.dumps(observation))
-                    observations.append(observation)
                 self.assertEqual(observations[0]['thread_id'], observations[1]['thread_id'])
                 self.assertNotEqual(observations[0]['turn_id'], observations[1]['turn_id'])
                 homes.update((initial['user_home'], initial['codex_home']))
             self.assertEqual(len(homes), 4)
+
+    def _check_retained_native_qualification_refusals(self, evidence_root, authority, payload, receipt):
+        from dataclasses import replace
+        from open_cake_ir.lab.native_skill_qualification import reconstruct_qualification_inputs
+        from open_cake_ir.serialization import canonical_json_bytes
+        store = EvidenceStore.writer(evidence_root)
+        def replay(a=authority, p=payload, r=receipt):
+            return reconstruct_qualification_inputs(evidence=store, run_id='skills', authority=a,
+                                                     payload=p, receipt=r)
+        def swap(p, role, transform):
+            index = next(i for i, item in enumerate(p['objects']) if item['role'] == role)
+            raw = store.read_object(p['objects'][index])
+            p['objects'][index] = store.put(transform(raw), media_type='application/json').reference(role)
+        for role in ('native_skill_package', 'system_skills_snapshot', 'qualification_reference',
+                     'qualification_receipt', 'open_cake_initial_invocation',
+                     'open_cake_resumed_native_skill_input', 'direct_cuda_initial_task_projection'):
+            for variant in ('missing', 'duplicate'):
+                p = deepcopy(payload)
+                item = next(item for item in p['objects'] if item['role'] == role)
+                if variant == 'missing': p['objects'].remove(item)
+                else: p['objects'].append(item)
+                with self.subTest(role=role, variant=variant), self.assertRaises(ValueError):
+                    replay(p=p)
+        for variant in ('old_authority', 'model', 'schema_path', 'selected_name', 'cross_arm_home', 'scope'):
+            a = deepcopy(authority)
+            if variant == 'old_authority': a.pop('native_skill_context')
+            elif variant == 'model': a['model'] = 'foreign-model'
+            elif variant == 'schema_path': a['native_skill_context']['output_schema'] = '/foreign/schema.json'
+            elif variant == 'selected_name': a['native_skill_context']['selected_names'] = ['folder-is-not-native-name']
+            elif variant == 'scope': a['qualification_scope'] = 'live_two_turn_current_provider'
+            else: a['native_skill_context']['arms']['direct_cuda']['user_home'] = a['native_skill_context']['arms']['open_cake']['user_home']
+            with self.subTest(variant=variant), self.assertRaises(ValueError):
+                replay(a=a)
+        for phase in ('initial', 'resumed'):
+            p = deepcopy(payload)
+            foreign = next(item for item in p['objects'] if item['role'] == f'direct_cuda_{phase}_native_skill_input')
+            swap(p, f'open_cake_{phase}_native_skill_input', lambda _: store.read_object(foreign))
+            with self.subTest(cross_arm=phase), self.assertRaises(ValueError):
+                replay(p=p)
+        for role, field, value in (
+            ('open_cake_initial_invocation', 'argv', ['foreign']),
+            ('open_cake_resumed_invocation', 'thread_id', 'foreign'),
+            ('open_cake_initial_task_projection', 'run_id', 'foreign'),
+            ('open_cake_resumed_task_projection', 'state_card', {'turn': 1}),
+            ('open_cake_initial_native_skill_input', 'loaded_this_turn', []),
+        ):
+            p = deepcopy(payload)
+            swap(p, role, lambda raw: canonical_json_bytes({**json.loads(raw), field: value}))
+            with self.subTest(role=role, field=field), self.assertRaises(ValueError):
+                replay(p=p)
+        for role, raw in (('native_skill_package', b'foreign material'),
+                          ('system_skills_snapshot', b'[["foreign/",493,""]]'),
+                          ('qualification_reference', b'{}')):
+            p = deepcopy(payload)
+            swap(p, role, lambda _: raw)
+            with self.subTest(role=role), self.assertRaises(ValueError):
+                replay(p=p)
+        with self.assertRaises(ValueError):
+            replay(r=replace(receipt, scope='live_two_turn_current_provider'))
+
+    def test_native_qualification_single_arm_and_missing_current_body(self):
+        # Real qualifier/executable fixture, including failure sealing. No live CLI/model.
+        for omit in (0, 1, 2):
+            with self.subTest(omit=omit), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                executable = root/'codex'
+                self._write_provider(executable, omit_skill_body_in_turn=omit)
+                source = root/'skills.tar'
+                with tarfile.open(source, 'w') as archive:
+                    for name, data in (
+                        ('SKILL.md', b'---\nname: cake\ndescription: fixture\n---\nRead references.\n'),
+                        ('scripts/check.py', b"print('fixture')\n"),
+                        ('assets/table.bin', bytes(range(256))),
+                    ):
+                        item = tarfile.TarInfo('skills/cake/' + name)
+                        item.size, item.mode = len(data), 0o644
+                        archive.addfile(item, io.BytesIO(data))
+                auth = root/'auth.json'
+                auth.write_bytes(b'fixture-only credential')
+                auth.chmod(0o600)
+                schema = json.loads((ROOT/'contracts/providers/codex-turn-output-schema-v1.json').read_text())
+                schema['properties']['arm'] = {'type': 'string'}
+                schema_path = root/'schema.json'
+                schema_path.write_text(json.dumps(schema))
+                completed, receipt, _, evidence_root = self._run_qualification(
+                    root, executable, provider_revision='single-native-fixture', run_id='single',
+                    author_skill_package=source, auth_source=auth,
+                    output_schema=schema_path, environment_kind='open_cake')
+                evidence = EvidenceStore.open(evidence_root)
+                audit = evidence.audit_run('single')
+                self.assertTrue(audit.archive_integrity)
+                self.assertTrue(audit.filesystem_custody_verified)
+                if omit:
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(b'selected body was not delivered this turn', completed.stderr)
+                    self.assertFalse(receipt.exists())
+                    self.assertEqual(audit.protocol_adherence, 'provider_fault')
+                else:
+                    self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+                    self.assertEqual(ProviderQualificationReceipt.load(receipt).scope,
+                                     'zero_gpu_contract_fixture_only')
+                    event = next(event for event in evidence.replay_events('single')
+                                 if event['kind'] == 'provider_qualification_observed')
+                    self.assertEqual(set(event['payload']['arms']), {'open_cake'})
 
     def test_tool_rich_qualification_binds_provider_defaults_and_auxiliary_events(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
