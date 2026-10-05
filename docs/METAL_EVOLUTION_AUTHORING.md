@@ -73,14 +73,22 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 
 待 [PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 验收并集成后，每个带技能包的
 v2 cell 同时显式声明 `native_skill_names`。本计划现有草案的原生名字已从 SKILL.md
-核对为 `cake-metal-optimization`，因此该 cell 的选择为 `['cake-metal-optimization']`。
+核对为 `cake-metal-optimization`，因此该 cell 的选择为 `["cake-metal-optimization"]`。
 管理 TASK/config 保存名字列表；local/SSH 节点把它逐项传成 `--native-skill-name`，
 再由 launcher 交给 qualifier。目录名不能替代原生名字；本机与节点使用同一校验规则。
-本项实现已提交、CI 尚未完成，不代表任务已经获得真实 skill 环境。
+本项实现已提交；CI `37363612900` 的三个 hosted job 因未取得 runner 而终止，没有执行
+测试。失败记录保留在 `native-selection-runner-5946faf1/`；不重跑或替换环境制造通过，
+不代表任务已经获得真实 skill 环境。
 
 复用已有资格时，必须从已验证的资格归档确认请求名字在各声明 arm 的 initial/resume
 当前输入中都有对应包内正文。包身份相同、目录可见或历史残留都不足以授权一个未观察的
 名字。Run 继续通过既有 qualification/anchor 引用绑定这份证据，不新增第二份资格清单。
+工作提交 `6fa33d5e` 已将请求名字交给同一个重建函数，检查原资格选择与本次请求的并集；
+每个名字须唯一解析为包内 entry，并在本轮加载记录中匹配其路径。目录名不同于原生名字
+的正例、两个 arm 各自首轮/续跑缺正文的反例，以及 launcher 不启动进程的复用检查已编写。
+原资格仅点名 `cake`、额外正文为 `cake:metal` 的夹具能把复用规则与原资格规则分开检查。
+目前只做了语法与 diff 检查，未执行合同测试；fixture scope、配置/材料准入与正式入口门
+保持原有职责。此提交依赖尚未验收的 #340/#341，尚未成为平台能力。
 
 
 原生 skill 环境是另一项需要资格验证的后继。默认 auth-only 策略仍保留宿主 `HOME`；Codex
