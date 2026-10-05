@@ -71,7 +71,8 @@ class SequentialRegions(unittest.TestCase):
                         self.assertAlmostEqual(actual,reference,places=12)
                     self.assertEqual(memory['x'],values)
                     self.assertEqual(set(observer.stores.values()),{1})
-                    self.assertEqual(sum(isinstance(n,ast.For) for n in ast.walk(ast.parse(result.source))),3)
+                    kernel=next(n for n in ast.parse(result.source).body if isinstance(n,ast.FunctionDef))
+                    self.assertEqual(sum(isinstance(n,ast.For) for n in ast.walk(kernel)),3)
                     self.assertIn('inverse',result.source_map)
 
     def test_sibling_control_flow_serves_peer_targets_without_borrowing_mask_operations(self):

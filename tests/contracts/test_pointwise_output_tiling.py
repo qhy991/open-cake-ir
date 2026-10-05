@@ -92,7 +92,9 @@ def candidate(lm,x:cake.Tensor((3,32),"fp32"),out:cake.Tensor((3,32),"fp32",mode
         self.assertFalse(self.compiler.tile_pointwise_outputs(source,output_tile=16,
             schedule_id=source['schedule_id'],entry_point='valid').applied)
         candidate=self.apply(source).schedule
-        result=self.apply(candidate,8);self.assertFalse(result.applied);self.assertEqual(result.reason,'program_shape')
+        result=self.compiler.tile_pointwise_outputs(candidate,output_tile=8,
+            schedule_id='columns-again',entry_point='columns_again')
+        self.assertFalse(result.applied);self.assertEqual(result.reason,'program_shape')
 
     def test_sliced_inputs_and_explicit_residency_cannot_be_silently_reinterpreted(self):
         source=pointwise_document()
@@ -100,8 +102,20 @@ def candidate(lm,x:cake.Tensor((3,32),"fp32"),out:cake.Tensor((3,32),"fp32",mode
         self.assertTrue(self.compiler.assess(source).lowering_eligible)
         result=self.apply(source);self.assertFalse(result.applied);self.assertEqual(result.reason,'execution_commitments')
 
+    def test_complete_program_rebinds_the_same_public_tensors(self):
+        from open_cake_ir.compiler.ir import Program
+        original=Program.from_schedule(pointwise_document())
+        stage=original.stages[0].name
+        result=self.compiler.rewrite_program(original,'tile_pointwise_outputs',
+            {'stage':stage,'output_tile':16,'schedule_id':'program-columns','entry_point':'program_columns'})
+        self.assertTrue(result.applied,(result.reason,result.message))
+        self.assertEqual(result.program.tensors,original.tensors)
+        self.assertEqual(result.program.outputs,original.outputs)
+        self.assertEqual(result.program.stages[0].bindings,original.stages[0].bindings)
+        self.assertEqual(len(result.program.stages),len(original.stages))
+
     def test_author_declared_metadata_survives_and_no_automatic_rewrite_occurs(self):
-        source=pointwise_document();source['metadata']={'test_marker':'retain'}
+        source=pointwise_document();source['metadata']={'workload_contract_sha256':'1'*64}
         result=self.apply(source);self.assertTrue(result.applied,(result.reason,result.message))
         self.assertEqual(result.schedule['metadata'],source['metadata'])
         original=self.compiler.lower(self.compiler.assess(source))
