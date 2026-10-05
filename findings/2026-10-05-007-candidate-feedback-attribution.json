@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "id": "F-2026-10-05-007",
+  "kind": "protocol",
+  "decision": "proposed",
+  "title": "Multi-candidate feedback lacked attribution and replay trusted its own StateCard",
+  "executor_revision": "CPU-semantic-fixture",
+  "compiler_revision_id": "open-cake-ir@uncommitted",
+  "backend": "triton",
+  "target": "sm_100a",
+  "evidence": {
+    "root": "/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-evolution-20261005-a2e62b08/feedback-binding/fixture-evidence",
+    "run_id": "open_cake-1",
+    "event_sequence": 18,
+    "locator": "candidate_selected and the turn-2 provider reference bundle StateCard",
+    "source_commit": "a2e62b08",
+    "scope": "Explicit CPU doubles. Metadata above is the original fixture declaration, not hardware, provider, custody or Compiler release qualification."
+  },
+  "observation": "The retained two-turn fixture selected the second candidate among three submissions and two searches. Next-turn numeric/profile feedback did not identify that candidate or expose the other evaluated result. Semantic replay accepted this omission because the bundle was checked against its own StateCard.",
+  "proposed_change": "Project bounded per-candidate feedback with existing identity and source Turn, preserving evaluated, rejected, duplicate and unsearched states. Reconstruct next-turn and terminal feedback from prior action, filter, rejection and Receipt facts. Keep selection, budget, confirmation and reference permissions unchanged.",
+  "implemented_in": "5453a4f5",
+  "verification_status": "Software implementation and focused positive/negative CPU contracts pass; broader regression results are recorded in the external implementation report. Review and platform integration remain pending.",
+  "verification_report": "/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-evolution-20261005-a2e62b08/feedback-binding-successor/report.json",
+  "disposition": "Proposed Lab protocol successor. No new Compiler primitive, release, provider qualification, device performance result or author-learning claim. Historical Runs and their original classifications remain unchanged."
+}

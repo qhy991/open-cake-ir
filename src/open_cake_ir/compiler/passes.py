@@ -61,10 +61,10 @@ def _whole_dimension(index, dimension: int) -> bool:
             and index.offset == 0 and index.extent is None)
 
 
-# Where the launch-width rewrite has been measured: B200 and B300 under the Triton
+# Where the launch-width rewrite has been qualified: B200, B300 and gfx938 under the Triton
 # route. An applicability set the pass declares, not a capability the Target does;
 # widening it is a qualification act on the added target.
-_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a'})
+_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a', 'gfx938'})
 
 
 def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
@@ -94,7 +94,7 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', str(error))
     if s.lowering.backend is not LoweringBackend.TRITON or s.target not in _WARP_SPECIALIZATION_EVIDENCE:
-        return refused('target_route', 'This specialization has bounded NVIDIA Triton evidence only.')
+        return refused('target_route', 'This specialization requires a target with retained launch-width qualification.')
     maximum = compiler._revision.targets[s.target].resource_limits.maximum_warps_per_cta
     if num_warps > maximum:
         return refused('warp_count', f'Target {s.target} admits at most {maximum} warps per CTA.')
@@ -103,16 +103,29 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         return refused('result_identity', 'A distinct Schedule id and valid entry point are required.')
     if (len(s.roles) != 1 or s.roles[0].execution_groups != tuple(range(len(s.roles[0].execution_groups)))
         or s.roles[0].registers_per_thread is not None or s.residency is not None
-        or s.allocations or s.pipelines or s.barriers or s.tile_loops
+        or s.allocations or s.pipelines or s.barriers
         or s.program_map is None or s.program_map.persistent
         or any(op.waits or op.signals or op.pipeline for op in s.operations)
         or any(b.space not in {MemorySpace.GLOBAL, MemorySpace.REGISTER}
                or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
-               or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent for b in s.buffers)):
-        return refused('execution_commitments', 'Require one zero-based role without explicit storage, loop, synchronization or residency commitments.')
+               or b.stages != 1 or b.swizzle or b.scale_of for b in s.buffers)):
+        return refused('execution_commitments', 'Require one zero-based role without explicit storage, synchronization or residency commitments.')
+    if s.tile_loops:
+        by_id = {op.op_id: op for op in s.operations}
+        if (len(s.tile_loops) != 1
+                or s.tile_loops[0].stop is not None
+                or s.tile_loops[0].range_options.warp_specialize
+                or not any(by_id[name].kind is OperationKind.MMA for name in s.tile_loops[0].body)
+                or any(by_id[name].kind not in {OperationKind.LOAD, OperationKind.CAST, OperationKind.MMA}
+                       for name in s.tile_loops[0].body)
+                or any(by_id[name].kind is OperationKind.CAST and
+                       (by_id[name].parameters.to is not DType.FP32
+                        or s.buffer(by_id[name].reads[0]).dtype not in {DType.FP16, DType.BF16, DType.FP32})
+                       for name in s.tile_loops[0].body)):
+            return refused('loop_domain', 'Only one sequential load/FP32-widen/MMA loop is admitted; its body and trip count stay unchanged.')
     if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
-                          OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
-        return refused('operation_domain', 'Only pure tensor arithmetic, CTA reductions and ordinary loads/stores are admitted.')
+                          OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
+        return refused('operation_domain', 'Only pure tensor arithmetic, MMA, CTA reductions and ordinary loads/stores are admitted.')
     if num_warps == len(s.roles[0].execution_groups):
         return refused('unchanged', 'The requested width is already declared.')
     copied['schedule_id'] = schedule_id
