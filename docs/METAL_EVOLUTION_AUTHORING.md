@@ -175,14 +175,23 @@ initial/resume → 实际本地 Responses 请求 → 同次调用采集器。两
 帧元数据。记录见 `native-skill-replay-integration-6150f463/report.json`。
 
 回放的覆盖域是保留的技能语义与前缀；完整原生日志的字节连续性仍仅在采集时检查。
-正式 Run 还须保留调用绑定并由归档和回放共同验证，不能只把这份 JSON 加进事件对象。
-调用方必须从冻结材料及可信调用记录取得预期值；旧 v1 观察不足以满足这一合同。
+[PR #335](https://github.com/qhy991/open-cake-ir/pull/335) 已在 `main@e041f4cb`
+接入 Run 软件路径：执行器保留实际调用和 Run/arm/轮次绑定；归档从执行入口取得冻结
+TaskPackage，在写入轮次完成事件前核对原生输入；回放按顺序独立重建并要求两个原生
+证据 role 各一份。resume 保持同一线程、路径与材料。system 快照复用既有已验证 owner，
+不重新打开原安装目录。旧 v1 观察不足以满足合同；非技能策略拒绝这些额外证据。
+CPU 反例覆盖缺失/重复、串 Run/轮次、配置和材料变化、原始事实与投影不一致。
+记录见 `native-skill-run-evidence-b039c49b/report.json`。这没有开放正式入口，
+也不证明对抗性写入者实际执行过该调用；历史 custody 仍须独立检查。
 
 **真实启用还缺一个软件后继，不是仅缺一次命令执行。** 当前
 `author_home.require_live_skill_qualification` 对新策略无条件拒绝，现有 qualifier 也只允许
-`--fixture-only`。当前已能从 fixture 保存的最小原生事实重建输入；下一步是正式 Run
-调用绑定、每轮归档/回放与资格收据/admission 一起接通。不能删拒绝分支后沿用旧收据；
-资格和每轮 Run 都须核对同一合同，证据丢失或互换时拒绝。
+`--fixture-only`。Run 归档/回放已具有软件校验路径，下一步是资格收据、anchor 和
+admission 对保留输入与 custody 的共同验证。不能删拒绝分支后沿用旧收据，不能仅凭
+`qualified=True` 或当时的 audit 摘要放行；fixture 收据仍只用于 fixture。
+准入需覆盖证据丢失、互换、旧格式和 custody-false，并检查零轮及首轮故障入口。
+当前故障路径仍主要保留 provider stdout；启用前还须保留被拒绝的原生输入/绑定，
+独立回放其拒绝原因并保留实际 token 消耗，不能将失败记成完成轮次。
 负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察、
 把历史 skill 正文当成本轮加载，以及旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
 不填补缺口。已有包、home 与 cell owner 继续复用，不再造安装器或第二套资格流程。

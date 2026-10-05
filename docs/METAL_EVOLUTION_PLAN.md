@@ -1,24 +1,21 @@
 # Metal：先验证可重复的 Kernel–Compiler 演进闭环
 
-状态：设计草案；已做离线准入探针，尚未满足正式实验执行门。2026-10-05，用户选择先验证闭环，
-再扩展 FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
-共享更新由 [PR #322](https://github.com/qhy991/open-cake-ir/pull/322) 集成；技能观察边界由
-[PR #324](https://github.com/qhy991/open-cake-ir/pull/324) 合入 `metal@229c1293`，保留
-`main@08e89422` 的祖先。#324 的三个 Python CI 版本各 2704 通过、35 跳过。
-[PR #327](https://github.com/qhy991/open-cake-ir/pull/327) 已将 `main@53f5aa70` 的技能包
-准备后继和本计划集成到 `metal@25f1faf2`；其平台三版本 CI 各 2749 通过、35 跳过。
-[PR #329](https://github.com/qhy991/open-cake-ir/pull/329) 已将资格边界合入
-`metal@1e5785bd`，三版本 CPU CI 各 2749 通过、35 跳过。这些软件结果不授予 Metal
-设备或原生技能资格；后继本地探针已观察 initial/resume 的实际技能目录与显式正文投递。
-[PR #330](https://github.com/qhy991/open-cake-ir/pull/330) 已将任务技能草案与输入观察合入
-`metal@b87386fe`。共享采集后继 [PR #331](https://github.com/qhy991/open-cake-ir/pull/331)
-已合入 `main@2a420ca3`；本任务同步该实现，正式资格收据和准入尚未开放。
-[PR #332](https://github.com/qhy991/open-cake-ir/pull/332) 已将上述采集合入
-`metal@08407a12`。共享回放后继 [PR #333](https://github.com/qhy991/open-cake-ir/pull/333)
-已合入 `main@7af51c05`；本次同步其 v2 原生事实与资格 fixture 语义重建。
-正式 Run 调用绑定、归档回放及资格准入仍待完成。
-以下分别标注旧探针与当前实现；旧证据在原提交回放，不自动升级为同步后的资格。验证记录见外部准入台账。
-本页是开发计划，不是实验报告或验收记录。模板见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
+状态：设计草案；尚未满足正式实验执行门。用户选择先验证可重复闭环，再扩展
+FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
+
+当前软件基线：[PR #334](https://github.com/qhy991/open-cake-ir/pull/334) 已将原生技能
+事实重建集成到 `metal@22334948`，三个 Python CI 版本各 2770 通过、35 跳过。
+本次吸收 [PR #335](https://github.com/qhy991/open-cake-ir/pull/335) 的
+`main@e041f4cb`：Run 保存执行器调用绑定，并在轮次归档和回放中核对技能输入。
+其源提交、完整 CI 和合并记录见外部台账
+`native-skill-run-evidence-b039c49b/report.json`。
+
+下一道软件门是资格收据、anchor 和 admission 的共同验收；正式 Run/Campaign 入口仍
+拒绝技能策略。CPU fixture 观察与软件检查不授予实际作者或 Metal 设备资格。本机工具链、
+资源分配和测量门仍分别待验收，不因临时子进程回环网络已通过而放行。
+
+旧证据保留在原提交回放，不自动升级为当前资格。本页是开发计划，不是实验报告；
+模板与观察边界见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
 
 ## 1. 产品定位与当前判断
 
@@ -413,9 +410,12 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    绑定完整 scaffold 和显式源码权限；每轮更新前重读当前候选文件，保留少量有效观察。
    按每任务独立材料与 Run 状态组织目录，
    为每个 cell 绑定完整技能包与 `isolated_skill_package_v1`，以 `gpt-6.1-sol / xhigh`
-   完成真实 initial/resume 资格。PR #333 已接入保留原生事实的重建与资格 fixture 校验；
-   下一步是正式 Run 的可信调用绑定、每轮归档/回放与资格收据/admission 的共同验证。
-   反例必须在这些实际入口拒绝，不能以纯函数测试代替；通过之后再开放准入。
+   完成真实 initial/resume 资格。PR #335 已接入执行器调用绑定与每轮归档/回放，CPU
+   合同覆盖真实 EvidenceStore 的两轮路径和材料、身份、角色互换等拒绝；未调用真实模型。
+   下一步沿既有资格收据、anchor 与 admission owner 校验保留的两 arm/两轮输入和 custody，
+   旧收据及 fixture scope 不得获得新能力。还须保留被拒绝的原生输入/绑定并回放拒绝原因，
+   当前完成轮次路径不覆盖该故障证据。直接入口、零轮和首轮故障路径也须验收；
+   反例必须在实际准入入口拒绝，通过之后再开放策略。
    当前真实入口仍明确拒绝新策略。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
@@ -444,10 +444,10 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | 完整包/home/cell、同次调用采集已集成；PR #333 从 v2 原生事实重建并验证资格 fixture 保存的两轮输入 | 正式 Run 调用绑定、归档/回放和资格收据/准入未接通；真实入口仍拒绝 | `native-skill-replay-integration-6150f463/report.json`；旧采集记录保留 |
+| G4 技能软件准备 | PR #335 接入执行器调用绑定、冻结 TaskPackage 校验和两轮归档/回放；非技能策略保持原角色集合 | 资格收据/anchor/admission 共同验收及真实作者资格仍未完成；正式入口继续拒绝 | `native-skill-run-evidence-b039c49b/report.json`；旧采集和回放记录保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | admin/插件哨兵、脚本/依赖、真实模型使用与正式 provider 资格未完成 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
-| 平台软件集成 | PR #332 合入 metal@08407a12，三版本 CPU CI 各 2760/35；本任务吸收共享回放后继 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-input-integration-d90a8ca0/report.json`；后继记录另列 |
+| 平台软件集成 | PR #334 合入 metal@22334948，三版本 CPU CI 各 2770/35；本任务吸收 PR #335 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-replay-integration-662538b2/report.json`；后继记录另列 |
 
 ## 8. 走向更完整的 Metal 工具
 
