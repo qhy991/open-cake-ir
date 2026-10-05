@@ -261,8 +261,21 @@ workspace、模型/effort、轮次、冻结包正文与已安装 system 入口�
 
 离线回放只验证保留的技能语义与其前缀连续性。未保留的日志行用空位置表示，不能证明
 完整原始日志字节未改写；后者仍是采集时的检查。该接口要求调用方按顺序验证前轮，并从
-自身的冻结调用和材料取得预期值；从观察本身复制预期值不是资格验证。正式 Run 的调用
-绑定、每轮归档/回放，以及正式资格收据/准入仍待接通，不能以这项 fixture 检查放行。
+自身的冻结调用和材料取得预期值；从观察本身复制预期值不是资格验证。
+
+Run 的软件归档路径在 `provider_turn_completed` 前验证原生输入和执行器调用绑定，保存
+`provider_native_skill_input` 与 `provider_native_skill_binding` 两个 role。绑定由
+`QualifiedRunProvider.turn` 在材料、workspace 生命周期与 system 树检查后产生，包含
+Run/arm/整数轮次、实际调用参数（不含 prompt）、workspace、两个私有 home、冻结配置
+及既有 system 快照。TaskPackage 来自执行入口的冻结材料 owner，不能从 agent 输出取得。
+回放核对两种 role 恰好各一份，重建技能语义；resume 要求前轮已经通过验证，并保持同一
+线程、执行器路径、workspace、home 和材料。未声明技能策略的 Run 拒绝这些额外证据。
+
+system 快照复用 author-home 已验证的目录数据；首次归档/回放交接以既有资格身份核对，
+后续轮比较此前验证的快照，不重开原安装目录。调用路径是执行器分配的事实，配置拥有
+内容身份；这份日志不证明对抗性写入者确实执行了程序，Evidence custody 仍是独立门槛。
+CPU 合同直接覆盖归档和回放；正式资格收据、anchor、admission 及零轮/故障入口的共同
+验收仍未接通，所有正式入口继续拒绝该策略。不能以这些 fixture 检查放行。
 
 这是 retained native input 的版本限定观察，**不是生产资格**。与实际请求的一致性须以
 同版本原生 fixture 验证，不能把生成的摘要视为 wire capture。当前不支持 compaction、
