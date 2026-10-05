@@ -3,6 +3,20 @@
 状态：设计草案；尚未满足正式实验执行门。用户选择先验证可重复闭环，再扩展
 FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
 
+2026-10-06 后继验收已恢复：用户选择现有 Xcode 16 / SDK 15，仅通过子进程
+`DEVELOPER_DIR` / `SDKROOT` / 编译器路径绑定，不修改全局 xcode-select。
+固定 `b3375d63` 的独立环境完成 54 项 CPU 合同、1 项跳过；archive 与 observer helper
+编译通过。现有 Metal 本地 broker 下的零 dispatch 检查和后继 host capture 通过，
+观察到 Apple M4 / macOS 27.0 (26A428) / family9，counter 能力可用。
+`runtime/hosts/apple_gpu_family9.json` 现记录该后继环境；旧提交及旧失败保持原状。
+这不是设备正确性、计时或 profiler 实测通过。外部记录目录为
+`~/.local/share/open-cake-ir/planning/metal-xcode16-20261006/`。
+
+[PR #342](https://github.com/qhy991/open-cake-ir/pull/342) 已提交完整原生技能运行整合，
+CI `37386721687` 在官方确认 Actions 恢复后实际取得 runner，完整合同正在执行；
+同时在上述独立环境验证 macOS 子进程与证据回放。以下 #340/#341 失败仍作为历史保留，
+不把新验收写回旧记录。真实作者与 GPU 优化 Run 仍须各自剩余门通过。
+
 当前平台基线：[PR #338](https://github.com/qhy991/open-cake-ir/pull/338) 已将技能拒绝证据
 与故障回放合入 `metal@f404dbf5`，三个 Python CI 版本各 2790 通过、35 跳过。
 本次吸收 [PR #339](https://github.com/qhy991/open-cake-ir/pull/339) 的 `main@58d668c4`：
@@ -36,7 +50,7 @@ provider 构造、Run/Campaign、factory 与回放入口的完整验收，
 下一步先执行这些合同测试，再开放命令行和取得真实作者资格。
 CPU fixture 与软件检查不授予实际作者或 Metal 设备资格。
 
-验收当前停在外部服务边界：2026-10-05 20:16 UTC 查询的
+此前验收停在外部服务边界：2026-10-05 20:16 UTC 查询的
 [GitHub 官方状态](https://www.githubstatus.com/api/v2/summary.json) 将 Actions 列为性能下降，
 事件 `3q1yb5m7ltvb` 正在调查 hosted runner 分配延迟，覆盖本次 CI 失败时段。
 状态摘要保留在 `github-actions-incident-3q1yb5m7ltvb-201637/`。确认外部恢复后，使用不改
@@ -478,7 +492,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 
 | 项目 | 已观察 | 剩余条件 | 原始记录 |
 | --- | --- | --- | --- |
-| G0 环境 | 本机 M4；当前 macOS 与已提交 host 记录不同；CPU shim 链接失败 | 单独维护后继一致环境；适用 GPU/provider 准入 | `readiness.md`、`followup-readiness.md` |
+| G0 环境 | 用户选择的 Xcode16/SDK15 后继 CPU 54/1；M4 零 dispatch 与 host capture 通过；旧失败保留 | 后继 host 提交与原生 archive、设备测量、provider 各自准入 | `metal-xcode16-20261006/`；旧 `readiness.md`、`followup-readiness.md` |
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 原生/oracle/设备；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
