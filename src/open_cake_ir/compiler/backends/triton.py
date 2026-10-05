@@ -2516,9 +2516,10 @@ class _TritonEmitter:
     def _emit_output_binding(self, outputs: list[Buffer], anchor: str) -> None:
         """Allocate and check the caller's output tensors.
 
-        One output binds the name `out` directly; several bind a sequence. The single
-        case keeps its exact emitted bytes because the corpus pins the lowered source
-        digest of every case, so drift there is a corpus-wide break for no gain.
+        Fresh outputs are constructed by torch.empty with the declared ABI and
+        need no repeated shape/device checks. Caller-owned outputs still receive
+        every check; in particular a retained graph workspace is not trusted by
+        object identity. One output binds out directly; several bind a sequence.
 
         Both host wrappers route through here. They did not before, and the consequence
         was that the multi-output launch defect existed twice -- once per copy.
@@ -2531,13 +2532,14 @@ class _TritonEmitter:
                 f"        out = torch.empty({tuple(output.shape)}, "
                 f"dtype={TORCH_DTYPES[output.dtype]}, device={anchor}.device)"
             )
+            self.line("    else:")
             self.line(
-                f"    if tuple(out.shape) != {tuple(output.shape)} "
+                f"        if tuple(out.shape) != {tuple(output.shape)} "
                 f"or out.dtype != {TORCH_DTYPES[output.dtype]}:"
             )
-            self.line("        raise ValueError(\"out differs from the frozen output contract\")")
-            self.line(f"    if out.device != {anchor}.device or not out.is_contiguous():")
-            self.line("        raise ValueError(\"out must be contiguous on the input device\")")
+            self.line("            raise ValueError(\"out differs from the frozen output contract\")")
+            self.line(f"        if out.device != {anchor}.device or not out.is_contiguous():")
+            self.line("            raise ValueError(\"out must be contiguous on the input device\")")
             return
         self.line("    if out is None:")
         self.line("        out = (")
@@ -2547,24 +2549,25 @@ class _TritonEmitter:
                 f"dtype={TORCH_DTYPES[buffer.dtype]}, device={anchor}.device),"
             )
         self.line("        )")
-        self.line("    out = tuple(out)")
-        self.line(f"    if len(out) != {len(outputs)}:")
+        self.line("    else:")
+        self.line("        out = tuple(out)")
+        self.line(f"        if len(out) != {len(outputs)}:")
         self.line(
-            f"        raise ValueError(\"out must provide {len(outputs)} output tensors\")"
+            f"            raise ValueError(\"out must provide {len(outputs)} output tensors\")"
         )
-        self.line("    for tensor, shape, dtype in (")
+        self.line("        for tensor, shape, dtype in (")
         for index, buffer in enumerate(outputs):
             self.line(
-                f"        (out[{index}], {tuple(buffer.shape)}, "
+                f"            (out[{index}], {tuple(buffer.shape)}, "
                 f"{TORCH_DTYPES[buffer.dtype]}),"
             )
-        self.line("    ):")
-        self.line("        if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
+        self.line("        ):")
+        self.line("            if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
         self.line(
-            "            raise ValueError(\"out differs from the frozen output contract\")"
+            "                raise ValueError(\"out differs from the frozen output contract\")"
         )
-        self.line(f"        if tensor.device != {anchor}.device or not tensor.is_contiguous():")
-        self.line("            raise ValueError(\"out must be contiguous on the input device\")")
+        self.line(f"            if tensor.device != {anchor}.device or not tensor.is_contiguous():")
+        self.line("                raise ValueError(\"out must be contiguous on the input device\")")
 
     def _emit_launch_arguments(
         self, globals_in_order: list[Buffer], outputs: list[Buffer]
