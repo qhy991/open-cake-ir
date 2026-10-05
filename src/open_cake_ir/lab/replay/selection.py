@@ -19,6 +19,7 @@ from ..selection import (
 )
 from .outcomes import _expected_matched_diagnoses_v1, _validate_matched_diagnoses_v1
 from .refusals import event_location, refuse
+from ..diagnoses import findings_feedback, validate_findings_feedback
 
 
 def _replay_candidate_selection(
@@ -71,6 +72,7 @@ def _replay_candidate_selection(
                 "candidate_sha256",
                 "disposition",
                 "cost",
+                "diagnostics",
             }
             expected_row_fields.add("semantic_sha256")
             if empirical_selection is not None:
@@ -80,6 +82,10 @@ def _replay_candidate_selection(
                        observed=set(row) if isinstance(row, Mapping) else type(row).__name__,
                        expected=expected_row_fields)
             candidate_sha256 = row.get("candidate_sha256")
+            try:
+                validate_findings_feedback(row['diagnostics'])
+            except ValueError as error:
+                refuse(f'{row_location}.diagnostics', str(error))
             disposition = row.get("disposition")
             cost = row.get("cost")
             semantic_sha256 = row.get("semantic_sha256")
@@ -158,6 +164,19 @@ def _replay_candidate_selection(
         refuse("candidate_rejected", "rejection events differ from the filters' rejected rows",
                observed={f"turn={turn},candidate={candidate}" for turn, candidate in rejected},
                expected={f"turn={turn},candidate={candidate}" for turn, candidate in expected_rejections})
+
+    # A rejection retains its complete Environment feedback. Its bounded filter
+    # projection cannot become a second, contradictory account of those facts.
+    for turn, payload in filters.items():
+        for index, row in enumerate(payload["order"]):
+            if row["disposition"] != "rejected":
+                continue
+            feedback = rejected[(turn, row["candidate_sha256"])]["feedback"]
+            expected = findings_feedback(feedback.get("findings", []))
+            if _canonical_json_bytes(row["diagnostics"]) != _canonical_json_bytes(expected):
+                location = event_location("candidate_set_filtered", turn=turn)
+                refuse(f"{location}.payload.order[{index}].diagnostics",
+                       "differs from the bounded projection of retained rejection feedback")
 
     selection_events = [
         event for event in events if event.get("kind") == "candidate_selected"
