@@ -462,7 +462,15 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     self.assertEqual(audit.protocol_adherence, 'provider_fault')
                 else:
                     self.assertEqual(completed.returncode, 0, completed.stderr.decode())
-                    self.assertEqual(ProviderQualificationReceipt.load(receipt).scope,
+                    from open_cake_ir.lab.native_skill_qualification import verify_qualification_evidence
+                    anchored = json.loads((root/'provider-qualification-anchor.json').read_bytes())
+                    qualified = ProviderQualificationReceipt.load(receipt)
+                    verify_qualification_evidence(qualification=qualified, anchor=anchored,
+                                                 required_environment_kinds=('open_cake',))
+                    with self.assertRaisesRegex(ValueError, 'no retained turns for environment: direct_cuda'):
+                        verify_qualification_evidence(qualification=qualified, anchor=anchored,
+                                                     required_environment_kinds=('direct_cuda',))
+                    self.assertEqual(qualified.scope,
                                      'zero_gpu_contract_fixture_only')
                     event = next(event for event in evidence.replay_events('single')
                                  if event['kind'] == 'provider_qualification_observed')

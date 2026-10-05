@@ -171,7 +171,8 @@ def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, re
     return result
 
 
-def verify_qualification_evidence(*, qualification, anchor, requested_names=None):
+def verify_qualification_evidence(*, qualification, anchor, requested_names=None,
+                                  required_environment_kinds=()):
     """Open actual sealed evidence and verify the receipt's native-input capability.
 
     Scope admission and the external anchor reference belong to admission. This
@@ -179,11 +180,17 @@ def verify_qualification_evidence(*, qualification, anchor, requested_names=None
     evidence. A capability name or an immediate-audit flag cannot replace this check.
     """
     from open_cake_ir.evidence import EvidenceStore
+    if (not isinstance(required_environment_kinds, (tuple, list))
+        or any(not isinstance(kind, str) or not kind for kind in required_environment_kinds)):
+        raise ValueError('native qualification requested environment kinds differ')
     if requested_names is not None:
         selection_instruction(requested_names)
     if qualification.native_skill_input_contract != NATIVE_SKILL_QUALIFICATION_V1:
         raise ValueError('native skill input capability is not qualified by this receipt')
     if (not isinstance(anchor, dict)
+        or set(anchor) != {'schema_version', 'kind', 'run_id', 'evidence_root', 'authority_sha256',
+                           'qualification_receipt_sha256', 'immediate_audit_integrity', 'terminal_seal_sha256'}
+        or anchor.get('schema_version') != 1 or anchor.get('immediate_audit_integrity') is not True
         or anchor.get('kind') != 'codex_provider_qualification_evidence_anchor'
         or anchor.get('qualification_receipt_sha256') != qualification.canonical_sha256
         or not isinstance(anchor.get('run_id'), str) or not anchor['run_id']
@@ -214,5 +221,29 @@ def verify_qualification_evidence(*, qualification, anchor, requested_names=None
     observations = [event['payload'] for event in events if event['kind'] == 'provider_qualification_observed']
     if len(observations) != 1 or any(event['kind'] == 'provider_qualification_failed' for event in events):
         raise ValueError('native qualification must retain exactly one successful observation')
-    return reconstruct_qualification_inputs(evidence=evidence, run_id=audit.run_id,
+    result = reconstruct_qualification_inputs(evidence=evidence, run_id=audit.run_id,
         authority=authority, payload=observations[0], receipt=qualification, requested_names=requested_names)
+    missing = set(required_environment_kinds) - set(result)
+    if missing:
+        raise ValueError('native qualification has no retained turns for environment: ' + ', '.join(sorted(missing)))
+    return result
+
+
+def require_live_native_receipt(*, qualification, anchor):
+    """Reject absent/old/fixture receipts early; this never grants admission."""
+    if (anchor is None or not getattr(qualification, "qualified", False)
+        or getattr(qualification, "scope", None) not in {
+            "live_two_turn_current_provider", "live_two_turn_tool_rich_provider"}
+        or getattr(qualification, "native_skill_input_contract", None) != NATIVE_SKILL_QUALIFICATION_V1):
+        raise ValueError("native skill discovery and actual initial/resume delivery are not qualified; live evidence is required")
+
+
+def verify_live_qualification_evidence(*, qualification, anchor, required_environment_kinds=(),
+                                       expected_configuration=None):
+    """Live construction needs the archive itself; receipt fields are not permission."""
+    require_live_native_receipt(qualification=qualification, anchor=anchor)
+    if (expected_configuration is not None
+        and sha256(canonical_json_bytes(expected_configuration)).hexdigest() != qualification.configuration_sha256):
+        raise ValueError('native provider qualification bytes or capability differ from the runtime configuration')
+    return verify_qualification_evidence(qualification=qualification, anchor=anchor,
+        required_environment_kinds=required_environment_kinds)

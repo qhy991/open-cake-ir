@@ -173,10 +173,14 @@ class QualifiedRunProvider:
         builders: Mapping[str, InvocationBuilder],
         task_packages: Mapping[str, TaskPackage],
         adapter: ProviderAdapter,
+        qualification_anchor: Mapping[str, object] | None = None,
     ) -> None:
-        from .author_home import require_live_skill_qualification
-        for builder in builders.values():
-            require_live_skill_qualification(builder.configuration.get('author_home_policy'))
+        from .author_home import ISOLATED_SKILL_PACKAGE_V1
+        if any(builder.configuration.get("author_home_policy") == ISOLATED_SKILL_PACKAGE_V1
+               for builder in builders.values()):
+            from .native_skill_qualification import verify_live_qualification_evidence
+            verify_live_qualification_evidence(qualification=qualification, anchor=qualification_anchor,
+                required_environment_kinds=tuple(package.environment_kind for package in task_packages.values()))
         if (
             not qualification.qualified
             or qualification.scope not in {
@@ -357,6 +361,7 @@ class CodexRunProvider(QualifiedRunProvider):
         self, *, qualification: ProviderQualificationReceipt,
         builders: Mapping[str, CodexInvocationBuilder], task_packages: Mapping[str, TaskPackage],
         adapter: CodexProviderAdapter | None = None,
+        qualification_anchor: Mapping[str, object] | None = None,
     ) -> None:
         for builder in builders.values():
             if (builder.configuration.get('author_home_policy') is not None
@@ -365,4 +370,4 @@ class CodexRunProvider(QualifiedRunProvider):
                      != qualification.system_skills_sha256)):
                 raise ValueError('Run system skills differ from Provider qualification')
         super().__init__(qualification=qualification, builders=builders, task_packages=task_packages,
-                         adapter=adapter or CodexProviderAdapter())
+                         adapter=adapter or CodexProviderAdapter(), qualification_anchor=qualification_anchor)

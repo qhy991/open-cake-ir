@@ -405,11 +405,29 @@ successful qualification observation and successful native reconstruction. An
 `immediate_audit_integrity` flag alone is insufficient. `EvidenceStore.replay_authority`
 reads the audited authority without following links; it does not replace the audit.
 
-The live qualifier, preparation, direct execution, provider construction, factory and
-replay entry gates remain closed while their end-to-end integration is unfinished.
-This admission component is not authorization to start a native-skill Run. Actual
-model qualification, zero-turn/initial-fault entrances and runtime credential ordering
-remain separate acceptance work; no fixture archive establishes a real model capability.
+The live qualifier and launcher still refuse the native-skill policy while software
+acceptance is unfinished. Library preparation, provider construction, direct Run and
+Campaign execution, factory composition and replay now require actual anchored live
+qualification evidence. This source integration is not authorization to start a Run;
+the contract matrix and actual provider qualification remain acceptance prerequisites.
+No fixture archive establishes a real model capability.
+
+`admit_native_skill_authoring` checks the frozen provider configuration and schema,
+live scope, historical custody and reconstructed inputs before side effects or terminal
+early returns. Coverage is matched to `environment_kind`, not a Run id or Study
+condition label: a generic output schema cannot extend a Cake-only qualification to
+another environment. Direct provider construction takes the actual qualification
+anchor, reopens its evidence and checks all TaskPackage environment kinds.
+
+Preparation rejects missing, old or fixture receipts before reading runtime settings;
+it checks the complete configuration and archive before reading credentials. This early
+receipt check only rejects; it does not grant permission. First-turn native-input
+rejections resolve their TaskPackage during replay, while a failure before observing
+native input keeps its existing missing-evidence semantics. CPU tests exercise boundary
+ordering plus zero-turn stop, first-call failure and returned cross-Run input rejection
+through the real execution and replay owners, with no Evaluation calls. These new tests
+are prepared but not executed; earlier hosted-runner failures remain external
+preconditions, not passing validation.
 
 For native-skill qualification, each schema-2 experiment cell declares
 `native_skill_names` alongside `author_skill_package`. These are exact native names,
@@ -420,7 +438,7 @@ node transport use the same pure selection validator before creating inputs or s
 a process. No frontmatter parser or native-name guess is introduced.
 
 Selection transport and qualification reuse do not enable live execution. The live
-guards remain closed. Reusing an existing qualification now reconstructs its anchored
+qualifier and launcher guards remain closed. Reusing an existing qualification now reconstructs its anchored
 inputs and requires every requested name to resolve to a package entry with its body
 delivered in every declared arm, in both the initial and resumed turn. A catalog, an
 earlier body or a system skill with the same name is insufficient. No second list of
