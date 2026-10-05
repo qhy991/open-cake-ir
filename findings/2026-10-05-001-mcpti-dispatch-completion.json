@@ -73,6 +73,23 @@
       "failure": "The17th Softmax A/A comparison passes correctness but cohort0 baseline CV0.078802917239899 and candidate CV0.065401516379315 exceed0.05. Slowest samples are baseline index13=5.376us and candidate index1=5.120us; this is not evidence of a first-timed-sample-only warmup defect. The stop leaves four timing controls and all four profiles unattempted; no replacement or sample deletion.",
       "audit": "All17 comparisons replay identically through the frozen common owner.340 cohorts contain17000 kernel records with no raw-prefix projection mismatch and no forced flush in timed captures. The failed capture has no dropped records or pending buffers. Completed-record acquisition therefore does not establish global timestamp stability or explain the former0.770us outlier.",
       "disposition": "Collector coverage and diagnostics improved; global uniform5% readiness remains unestablished. Keep the finding deferred and PR305 open pending timing-readiness investigation. No cost-model calibration or primary GLM experiment resumed."
+    },
+    {
+      "date": "2026-10-05",
+      "kind": "failed_cohort_evidence_transport",
+      "implemented_in": "b1e0b06d",
+      "evidence": "metax-evolution-roadmap-20261005/capture-fault-red.txt",
+      "source_before": "37ad0d33",
+      "observation": "CPU fixtures show that begin/finish collector faults could leave the reset calibration snapshot as the failed timing cohort. Launch/synchronization failures also discarded the current drain snapshot when rethrowing the primary error or wrapping teardown errors. No actual SDK failure or new device result is asserted by these fixtures.",
+      "source_change": "Clear successful calibration from last_activity before warmup; retain only the current failed timing cohort snapshot. Preserve finish snapshots on primary and lifecycle exceptions. A failure rethrows before sample derivation; no partial sample or successful receipt is created.",
+      "verified_by": {
+        "red_commit": "9ec8025e",
+        "red_result": "4 new regression methods fail; the existing rejected-capture method passes.",
+        "green_commit": "b1e0b06d",
+        "green_result": "62 measurement, platform, binary, paired and failed-artifact contracts pass. Corpus181 and F821 pass.",
+        "scope": "CPU software contracts only. The first green command named a nonexistent test file and ran no tests; the corrected invocation changed no environment or source."
+      },
+      "disposition": "Failure transport repair only. No performance transformation promotion; existing timing findings remain deferred. Frozen Runs and prior classifications remain unchanged."
     }
   ]
 }
