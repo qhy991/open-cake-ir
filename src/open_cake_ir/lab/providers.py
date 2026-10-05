@@ -58,6 +58,11 @@ class CodexProviderAdapter:
         """Run without shell expansion and remove every contract-declared environment name."""
 
         environment = sanitized_environment(invocation.removed_environment)
+        if (invocation.user_home is None) != (invocation.native_skill_package is None):
+            raise ValueError('provider private HOME and native skill material differ')
+        if invocation.user_home is not None:
+            from .author_home import verify_user_home
+            environment['HOME'] = str(verify_user_home(invocation.user_home, invocation.native_skill_package))
         if invocation.codex_home is not None:
             from .author_home import verify_codex_home
             environment['CODEX_HOME'] = str(verify_codex_home(
@@ -160,6 +165,9 @@ class QualifiedRunProvider:
         task_packages: Mapping[str, TaskPackage],
         adapter: ProviderAdapter,
     ) -> None:
+        from .author_home import require_live_skill_qualification
+        for builder in builders.values():
+            require_live_skill_qualification(builder.configuration.get('author_home_policy'))
         if (
             not qualification.qualified
             or qualification.scope not in {
@@ -206,6 +214,13 @@ class QualifiedRunProvider:
         for run_id, package in task_packages.items():
             if package.run_id != run_id:
                 raise ValueError("Ralph task package Run identity differs")
+            expected_skill = package.native_skill_package
+            bound_skill = getattr(builders[run_id], 'native_skill_package', None)
+            if ((expected_skill is None) != (bound_skill is None)
+                or expected_skill is not None and (
+                    bound_skill.reference != expected_skill.reference
+                    or bound_skill.raw_bytes != expected_skill.raw_bytes)):
+                raise ValueError('provider native skill material differs from TaskPackage')
             verify_task_package(builders[run_id].workspace, package)
         self._builders = dict(builders)
         self._task_packages = task_packages

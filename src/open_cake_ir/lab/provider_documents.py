@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Mapping
 
 from ._documents import _canonical_json_bytes
+from .native_skills import NativeSkillPackage
 
 
 def required_live_provider_qualification_scope(claim_scope: str) -> str:
@@ -176,6 +177,8 @@ class ProviderInvocation:
     thread_id: str | None
     codex_home: Path | None = None
     system_skills_snapshot: tuple[tuple[str, int, str], ...] | None = None
+    user_home: Path | None = None
+    native_skill_package: "NativeSkillPackage | None" = None
 
 
 @dataclass(frozen=True)
