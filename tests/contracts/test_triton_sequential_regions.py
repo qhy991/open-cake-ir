@@ -89,9 +89,14 @@ class SequentialRegions(unittest.TestCase):
             _execute(emission,memory)
             self.assertAlmostEqual(sum(memory['out'][:8]),1.0,places=12)
             self.assertAlmostEqual(sum(memory['out'][8:]),1.0,places=12)
-            # These targets do not declare coordinate/compare/select today.
+            # Admission follows each Target document; a platform qualification
+            # must not leave a duplicate vocabulary assumption in this peer test.
             masked=self.compiler.assess(frontend.parse(softmax_source(target=target)).document)
-            self.assertTrue(any(f.code=='TARGET_OPERATION_UNSUPPORTED' for f in masked.findings))
+            declared={kind.value for kind in self.compiler._revision.targets[target].operation_kinds}
+            if {'coordinate','compare','select'} <= declared:
+                self.assertTrue(masked.lowering_eligible,masked.findings)
+            else:
+                self.assertTrue(any(f.code=='TARGET_OPERATION_UNSUPPORTED' for f in masked.findings))
 
     def test_a_noniterating_single_trip_stays_a_semantic_refusal(self):
         a=self.compiler.assess(frontend.parse(softmax_source(columns=1)).document)
