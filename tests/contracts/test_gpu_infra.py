@@ -339,6 +339,7 @@ class ExperimentInputTests(unittest.TestCase):
             with self.assertRaises((OSError, ValueError)):
                 kernel_experiment.run_cell(output, config["cells"][0]["id"])
         launch.assert_not_called()
+        self.assertFalse((output / "launches" / config["cells"][0]["id"]).exists())
 
     def test_reference_schema_versions_refuse_mixed_or_missing_authority(self):
         cases = []
