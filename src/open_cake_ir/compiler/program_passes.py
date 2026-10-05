@@ -103,6 +103,8 @@ class Transformation:
 # The callable surface, shared by authoring grants and tools. Hardware legality is
 # deliberately absent: the owning pass and Compiler assess each concrete request.
 TRANSFORMATIONS = (
+    Transformation('tile_pointwise_outputs', ('stage', 'output_tile', 'schedule_id', 'entry_point'),
+                   'Partition whole-row pure pointwise outputs into explicit column tiles; preserve arithmetic and public tensors. No reductions, state or synchronization.'),
     Transformation('tile_squared_difference_outputs', ('stage', 'output_tile', 'schedule_id', 'entry_point'),
                    'Partition independent FP32 squared-distance output columns while retaining the full K sum. output_tile is a power of two below N; same pure loop-free row/centroid domain as K tiling.'),
     Transformation('tile_squared_difference', ('stage', 'k_tile', 'schedule_id', 'entry_point'),
@@ -140,9 +142,11 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
                 return _refuse('input_refused', ', '.join(f.code for f in assessment.findings), (stage.name,))
         if transformation == 'fuse_pointwise_epilogue':
             return _fuse(compiler, program, **parameters)
+        from .pointwise_tiling import tile_pointwise_outputs
         from .passes import specialize_triton_warps, specialize_output_columns
         from .reduction_tiling import tile_squared_difference, tile_squared_difference_outputs
-        transform = (tile_squared_difference_outputs if transformation == 'tile_squared_difference_outputs' else
+        transform = (tile_pointwise_outputs if transformation == 'tile_pointwise_outputs' else
+                     tile_squared_difference_outputs if transformation == 'tile_squared_difference_outputs' else
                      tile_squared_difference if transformation == 'tile_squared_difference' else
                      specialize_triton_warps if transformation == 'specialize_triton_warps'
                      else specialize_output_columns)
