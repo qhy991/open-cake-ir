@@ -43,6 +43,8 @@ def _cake_state_store_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_state_store_b8_smoke = _cake_state_store_b8_smoke_kernel[(8, 1, 1)]
+
 def cake_state_store_b8_smoke(state, update, out=None):
     for tensor, shape, dtype in (
         (state, (8, 128), torch.float32),
@@ -69,7 +71,7 @@ def cake_state_store_b8_smoke(state, update, out=None):
                 raise ValueError("out differs from the frozen output contract")
             if tensor.device != state.device or not tensor.is_contiguous():
                 raise ValueError("out must be contiguous on the input device")
-    _cake_state_store_b8_smoke_kernel[(8, 1, 1)](
+    _cake_launch_cake_state_store_b8_smoke(
         state,
         update,
         N_BATCH=8,

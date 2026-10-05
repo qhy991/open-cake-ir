@@ -83,6 +83,8 @@ def _cake_block_scaled_gemm_b1_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_block_scaled_gemm_b1_smoke = _cake_block_scaled_gemm_b1_smoke_kernel[(1, 1, 1)]
+
 def cake_block_scaled_gemm_b1_smoke(a, b, sfa, sfb, out=None):
     for tensor, shape, dtype in (
         (a, (16, 256), torch.float8_e4m3fn),
@@ -105,7 +107,7 @@ def cake_block_scaled_gemm_b1_smoke(a, b, sfa, sfb, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != a.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_block_scaled_gemm_b1_smoke_kernel[(1, 1, 1)](
+    _cake_launch_cake_block_scaled_gemm_b1_smoke(
         a,
         b,
         sfa,

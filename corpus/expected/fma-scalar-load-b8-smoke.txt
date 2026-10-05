@@ -49,6 +49,8 @@ def _cake_fma_scalar_load_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_fma_scalar_load_b8_smoke = _cake_fma_scalar_load_b8_smoke_kernel[(8, 1, 1)]
+
 def cake_fma_scalar_load_b8_smoke(a, b, c, out=None):
     for tensor, shape, dtype in (
         (a, (8,), torch.float32),
@@ -70,7 +72,7 @@ def cake_fma_scalar_load_b8_smoke(a, b, c, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != a.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_fma_scalar_load_b8_smoke_kernel[(8, 1, 1)](
+    _cake_launch_cake_fma_scalar_load_b8_smoke(
         a,
         b,
         c,

@@ -125,6 +125,8 @@ def _cake_moe_expert_selection_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_moe_expert_selection = _cake_moe_expert_selection_kernel[(1, 1, 1)]
+
 def cake_moe_expert_selection(routing_logits, routing_bias, selected_groups, out=None):
     for tensor, shape, dtype in (
         (routing_logits, (1, 256), torch.float32),
@@ -146,7 +148,7 @@ def cake_moe_expert_selection(routing_logits, routing_bias, selected_groups, out
             raise ValueError("out differs from the frozen output contract")
         if out.device != routing_logits.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_moe_expert_selection_kernel[(1, 1, 1)](
+    _cake_launch_cake_moe_expert_selection(
         routing_logits,
         routing_bias,
         selected_groups,

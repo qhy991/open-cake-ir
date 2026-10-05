@@ -57,6 +57,8 @@ def _run_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_run = _run_kernel[(4, 1, 1)]
+
 def run(x, indices, out=None):
     for tensor, shape, dtype in (
         (x, (4, 8), torch.float32),
@@ -77,7 +79,7 @@ def run(x, indices, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != x.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _run_kernel[(4, 1, 1)](
+    _cake_launch_run(
         x,
         indices,
         out,

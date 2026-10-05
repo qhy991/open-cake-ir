@@ -86,6 +86,8 @@ def _cake_triton_fp32_two_k64_mma_loop_b1_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_triton_fp32_two_k64_mma_loop_b1_smoke = _cake_triton_fp32_two_k64_mma_loop_b1_smoke_kernel[(1, 1, 1)]
+
 def cake_triton_fp32_two_k64_mma_loop_b1_smoke(lhs, rhs, out=None):
     for tensor, shape, dtype in (
         (lhs, (1, 16, 128), torch.float32),
@@ -106,7 +108,7 @@ def cake_triton_fp32_two_k64_mma_loop_b1_smoke(lhs, rhs, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != lhs.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_triton_fp32_two_k64_mma_loop_b1_smoke_kernel[(1, 1, 1)](
+    _cake_launch_cake_triton_fp32_two_k64_mma_loop_b1_smoke(
         lhs,
         rhs,
         out,

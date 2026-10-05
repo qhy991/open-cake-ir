@@ -98,6 +98,8 @@ def _cake_qsa_score_topk_t32768_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_qsa_score_topk_t32768 = _cake_qsa_score_topk_t32768_kernel[(32768, 1, 1)]
+
 def cake_qsa_score_topk_t32768(index_q, normalized_keys, out=None):
     for tensor, shape, dtype in (
         (index_q, (32768, 8, 128), torch.bfloat16),
@@ -118,7 +120,7 @@ def cake_qsa_score_topk_t32768(index_q, normalized_keys, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != index_q.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_qsa_score_topk_t32768_kernel[(32768, 1, 1)](
+    _cake_launch_cake_qsa_score_topk_t32768(
         index_q,
         normalized_keys,
         out,

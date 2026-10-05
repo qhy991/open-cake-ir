@@ -69,6 +69,8 @@ def _cake_rmsnorm_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_rmsnorm_b8_smoke = _cake_rmsnorm_b8_smoke_kernel[(8, 8, 1)]
+
 def cake_rmsnorm_b8_smoke(x, gamma, out=None):
     for tensor, shape, dtype in (
         (x, (8, 512, 128), torch.float32),
@@ -89,7 +91,7 @@ def cake_rmsnorm_b8_smoke(x, gamma, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != x.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_rmsnorm_b8_smoke_kernel[(8, 8, 1)](
+    _cake_launch_cake_rmsnorm_b8_smoke(
         x,
         gamma,
         out,
