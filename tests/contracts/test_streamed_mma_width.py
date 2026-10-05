@@ -11,20 +11,20 @@ ROOT=Path(__file__).resolve().parents[2]
 def document(dtype='bf16', target='sm_103a'):
     buffers=[]
     for name,space,kind,shape,mode in [
-        ('a','global',dtype,[17,32],'input'),('b','global',dtype,[70,32],'input'),
-        ('c','global',dtype,[17,70],'output'),('at','register',dtype,[16,32],'scratch'),
-        ('bt','register',dtype,[16,32],'scratch'),('acc','register','fp32',[16,16],'scratch'),
+        ('a','global','bf16',[17,32],'input'),('b','global','bf16',[70,32],'input'),
+        ('c','global',dtype,[17,70],'output'),('at','register','bf16',[16,32],'scratch'),
+        ('bt','register','bf16',[16,32],'scratch'),('acc','register','fp32',[16,16],'scratch'),
         ('rounded','register',dtype,[16,16],'scratch')]:
         buffers.append(dict(name=name,space=space,dtype=kind,shape=shape,mode=mode))
     def index(source,**kw):return dict(source=source,**kw)
     return {'schema_version':2,'schedule_id':'streamed-output','target':target,
         'roles':[{'name':'compute','execution_groups':list(range(8))}],
-        'allocations':[],'pipelines':[],'barriers':[],'buffers':buffers,
+        'allocations':[],'pipelines':[],'barriers':[],'buffers':buffers,'outputs':['c'],
         'operations':[
             {'id':'load_a','kind':'load','role':'compute','reads':['a'],'writes':['at'],'parameters':{'movement':'global','reuse':'streamed'}},
             {'id':'load_b','kind':'load','role':'compute','reads':['b'],'writes':['bt'],'parameters':{'movement':'global','reuse':'streamed'}},
             {'id':'dot','kind':'mma','role':'compute','reads':['at','bt'],'writes':['acc'],
-             'parameters':{'accumulator':'fp32','instruction':{'contract':'triton.dot.'+dtype+'_fp32'},'tile_shape':[16,16,32]},'depends_on':['load_a','load_b']},
+             'parameters':{'accumulator':'fp32','instruction':{'contract':'triton.dot.bf16_fp32'},'tile_shape':[16,16,32]},'depends_on':['load_a','load_b']},
             {'id':'round','kind':'cast','role':'compute','reads':['acc'],'writes':['rounded'],'parameters':{'to':dtype},'depends_on':['dot']},
             {'id':'store','kind':'store','role':'compute','reads':['rounded'],'writes':['c'],'parameters':{'coalesced':True},'depends_on':['round']}],
         'program_map':{'axes':[{'name':'m','axis':0,'buffer':'a','dimension':0,'tile':16}]},
