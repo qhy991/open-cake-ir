@@ -85,10 +85,11 @@ def cake_top_k_streaming_b8_smoke(scores, out=None):
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((8, 8), dtype=torch.int32, device=scores.device)
-    if tuple(out.shape) != (8, 8) or out.dtype != torch.int32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != scores.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
+    else:
+        if tuple(out.shape) != (8, 8) or out.dtype != torch.int32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != scores.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
     _cake_top_k_streaming_b8_smoke_kernel[(8, 1, 1)](
         scores,
         out,

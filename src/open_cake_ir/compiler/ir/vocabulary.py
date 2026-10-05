@@ -72,6 +72,7 @@ class OperationKind(str, Enum):
     COORDINATE = "coordinate"
     COMPARE = "compare"
     SELECT = "select"
+    BROADCAST_IN_DIM = "broadcast_in_dim"
     CAST = "cast"
     ELEMENTWISE = "elementwise"
     SCAN = "scan"

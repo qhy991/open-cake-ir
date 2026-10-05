@@ -113,6 +113,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COORDINATE: "_emit_coordinate",
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
+    OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
@@ -131,6 +132,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COORDINATE: "_emit_coordinate",
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
+    OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
@@ -1511,7 +1513,18 @@ class _TritonEmitter:
         extent = self._loop_stop(loop)
         tile = self._tile(loop.name)
         if self.target.code_object is CodeObject.MCFATBIN:
-            from .metax import loop_range
+            from .metax import loop_range, partial_unroll_factor
+            factor = partial_unroll_factor(loop, self.schedule)
+            if factor is not None:
+                base = f"_maca_unroll_{loop.iterator}_base"
+                lane = f"_maca_unroll_{loop.iterator}_lane"
+                self.line(f"{pad}for {base} in tl.range(0, {extent}, {tile} * {factor}, num_stages=1):")
+                self.line(f"{pad}    for {lane} in tl.static_range(0, {factor}):")
+                self.line(f"{pad}        {loop.iterator} = {base} + {lane} * {tile}",
+                          declares=(loop.iterator,))
+                self._emit_loop_body(loop, pad + "    ", tile, finalize=False)
+                self._emit_loop_finalize(loop, pad)
+                return
             maca_range = loop_range(loop, self.schedule, extent, tile)
             if maca_range is not None:
                 self.line(
@@ -1539,7 +1552,7 @@ class _TritonEmitter:
         )
         self._emit_loop_body(loop, pad, tile)
 
-    def _emit_loop_body(self, loop: TileLoop, pad: str, tile: str) -> None:
+    def _emit_loop_body(self, loop: TileLoop, pad: str, tile: str, *, finalize: bool = True) -> None:
         self.line(
             f"{pad}    {loop.iterator}_offsets = "
             f"{loop.iterator} + tl.arange(0, {tile})"
@@ -1552,6 +1565,10 @@ class _TritonEmitter:
             operation = self.schedule.operation(op_id)
             _require(operation is not None, f"loop body names unknown operation {op_id!r}")
             self._emit_operation(operation, pad + "    ", inside=True)
+        if finalize:
+            self._emit_loop_finalize(loop, pad)
+
+    def _emit_loop_finalize(self, loop: TileLoop, pad: str) -> None:
         for op_id in loop.body:
             operation = self.schedule.operation(op_id)
             if operation is not None and streaming_compensated_loop(self.schedule, operation) is not None:
@@ -1748,6 +1765,22 @@ class _TritonEmitter:
             ),
             declares=(operation.writes[0],),
         )
+
+    def _emit_broadcast_in_dim(self, operation, pad: str) -> None:
+        result = self.schedule.buffer(operation.writes[0])
+        _require(result is not None, "broadcast result is undeclared")
+        axes = operation.parameters.dimensions
+        source = self.schedule.buffer(operation.reads[0])
+        _require(source is not None, "broadcast source is undeclared")
+        # Canonical [1] may be a native rank-zero reduction or scalar load.
+        # Both rank-zero and one-element block values broadcast directly.
+        value = operation.reads[0]
+        if not source.is_scalar:
+            index = ", ".join(":" if axis in axes else "None" for axis in range(len(result.shape)))
+            value += f"[{index}]"
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{result.name} = tl.broadcast_to({value}, {tuple(result.shape)})",
+                  declares=(result.name,))
 
     def _emit_scan(self, operation, pad: str) -> None:
         """Accumulate one inclusive prefix along the declared resident axis."""
@@ -2501,9 +2534,10 @@ class _TritonEmitter:
     def _emit_output_binding(self, outputs: list[Buffer], anchor: str) -> None:
         """Allocate and check the caller's output tensors.
 
-        One output binds the name `out` directly; several bind a sequence. The single
-        case keeps its exact emitted bytes because the corpus pins the lowered source
-        digest of every case, so drift there is a corpus-wide break for no gain.
+        Fresh outputs are constructed by torch.empty with the declared ABI and
+        need no repeated shape/device checks. Caller-owned outputs still receive
+        every check; in particular a retained graph workspace is not trusted by
+        object identity. One output binds out directly; several bind a sequence.
 
         Both host wrappers route through here. They did not before, and the consequence
         was that the multi-output launch defect existed twice -- once per copy.
@@ -2516,13 +2550,14 @@ class _TritonEmitter:
                 f"        out = torch.empty({tuple(output.shape)}, "
                 f"dtype={TORCH_DTYPES[output.dtype]}, device={anchor}.device)"
             )
+            self.line("    else:")
             self.line(
-                f"    if tuple(out.shape) != {tuple(output.shape)} "
+                f"        if tuple(out.shape) != {tuple(output.shape)} "
                 f"or out.dtype != {TORCH_DTYPES[output.dtype]}:"
             )
-            self.line("        raise ValueError(\"out differs from the frozen output contract\")")
-            self.line(f"    if out.device != {anchor}.device or not out.is_contiguous():")
-            self.line("        raise ValueError(\"out must be contiguous on the input device\")")
+            self.line("            raise ValueError(\"out differs from the frozen output contract\")")
+            self.line(f"        if out.device != {anchor}.device or not out.is_contiguous():")
+            self.line("            raise ValueError(\"out must be contiguous on the input device\")")
             return
         self.line("    if out is None:")
         self.line("        out = (")
@@ -2532,24 +2567,25 @@ class _TritonEmitter:
                 f"dtype={TORCH_DTYPES[buffer.dtype]}, device={anchor}.device),"
             )
         self.line("        )")
-        self.line("    out = tuple(out)")
-        self.line(f"    if len(out) != {len(outputs)}:")
+        self.line("    else:")
+        self.line("        out = tuple(out)")
+        self.line(f"        if len(out) != {len(outputs)}:")
         self.line(
-            f"        raise ValueError(\"out must provide {len(outputs)} output tensors\")"
+            f"            raise ValueError(\"out must provide {len(outputs)} output tensors\")"
         )
-        self.line("    for tensor, shape, dtype in (")
+        self.line("        for tensor, shape, dtype in (")
         for index, buffer in enumerate(outputs):
             self.line(
-                f"        (out[{index}], {tuple(buffer.shape)}, "
+                f"            (out[{index}], {tuple(buffer.shape)}, "
                 f"{TORCH_DTYPES[buffer.dtype]}),"
             )
-        self.line("    ):")
-        self.line("        if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
+        self.line("        ):")
+        self.line("            if tuple(tensor.shape) != shape or tensor.dtype != dtype:")
         self.line(
-            "            raise ValueError(\"out differs from the frozen output contract\")"
+            "                raise ValueError(\"out differs from the frozen output contract\")"
         )
-        self.line(f"        if tensor.device != {anchor}.device or not tensor.is_contiguous():")
-        self.line("            raise ValueError(\"out must be contiguous on the input device\")")
+        self.line(f"            if tensor.device != {anchor}.device or not tensor.is_contiguous():")
+        self.line("                raise ValueError(\"out must be contiguous on the input device\")")
 
     def _emit_launch_arguments(
         self, globals_in_order: list[Buffer], outputs: list[Buffer]

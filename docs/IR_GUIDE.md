@@ -281,3 +281,22 @@ assert "fma.rn.f32" in lowering.source
 5. 新文件提交即属于 Compiler：源码身份就是这次检出的 git 提交（[ADR 0065](adr/0065-source-identity-is-the-commit.md)），没有另一份源码清单要登记，评审在合并到 main 时进行一次。历史 release、Executor 与实验固定的源码使用原 Git 版本回放。
 
 查看代码中的现行词汇可以运行 `tools/ir_vocabulary.py`。它从公共 IR 对象投影枚举和结构，因此文件拆分不会使这份工具清单变成第二份手工维护的事实来源。是否真的可用，仍对目标 Schedule 执行 assessment。
+
+### Explicit register broadcast
+
+`broadcast_in_dim` reads one register value and writes one register value of the
+same dtype. Its `parameters.dimensions` lists, in strictly increasing order, the
+result axis corresponding to each source axis. The result Buffer owns its shape;
+the operation does not restate it. Each mapped source extent must equal the result
+extent or be one. Unmapped result axes replicate values without arithmetic or
+rounding. For example, `[R]` with `dimensions: [0]` into `[R,C]` forms a per-row
+value, while `[C]` with `dimensions: [1]` forms a per-column value.
+
+This makes outer products and widened validity predicates explicit. A masked load
+still produces its declared fill value; broadcasting a predicate and selecting a
+reduction identity is an authored dataflow, not an implicit change to every
+consumer. Effects remain register-local. Triton emits `tl.broadcast_to`; other
+routes must admit their own emission before lowering. Target operation admission
+is explicit: adding the vocabulary and semantic tests does not qualify a device
+or silently widen a committed Target. The current prototype tests use a test-local
+Target declaration. Device qualification precedes platform admission.

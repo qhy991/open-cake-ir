@@ -187,7 +187,7 @@ def _streaming_compensated_domain(schedule: Schedule, operation) -> bool:
     return True
 
 
-def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
+def _fixed_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
     """Only a fixed loop can carry an exact full-unroll commitment."""
     buffer = schedule.buffer(loop.buffer)
     if buffer is None or loop.stop is not None or loop.dimension >= len(buffer.shape):
@@ -195,22 +195,38 @@ def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
     return (buffer.shape[loop.dimension] + loop.tile - 1) // loop.tile
 
 
-def _full_unroll_admitted(loop: TileLoop, schedule: Schedule) -> bool:
-    return (loop.range_options.num_stages == 1
-            and _full_unroll_trip_count(loop, schedule)
-            == loop.range_options.loop_unroll_factor)
+def _fixed_unroll_admitted(loop: TileLoop, schedule: Schedule) -> bool:
+    """Partition a fixed trip count without padding it with extra iterations.
+
+    A partial group must divide the trip count exactly. Buffer tails remain in
+    the existing access masks; a query stop or a pipelined loop has no such route.
+    """
+    trips = _fixed_trip_count(loop, schedule)
+    factor = loop.range_options.loop_unroll_factor
+    return (loop.range_options.num_stages == 1 and trips is not None
+            and factor <= trips and trips % factor == 0)
+
+
+def partial_unroll_factor(loop: TileLoop, schedule: Schedule) -> int | None:
+    """Return only an admitted partial grouping; full unroll keeps its spelling."""
+    factor = loop.range_options.loop_unroll_factor
+    if (factor > 1 and _fixed_unroll_admitted(loop, schedule)
+            and factor < _fixed_trip_count(loop, schedule)):
+        return factor
+    return None
 
 
 def loop_range(loop: TileLoop, schedule: Schedule, extent: str, tile: str) -> str | None:
     """Use the MACA 3.1 static iterator for an explicitly full-unrolled loop.
 
-    None leaves the shared tl.range spelling in control. Preflight refuses every
-    other non-default unroll request before this function is called by emission.
+    None leaves the shared tl.range spelling in control. Preflight refuses
+    unfaithful unroll requests before this function is called by emission.
     """
     factor = loop.range_options.loop_unroll_factor
     if factor == 1:
         return None
-    if not _full_unroll_admitted(loop, schedule):
+    if (not _fixed_unroll_admitted(loop, schedule)
+            or factor != _fixed_trip_count(loop, schedule)):
         return None
     return f"tl.static_range(0, {extent}, {tile})"
 
@@ -325,17 +341,31 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             "the admitted MACA Triton version has no qualified warp-specialization route",
         ))
     # The captured MACA Triton 3.1 range accepts num_stages only. A fixed,
-    # single-stage full unroll has its own static_range spelling; partial or
-    # dynamic unrolls cannot be silently weakened to that spelling.
+    # single-stage loop can use static_range, either for its whole trip count or
+    # inside exact partial groups. Dynamic and pipelined requests remain refused.
     for index, loop in enumerate(schedule.tile_loops):
         factor = loop.range_options.loop_unroll_factor
-        if factor != 1 and not _full_unroll_admitted(loop, schedule):
+        if factor != 1 and not _fixed_unroll_admitted(loop, schedule):
+            trips = _fixed_trip_count(loop, schedule)
+            stages = loop.range_options.num_stages
+            if stages != 1:
+                reason = (
+                    f"unroll factor {factor} with num_stages={stages} has no qualified "
+                    "MACA pipelined-unroll spelling; explicitly choose factor=1 to retain "
+                    "the requested pipeline, or num_stages=1 for a fixed divisible unroll; "
+                    "the backend does not change either commitment"
+                )
+            elif trips is None:
+                reason = "MACA unroll requires a fixed buffer-derived trip count; query stops remain unsupported"
+            else:
+                reason = (
+                    f"unroll factor {factor} must divide the fixed trip count {trips} "
+                    "without adding iterations; choose a divisor or factor=1"
+                )
             findings.append(refusal(
                 "MACA_LOOP_UNROLL_UNSUPPORTED",
                 f"tile_loops[{index}].range_options.loop_unroll_factor",
-                "MACA lowering admits a non-default unroll factor only when it equals "
-                "the trip count of a fixed, single-stage loop; partial, query-bounded "
-                "or pipelined unrolls have no faithful spelling",
+                reason,
             ))
         for name, default in (("flatten", False), ("disallow_acc_multi_buffer", False),
                               ("disable_licm", False)):

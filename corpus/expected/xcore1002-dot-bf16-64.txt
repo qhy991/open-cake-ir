@@ -68,10 +68,11 @@ def xcore1002_dot_bf16_64(a, b, out=None):
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((64, 64), dtype=torch.float32, device=a.device)
-    if tuple(out.shape) != (64, 64) or out.dtype != torch.float32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != a.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
+    else:
+        if tuple(out.shape) != (64, 64) or out.dtype != torch.float32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != a.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
     _xcore1002_dot_bf16_64_kernel[(1, 1, 1)](
         a,
         b,

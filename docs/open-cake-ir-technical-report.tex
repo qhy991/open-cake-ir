@@ -586,7 +586,7 @@ FMA 说明为什么公式相同，还要写清计算语义。$a\times b+c$ 可�
 \FloatBarrier
 
 \subsection{完整 Program 的阶段与绑定}
-\repo{contracts/programs/qsa-prefill-t32768-v4.json}{QSA Program v4} 是一份可检查的
+\repo{contracts/programs/qsa-prefill-t32768-v5.json}{QSA Program v5} 是一份可检查的
 多阶段实例。其任务在 $B=1,T=32768$ 时读入 $q,k,v$、索引查询与索引键，最终写出
 BF16 的 \code{output}，形状为 $[1,32768,32,128]$。Program 中的五个阶段各有一份
 \repo{corpus/schedules/qsa-score-topk-t32768.json}{独立 Schedule}；下表直接按合同中的
@@ -594,7 +594,7 @@ BF16 的 \code{output}，形状为 $[1,32768,32,128]$。Program 中的五个阶�
 
 \begin{table}[htbp]
 \centering\small\renewcommand{\arraystretch}{1.2}
-\caption{QSA Program v4 的实际五阶段数据流。形状来自固定 $B=1,T=32768$ 的任务与
+\caption{QSA Program v5 的实际五阶段数据流。形状来自固定 $B=1,T=32768$ 的任务与
 Program 合同；本表描述程序结构，不代表第\ref{sec:results}节历史候选的计时。}
 \label{tab:qsa-program}
 \begin{tabularx}{\textwidth}{@{}p{21mm}Y Y@{}}

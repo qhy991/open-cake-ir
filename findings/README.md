@@ -49,6 +49,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 This integration assigns the DCU cast/BF16 record first published as F-2026-10-03-001 on dcu to F-2026-10-03-005. The original record remains at f0f465f6:findings/2026-10-03-001-gfx938-cast-bf16-admission.json; its device receipts and implementation history remain unchanged. Main retains F-2026-10-03-001 for the distinct native-cohort custody observation.
 
+- F-2026-10-04-005 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
 
 - F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.
 

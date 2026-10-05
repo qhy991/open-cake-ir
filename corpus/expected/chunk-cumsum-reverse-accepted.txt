@@ -58,10 +58,11 @@ def cake_chunk_cumsum_reverse_b8_smoke(gate, out=None):
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((8, 64, 128), dtype=torch.float32, device=gate.device)
-    if tuple(out.shape) != (8, 64, 128) or out.dtype != torch.float32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != gate.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
+    else:
+        if tuple(out.shape) != (8, 64, 128) or out.dtype != torch.float32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != gate.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
     _cake_chunk_cumsum_reverse_b8_smoke_kernel[(1, 8, 1)](
         gate,
         out,
