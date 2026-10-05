@@ -203,6 +203,7 @@ class NativeSkillRuntimeTests(unittest.TestCase):
 
         template = run_fixtures.IndependentRunTests(methodName='runTest')
         self.addCleanup(template.doCleanups)
+        template.setUp()  # Enter the existing CPU Executor fixture before preflight.
         _, original = template.fixture(condition='open_cake')
         for mode in ('zero_turn', 'call_fault', 'returned_native_rejection'):
             document = deepcopy(original.document)
@@ -267,6 +268,7 @@ class NativeSkillRuntimeTests(unittest.TestCase):
 
         template = run_fixtures.IndependentRunTests(methodName='runTest')
         self.addCleanup(template.doCleanups)
+        template.setUp()  # Enter the existing CPU Executor fixture before preflight.
         _, original = template.fixture(condition='open_cake')
         document = deepcopy(original.document)
         document['authoring']['provider'] = deepcopy(self.provider)
