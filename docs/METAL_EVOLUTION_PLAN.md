@@ -531,6 +531,16 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
   `air.rsqrt.f32`、`air.simd_broadcast.f32` 和 5 个 32-float private alloca。
   它不是实际 runtime archive 的反汇编；不能据此报告物理寄存器、spill 或机器 ISA。
 
+另以同一固定 Compiler、原 Workload/oracle 完成两种手写结构替代的数值资格，
+记录在 `g2-structural-rmsnorm/` 与 `g2-structural-gemm_silu/`：两者均通过原生编译、
+archive-only 重载与各 5 种输入，再增加 10 次正确 dispatch。RMSNorm 重载输入并延后
+weight load，逻辑峰值仍为每 lane 97 个 FP32 值；离线 AIR 保留额外 load，32-float
+alloca 从 5 个变为 6 个，不能宣称减少物理寄存器。GEMM+SiLU 按行列拆分，MSL 显式
+使用 program.x/program.y，grid 从 `(128,1,1)` 变为 `(128,32,1)`；逻辑峰值从 521
+降至 25，离线 AIR 有三个 8-float alloca 与 SIMD sum/exp。输入重复读取和实际资源代价
+尚未测量。这些验证说明两种结构能正确实现；它们是维护者编写的资格候选，不是 agent
+搜索结果。RMSNorm 的逻辑存储假设保留为负结果，两者均 **No promotion**。
+
 后续独立 `timestamp-attribution-diagnostic/` 按预先声明的计划执行 32 次单-dispatch
 instrumented 观察和前后各 5 个原有输入检查，共 42 次 dispatch 全部正确。两个时间窗口
 高度同变（Pearson 0.99999994；command/stage 的 CV 分别约 1.8267/1.8264）；
