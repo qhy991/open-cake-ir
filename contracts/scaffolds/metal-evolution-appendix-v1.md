@@ -25,6 +25,12 @@ spills, occupancy or a performance gain. Missing, omitted or unavailable code an
 profiler information remain unverified; do not infer their contents or invoke
 extra tools to obtain them.
 
+On later Turns, read the existing `candidate-set.py` through the already permitted
+tools before updating it. Carry forward only a few useful observations, then replace
+the ordered proposals within the current candidate limit. Do not accumulate old
+complete candidates. The feedback bundle does not automatically resend old author
+comments; retained files and thread history do not prove that you reread them.
+
 Keep a brief public hypothesis note at the start of each Schedule function body.
 Name the Cake primitive or operation region, the expected lowering change, the
 prior visible candidate/Turn evidence and the next check. Update the prior outcome
