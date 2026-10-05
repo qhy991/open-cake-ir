@@ -73,11 +73,18 @@ def observe_local_job(kind: str = "metal") -> str:
     metadata = os.fstat(fd)
     scope = os.environ.get('OPEN_CAKE_LOCAL_LOCK_SCOPE', 'user')
     selected = os.environ.get('OPEN_CAKE_LOCAL_DEVICE')
+    runtime_selected = os.environ.get('OPEN_CAKE_LOCAL_RUNTIME_DEVICE', selected)
+    runtime_override = os.environ.get('OPEN_CAKE_LOCAL_RUNTIME_DEVICE')
+    expected_pci = os.environ.get('OPEN_CAKE_LOCAL_EXPECTED_PCI')
+    if runtime_override is not None or expected_pci is not None:
+        validate_namespace_mapping(kind, int(selected) if selected and selected.isdecimal() else None,
+            scope, int(runtime_override) if runtime_override and runtime_override.isdecimal() else None,
+            expected_pci)
     if scope not in {'user', 'device'}:
         raise ValueError('local broker lock scope differs')
     if selected is not None:
-        keys = _selection_environment(kind, int(selected)) if selected.isdecimal() else ()
-        if not keys or any(os.environ.get(key) != selected for key in keys):
+        keys = _selection_environment(kind, int(runtime_selected)) if selected.isdecimal() and runtime_selected is not None and runtime_selected.isdecimal() else ()
+        if not keys or any(os.environ.get(key) != runtime_selected for key in keys):
             raise ValueError('local broker device mapping differs from admission')
     if scope == 'device' and (selected is None or not selected.isdecimal()):
         raise ValueError('device-scoped local admission lacks a physical device')
@@ -128,8 +135,20 @@ def _selection_environment(kind: str, device: int | None) -> tuple[str, ...]:
     return row.local_visibility_environment
 
 
+def validate_namespace_mapping(kind: str, device: int | None, lock_scope: str,
+                               runtime_device: int | None, expected_pci: str | None) -> None:
+    """Validate an explicit host-ordinal to runtime-ordinal binding before allocation."""
+    if runtime_device is not None or expected_pci is not None:
+        if (kind != 'maca' or lock_scope != 'device' or type(device) is not int or device < 0
+                or type(runtime_device) is not int or runtime_device < 0
+                or not isinstance(expected_pci, str)
+                or re.fullmatch(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}', expected_pci) is None):
+            raise ValueError('runtime namespace mapping requires a MACA device lease and exact PCI binding')
+        _selection_environment(kind, runtime_device)
+
 def admit_local_job(kind: str, *, device: int | None = None, queue_seconds: float = 0,
-                    lock_scope: str = 'user') -> str:
+                    lock_scope: str = 'user', runtime_device: int | None = None,
+                    expected_pci: str | None = None) -> str:
     """Acquire this process's local job after its CPU preparation completes.
 
     The default user scope remains compatible with frozen workers. Device scope
@@ -143,6 +162,8 @@ def admit_local_job(kind: str, *, device: int | None = None, queue_seconds: floa
     Call only from a short-lived worker's process entry, never a reusable host.
     """
     selection = _selection_environment(kind, device)
+    validate_namespace_mapping(kind, device, lock_scope, runtime_device, expected_pci)
+    visible = device if runtime_device is None else runtime_device
     if (type(queue_seconds) not in (int, float) or not math.isfinite(queue_seconds)
             or queue_seconds < 0):
         raise ValueError("local queue seconds must be finite and nonnegative")
@@ -150,7 +171,8 @@ def admit_local_job(kind: str, *, device: int | None = None, queue_seconds: floa
         raise ValueError('unknown local lock scope')
     path = _device_lock_path(kind, device) if lock_scope == 'device' else _lock_path(kind)
     if any(os.environ.get(key) for key in ('METAL_BROKER_LOCK_FD', 'GPUQ_JOB_ID',
-                                         'OPEN_CAKE_LOCAL_LEGACY_FD', 'OPEN_CAKE_LOCAL_LOCK_SCOPE')):
+                                         'OPEN_CAKE_LOCAL_LEGACY_FD', 'OPEN_CAKE_LOCAL_LOCK_SCOPE',
+                                         'OPEN_CAKE_LOCAL_RUNTIME_DEVICE', 'OPEN_CAKE_LOCAL_EXPECTED_PCI')):
         raise ValueError('a local job cannot nest an existing allocation')
     job = f"{kind}-" + uuid.uuid4().hex[:12]
     deadline = time.monotonic() + queue_seconds
@@ -180,8 +202,11 @@ def admit_local_job(kind: str, *, device: int | None = None, queue_seconds: floa
             for key in _VISIBILITY_KEYS:
                 os.environ.pop(key, None)
             for key in selection:
-                os.environ[key] = str(device)
+                os.environ[key] = str(visible)
             os.environ['OPEN_CAKE_LOCAL_DEVICE'] = str(device)
+            if runtime_device is not None:
+                os.environ['OPEN_CAKE_LOCAL_RUNTIME_DEVICE'] = str(runtime_device)
+                os.environ['OPEN_CAKE_LOCAL_EXPECTED_PCI'] = expected_pci
         os.set_inheritable(fd, True)
         if barrier_fd is not None:
             os.set_inheritable(barrier_fd, True)
@@ -205,6 +230,8 @@ def main(argv=None) -> int:
     parser.add_argument("--request", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--local-device", type=int)
+    parser.add_argument("--local-runtime-device", type=int)
+    parser.add_argument("--local-expected-pci")
     parser.add_argument("--local-lock-scope", choices=("user", "device"), default="user")
     parser.add_argument("--local-queue-seconds", type=float, default=0)
     parser.add_argument("--probe-target", help="exact MACA device admission only; no kernel or timing")
@@ -217,11 +244,13 @@ def main(argv=None) -> int:
             parser.error('MACA probe requires only its exact target, runtime library and new absolute output')
         from .triton_metax import observe_local_metax
         try:
-            job = admit_local_job(args.kind, device=args.local_device, queue_seconds=args.local_queue_seconds, lock_scope=args.local_lock_scope)
+            job = admit_local_job(args.kind, device=args.local_device, queue_seconds=args.local_queue_seconds, lock_scope=args.local_lock_scope,
+                                  runtime_device=args.local_runtime_device, expected_pci=args.local_expected_pci)
             admission = observe_local_metax(args.probe_target, runtime_library=str(args.runtime_library))
             result = {'schema_version': 1, 'scope': 'local_device_admission_only',
                       'admitted': True, 'job_id': job, 'mode': 'local_serialized',
-                      'physical_device': args.local_device, 'lock_scope': args.local_lock_scope, 'device_admission': asdict(admission),
+                      'physical_device': args.local_device, 'runtime_device': (args.local_device if args.local_runtime_device is None else args.local_runtime_device),
+                      'expected_pci': args.local_expected_pci, 'lock_scope': args.local_lock_scope, 'device_admission': asdict(admission),
                       'kernel_calls': 0, 'timing_samples': 0}
         except (ValueError, OSError, RuntimeError) as error:
             result = {'schema_version': 1, 'scope': 'local_device_admission_only',
@@ -236,7 +265,8 @@ def main(argv=None) -> int:
     if not args.request.is_absolute() or not args.output.is_absolute() or args.output.exists():
         parser.error("request/output must be absolute and output must be new")
     try:
-        admit_local_job(args.kind, device=args.local_device, queue_seconds=args.local_queue_seconds, lock_scope=args.local_lock_scope)
+        admit_local_job(args.kind, device=args.local_device, queue_seconds=args.local_queue_seconds, lock_scope=args.local_lock_scope,
+                                  runtime_device=args.local_runtime_device, expected_pci=args.local_expected_pci)
         # Exec preserves the supervisor-owned process group and lock. Its
         # timeout kills the worker and native children together as before.
         from .source_bootstrap import module_command
