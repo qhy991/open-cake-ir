@@ -892,10 +892,27 @@ def main() -> int:
             initial_invocation = observation["initial_invocation"]
             resumed_invocation = observation["resumed_invocation"]
             prefix = f"{arm}_"
-            for phase, observed_turn in (("initial", initial), ("resumed", resumed)):
-                if observed_turn.native_skill_input is not None:
-                    objects.append(evidence.put(observed_turn.native_skill_input,
-                        media_type="application/json").reference(f"{prefix}{phase}_native_skill_input"))
+            previous_skill_input = None
+            for turn_number, (phase, observed_turn, invocation) in enumerate((
+                ("initial", initial, initial_invocation), ("resumed", resumed, resumed_invocation)), start=1):
+                if native_skill_package is not None:
+                    from open_cake_ir.lab.native_skill_observation import replay_observation
+                    if observed_turn.native_skill_input is None:
+                        raise ValueError('qualification Turn lacks native skill input')
+                    reference = evidence.put(observed_turn.native_skill_input,
+                        media_type="application/json").reference(f"{prefix}{phase}_native_skill_input")
+                    retained_input = evidence.read_object(reference)
+                    entries = {f'skills/{name}/SKILL.md' for name in native_skill_package.entry_names}
+                    replay_observation(retained_input, previous=previous_skill_input,
+                        thread_id=initial.thread_id, cwd=str(invocation.cwd), model=args.model,
+                        effort=args.reasoning_effort, turn=turn_number,
+                        package_files={str(invocation.user_home/'.agents'/item.path): item.payload
+                                       for item in native_skill_package.files if item.path in entries},
+                        system_paths=observation['builder'].system_skill_entrypoints)
+                    previous_skill_input = retained_input
+                    objects.append(reference)
+                elif observed_turn.native_skill_input is not None:
+                    raise ValueError('qualification has undeclared native skill input')
             objects.extend(
                 [
                     evidence.put(
