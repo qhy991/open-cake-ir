@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "id": "F-2026-10-05-005",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+  "executor_revision": "xcore1002@2487a4e39f1facb233d2845da596d8fd9ab7fd0f",
+  "title": "A complete RMSNorm Program has lowering support but lacks optimization-Run measurement coverage",
+  "decision": "deferred",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-local-admission-20261004/matrix-v1/rmsnorm/run-evidence",
+    "run": "open_cake-1",
+    "event_sequence": 57,
+    "program_id": "rmsnorm-fp32-metax-r128-c1024-inv-epilogue",
+    "retained_source_and_successor_inspection": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/route-dispositions-f0393c92",
+    "successor_commit": "f0393c92664b665e3cb4bf545964fa86bdb17e0f",
+    "owning_code": "evaluation/program.py::admit_program_execution; evaluation/paired.py::validate_receipt_policy"
+  },
+  "observation": "Original event57 is candidate_rejected at assessment, routed to candidate, with the exact error: ordered Program attribution is not implemented for mcfatbin; the existing instrument covers one dispatch. The unchanged retained Python Program parses under the successor and both sum/epilogue stages lower. The ordinary execution admission accepts xcore1002, while the optimization Run's timing and attribution admissions both refuse with their explicit coverage messages. Standalone MACA Program attribution is separately supported in the current code; it does not grant this common optimization-Run coverage. No native build, launch, correctness or performance result for this Program was produced by this inspection.",
+  "proposed_change": "Route this follow-up to Lab/Executor measurement coverage. A successor must retain and check the complete stage sequence, stage/module identities, launch correlations, cache reset, declared measured interval, external oracle and full input/output custody before accepting a complete-Program result. Give the author a localized coverage diagnosis rather than inferring a candidate syntax or IR-vocabulary defect from this untyped Environment error. Do not time only one stage, borrow the standalone attribution scope, collapse kernel names, or relax the existing measurement policy. Phase-boundary changes require a successor source commit and separately admitted Run.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "No Compiler optimization promotion for the two-stage candidate. Keep the original rejected outcome and defer common MACA optimization-Run measurement coverage. Existing IR Program composition and lowering need no new primitive from this event. This Finding authorizes no new GPU or provider work."
+}
