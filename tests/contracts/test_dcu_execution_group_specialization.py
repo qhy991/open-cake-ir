@@ -23,6 +23,9 @@ class ExecutionGroupSpecialization(unittest.TestCase):
     def gemm(self, target='gfx938'):
         document = json.loads((ROOT / 'corpus/schedules/gemm-bias-b1-smoke.json').read_text())
         document['target'] = target
+        document.pop('residency', None)
+        for role in document['roles']:
+            role.pop('registers_per_thread', None)
         for buffer in document['buffers']:
             if buffer['name'] in {'a', 'b', 'a_tile', 'b_tile'}:
                 buffer['dtype'] = 'fp16'
@@ -76,7 +79,7 @@ class ExecutionGroupSpecialization(unittest.TestCase):
     def test_residency_and_register_commitments_are_not_silently_changed(self):
         for field, value in [('residency', {'ctas_per_multiprocessor': 1}),
                              ('registers', 128)]:
-            document = self.gemm()
+            document = self.gemm('sm_100a' if field == 'registers' else 'gfx938')
             if field == 'registers':
                 document['roles'][0]['registers_per_thread'] = value
             else:
