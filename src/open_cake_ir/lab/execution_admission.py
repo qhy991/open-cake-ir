@@ -148,6 +148,8 @@ def validate_run_bindings(specification, *, project_root, workload_loader, provi
     from .admission import admit_run_inputs
 
     document = specification.document
+    from .author_home import require_live_skill_qualification
+    require_live_skill_qualification(document['authoring'].get('provider', {}).get('author_home_policy'))
     protocol = document['evaluation_protocol']
     if (getattr(evaluator, 'protocol', None) != protocol
         or getattr(evaluator, 'protocol_sha256', None) != sha256(_canonical_json_bytes(protocol)).hexdigest()):

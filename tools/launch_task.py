@@ -23,7 +23,7 @@ from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
-from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
+from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, verify_auth_source
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.incumbents import TaskIncumbentRegistry, admit_baseline_selection
 from open_cake_ir.lab.build import TritonToolchainBuilder
@@ -487,8 +487,12 @@ def _qualify(root, workspace, args, executable, source_path):
                     PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
                     else PYTHON_CANDIDATE_BUNDLE_V1))
     if args.harness == 'codex':
-        command.extend(('--author-home-policy', ISOLATED_AUTH_ONLY_V1,
+        skill_package = getattr(args, 'author_skill_package', None)
+        command.extend(('--author-home-policy',
+                        ISOLATED_SKILL_PACKAGE_V1 if skill_package is not None else ISOLATED_AUTH_ONLY_V1,
                         '--auth-source', str(args.auth_source)))
+        if skill_package is not None:
+            command.extend(('--author-skill-package', str(skill_package)))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -547,6 +551,8 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--author-skill-package', type=Path,
+                        help='controlled native skill package for a private Codex HOME; live discovery and delivery remain unqualified')
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
                         default='known_kernel_reproduction',
                         help='clean_start is reserved until provider read isolation is qualified')
@@ -604,6 +610,11 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if args.author_skill_package is not None:
+        if args.harness != 'codex' or args.reference_access != 'known_kernel_reproduction':
+            parser.error('--author-skill-package requires Codex known-kernel authoring')
+        if not args.baseline_only:
+            parser.error('native skill discovery and delivery on initial/resume are not verified; refusing formal qualification or launch')
     if args.local_device is not None and args.local_device < 0:
         parser.error('--local-device must be nonnegative')
     if args.local_queue_seconds < 0 or not math.isfinite(args.local_queue_seconds):
@@ -658,7 +669,8 @@ def main(argv=None) -> int:
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
-        source_file=args.source_file, generated_source_feedback=args.generated_source_feedback)
+        source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
+        native_skill_package=args.author_skill_package)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     if args.harness != 'codex' and args.auth_source is not None:
         raise ValueError('--auth-source applies only to the Codex harness')
