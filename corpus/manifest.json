@@ -2547,6 +2547,71 @@
         "schedule_sha256": "018c77a5e706e4babf9c30761ef113f071f1c7334c39639f364df0711a354dd0",
         "lowering_source_sha256": "fc8b8de82483de49b40889f51b91001fc698bdb8d0b367b0a3178cd38f891dcf"
       }
+    },
+    {
+      "case_id": "gfx938-int32-scan-129-reverse-qualified",
+      "schedule": "corpus/schedules/gfx938-int32-scan-129-reverse.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "4cfc12e3351e00a499c412c0df47c303b91f972bcbcb92de82848b8721773d85",
+        "lowering_source_sha256": "e32c5d97514a2c4868c4b05461372747851b6fa43aa063369a9c9570ce798578"
+      }
+    },
+    {
+      "case_id": "gfx938-fp32-scan-33-forward-qualified",
+      "schedule": "corpus/schedules/gfx938-fp32-scan-33-forward.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "34728d604654b74752c0a879f378d130138891053fbd89588671fced5681f007",
+        "lowering_source_sha256": "3b1d7961ef259f85b0867dbde68c5f2385744e97d2bca79964a3bb4f1ac43d45"
+      }
+    },
+    {
+      "case_id": "gfx938-register-outer-broadcast-qualified",
+      "schedule": "corpus/schedules/gfx938-register-outer-broadcast.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "3769b15c95467d821fb287ed3da3fed4a235962a6bc722aec4a0ae84098f4c22",
+        "lowering_source_sha256": "9b9e8040656a006c5436feef55b9922ee857a88a83076e6f68248205f285fedd"
+      }
+    },
+    {
+      "case_id": "gfx938-effective-row-validity-broadcast-qualified",
+      "schedule": "corpus/schedules/gfx938-effective-row-validity-broadcast.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "f0084908fde1b5be73ba8cebf29147d4a2f0f0952c696868d69e84b3802f49fe",
+        "lowering_source_sha256": "fc75aaa7027c57df4ba8acb291fa041e94656c27a3fbd03f3374acecc4e3e56f"
+      }
+    },
+    {
+      "case_id": "gfx938-fp8-register-broadcast-qualified",
+      "schedule": "corpus/schedules/gfx938-fp8-register-broadcast.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "43eaf13c59af5b37b0d3425df1e1ecbf15acfc5474c96c6236d169db40465967",
+        "lowering_source_sha256": "c664c2d71bae21491ecb719bafb69ded249153d1937f23ffb22dd228ff8e5b4d"
+      }
     }
   ]
 }
