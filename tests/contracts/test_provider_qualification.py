@@ -337,10 +337,20 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 self.assertNotEqual(initial['user_home'], initial['codex_home'])
                 self.assertEqual(initial['native_skill_package'], authority['native_skill_package'])
                 self.assertEqual(initial['native_skill_package'], resumed['native_skill_package'])
+                from open_cake_ir.lab.native_skill_observation import replay_observation
                 observations = []
+                previous_input = None
                 for phase, invocation in (('initial', initial), ('resumed', resumed)):
-                    observation = json.loads(evidence.read_object(objects[f'{arm}_{phase}_native_skill_input']))
-                    self.assertEqual(observation['kind'], 'codex_skill_input_observation_v1')
+                    retained_input = evidence.read_object(objects[f'{arm}_{phase}_native_skill_input'])
+                    observation = replay_observation(retained_input, previous=previous_input,
+                        thread_id=events[0]['payload']['arms'][arm]['thread_id'], cwd=invocation['cwd'],
+                        model=authority['model'], effort=authority['reasoning_effort'],
+                        turn=1 if phase == 'initial' else 2,
+                        package_files={str(Path(invocation['user_home'])/'.agents'/item.path): item.payload
+                                       for item in package.files if item.path == 'skills/cake/SKILL.md'},
+                        system_paths=())
+                    previous_input = retained_input
+                    self.assertEqual(observation['kind'], 'codex_skill_input_observation_v2')
                     self.assertEqual(observation['resumed'], phase == 'resumed')
                     self.assertEqual(observation['cwd'], invocation['cwd'])
                     self.assertEqual(len(observation['loaded_this_turn']), 1)
