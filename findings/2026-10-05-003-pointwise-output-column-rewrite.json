@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "id": "F-2026-10-05-003",
+  "kind": "behavior",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "executor_revision": "xcore1002@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "title": "Confirmed SiLU column partition suggests a guarded explicit pointwise rewrite",
+  "decision": "proposed",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/matrix-v1/silu/run-evidence",
+    "candidate_seal_event": 16,
+    "profile_event": 22,
+    "fresh_confirmation_event": 427,
+    "review": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/silu-confirmed-review.json",
+    "successor_cpu_compilation": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/compiler-successor-4d7258a2/offline-build-v2/results.json"
+  },
+  "observation": "The sealed R128/C1024 SiLU candidate preserves exp/reciprocal/multiply and partitions existing independent columns into two programs per row. Its original fresh paired confirmation passes correctness and measurement quality:3.584us versus4.096us,1.142857x,10/10 wins, with matching profiler evidence. The mechanism is already expressible in Cake IR. This one shape does not establish the best tile for other shapes or qualify a new Compiler pass. Existing specialize_output_columns is a contraction-specific mechanism and does not own the independence proof for pointwise graphs.",
+  "proposed_change": "Provide the explicit tile_pointwise_outputs Schedule and complete-Program rewrite. Require a loop-free single-role whole-row rank2 graph, aligned register vectors, ordinary input/output storage, one writer per public output and direct column accesses with tail masks. Preserve graph, dtype, public ABI and metadata while adding the requested column program tile and resizing only internal values. Refuse reductions, contractions, scans, atomics, sliced inputs, cross-axis broadcasts, synchronization and explicit storage commitments. Lab selects parameters and measures complete candidates; ordinary assessment never applies the rewrite implicitly.",
+  "implemented_in": "4d7258a22b75c6ca430493f246901e8ba8b0b2f1",
+  "verified_by": null,
+  "software_verification": {
+    "commit": "4d7258a22b75c6ca430493f246901e8ba8b0b2f1",
+    "contracts": "The99 affected contracts include four Triton peer targets, divisible and C35 tail domains, immutable inputs, two outputs, one store per element, complete Program rebinding and owned refusals. A dedicated sliced-input counterexample also passes at7440e7e6, pinning its access_domain guard.",
+    "corpus": "181/181 unchanged Corpus expectations match;97 lowerable source snapshots match.",
+    "offline_build": "Pass-generated C32 and C35/tile16 pointwise candidates compile to MCFATBIN using the existing isolated CPU-only builder under4d7258a2.",
+    "limits": "The original SiLU speedup is an author candidate result underafa75c13, not a pass-generated result under the successor. CPU source interpretation and native compilation do not qualify device correctness, a performance model, a selected tile, or transfer beyond this source mechanism."
+  },
+  "promotion_disposition": "Reviewable guarded rewrite with software evidence; behavior finding remains open for independent review and separately qualified successor measurement. No automatic policy, new IR primitive, performance acceptance or GPU retry."
+}

@@ -43,6 +43,9 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-05-002 — three sibling Softmax regions expose the Triton two-loop cap; flat-region admission is software verified, including isolated compilation of retained events99/100. Device qualification remains open.
+- F-2026-10-05-003 — confirmed SiLU column partition motivates an explicit guarded pointwise rewrite; public ABI, tail effects and refusal ownership are software verified. Original candidate performance does not qualify the successor pass.
+
 - F-2026-10-04-005 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
 
 - F-2026-10-04-004 — native Triton launch admission now derives each group width from emission route facts; oversized wave64 requests refuse before a build, with the32-lane control preserved.
