@@ -73,7 +73,7 @@ H1/H2 是同类算子迁移，H3 是不同收缩语义；这些不能声称是�
 | G1 任务与 Compiler | 六个 starter 构造、assess、lower、原生编译；已有 Corpus Gate 与适用合同测试通过；oracle 覆盖完整输入 | 区分 frontend、verifier、lowering、任务 ABI；按 owner 修复后作为后继验证 |
 | G2 可搜索性 | 每任务至少两个非改名、非纯 group 调参的结构策略可表达；至少两个代表任务验证完整策略对 | 若只有一种实现可走，先补关键表达能力，不能通过奖励调参掩盖 |
 | G3 设备与测量 | 封存基线全部输入正确；A/A 对照、已知慢化对照、配对顺序、时间戳与独立确认通过 | 无可信计时就只报正确性/覆盖，不能开启性能研究 |
-| G4 两轮系统验收 | 候选绑定的结果与 MSL/operation 对应实际交付并可回放；作者探索 Cake 并核对低层机制；受保护文件、预算、确认预留正确；经验摘要可追溯 | 结果归因修复已合入 main；MSL 投递仍缺失，待共享后继、Metal 集成和真实作者验收 |
+| G4 两轮系统验收 | 候选绑定的结果与 MSL/operation 对应实际交付并可回放；作者探索 Cake 并核对低层机制；受保护文件、预算、确认预留正确；经验摘要可追溯 | 结果归因与源码投递已在 main 通过 CPU CI；待最终平台集成、真实作者和设备资格 |
 | G5 冻结 | Workload、固定基线、提交、每任务 scaffold/资料、Codex gpt-6.1-sol/xhigh、作者环境、参考权限、预算、经验和 pass grants 完整 | 独立 Run 目录与状态；技能发现按实证范围声明；不使用浮动 main 或自动更新 incumbent |
 
 G1 要覆盖所有发现任务的 starter；G2 先以 D2、D6 做完整机制对演练，其他任务再逐项扩展。
@@ -196,9 +196,11 @@ Cake 表达能力、lowering 实现和设备收益必须分别判断，负结果
 低层参照分为 MSL 源码、Metal IR/AIR 中间表示、Apple GPU 机器指令；MSL 不等于 PTX。
 首轮以候选绑定的生成 MSL 为代码检查层；更低层能力按精确工具链的实际证据增加。
 源码与 logical slots 不能证明最终指令、寄存器、spill 或 occupancy。
-当前 builder 已保存 MSL，但作者初始材料/反馈没有交付其正文；已有候选归因修复也没有
-补上这一点。G4 必须先增加有界代码与 operation 对应投递及独立回放，再要求作者引用
-实际区域并检验假设。任务文字不能授予额外参考访问或调用编译器的权限。
+[PR #320](https://github.com/qhy991/open-cake-ir/pull/320) 已在 `main@473f8cad` 补齐显式
+启用的候选源码反馈及独立回放，本计划任务分支已吸收；默认和旧 Run 权限不变。
+投递完整 stage 的 MSL、原始行号和既有 `CAKE_OP` 标记，超限时明确省略，不能声称看过
+未交付区域。固定实现的三版本 CI 各 2698 通过、35 跳过；这证明软件合同，不证明真实
+作者阅读、设备正确或收益。G4 继续要求实际作者引用区域并检验假设，任务文字不授予额外工具。
 分层依据、短任务文案及交付正反例见 [authoring 合同](METAL_EVOLUTION_AUTHORING.md)。
 
 当前有四种不同的“记忆”：
@@ -347,8 +349,9 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 2. **共享反馈修复与两轮经验验收。** PR #319 已将 `main@354a670f` 的默认 bundle、
    候选归因、peer 结果、Run 内历史和任务资料隔离经 CPU 集成验证合入 Metal；本机 custody
    条件和真实资格保持各自未验证状态。继续按
-   [authoring 规划](METAL_EVOLUTION_AUTHORING.md)补齐候选 MSL/operation 对应投递与回放，
-   接入明确要求 Cake 探索及低层对照的新 scaffold；按每任务独立材料与 Run 状态组织目录，
+   [authoring 规划](METAL_EVOLUTION_AUTHORING.md)完成 PR #320 源码反馈的最终平台集成，
+   绑定完整 scaffold 和显式源码权限；每轮更新前重读当前候选文件，保留少量有效观察。
+   按每任务独立材料与 Run 状态组织目录，
    以 `gpt-6.1-sol / xhigh` 完成适用资格，核对 skill 发现边界。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
@@ -376,7 +379,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 原生/oracle/设备；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
-| G4 经验接入 | PR #319 已同步候选绑定、Run 内历史、bundle 和每任务资料；新 bundle 笔记投影已做 CPU 验证 | 有界源码/operation 交付与回放的共享后继；完整 scaffold 绑定；真实作者行为 | `feedback-binding-successor/report.json`、`task-environment-integration.json`、`metal-main-sync.json` |
+| G4 经验接入 | PR #319 已同步历史/材料；PR #320 源码投递已合 main 并通过完整 CI；初版 scaffold 已做 CPU 输入绑定 | 最终平台集成与后继完整 scaffold；真实作者行为；native skill 实际输入观测 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-1b2920/composition-report.json`、`codex-skill-interface-01592/report.json` |
 | G5 冻结与发现批次 | 未启动 | 前置门通过、完整有限预算和权限冻结 | 无 Run / Study |
 
 ## 8. 走向更完整的 Metal 工具
