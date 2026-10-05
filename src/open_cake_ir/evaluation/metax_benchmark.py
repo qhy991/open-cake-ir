@@ -149,17 +149,24 @@ class McptiDispatchBenchmark:
             torch.cuda.synchronize()
         except BaseException as primary:
             failures = [primary]
+            activity = None
             try:
                 torch.cuda.synchronize()
             except BaseException as synchronization:
                 failures.append(synchronization)
             try:
-                self._collector.finish()
+                activity = self._collector.finish()
             except BaseException as teardown:
                 failures.append(teardown)
+                activity = getattr(teardown, 'activity_snapshot', None)
             if len(failures) > 1:
                 from .loaders import LifecycleError
-                raise LifecycleError(*failures) from primary
+                combined = LifecycleError(*failures)
+                if activity is not None:
+                    combined.activity_snapshot = activity
+                raise combined from primary
+            if activity is not None:
+                primary.activity_snapshot = activity
             raise
         return self._collector.finish()
 
@@ -201,6 +208,9 @@ class McptiDispatchBenchmark:
             raise ValueError("MACA timing iteration or reset contract differs")
         if cold_l2_cache:
             self._prepare_reset()
+        # Calibration is its own observation. Once it succeeds, a later warmup
+        # or cohort failure must not be reported using that earlier snapshot.
+        self.last_activity = None
         for _ in range(dry_run_iters):
             function()
         torch.cuda.synchronize()
@@ -214,12 +224,20 @@ class McptiDispatchBenchmark:
                 # on the captured route. Complete device work before reuse instead
                 # of accepting overlap or substituting host/event timing.
                 torch.cuda.synchronize()
-        activity = self._collect(cohort)
         reset = self._reset_record if cold_l2_cache else None
-        self.last_activity = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
+        capture_context = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
             "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
-            "reset_record": reset, "reset_activity": self._reset_activity if cold_l2_cache else None,
-            "activity": activity}
+            "reset_record": reset, "reset_activity": self._reset_activity if cold_l2_cache else None}
+        try:
+            activity = self._collect(cohort)
+        except BaseException as error:
+            activity = getattr(error, 'activity_snapshot', None)
+            if activity is not None:
+                self.last_activity = {**capture_context, 'phase': 'failed_timing_cohort', 'activity': activity}
+            # No sample derivation or successful receipt follows a failed capture.
+            # Keep the original exception (including any lifecycle error chain).
+            raise
+        self.last_activity = {**capture_context, "activity": activity}
         samples = dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
             grid=self.manifest.grid, block=self.manifest.block, repeats=repeat_iters, reset_record=reset)
         self.non_target_dispatches = 0  # Proven above; any extra device activity is refused.
