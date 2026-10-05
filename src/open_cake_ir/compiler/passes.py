@@ -108,7 +108,7 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         or any(op.waits or op.signals or op.pipeline for op in s.operations)
         or any(b.space not in {MemorySpace.GLOBAL, MemorySpace.REGISTER}
                or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
-               or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent for b in s.buffers)):
+               or b.stages != 1 or b.swizzle or b.scale_of for b in s.buffers)):
         return refused('execution_commitments', 'Require one zero-based role without explicit storage, synchronization or residency commitments.')
     if s.tile_loops:
         by_id = {op.op_id: op for op in s.operations}
