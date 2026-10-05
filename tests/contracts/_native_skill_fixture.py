@@ -24,10 +24,13 @@ def append_rollout(thread_id, arguments):
     rows = [] if resumed else [row('session_meta', id=thread_id, cwd=str(Path.cwd()), cli_version='0.159.2')]
     rows.append(row('event_msg', type='task_started', turn_id=native_turn))
     if not resumed:
-        rows.append(frame('<skills_instructions>\n## Skills\n### Skill roots\n'
+        instructions = ('<skills_instructions>\n## Skills\n### Skill roots\n'
             f'- `r0` = `{skill.parent.parent}`\n### Available skills\n'
-            '- cake: fixture (file: r0/cake/SKILL.md)\n</skills_instructions>',
-            'host_skills.instructions', 'developer'))
+            '- cake: fixture (file: r0/cake/SKILL.md)\n</skills_instructions>')
+        rows.append(frame(instructions, 'host_skills.instructions', 'developer'))
+        rows.append(row('world_state', full=True, state={'host_skills': {
+            'body': instructions.removeprefix('<skills_instructions>').removesuffix('</skills_instructions>'),
+            'includeInstructions': True}}))
     rows.append(row('turn_context', turn_id=native_turn, cwd=str(Path.cwd()), model=model, effort=effort))
     rows.append(frame(f'<skill>\n<name>cake</name>\n<path>{skill}</path>\n{skill.read_text()}\n</skill>',
                       'skills.selected_skill_instructions', 'user'))

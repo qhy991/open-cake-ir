@@ -185,7 +185,8 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
         raise ValueError('native skill declared entry points differ')
     active = None
     completed = []
-    catalog, catalog_turn = None, None
+    catalog, catalog_turn, catalog_text = None, None, None
+    world_state_seen = False
     current_bodies, retained = [], []
     turn_contexts = {}
     appended_starts = []
@@ -211,6 +212,20 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
                 or payload.get('cwd') != cwd or payload.get('model') != model or payload.get('effort') != effort):
                 raise ValueError('native skill turn context differs')
             turn_contexts[active] = index
+        elif kind == 'world_state':
+            state = payload.get('state')
+            if not isinstance(state, dict) or type(payload.get('full')) is not bool:
+                raise ValueError('native skill world state differs')
+            if 'host_skills' in state:
+                skills = state['host_skills']
+                if (active is None or catalog_text is None or not isinstance(skills, dict)
+                    or skills.get('includeInstructions') is not True
+                    or not isinstance(skills.get('body'), str)
+                    or '<skills_instructions>' + skills['body'] + '</skills_instructions>' != catalog_text):
+                    raise ValueError('native skill world state differs from input catalog')
+                world_state_seen = True
+            elif payload['full']:
+                raise ValueError('native skill full world state lacks skill input')
         elif kind == 'response_item':
             contents = payload.get('content', [])
             if not isinstance(contents, list):
@@ -237,9 +252,9 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
                     paths = {entry['path'] for entry in observed}
                     if paths != allowed:
                         raise ValueError('native skill catalog has undeclared or missing sources')
-                    if catalog is not None and observed != catalog:
+                    if catalog is not None and (observed != catalog or text != catalog_text):
                         raise ValueError('native skill catalog drifted across turns')
-                    catalog, catalog_turn = observed, active
+                    catalog, catalog_turn, catalog_text = observed, active, text
                     retained.append({'line': index + 1, 'turn_id': active,
                                      'kind': item_kind, 'role': 'developer', 'text': text})
                 else:
@@ -254,7 +269,7 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
                         retained.append({'line': index + 1, 'turn_id': active,
                             'kind': item_kind, 'role': 'user', 'text': text})
     if (active is not None or len(appended_starts) != 1 or not completed
-        or completed[-1] != appended_starts[0] or catalog is None
+        or completed[-1] != appended_starts[0] or catalog is None or not world_state_seen
         or not resumed and len(completed) != 1
         or resumed and len(completed) < 2):
         raise ValueError('native skill invocation does not contain exactly one complete new turn')

@@ -48,6 +48,9 @@ def rows(turn=TURN1, *, initial=True, path=SKILL, cwd=CWD, body=BODY, load=True)
     result.append(record('event_msg', type='task_started', turn_id=turn))
     if initial:
         result.append(frame(catalog(path), turn, 'host_skills.instructions', 'developer'))
+        result.append(record('world_state', full=True, state={'host_skills': {
+            'body': catalog(path).removeprefix('<skills_instructions>').removesuffix('</skills_instructions>'),
+            'includeInstructions': True}}))
     result.append(record('turn_context', turn_id=turn, cwd=cwd, model='gpt-6.1-sol', effort='xhigh'))
     result.append(record('response_item', type='message', role='user',
                          content=[{'type': 'input_text', 'text': 'private task prompt not retained'}]))
@@ -136,6 +139,25 @@ class NativeSkillObservationTests(unittest.TestCase):
         changed[0]['payload']['base_instructions'] = 'changed history'
         with self.assertRaisesRegex(ValueError, 'prior prefix'):
             self.project(changed + second, previous=encode(first), resumed=True)
+
+    def test_world_state_and_description_drift_are_not_hidden_by_same_paths(self):
+        for mutate in ('description', 'disabled', 'missing'):
+            data = rows()
+            state = next(r['payload'] for r in data if r['type'] == 'world_state')
+            if mutate == 'description':
+                state['state']['host_skills']['body'] = state['state']['host_skills']['body'].replace('fixture', 'different')
+            elif mutate == 'disabled':
+                state['state']['host_skills']['includeInstructions'] = False
+            else:
+                state['state'] = {}
+            with self.subTest(mutate=mutate), self.assertRaisesRegex(ValueError, 'world state'):
+                self.project(data)
+        first = rows()
+        second = rows(TURN2, initial=False)
+        second.insert(1, frame(catalog().replace('fixture (file:', 'changed (file:'),
+                               TURN2, 'host_skills.instructions', 'developer'))
+        with self.assertRaisesRegex(ValueError, 'drifted'):
+            self.project(first+second, previous=encode(first), resumed=True)
 
     def test_compaction_rollback_and_partial_json_do_not_claim_coverage(self):
         for kind in ('compacted', 'thread_rolled_back'):
