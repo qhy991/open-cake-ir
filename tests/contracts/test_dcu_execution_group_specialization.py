@@ -26,10 +26,11 @@ class ExecutionGroupSpecialization(unittest.TestCase):
         document.pop('residency', None)
         for role in document['roles']:
             role.pop('registers_per_thread', None)
-        for buffer in document['buffers']:
-            if buffer['name'] in {'a', 'b', 'a_tile', 'b_tile'}:
-                buffer['dtype'] = 'fp16'
-        document['operations'][2]['parameters']['instruction']['contract'] = 'triton.dot.fp16_fp32'
+        if target == 'gfx938':
+            for buffer in document['buffers']:
+                if buffer['name'] in {'a', 'b', 'a_tile', 'b_tile'}:
+                    buffer['dtype'] = 'fp16'
+            document['operations'][2]['parameters']['instruction']['contract'] = 'triton.dot.fp16_fp32'
         return document
 
     def apply(self, document, width=8):
