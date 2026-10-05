@@ -181,3 +181,14 @@
 INT32 谓词非零时选择 true 值，否则选择 false 值。两个分支类型一致；
 false 分支可为有限常量，浮点结果另可声明 `negative_infinity`，用于注意力掩码。
 地址必须在解引用时独立检查边界，选择操作不能替代安全的 load。
+
+## broadcast_in_dim
+
+Replicate one register value into the result Buffer's declared shape without
+arithmetic, dtype conversion or memory effects. `parameters.dimensions` maps
+every source axis to a strictly increasing result axis; mapped extents must
+match or be one. Unmapped result axes replicate values. Canonical `[1]` values
+can be native scalar reductions or scalar loads. This explicit operation serves
+outer products and widened validity predicates; it does not silently propagate
+a load mask through later arithmetic. Target admission and backend support remain
+separate from the typed vocabulary.

@@ -177,6 +177,7 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 | --- | --- | --- |
 | `load` | `LoadParameters` | 从指定地址取数；`global` / `tma` 搬运、TMA descriptor box、`reused` / `streamed` 复用意图 |
 | `store` | `StoreParameters` | 写回 output 或有合法所有权的 state；显式 `coalesced` |
+| `broadcast_in_dim` | `BroadcastInDimParameters` | 显式寄存器轴映射与值复制；shape 由结果 Buffer 唯一维护 |
 | `elementwise` | `ElementwiseParameters` | 同位置算术；选择 `op`，按规则使用 scalar、broadcast 或 instruction |
 | `cast` | `CastParameters` | 转换到声明的 dtype；不改变索引空间 |
 | `mma` | `MmaParameters` | `a[M,K]` 与 `b[N,K]` 的收缩、FP32 累加、指令与 tile 承诺 |
