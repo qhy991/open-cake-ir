@@ -75,6 +75,21 @@ class DeviceLeaseProcesses(unittest.TestCase):
         self.finish(replacement);self.finish(second)
         fd=local_broker._acquire(self.base);os.close(fd)
 
+    def test_exec_retains_both_admission_descriptors(self):
+        child = """import os,sys
+from open_cake_ir.evaluation import local_broker
+local_broker.admit_local_job('maca',device=2,lock_scope='device')
+os.execvpe(sys.executable,[sys.executable,'-c',
+    "from open_cake_ir.evaluation.local_broker import observe_local_job; print(observe_local_job('maca'))"],dict(os.environ))
+"""
+        env={key:value for key,value in os.environ.items() if not key.startswith(
+            ('METAL_', 'GPUQ_', 'OPEN_CAKE_LOCAL_'))}
+        env.update(TMPDIR=str(self.root),PYTHONPATH=str(ROOT/'src'))
+        result=subprocess.run([sys.executable,'-c',child],env=env,capture_output=True,text=True,timeout=5)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertTrue(result.stdout.strip().startswith('maca-'))
+        fd=local_broker._acquire(self.base);os.close(fd)
+
     def test_old_exclusive_user_jobs_and_new_device_jobs_exclude_each_other(self):
         for first_scope,second_scope in [('user','device'),('device','user')]:
             with self.subTest(first=first_scope):
