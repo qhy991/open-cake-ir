@@ -102,3 +102,18 @@ class TiledEpilogueFusion(unittest.TestCase):
             if b['space']=='register':b['shape']=[32,32]
         self.assertTrue(self.compiler.assess(e).lowering_eligible)
         self.assertEqual(self.fuse(d).reason,'tile_ownership')
+
+    def test_valid_transposed_reload_does_not_borrow_an_invalid_input_refusal(self):
+        d=tiled_program(m=32,n=32,k=17)
+        e=d['stages'][1]['schedule']
+        access=next(a for a in e['access_maps'] if a['operation']=='load_gate')
+        access['indices'].reverse()
+        self.assertTrue(self.compiler.assess(e).lowering_eligible)
+        self.assertEqual(self.fuse(d).reason,'tile_ownership')
+
+    def test_role_names_can_differ_without_changing_execution_commitments(self):
+        d=tiled_program();e=d['stages'][1]['schedule']
+        e['roles'][0]['name']='pointwise'
+        for op in e['operations']:op['role']='pointwise'
+        r=self.fuse(d);self.assertTrue(r.applied,r.message)
+        self.assertTrue(all(op.role=='compute' for op in r.program.stages[0].schedule.operations))
