@@ -3,16 +3,16 @@
 状态：设计草案；尚未满足正式实验执行门。用户选择先验证可重复闭环，再扩展
 FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
 
-当前软件基线：[PR #334](https://github.com/qhy991/open-cake-ir/pull/334) 已将原生技能
-事实重建集成到 `metal@22334948`，三个 Python CI 版本各 2770 通过、35 跳过。
-本次吸收 [PR #335](https://github.com/qhy991/open-cake-ir/pull/335) 的
-`main@e041f4cb`：Run 保存执行器调用绑定，并在轮次归档和回放中核对技能输入。
-其源提交、完整 CI 和合并记录见外部台账
-`native-skill-run-evidence-b039c49b/report.json`。
+当前软件基线：[PR #336](https://github.com/qhy991/open-cake-ir/pull/336) 已把完成轮次的
+技能调用绑定、归档回放和计划更新合入 `metal@fb0d1cf4`，三个 Python CI 版本各
+2781 通过、35 跳过。本次吸收 [PR #337](https://github.com/qhy991/open-cake-ir/pull/337)
+的 `main@79957ff5`：返回 Turn 后的技能校验拒绝也保留输入与绑定，并重现拒绝原因。
+源提交、完整 CI 与合并记录见外部台账 `native-skill-fault-4bdea637/report.json`。
 
 下一道软件门是资格收据、anchor 和 admission 的共同验收；正式 Run/Campaign 入口仍
-拒绝技能策略。CPU fixture 观察与软件检查不授予实际作者或 Metal 设备资格。本机工具链、
-资源分配和测量门仍分别待验收，不因临时子进程回环网络已通过而放行。
+拒绝技能策略。CPU fixture 与软件检查不授予实际作者或 Metal 设备资格。采集前失败
+如实记为技能输入未验证，保留诊断和可见费用，不授权候选；不要求为缺失输入制造证明。
+本机工具链、资源分配和测量门仍分别待验收，不因回环网络已通过而放行。
 
 旧证据保留在原提交回放，不自动升级为当前资格。本页是开发计划，不是实验报告；
 模板与观察边界见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
@@ -412,9 +412,11 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    为每个 cell 绑定完整技能包与 `isolated_skill_package_v1`，以 `gpt-6.1-sol / xhigh`
    完成真实 initial/resume 资格。PR #335 已接入执行器调用绑定与每轮归档/回放，CPU
    合同覆盖真实 EvidenceStore 的两轮路径和材料、身份、角色互换等拒绝；未调用真实模型。
-   下一步沿既有资格收据、anchor 与 admission owner 校验保留的两 arm/两轮输入和 custody，
-   旧收据及 fixture scope 不得获得新能力。还须保留被拒绝的原生输入/绑定并回放拒绝原因，
-   当前完成轮次路径不覆盖该故障证据。直接入口、零轮和首轮故障路径也须验收；
+   PR #337 补齐已返回 Turn 的拒绝证据及故障回放；超界或未采集输入仍明确不可验证。
+   下一步沿既有资格收据、anchor 与 admission owner，按输出合同声明的 arm 集合验证
+   每 arm 的 initial/resume 输入和 custody，不把两 arm 固定成 Metal 的额外要求。
+   旧收据及 fixture scope 不得获得新能力。直接入口、零轮和首轮故障路径须验证不会借
+   缺输入或早退放行候选；采集前失败保留原诊断与已消耗费用，不冒充已验证投递。
    反例必须在实际准入入口拒绝，通过之后再开放策略。
    当前真实入口仍明确拒绝新策略。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
@@ -444,10 +446,10 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | PR #335 接入执行器调用绑定、冻结 TaskPackage 校验和两轮归档/回放；非技能策略保持原角色集合 | 资格收据/anchor/admission 共同验收及真实作者资格仍未完成；正式入口继续拒绝 | `native-skill-run-evidence-b039c49b/report.json`；旧采集和回放记录保留 |
+| G4 技能软件准备 | PR #335 完成轮次校验；PR #337 保留返回 Turn 的拒绝输入，并在故障回放中重现原因和用量 | 资格收据/anchor/admission 及真实作者资格未完成；采集前失败的输入未验证；正式入口继续拒绝 | `native-skill-fault-4bdea637/report.json`；旧输入与回放记录保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | admin/插件哨兵、脚本/依赖、真实模型使用与正式 provider 资格未完成 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
-| 平台软件集成 | PR #334 合入 metal@22334948，三版本 CPU CI 各 2770/35；本任务吸收 PR #335 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-replay-integration-662538b2/report.json`；后继记录另列 |
+| 平台软件集成 | PR #336 合入 metal@fb0d1cf4，三版本 CPU CI 各 2781/35；本任务吸收 PR #337 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-run-evidence-b6ee3656/report.json`；后继记录另列 |
 
 ## 8. 走向更完整的 Metal 工具
 
