@@ -56,6 +56,10 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
                                                            second_text=terminal)
         if number > 1:
             raw = raw.replace(b'"kind":"add"', b'"kind":"update"')
+        events = [json.loads(line) for line in raw.splitlines()]
+        # Codex reports a session cumulative counter; the Run archives a delta.
+        events[-1]['usage'] = {'input_tokens': 100*number, 'output_tokens': 20*number}
+        raw = native.encode(events)
         turn = normalize_codex_turn(raw, candidate_path=candidate,
             expected_change='add' if number == 1 else 'update', expected_terminal_message=terminal,
             arm='open_cake', maximum_candidates_per_turn=1)
@@ -76,7 +80,10 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
             configuration=self.builder.configuration, system_skills_snapshot=self.builder.remembered_system_skills)
         state = {'kind': 'ralph_state_v1', 'iteration': number,
                  'cumulative_provider_tokens': 120*(number-1), 'terminal_reason': None}
+        from open_cake_ir.lab.provider_usage import provider_token_delta
         return replace(turn, reference_bundle=self.package.evidence_bundle(state),
+            provider_tokens=provider_token_delta(turn.provider_tokens, provider=self.provider,
+                                                 previous_tokens=120*(number-1)),
             native_skill_input=canonical_json_bytes(observation), native_skill_binding=binding)
 
     def archive(self, turn, number=1, **overrides):
