@@ -39,7 +39,7 @@ with the original Task inputs. It bypasses the graph wrapper for attribution;
 this collection supplies no complete-call or graph performance score. The
 installed `dcu-rocprof-report-skill` CSV parser validates five target rows:
 
-| observed field | value per target dispatch |
+| observed field | value across the five target dispatches |
 |---|---:|
 | kernel | `_l1048_dualgemm_m128_bm128bn128bk64s1g4_kernel.kd` |
 | grid / workgroup | 49152 / 256 work-items (192 CTAs) |
@@ -48,7 +48,7 @@ installed `dcu-rocprof-report-skill` CSV parser validates five target rows:
 | architectural VGPR / SGPR | 256 / 32 |
 | scratch (`scr`) | 32 |
 | VALUInsts / SALUInsts | 11447 / 838 |
-| FETCH_SIZE | 296778.5 KB |
+| FETCH_SIZE | 296434.125–296778.5 KB |
 
 The first two filtered wrapper collections produced zero contexts and remain
 retained. The valid third collection changed both filtering and dispatch scope;
