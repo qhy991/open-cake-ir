@@ -31,7 +31,9 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
   "schema_version": 2,
   "objective": "复现参考 RMSNorm 的执行结构，并解释性能差距",
   "provider": {"harness": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"},
-  "budget": {"turns": 8, "token_budget": 300000, "wall_seconds": 7200},
+  "budget": {"turns": 8, "token_budget": 150000, "wall_seconds": 3600,
+    "max_candidates": 3, "searches_per_turn": 3,
+    "max_compilations": 24, "confirmation_seconds": 600},
   "cells": [{
     "id": "rmsnorm-b300", "task": "rmsnorm", "backend": "triton-b300",
     "rows": 128, "columns": 4096,
@@ -46,6 +48,34 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
 
 模型与 effort 是显式输入；示例按当前实验选择 `gpt-6.1-sol` / `xhigh`，不是 launcher
 全局默认值，也不证明该 CLI/模型组合已经通过资格。初始与续轮均使用同一绑定。
+
+`budget` 为每个 cell 单独计数，不从 scaffold 或参考材料读取。`turns` 与 `wall_seconds`
+必填；`token_budget` 可省略或为 `null`。schema v2 另外允许以下四项独立覆盖，均可省略，
+不要求同时填写：
+
+| v2 可选字段 | 传入现有 launcher 的参数 | 含义 |
+| --- | --- | --- |
+| `max_candidates` | `--max-candidates` | 每个 Turn 最多提交的候选数，正整数 |
+| `searches_per_turn` | `--searches-per-turn` | 每个 Turn 的搜索评测配额，正整数，不超过最终解析的候选数 |
+| `max_compilations` | `--max-compilations` | Run 内 native source-to-artifact 编译入口调用上限，正整数，包含失败调用和内部 variants |
+| `confirmation_seconds` | `--confirmation-seconds` | 总 wall budget 内预留给确认阶段的秒数，正有限数，可带小数，严格小于 `wall_seconds` |
+
+其余预算计数必须为正整数，布尔值、字符串与自动数值转换不被接受。
+`token_budget` 是 provider token 停止阈值，在 Turn 边界检查，不是单次响应的硬截断；
+省略或 `null` 仍记录用量，但不启用 token 停止阈值。
+例如上述配置向既有 Run budget 投影为最多 8 Turns、每 Turn 3 候选和 3 次搜索、
+全 Run 24 次搜索配额、24 次 attribution 配额和 24 次编译调用；600 秒确认预留包含在
+3600 秒总预算内。配额不是实际执行次数，既有 `task_run_inputs` 继续推导其余 Run 限制。
+
+管理器保留省略项，不填补默认值。固定 source commit 的 `launch_task.py` 解析默认值，
+`task_run_inputs` 校验完整预算；这两个入口仍是实际执行参数与 Run 预算的 owner。
+当两个计数字段都显式填写时，管理器先检查 `searches_per_turn <= max_candidates`；
+只填写其中一项时，它与 CLI 默认值是否相容由真实运行入口检查。
+`prepare` 成功只表示输入可准备，不表示 Run 已冻结、通过资格或一定能启动。
+完整预算校验先于 stack admission、native baseline 构建、provider qualification 和 GPU
+评测；此前节点可能已经创建输入与 source worktree、解析 provider 可执行文件并查询
+GPU Infra `node-status`。失败仍应检查保留的启动记录，不自动重试同一 cell。
+schema v1 继续只接受原有的三个预算字段；新字段不会改变旧版配置或其 CLI 默认行为。
 
 schema v2 为每个 cell 创建 `cells/<id>/TASK.md`、`AGENTS.md`、`references/` 和
 `scaffold.md`。每项必须声明自己的 `references`；没有顶层资料继承或缺失文件回退。
