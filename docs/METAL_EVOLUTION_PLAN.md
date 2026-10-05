@@ -531,6 +531,14 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
   `air.rsqrt.f32`、`air.simd_broadcast.f32` 和 5 个 32-float private alloca。
   它不是实际 runtime archive 的反汇编；不能据此报告物理寄存器、spill 或机器 ISA。
 
+后续独立 `timestamp-attribution-diagnostic/` 按预先声明的计划执行 32 次单-dispatch
+instrumented 观察和前后各 5 个原有输入检查，共 42 次 dispatch 全部正确。两个时间窗口
+高度同变（Pearson 0.99999994；command/stage 的 CV 分别约 1.8267/1.8264）；
+前次 GPU end 到本次 start 的间隔与 command interval 相关性约 0.1666。
+这组观察不支持“仅整体 command 窗口有波动、compute-stage 稳定”的假设，不能说明
+实际指令执行、系统调度或计数器中的哪项造成波动。raw units 没有校准成时间单位。
+单次 instrumented dispatch 与原 64-dispatch A/A 不同，原失败判定保持不变。
+
 GPU 阶段使用现有 local broker 的短生命周期 lease；CPU oracle 在取得 lease 前准备。
 该锁是同用户合作式互斥，不排除系统或其他应用 GPU 活动。正式 launcher 的所有原生
 构建/检查阶段仍需完成统一 lease 边界接线，不能把探针的显式包装视为生产路径已修复。
