@@ -13,6 +13,10 @@
 [PR #330](https://github.com/qhy991/open-cake-ir/pull/330) 已将任务技能草案与输入观察合入
 `metal@b87386fe`。共享采集后继 [PR #331](https://github.com/qhy991/open-cake-ir/pull/331)
 已合入 `main@2a420ca3`；本任务同步该实现，正式资格收据和准入尚未开放。
+[PR #332](https://github.com/qhy991/open-cake-ir/pull/332) 已将上述采集合入
+`metal@08407a12`。共享回放后继 [PR #333](https://github.com/qhy991/open-cake-ir/pull/333)
+已合入 `main@7af51c05`；本次同步其 v2 原生事实与资格 fixture 语义重建。
+正式 Run 调用绑定、归档回放及资格准入仍待完成。
 以下分别标注旧探针与当前实现；旧证据在原提交回放，不自动升级为同步后的资格。验证记录见外部准入台账。
 本页是开发计划，不是实验报告或验收记录。模板见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
 
@@ -409,8 +413,9 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    绑定完整 scaffold 和显式源码权限；每轮更新前重读当前候选文件，保留少量有效观察。
    按每任务独立材料与 Run 状态组织目录，
    为每个 cell 绑定完整技能包与 `isolated_skill_package_v1`，以 `gpt-6.1-sol / xhigh`
-   完成真实 initial/resume 资格。PR #331 已接入同次调用采集和 fixture 证据保存；下一步
-   是资格收据及每轮 Run 的独立回放校验，补齐缺失、串轮、材料漂移等反例后再开放准入。
+   完成真实 initial/resume 资格。PR #333 已接入保留原生事实的重建与资格 fixture 校验；
+   下一步是正式 Run 的可信调用绑定、每轮归档/回放与资格收据/admission 的共同验证。
+   反例必须在这些实际入口拒绝，不能以纯函数测试代替；通过之后再开放准入。
    当前真实入口仍明确拒绝新策略。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
@@ -439,10 +444,10 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | 完整包/home/cell 已集成；PR #331 接入同次调用采集与 fixture 证据保存；任务技能草案已准备 | 正式收据、每轮保留与回放、准入尚未接通；真实入口仍拒绝，不能以 auth-only 替代 | `native-skill-main-225e9e6e/report.json`、`native-skill-collector-2d3a86b0/report.json` |
+| G4 技能软件准备 | 完整包/home/cell、同次调用采集已集成；PR #333 从 v2 原生事实重建并验证资格 fixture 保存的两轮输入 | 正式 Run 调用绑定、归档/回放和资格收据/准入未接通；真实入口仍拒绝 | `native-skill-replay-integration-6150f463/report.json`；旧采集记录保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | admin/插件哨兵、脚本/依赖、真实模型使用与正式 provider 资格未完成 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
-| 平台软件集成 | PR #330 合入 metal@b87386fe，三版本 CPU CI 各 2749/35；本任务吸收共享采集后继 | 后继平台集成验收；这些软件检查不授予主机、设备或作者资格 | `metal-native-input-integration-dff82d86/report.json`；后继记录另列 |
+| 平台软件集成 | PR #332 合入 metal@08407a12，三版本 CPU CI 各 2760/35；本任务吸收共享回放后继 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-input-integration-d90a8ca0/report.json`；后继记录另列 |
 
 ## 8. 走向更完整的 Metal 工具
 
