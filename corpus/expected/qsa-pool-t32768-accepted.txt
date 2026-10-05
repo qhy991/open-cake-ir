@@ -43,6 +43,8 @@ def _cake_qsa_pool_t32768_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_qsa_pool_t32768 = _cake_qsa_pool_t32768_kernel[(8192, 1, 1)]
+
 def cake_qsa_pool_t32768(index_k, out=None):
     for tensor, shape, dtype in (
         (index_k, (32768, 128), torch.bfloat16),
@@ -62,7 +64,7 @@ def cake_qsa_pool_t32768(index_k, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != index_k.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_qsa_pool_t32768_kernel[(8192, 1, 1)](
+    _cake_launch_cake_qsa_pool_t32768(
         index_k,
         out,
         N_BLOCK=32768,

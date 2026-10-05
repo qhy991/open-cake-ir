@@ -106,6 +106,8 @@ def _cake_rope_b8_fused_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_rope_b8_fused = _cake_rope_b8_fused_kernel[(8, 8, 1)]
+
 def cake_rope_b8_fused(x, cos, sin, out=None):
     for tensor, shape, dtype in (
         (x, (8, 512, 128), torch.float32),
@@ -137,7 +139,7 @@ def cake_rope_b8_fused(x, cos, sin, out=None):
                 raise ValueError("out differs from the frozen output contract")
             if tensor.device != x.device or not tensor.is_contiguous():
                 raise ValueError("out must be contiguous on the input device")
-    _cake_rope_b8_fused_kernel[(8, 8, 1)](
+    _cake_launch_cake_rope_b8_fused(
         x,
         cos,
         sin,

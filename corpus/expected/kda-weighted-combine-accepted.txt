@@ -72,6 +72,8 @@ def _cake_kda_weighted_combine_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_kda_weighted_combine_b8_smoke = _cake_kda_weighted_combine_b8_smoke_kernel[(8, 1, 1)]
+
 def cake_kda_weighted_combine_b8_smoke(expert_rows, expert_ids, row_ids, route_weights, out=None):
     for tensor, shape, dtype in (
         (expert_rows, (4, 8, 16), torch.bfloat16),
@@ -94,7 +96,7 @@ def cake_kda_weighted_combine_b8_smoke(expert_rows, expert_ids, row_ids, route_w
             raise ValueError("out differs from the frozen output contract")
         if out.device != expert_rows.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_kda_weighted_combine_b8_smoke_kernel[(8, 1, 1)](
+    _cake_launch_cake_kda_weighted_combine_b8_smoke(
         expert_rows,
         expert_ids,
         row_ids,

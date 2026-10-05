@@ -99,6 +99,8 @@ def _cake_top_k_streaming_merge2_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_top_k_streaming_merge2_b8_smoke = _cake_top_k_streaming_merge2_b8_smoke_kernel[(8, 1, 1)]
+
 def cake_top_k_streaming_merge2_b8_smoke(scores, out=None):
     for tensor, shape, dtype in (
         (scores, (8, 24), torch.float32),
@@ -118,7 +120,7 @@ def cake_top_k_streaming_merge2_b8_smoke(scores, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != scores.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_top_k_streaming_merge2_b8_smoke_kernel[(8, 1, 1)](
+    _cake_launch_cake_top_k_streaming_merge2_b8_smoke(
         scores,
         out,
         N_BATCH=8,

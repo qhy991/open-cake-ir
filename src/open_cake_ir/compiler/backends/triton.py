@@ -103,7 +103,7 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
 }
 
 SCANS: dict[ScanOp, str] = {
-    ScanOp.SUM: "{out} = tl.cumsum({src}.to(tl.float32), axis={axis}, reverse={reverse})",
+    ScanOp.SUM: "{out} = tl.cumsum({src}.to({acc_dtype}), axis={axis}, reverse={reverse})",
 }
 
 
@@ -183,7 +183,7 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 # and the Compiler refuses a Target whose code object is neither before preflight.
 PYTHON_NAMESPACE = PythonNamespace(
     reserved_names=frozenset({"tl", "torch", "triton"}),
-    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_"),
+    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_", "_cake_launch_"),
 )
 
 
@@ -1191,6 +1191,10 @@ class _TritonEmitter:
         kernel = f"_{entry}_kernel"
         self._emit_header()
         self._emit_kernel(kernel)
+        # grid is a static Schedule fact. Retain the lightweight JIT launch
+        # callable once, without retaining any caller tensor or its pointer.
+        self.line(f"_cake_launch_{entry} = {kernel}[{self.grid()}]")
+        self.line("")
         self._emit_host(entry, kernel)
         source = "\n".join(self.lines) + "\n"
         if self.check_namespace:
@@ -1790,12 +1794,20 @@ class _TritonEmitter:
         axis = operation.parameters.axis
         _require(axis < len(source.shape), f"scan axis {axis} is outside {source.name!r}")
         reverse = operation.parameters.direction is ScanDirection.REVERSE
+        acc_dtype = "tl.int32" if source.dtype is DType.INT32 else "tl.float32"
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if source.is_scalar:
+            # Canonical [1] may be a native rank-zero scalar load. Its inclusive
+            # prefix is itself; do not apply a rank-one cumsum to a scalar value.
+            self.line(f"{pad}{operation.writes[0]} = {operation.reads[0]}.to({acc_dtype})",
+                      declares=(operation.writes[0],))
+            return
         self.line(
             pad
             + SCANS[operation.parameters.op].format(
                 out=operation.writes[0],
                 src=operation.reads[0],
+                acc_dtype=acc_dtype,
                 axis=axis,
                 reverse=reverse,
             ),
@@ -2510,7 +2522,7 @@ class _TritonEmitter:
         self.line(f"    if any(t.device != {inputs[0].name}.device for t in ({names},)):")
         self.line("        raise ValueError(\"every input must share one device\")")
         self._emit_output_binding(outputs, inputs[0].name)
-        self.line(f"    {kernel}[{self.grid()}](")
+        self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
         self.line("    )")
@@ -2639,7 +2651,7 @@ class _TritonEmitter:
         )
         self.line('        raise ValueError("every input and state must share one device")')
         self._emit_output_binding(outputs, anchor)
-        self.line(f"    {kernel}[{self.grid()}](")
+        self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
         self.line("    )")

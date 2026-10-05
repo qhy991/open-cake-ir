@@ -73,6 +73,8 @@ def _cake_gfx938_gemm_bias_b1_smoke_tf32_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_gfx938_gemm_bias_b1_smoke_tf32 = _cake_gfx938_gemm_bias_b1_smoke_tf32_kernel[(8, 4, 1)]
+
 def cake_gfx938_gemm_bias_b1_smoke_tf32(a, b, bias, out=None):
     for tensor, shape, dtype in (
         (a, (512, 256), torch.float32),
@@ -94,7 +96,7 @@ def cake_gfx938_gemm_bias_b1_smoke_tf32(a, b, bias, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != a.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_gfx938_gemm_bias_b1_smoke_tf32_kernel[(8, 4, 1)](
+    _cake_launch_cake_gfx938_gemm_bias_b1_smoke_tf32(
         a,
         b,
         bias,

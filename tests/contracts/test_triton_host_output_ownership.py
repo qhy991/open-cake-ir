@@ -62,17 +62,22 @@ class HostOutputOwnership(unittest.TestCase):
         typed=Schedule.from_dict(d);target=Target.load(ROOT/'compiler/targets'/(typed.target+'.json'))
         source=emit(typed,target).source;tree=ast.parse(source)
         entry=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==d['lowering']['entry_point'])
-        allocated=[];launches=[]
+        allocated=[];launches=[];selections=[]
         def empty(shape,*,dtype,device):
             t=Tensor(shape,dtype,device,pointer=100+len(allocated));allocated.append(t);return t
         class Kernel:
             def __getitem__(self,grid):
-                def run(*args,**options):launches.append([t.data_ptr() for t in args])
+                selections.append(grid)
+                def run(*args,**options):
+                    assert len(selections)==1, 'static grid should be bound once at module initialization'
+                    launches.append([t.data_ptr() for t in args])
                 return run
         namespace={'torch':SimpleNamespace(empty=empty,**{n:n for n in ['float32','float16','bfloat16','int32','float8_e4m3fn']})}
         for n in tree.body:
             if isinstance(n,ast.FunctionDef) and n is not entry:namespace[n.name]=Kernel()
-        exec(compile(ast.Module(body=[entry],type_ignores=[]),'<generated host>','exec'),namespace)
+        binding = next(n for n in tree.body if isinstance(n,ast.Assign)
+                       and any(isinstance(t,ast.Name) and t.id.startswith('_cake_launch_') for t in n.targets))
+        exec(compile(ast.Module(body=[binding,entry],type_ignores=[]),'<generated host>','exec'),namespace)
         inputs=[b for b in d['buffers'] if b['space']=='global' and b['mode'] in ['input','state']]
         outputs=[next(b for b in d['buffers'] if b['name']==n) for n in d['outputs']]
         spelling={'fp32':'float32','bf16':'bfloat16','fp16':'float16','int32':'int32'}
@@ -102,6 +107,13 @@ class HostOutputOwnership(unittest.TestCase):
                     setattr(target,field,old)
                 self.assertEqual(len(launches),1)
                 self.assertTrue(all('contiguous' in t.reads for t in values))
+
+    def test_bound_launcher_prefix_cannot_be_shadowed_by_an_authored_buffer(self):
+        from open_cake_ir.compiler.backends.triton import preflight
+        d=json.loads((ROOT/'corpus/schedules/gemm-bias-b1-smoke.json').read_text())
+        d['buffers'].append(dict(name='_cake_launch_alias',shape=[1],dtype='fp32',space='global',mode='input'))
+        codes={f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/sm_100a.json'))}
+        self.assertIn('BACKEND_IDENTIFIER_UNSAFE',codes)
 
     def test_multi_output_count_and_mutable_input_metadata_are_rejected_before_launch(self):
         fn,args,_,_,launches,_=self.entry(multi=True)

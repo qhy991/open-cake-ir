@@ -67,6 +67,8 @@ def _cake_ragged_grouped_gemm_b1_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_ragged_grouped_gemm_b1_smoke = _cake_ragged_grouped_gemm_b1_smoke_kernel[(4, 1, 1)]
+
 def cake_ragged_grouped_gemm_b1_smoke(a, b, lengths, out=None):
     for tensor, shape, dtype in (
         (a, (4, 16, 32), torch.bfloat16),
@@ -88,7 +90,7 @@ def cake_ragged_grouped_gemm_b1_smoke(a, b, lengths, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != a.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_ragged_grouped_gemm_b1_smoke_kernel[(4, 1, 1)](
+    _cake_launch_cake_ragged_grouped_gemm_b1_smoke(
         a,
         b,
         lengths,

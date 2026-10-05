@@ -44,6 +44,8 @@ def _cake_mixed_dtype_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_mixed_dtype = _cake_mixed_dtype_kernel[(8, 1, 1)]
+
 def cake_mixed_dtype(x, bias, out=None):
     for tensor, shape, dtype in (
         (x, (8, 128), torch.bfloat16),
@@ -64,7 +66,7 @@ def cake_mixed_dtype(x, bias, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != x.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_mixed_dtype_kernel[(8, 1, 1)](
+    _cake_launch_cake_mixed_dtype(
         x,
         bias,
         out,

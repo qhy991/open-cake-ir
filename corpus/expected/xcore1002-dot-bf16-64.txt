@@ -53,6 +53,8 @@ def _xcore1002_dot_bf16_64_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_xcore1002_dot_bf16_64 = _xcore1002_dot_bf16_64_kernel[(1, 1, 1)]
+
 def xcore1002_dot_bf16_64(a, b, out=None):
     for tensor, shape, dtype in (
         (a, (64, 64), torch.bfloat16),
@@ -73,7 +75,7 @@ def xcore1002_dot_bf16_64(a, b, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != a.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _xcore1002_dot_bf16_64_kernel[(1, 1, 1)](
+    _cake_launch_xcore1002_dot_bf16_64(
         a,
         b,
         out,

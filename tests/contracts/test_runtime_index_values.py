@@ -131,4 +131,6 @@ def candidate(lm, x: cake.Tensor((4,), "int32"), y: cake.Tensor((4,), "int32", m
         self.assertIn('values, 16777217).to(tl.int32)',generated)
         scan=source.replace('chosen = lm.compare(values, 16777217.0, op="eq")',
                             'chosen = lm.scan(values, op="sum", axis=0)')
-        self.assertIn('SCAN_DTYPE_MISMATCH',{f.code for f in compiler.assess(parse(scan).document).findings})
+        scan_assessment = compiler.assess(parse(scan).document)
+        self.assertEqual(scan_assessment.findings, ())
+        self.assertIn('tl.cumsum(values.to(tl.int32)', compiler.lower(scan_assessment).source)

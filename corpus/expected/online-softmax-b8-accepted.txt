@@ -72,6 +72,8 @@ def _cake_online_softmax_b8_smoke_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_online_softmax_b8_smoke = _cake_online_softmax_b8_smoke_kernel[(4, 1, 1)]
+
 def cake_online_softmax_b8_smoke(logits, values, out=None):
     for tensor, shape, dtype in (
         (logits, (8, 64), torch.float32),
@@ -92,7 +94,7 @@ def cake_online_softmax_b8_smoke(logits, values, out=None):
             raise ValueError("out differs from the frozen output contract")
         if out.device != logits.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
-    _cake_online_softmax_b8_smoke_kernel[(4, 1, 1)](
+    _cake_launch_cake_online_softmax_b8_smoke(
         logits,
         values,
         out,
