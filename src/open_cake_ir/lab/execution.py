@@ -22,6 +22,9 @@ from .archive import _arm_artifact_roles, _archive_provider_turn, _candidate_art
 from .evaluation_writer import EvaluationWriter
 from .execution_admission import validate_execution_bindings, validate_run_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
+from .diagnoses import rejected_peer_feedback
+from .optimization_history import (optimization_history, evaluated_observation,
+                                   rejected_observation, action_observation)
 from .feedback import derive_turn_feedback, baseline_comparison_feedback as _baseline_comparison_feedback
 from .run_completion import _seal_run, record_run_fault
 from .faults import RunProtocolFault, ReportedProviderUsage
@@ -226,6 +229,7 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
     feedback: Mapping[str, object] = MappingProxyType({"kind": "initial"})
     observations: list[TurnObservation] = []
     selected_by_turn = {}
+    history_evaluations, history_rejections, history_actions = [], [], []
     confirmation = None
     search_state = None
     confirmation_source_turn = None
@@ -258,6 +262,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 cumulative_provider_tokens=cumulative_tokens,
                 feedback=feedback,
             )
+            state_card = {**state_card, 'optimization_history': optimization_history(
+                history_evaluations, history_rejections, history_actions)}
             if kind == 'open_cake':
                 from .actions import author_parent_choices
                 state_card = {**state_card, 'author_parents':author_parent_choices(
@@ -329,6 +335,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             ledger.append('author_actions_resolved', {'turn': turn_number, 'actions': action_rows})
             prior_candidates.update(resolved_candidates)
             action_feedback = [{key: value for key, value in row.items() if key != 'objects'} for row in action_rows]
+            history_actions.extend(item for row in action_rows
+                if (item := action_observation(turn_number, row)) is not None)
             (
                 built,
                 launchable_first,
@@ -346,6 +354,9 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             record_candidate_rejections(
                 built=built, evidence=evidence, ledger=ledger, turn_number=turn_number, arm=kind,
             )
+            history_rejections.extend(rejected_observation(turn_number, row)
+                for row in rejected_peer_feedback(built, arm=kind))
+            diagnostics_by_candidate = {row['candidate_sha256']: row['diagnostics'] for row in filter_rows}
             searched: list[_SearchedCandidate] = []
             def current_feedback(selected):
                 return MappingProxyType(derive_turn_feedback(
@@ -357,7 +368,9 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                     rejected_feedback={entry.sha256: result.feedback for entry, result in built
                                        if result.disposition == 'rejected'},
                     actions=action_feedback, arm=kind, specification=specification,
-                    selection_summary=selection_summary))
+                    selection_summary=selection_summary,
+                    launchables={item.submission.sha256: item.launchable for item in searched},
+                    authored=resolved_candidates))
             if not built:
                 ledger.append('candidate_selected', {'turn': turn_number, 'candidate_sha256': None,
                     'qualified_search_candidates': [], 'reason': 'no_candidate_produced'})
@@ -444,6 +457,9 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                         and entry_search.correctness_passed
                         else None
                     )
+                    history_evaluations.append(evaluated_observation(
+                        turn_number, entry_search, entry_attribution,
+                        diagnostics=diagnostics_by_candidate[entry_submission.sha256]))
                     searched.append(
                         _SearchedCandidate(
                             entry_submission,

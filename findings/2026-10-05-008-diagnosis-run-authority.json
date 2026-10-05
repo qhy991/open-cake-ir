@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "id": "F-2026-10-05-008",
+  "kind": "bug",
+  "decision": "proposed",
+  "title": "Diagnosis maintenance reader refused sealed current Run authorities",
+  "executor_revision": "xcore1002@d3d4c696958f541f797cd0356728b85f470a7848",
+  "compiler_revision_id": "open-cake-ir@d3d4c696958f541f797cd0356728b85f470a7848",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-transfer-pilot-20261005/study-v1/runs/c550-joint-interface-transfer-pilot-20261005-t1-r1-c1/evidence",
+    "run_id": "c550-joint-interface-transfer-pilot-20261005-t1-r1-c1",
+    "locator": "runs/c550-joint-interface-transfer-pilot-20261005-t1-r1-c1/authority.json /authority/evidence_policy",
+    "failing_reader_commit": "98bcbad3",
+    "failure": "diagnosis summary requires retained Executor and evidence policy"
+  },
+  "observation": "The sealed current Run retains evidence_policy directly in its authority. The maintenance reader looked only inside the historical Campaign resolved_inputs wrapper, so it rejected the first valid Run before producing the Compiler-gap queue. This is a reader failure, not a Run fault or hardware limitation.",
+  "proposed_change": "Read the policy at its retained current or historical location, refuse contradictory duplicate policies and malformed/missing metadata, and preserve archived routing and separate custody reporting.",
+  "implemented_in": "27def9a2",
+  "verified_by": {
+    "cpu": "Three archive-reader contracts pass at27def9a2, covering current Run and historical Campaign files, transform source locators, mirror deduplication, missing/malformed/conflicting policies and byte/mode preservation. F821 passes.",
+    "retained_evidence": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-foundation-20261005/maintenance-pilot-initial.json",
+    "observation": "The successor reader processes14 sealed Runs and reports24 candidate-routed rejections,10 backend-triage leads and3 transform refusals. These remain archived decisions, not semantic reclassification.",
+    "scope": "Read-only maintenance; semantic replay remains with the producer Executor. No device, provider, performance or new capability claim."
+  },
+  "promotion_disposition": "Promote the Lab maintenance-reader repair only after review/CI. No Compiler transformation, IR primitive or hardware capability promotion; frozen Runs remain unchanged."
+}

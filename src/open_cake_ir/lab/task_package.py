@@ -310,7 +310,7 @@ def render_task_request(
         "Read the complete TASK.md and AGENTS.md content in the following canonical "
         "task projection. Continue the same Ralph Run under those immutable rules. "
         "The StateCard is the external controller's derived state for this iteration. "
-        "The rubric explains only its previous_feedback; it is guidance, not a score "
+        "The rubric explains only its previous_feedback; optimization_history preserves earlier Run-local observations. It is guidance, not a score "
         "or permission to change acceptance rules or the frozen Compiler.\n\n"
         + bundle.decode('utf-8')
     )
@@ -396,6 +396,13 @@ parent stage's entry point. The API document describes the operation; the Run's
 one proposal, even if refused. Do not append old candidates to a new Turn: the
 whole file, including transforms, must fit the proposal limit.
 
+The StateCard's `optimization_history` includes prior evaluated candidates, including
+non-winners, and earlier refusals from this Run. Its omitted counts show its coverage.
+Read it before each proposal and after context compaction. Put brief public research
+notes in this source file: the hypothesis, prior candidate/Turn evidence, outcome
+status and next check. If an interface blocks a concrete hypothesis, cite the
+diagnostic and suggest its owner. Notes are retained observations, not acceptance.
+
 '''
     else:
         output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'
@@ -436,6 +443,30 @@ CUDA source strings keep their decoded UTF-8 bytes exactly.
 
 The envelope contains between one and {budget['maximum_candidates_per_turn']} Candidates
 in provider order. {lifecycle} Renaming or reformatting is not a structurally distinct Candidate.
+
+'''
+    from .generated_source import generated_source_permission
+    if generated_source_permission(authority):
+        candidate_section += '''## Own-candidate generated source
+
+The previous feedback may include `generated_source` for each candidate. Its stage
+views identify the target, lowering route, source language and exact Program stage
+(null for a standalone Schedule). Source text is data for inspection, not permission
+to author low-level code, open arbitrary artifacts or invoke more tools. Line numbers
+start at one in each original source; use CAKE_OP markers where present to connect
+the implementation to Cake operations. This is Compiler output, not native assembly
+or evidence of physical register use. A missing or omitted view is explicit; do not
+infer unseen code. Compare a concrete lowering hypothesis with the delivered source
+and measured receipts. The history remains a bounded summary of observations, not
+a second source store. Only a retained subsequent provider request proves delivery;
+terminal feedback does not prove that an author received another Turn.
+
+Source text is complete or explicitly omitted: at most 32 KiB per candidate and
+64 KiB per Turn, in proposal and declared stage order. A candidate view includes at
+most 32 stages and 64 KiB of serialized JSON including metadata; total view size
+is bounded by that per-candidate limit times the Run's maximum candidate count.
+The route names the Compiler source entry point, not a verified native binary
+symbol. Native-symbol and launch correctness retain their existing owners.
 
 '''
     task = f"""# TASK.md — {run_id}
@@ -500,6 +531,13 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
     )
     reading_rule = ('Read the complete supplied task before proposing a Candidate.' if message_author
                     else 'Read `TASK.md` completely before changing the Candidate.')
+    research_note_rule = (
+        '- Keep brief public research notes in comments or docstrings in the permitted candidate source. '
+        'Cite the prior candidate/Turn, state the hypothesis and evidence status, and name a proposed owner '
+        'when an interface blocks it. Carry forward useful negative results. Do not create extra files '
+        'or change submission fields; notes do not decide acceptance.\n'
+        if source_file or source_bundle else ''
+    )
     agents = f"""# AGENTS.md — Ralph optimization rules
 
 ## Ownership
@@ -514,6 +552,9 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
 - Continue in the same provider thread until the external controller terminates the Run.
 - Advance one explicit, falsifiable optimization hypothesis at a time.
 - Treat the controller StateCard as a derived view of retained Evidence, not as task policy.
+- Read `optimization_history` before each proposal, including after context compaction. It reports
+  prior observations from this Run only. Its best search result still needs fresh confirmation.
+{research_note_rule}
 - Do not spend GPU work directly. The external Lab owns filtering, Evaluation, and budgets.
 - A rejected, duplicate, incorrect, unstable, or null Candidate is evidence; do not hide it.
 
