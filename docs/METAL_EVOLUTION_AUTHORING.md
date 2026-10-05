@@ -184,7 +184,7 @@ CPU 反例覆盖缺失/重复、串 Run/轮次、配置和材料变化、原始�
 记录见 `native-skill-run-evidence-b039c49b/report.json`。这没有开放正式入口，
 也不证明对抗性写入者实际执行过该调用；历史 custody 仍须独立检查。
 
-**真实启用还缺一个软件后继，不是仅缺一次命令执行。** 当前
+**真实启用仍需通过软件接入验收。** 当前
 `author_home.require_live_skill_qualification` 对新策略无条件拒绝，现有 qualifier 也只允许
 `--fixture-only`。Run 归档/回放已具有软件校验路径，下一步是资格收据、anchor 和
 admission 对保留输入与 custody 的共同验证。不能删拒绝分支后沿用旧收据，不能仅凭
@@ -201,6 +201,19 @@ admission 对保留输入与 custody 的共同验证。不能删拒绝分支后�
 负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察、
 把历史 skill 正文当成本轮加载，以及旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
 不填补缺口。已有包、home 与 cell owner 继续复用，不再造安装器或第二套资格流程。
+
+[PR #339](https://github.com/qhy991/open-cake-ir/pull/339) 已在 `main@58d668c4` 实现独立资格
+输入重建，三个 Python CI 版本各 2791 通过、35 跳过。冻结资格 authority 固定模型，context 记录原调用路径
+与原生技能选择；复用既有 Run validator，读取原有 invocation、任务投影/reference、
+provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HOME 或安装目录。
+`--native-skill-name` 可重复指定准确的原生名字；TASK 每轮明确点名，正文必须出现在当前轮。
+实际 qualifier 的单 arm、首轮或 resume 只有目录无正文，以及离线重建/材料互换反例已验收。
+记录见 `native-skill-qualification-b6ba8dc6/report.json`。这不授予旧收据新能力。
+
+[PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 正在验收收据 v3 与实际归档准入组件，
+未作为本页已验证能力。其反例包括旧收据、scope 替换、过期 anchor、custody-false 与语义不符
+的封存归档；真实运行入口接线和零轮/首轮故障覆盖仍待完成。软件反事实归档只用于测试，
+不能列为真实模型资格。准备与 provider 构造必须在缺失资格时先拒绝，再考虑读取凭据。
 
 资格接入沿现有 owner 进行，验收范围如下，不新增并行资格流程：
 
