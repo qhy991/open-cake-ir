@@ -83,6 +83,7 @@ class ExecutionGroupSpecialization(unittest.TestCase):
             document = self.gemm('sm_100a' if field == 'registers' else 'gfx938')
             if field == 'registers':
                 document['roles'][0]['registers_per_thread'] = value
+                document['residency'] = {'registers_per_thread': value}
             else:
                 document[field] = value
             self.assertTrue(self.compiler.assess(document).lowering_eligible)
