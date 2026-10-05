@@ -9,6 +9,7 @@ import json
 from open_cake_ir.evaluation.core import _plain_json
 
 from .selection import _receipt_latency_ms, _receipt_qualifies
+from .diagnoses import validate_findings_feedback
 
 _MAX_EVALUATIONS = 12
 _MAX_REJECTIONS = 8
@@ -29,7 +30,17 @@ def profile_observation(attribution):
             'details': 'retained attribution receipt at this turn and candidate'}
 
 
-def evaluated_observation(turn, receipt, attribution=None):
+def diagnostic_observation(diagnostics):
+    """Compact the existing bounded diagnostic projection, without new fields."""
+    validate_findings_feedback(diagnostics)
+    value = deepcopy(diagnostics)
+    findings = value['findings']
+    value['omitted_findings'] += max(0, len(findings) - 2)
+    value['findings'] = findings[:2]
+    return value
+
+
+def evaluated_observation(turn, receipt, attribution=None, *, diagnostics=None):
     qualified = _receipt_qualifies(receipt)
     row = {'turn': turn, 'candidate_sha256': receipt.candidate_sha256,
            'event_kind': 'candidate_evaluated', 'purpose': 'search',
@@ -42,14 +53,15 @@ def evaluated_observation(turn, receipt, attribution=None):
         for key in ('classification', 'speedup', 'pooled_medians_ms') if key in timing}
         if qualified and timing is not None else None)
     row['profile'] = profile_observation(attribution)
+    row['diagnostics'] = diagnostic_observation(diagnostics if diagnostics is not None else
+        {'findings': [], 'omitted_findings': 0, 'text_truncated': False})
     return row
 
 
 def rejected_observation(turn, feedback):
     row = {'turn': turn, 'event_kind': 'candidate_rejected', **deepcopy(feedback)}
-    findings = row.get('findings', [])
-    row['omitted_findings'] = row.get('omitted_findings', 0) + max(0, len(findings)-2)
-    row['findings'] = findings[:2]
+    row.update(diagnostic_observation({key: row[key]
+        for key in ('findings', 'omitted_findings', 'text_truncated')}))
     return row
 
 

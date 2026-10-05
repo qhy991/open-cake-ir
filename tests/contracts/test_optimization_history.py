@@ -14,6 +14,7 @@ from open_cake_ir.lab.optimization_history import (
 )
 from open_cake_ir.lab.replay.history import replay_optimization_history
 from open_cake_ir.lab.replay.refusals import ReplayRefusal
+from open_cake_ir.lab.diagnoses import findings_feedback
 
 ROOT=Path(__file__).resolve().parents[2]
 
@@ -27,6 +28,18 @@ def receipt(letter, latency, *, quality=True, correct=True):
 
 
 class HistoryProjectionTests(unittest.TestCase):
+    def test_long_unicode_best_diagnostics_keep_coverage_and_fit_history(self):
+        finding = {key: '字' * 512 for key in ('code', 'path', 'category', 'severity', 'message')}
+        finding['blocks_lowering'] = False
+        diagnostics = findings_feedback([finding] * 10)
+        row = evaluated_observation(1, receipt('a', 1.0), diagnostics=diagnostics)
+        view = optimization_history([row], [], [])
+        kept = view['best_qualified_search']['diagnostics']
+        self.assertEqual(len(kept['findings']), 2)
+        self.assertEqual(kept['omitted_findings'], 8)
+        self.assertLessEqual(len(json.dumps(view, ensure_ascii=False).encode()), 24576)
+        self.assertEqual(len(diagnostics['findings']), 8)
+
     def test_frozen_nested_receipts_and_unstable_values_remain_distinct(self):
         fast=receipt('a',1.0);slow=receipt('b',1.8);unstable=receipt('c',0.01,quality=False)
         wrong=receipt('d',0.005,correct=False)
@@ -60,10 +73,14 @@ class HistoryProjectionTests(unittest.TestCase):
         expected=optimization_history([evaluated_observation(1,a)],[],[])
         bundles={'turn2':json.dumps({'state_card':{'optimization_history':expected}}).encode()}
         evidence=SimpleNamespace(read_object=lambda ref:bundles[ref['key']])
-        events=[{'sequence':0,'kind':'candidate_evaluated','payload':{'turn':1,'purpose':'search','candidate_sha256':'a'*64}},
-                {'sequence':1,'kind':'provider_turn_completed','payload':{'turn':2,'objects':[{'role':'provider_reference_bundle','key':'turn2'}]}},
-                {'sequence':2,'kind':'candidate_evaluated','payload':{'turn':2,'purpose':'search','candidate_sha256':'b'*64}},
-                {'sequence':3,'kind':'candidate_evaluated','payload':{'source_turn':2,'purpose':'attribution','candidate_sha256':'b'*64}}]
+        events=[{'sequence':0,'kind':'candidate_set_filtered','payload':{'turn':1,'order':[
+                    {'candidate_sha256':'a'*64,'diagnostics':findings_feedback([])}]}},
+                {'sequence':1,'kind':'candidate_evaluated','payload':{'turn':1,'purpose':'search','candidate_sha256':'a'*64}},
+                {'sequence':2,'kind':'provider_turn_completed','payload':{'turn':2,'objects':[{'role':'provider_reference_bundle','key':'turn2'}]}},
+                {'sequence':3,'kind':'candidate_set_filtered','payload':{'turn':2,'order':[
+                    {'candidate_sha256':'b'*64,'diagnostics':findings_feedback([])}]}},
+                {'sequence':4,'kind':'candidate_evaluated','payload':{'turn':2,'purpose':'search','candidate_sha256':'b'*64}},
+                {'sequence':5,'kind':'candidate_evaluated','payload':{'source_turn':2,'purpose':'attribution','candidate_sha256':'b'*64}}]
         replay_optimization_history(events=events,evidence=evidence,receipts=records,arm='open_cake')
         future=optimization_history([evaluated_observation(1,a),evaluated_observation(2,b)],[],[])
         bundles['turn2']=json.dumps({'state_card':{'optimization_history':future}}).encode()
@@ -73,6 +90,62 @@ class HistoryProjectionTests(unittest.TestCase):
         bundles['turn2']=json.dumps({'state_card':{'optimization_history':forged}}).encode()
         with self.assertRaises(ReplayRefusal):
             replay_optimization_history(events=events,evidence=evidence,receipts=records,arm='open_cake')
+
+    def test_replay_binds_diagnostics_to_preceding_candidate_and_turn(self):
+        a = receipt('a', 1.0)
+        diagnostics = findings_feedback([{'code': 'PRESSURE', 'path': 'buffers[2]',
+            'blocks_lowering': False, 'message': 'Measured allocation is still required.'}])
+        expected = optimization_history([evaluated_observation(1, a, diagnostics=diagnostics)], [], [])
+        bundle = {'state_card': {'optimization_history': expected}}
+        evidence = SimpleNamespace(read_object=lambda ref: json.dumps(bundle).encode())
+        events = [
+            {'sequence': 0, 'kind': 'candidate_set_filtered', 'payload': {'turn': 1, 'order': [
+                {'candidate_sha256': 'b'*64, 'diagnostics': findings_feedback([])},
+                {'candidate_sha256': 'a'*64, 'diagnostics': diagnostics}]}},
+            {'sequence': 1, 'kind': 'candidate_evaluated', 'payload': {
+                'turn': 1, 'purpose': 'search', 'candidate_sha256': 'a'*64}},
+            {'sequence': 2, 'kind': 'provider_turn_completed', 'payload': {'turn': 2,
+                'objects': [{'role': 'provider_reference_bundle'}]}},
+        ]
+        records = {(1, 'search', 'a'*64): a}
+        replay_optimization_history(events=events, evidence=evidence, receipts=records, arm='open_cake')
+        forged = copy.deepcopy(expected)
+        forged['evaluations'][0]['diagnostics']['findings'][0]['code'] = 'BORROWED_DIAGNOSIS'
+        bundle['state_card']['optimization_history'] = forged
+        with self.assertRaisesRegex(ReplayRefusal, 'earlier Run-local'):
+            replay_optimization_history(events=events, evidence=evidence, receipts=records, arm='open_cake')
+        with self.assertRaisesRegex(ReplayRefusal, 'preceding candidate-bound'):
+            replay_optimization_history(events=events[1:], evidence=evidence, receipts=records, arm='open_cake')
+
+    def test_failed_message_request_history_is_checked_without_a_completed_turn(self):
+        specification = SimpleNamespace(document={'authoring': {
+            'provider': {'event_contract': 'responses_messages_v1'}}})
+        a = receipt('a', 1.0)
+        prior = [
+            {'sequence': 0, 'kind': 'candidate_set_filtered', 'payload': {'turn': 1, 'order': [
+                {'candidate_sha256': 'a'*64, 'diagnostics': findings_feedback([])}]}},
+            {'sequence': 1, 'kind': 'candidate_evaluated', 'payload': {
+                'turn': 1, 'purpose': 'search', 'candidate_sha256': 'a'*64}},
+        ]
+        for previous in (False, True):
+            with self.subTest(previous=previous):
+                expected = optimization_history([evaluated_observation(1, a)] if previous else [], [], [])
+                state = {'optimization_history': expected}
+                evidence = SimpleNamespace(read_object=lambda ref: json.dumps({'request': {
+                    'input': [{'role': 'user', 'content': json.dumps({'state_card': state})}]}}).encode())
+                events = (prior if previous else []) + [
+                    {'sequence': 2 if previous else 0, 'kind': 'run_fault', 'payload': {
+                        'turn': 2 if previous else 1, 'stage': 'provider',
+                        'objects': [{'role': 'provider_stdout'}]}}]
+                records = {(1, 'search', 'a'*64): a} if previous else {}
+                replay_optimization_history(events=events, evidence=evidence, receipts=records,
+                    arm='open_cake', specification=specification)
+                forged = copy.deepcopy(expected)
+                forged['total']['evaluations'] = 999
+                state['optimization_history'] = forged
+                with self.assertRaisesRegex(ReplayRefusal, 'earlier Run-local'):
+                    replay_optimization_history(events=events, evidence=evidence, receipts=records,
+                        arm='open_cake', specification=specification)
 
 
 class HistoryRunTests(unittest.TestCase):

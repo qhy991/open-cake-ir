@@ -25,6 +25,7 @@ from .candidate_filter import _build_filter_candidates, record_candidate_rejecti
 from .diagnoses import rejected_peer_feedback
 from .optimization_history import (optimization_history, evaluated_observation,
                                    rejected_observation, action_observation)
+from .feedback import derive_turn_feedback, baseline_comparison_feedback as _baseline_comparison_feedback
 from .run_completion import _seal_run, record_run_fault
 from .faults import RunProtocolFault, ReportedProviderUsage
 from .provider_events import reported_provider_usage, provider_token_delta
@@ -60,38 +61,6 @@ class _SearchedCandidate:
 
 from .pairing import matched_run_arms
 from open_cake_ir.evaluation.paired import paired_protocol
-
-
-def _baseline_comparison_feedback(
-    lock: CampaignLock, timing: Mapping[str, object]
-) -> dict[str, object]:
-    """Project the exact black-box opponent into next-Turn feedback."""
-
-    medians = timing.get("pooled_medians_ms")
-    fixed = _object(lock.document["execution"], "campaign execution").get(
-        "fixed_baseline"
-    )
-    selection = (
-        _object(fixed, "fixed baseline").get("selection")
-        if isinstance(fixed, Mapping)
-        else None
-    )
-    return {
-        "source": (
-            _object(selection, "fixed baseline selection").get("source")
-            if isinstance(selection, Mapping)
-            else "campaign_fixed_baseline"
-        ),
-        "baseline_latency_ms": (
-            _object(medians, "paired timing medians").get("baseline")
-            if isinstance(medians, Mapping)
-            else None
-        ),
-        "candidate_speedup": timing.get("speedup"),
-        "measurement_quality_passed": timing.get(
-            "measurement_quality_passed"
-        ),
-    }
 
 
 def execute_campaign(
@@ -385,11 +354,26 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             record_candidate_rejections(
                 built=built, evidence=evidence, ledger=ledger, turn_number=turn_number, arm=kind,
             )
+            history_rejections.extend(rejected_observation(turn_number, row)
+                for row in rejected_peer_feedback(built, arm=kind))
+            diagnostics_by_candidate = {row['candidate_sha256']: row['diagnostics'] for row in filter_rows}
+            searched: list[_SearchedCandidate] = []
+            def current_feedback(selected):
+                return MappingProxyType(derive_turn_feedback(
+                    turn=turn_number, candidates=tuple(entry.sha256 for entry, _ in built),
+                    filter_rows=filter_rows, selected=selected,
+                    receipts={item.submission.sha256: item.receipt for item in searched},
+                    attributions={item.submission.sha256: item.attribution for item in searched
+                                  if item.attribution is not None},
+                    rejected_feedback={entry.sha256: result.feedback for entry, result in built
+                                       if result.disposition == 'rejected'},
+                    actions=action_feedback, arm=kind, specification=specification,
+                    selection_summary=selection_summary))
             if not built:
                 ledger.append('candidate_selected', {'turn': turn_number, 'candidate_sha256': None,
                     'qualified_search_candidates': [], 'reason': 'no_candidate_produced'})
                 observations.append(TurnObservation(turn_number, cumulative_tokens, None, False, None))
-                feedback = {'stage': 'authoring', 'author_actions': action_feedback}
+                feedback = current_feedback(None)
                 continue
             submission, environment_result = built[launchable_first[0]]
             if environment_result.disposition == "rejected":
@@ -411,7 +395,7 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                         None,
                     )
                 )
-                feedback = environment_result.feedback
+                feedback = current_feedback(submission.sha256)
             else:
                 launchable = environment_result.launchable
                 assert launchable is not None
@@ -431,7 +415,6 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 budget_k = int(
                     evaluation_protocol.get("searches_per_turn", 1)
                 )
-                searched: list[_SearchedCandidate] = []
                 planned_searches, collapsed = _matched_search_plan(
                     filter_rows, budget_k
                 )
@@ -473,7 +456,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                         else None
                     )
                     history_evaluations.append(evaluated_observation(
-                        turn_number, entry_search, entry_attribution))
+                        turn_number, entry_search, entry_attribution,
+                        diagnostics=diagnostics_by_candidate[entry_submission.sha256]))
                     searched.append(
                         _SearchedCandidate(
                             entry_submission,
@@ -543,44 +527,7 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 observations.append(TurnObservation(turn_number, cumulative_tokens,
                     launchable.candidate_sha256, qualified,
                     _receipt_latency_ms(search) if qualified else None))
-                # A measurement says what this candidate cost; the Environment's
-                # surviving findings say which declared resource is what bounds
-                # it. Only the pair is actionable, so the next Turn gets both.
-                feedback_document: dict[str, object] = {
-                    "kind": "evaluation",
-                    "candidate_disposition": search.candidate_disposition,
-                    "measurement_quality": search.measurement_quality,
-                    "search_qualified": qualified,
-                    "search_latency_ms": _receipt_latency_ms(search),
-                    "findings": environment_result.feedback.get("findings", []),
-                }
-                if isinstance(search.timing, Mapping):
-                    feedback_document["baseline_comparison"] = (
-                        _baseline_comparison_feedback(specification, search.timing)
-                    )
-                if "attribution_evaluation" in evaluation_protocol:
-                    attribution_feedback = (
-                        attribution.attribution_feedback
-                        if attribution is not None
-                        else None
-                    )
-                    feedback_document["profile"] = (
-                        dict(attribution_feedback)
-                        if attribution_feedback is not None
-                        else None
-                    )
-                feedback = MappingProxyType(feedback_document)
-            if any(row["kind"] != "submit" or row["action_sha256"] != row["candidate_sha256"] for row in action_rows):
-                feedback = MappingProxyType({**feedback, "author_actions": action_feedback})
-            rejected_peers = rejected_peer_feedback(built, arm=kind)
-            history_rejections.extend(rejected_observation(turn_number, row) for row in rejected_peers)
-            if rejected_peers:
-                feedback = MappingProxyType({**feedback, "rejected_candidates": rejected_peers})
-            if empirical_enabled:
-                feedback = MappingProxyType({
-                    **feedback,
-                    "candidate_selection": {**selection_summary, "order": filter_rows},
-                })
+                feedback = current_feedback(submission.sha256)
             if budget["limit"] is not None and cumulative_tokens >= budget["limit"]:
                 break
         # Search closes before nomination; no author/build activity follows this.
