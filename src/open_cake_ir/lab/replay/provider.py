@@ -66,6 +66,8 @@ def _replay_reference_bundle(reference_bundle, *, expected_task_package, run_id,
         "state_card",
         "rubric",
     }
+    if expected_task_package.native_skill_package is not None:
+        expected_bundle_fields.add('native_skill_package')
     if set(bundle) != expected_bundle_fields:
         refuse(bundle_location, "fields differ", observed=set(bundle),
                expected=expected_bundle_fields)
