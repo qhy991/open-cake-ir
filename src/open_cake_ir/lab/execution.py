@@ -75,6 +75,7 @@ def execute_campaign(
     provider: RunProvider,
     environments: Mapping[str, AuthoringEnvironment],
     evaluator: RunEvaluator,
+    task_package=None,
 ) -> CampaignRef:
     """Own every Turn, budget, checkpoint, feedback and terminal decision."""
 
@@ -133,7 +134,8 @@ def execute_campaign(
     for run_id in lock.run_order:
         specification = lock.run_specification(run_id)
         _execute_run(specification, project_root=project_root, evidence=evidence, clock=clock, provider=provider,
-                     environment=environments[specification.condition_id], evaluator=evaluator)
+                     environment=environments[specification.condition_id], evaluator=evaluator,
+                     task_package=task_package)
 
     return CampaignRef(lock=lock, evidence_root=evidence.root)
 
@@ -153,7 +155,7 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
                           environment=environment, evaluator=evaluator, task_package=task_package)
     evidence = EvidenceStore.create(root)
     _execute_run(specification, project_root=project_root, evidence=evidence, clock=clock, provider=provider,
-                 environment=environment, evaluator=evaluator)
+                 environment=environment, evaluator=evaluator, task_package=task_package)
     return RunRef(specification, evidence.root)
 
 
@@ -181,11 +183,13 @@ def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loa
             raise ValueError('Run runtime factory must bind provider, environment and evaluator')
         validate_run_bindings(specification,project_root=project_root,workload_loader=workload_loader,
                               task_package=task_package,**components)
-        _execute_run(specification,project_root=project_root,evidence=evidence,clock=clock,**components)
+        _execute_run(specification,project_root=project_root,evidence=evidence,clock=clock,
+                     task_package=task_package,**components)
     return CampaignRef(lock=lock,evidence_root=evidence.root)
 
 
-def _execute_run(specification: RunSpecification, *, project_root, evidence, clock, provider, environment, evaluator):
+def _execute_run(specification: RunSpecification, *, project_root, evidence, clock, provider, environment, evaluator,
+                 task_package=None):
     """The one search/evaluation lifecycle for every frozen Run."""
     document = specification.document
     from open_cake_ir.compiler import Compiler
@@ -211,6 +215,13 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
     ralph_budget = RalphBudget.from_mapping(budget)
     expected_protocol_sha256 = sha256(_canonical_json_bytes(evaluation_protocol)).hexdigest()
     provider_document = document['authoring']['provider']
+    from .author_home import ISOLATED_SKILL_PACKAGE_V1
+    native_package = None
+    if provider_document.get('author_home_policy') == ISOLATED_SKILL_PACKAGE_V1:
+        if task_package is None:
+            raise ValueError('native skill Run lacks its frozen TaskPackage owner')
+        native_package = task_package(specification, specification.run_id)
+    previous_native_input = previous_native_binding = None
     case_id = evaluation_protocol['case_id']
     workload_sha256 = document['workload']['canonical_sha256']
     arm = specification.condition_id
@@ -312,7 +323,12 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 provider_turn=provider_turn,
                 thread_id=next_thread_id,
                 turn_number=turn_number,
+                task_package=native_package,
+                previous_native_input=previous_native_input,
+                previous_native_binding=previous_native_binding,
             )
+            previous_native_input = provider_turn.native_skill_input
+            previous_native_binding = provider_turn.native_skill_binding
             # Completion owns the cumulative/session commit. A returned Turn
             # can still be refused by archive validation before any build.
             thread_id = next_thread_id

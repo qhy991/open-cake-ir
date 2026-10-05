@@ -115,6 +115,10 @@ def _replay_provider_turns(
     set[int],
     int,
 ]:
+    from ..author_home import ISOLATED_SKILL_PACKAGE_V1
+    from ..native_skill_run import validate_run_input
+    native_enabled = provider_authority.get('author_home_policy') == ISOLATED_SKILL_PACKAGE_V1
+    previous_native_input = previous_native_binding = None
     threads: set[str] = set()
     cumulative_by_turn: dict[int, int] = {}
     provider_candidates_by_turn: dict[int, tuple[str, ...]] = {}
@@ -220,9 +224,17 @@ def _replay_provider_turns(
         if len(candidate_references) != candidate_count:
             refuse(f"{location}.payload.objects", "candidate submission references differ from candidate_count",
                    observed=len(candidate_references), expected=candidate_count)
-        if len(objects) != candidate_count + 3:
+        native_references = {}
+        for role in ('provider_native_skill_input', 'provider_native_skill_binding'):
+            references = [item for item in objects if isinstance(item, Mapping) and item.get('role') == role]
+            if len(references) != int(native_enabled):
+                refuse(f'{location}.payload.objects', f'{role} reference count differs',
+                       observed=len(references), expected=int(native_enabled))
+            native_references[role] = references[0] if references else None
+        expected_objects = candidate_count + 3 + 2 * int(native_enabled)
+        if len(objects) != expected_objects:
             refuse(f"{location}.payload.objects", "object reference count differs",
-                   observed=len(objects), expected=candidate_count + 3)
+                   observed=len(objects), expected=expected_objects)
         raw_events = evidence.read_object(event_references[0])
         reference_bundle = (
             evidence.read_object(reference_bundle_references[0])
@@ -331,6 +343,19 @@ def _replay_provider_turns(
             if payload.get("auxiliary_activity") != expected_activity:
                 refuse(f"{location}.payload.auxiliary_activity", "differs from the retained provider events",
                        observed=payload.get("auxiliary_activity"), expected=expected_activity)
+        native_input, native_binding = (evidence.read_object(native_references[role])
+            if native_references[role] is not None else None
+            for role in ('provider_native_skill_input', 'provider_native_skill_binding'))
+        try:
+            if (expected_task_package.run_id != audit.run_id or expected_task_package.arm != arm):
+                raise ValueError('native skill TaskPackage differs from Run ledger')
+            validate_run_input(native_input=native_input, binding=native_binding,
+                previous_input=previous_native_input, previous_binding=previous_native_binding,
+                task_package=expected_task_package, provider=provider_authority,
+                thread_id=thread_id, turn=expected_turn)
+        except ValueError as error:
+            refuse(f'{location}.native_skill_input', str(error))
+        previous_native_input, previous_native_binding = native_input, native_binding
         threads.add(thread_id)
         cumulative_by_turn[expected_turn] = cumulative
         provider_candidates_by_turn[expected_turn] = candidate_digests
