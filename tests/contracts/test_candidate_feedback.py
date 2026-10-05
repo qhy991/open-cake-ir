@@ -76,6 +76,8 @@ class _FeedbackEnvironment(FakeEnvironment):
 
 class _QualityEvaluator(FakeEvaluator):
     """First candidate is faster but unstable; second is the qualified winner."""
+    incorrect_first = False
+
     def candidate_position(self, candidate):
         arm, _ = super().candidate_position(candidate)
         role = "lowered_source" if arm == "open_cake" else "authored_source"
@@ -89,17 +91,26 @@ class _QualityEvaluator(FakeEvaluator):
         _, position = self.candidate_position(candidate)
         variant = position - 1
         latency = 0.1 if variant == 0 else 1.0
-        quality = variant != 0
+        # The incorrect case gives the fast candidate stable synthetic timing,
+        # isolating correctness from the separately tested quality rejection.
+        correct = not (self.incorrect_first and variant == 0)
+        quality = variant != 0 or self.incorrect_first
         timing = {"measurement_quality_passed": quality, "pooled_median_ms": latency}
-        samples = [0.08] * 62 + [0.1] + [0.12] * 62 if variant == 0 else [latency] * 125
+        samples = [0.08] * 62 + [0.1] + [0.12] * 62 if not quality else [latency] * 125
+        correctness = {"tie_aware_distance_match": correct}
         receipt = dataclasses.replace(
             result.final_receipt,
+            correctness_passed=correct,
+            correctness=correctness,
             timing=timing,
             artifact_payloads={**result.final_receipt.artifact_payloads,
+                               "correctness_output": json.dumps({"passed": correct, "metrics": correctness}).encode(),
                                "timing_samples": json.dumps(samples).encode()},
         )
         attempt = result.attempts[0]
         raw = json.loads(attempt.artifact_payloads["broker_record"])
+        raw["receipt"]["correctness_passed"] = correct
+        raw["receipt"]["correctness"] = correctness
         raw["receipt"]["timing"] = timing
         raw_bytes = json.dumps(raw, sort_keys=True, separators=(",", ":")).encode()
         attempt = dataclasses.replace(
@@ -116,7 +127,7 @@ class CandidateFeedbackTests(unittest.TestCase):
     setUp = DiagnosisRunTests.setUp
 
     @contextlib.contextmanager
-    def campaign(self, peer="unsearched"):
+    def campaign(self, peer="unsearched", *, incorrect_first=False):
         with tempfile.TemporaryDirectory() as directory:
             document = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())
             _enable_candidate_set(document, 3)
@@ -134,6 +145,7 @@ class CandidateFeedbackTests(unittest.TestCase):
                 sha256(json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
                 lock.document["workload"]["canonical_sha256"],
             )
+            evaluator.incorrect_first = incorrect_first
             arms = lock.document["resolved_inputs"]["arm_environments"]
             campaign = _execute(
                 lab, lock, Path(directory) / "evidence", provider=provider,
@@ -191,6 +203,47 @@ class CandidateFeedbackTests(unittest.TestCase):
                     self.assertEqual(terminal["previous_feedback"]["selected_candidate_sha256"],
                                      final_selection["candidate_sha256"])
                 self.assertTrue(lab.audit(campaign).semantic_replay_passed)
+
+    def test_faster_incorrect_candidate_keeps_its_failure_after_other_evaluations(self):
+        with self.campaign(incorrect_first=True) as (lab, lock, provider, campaign, store):
+            requests = [request for request in provider.requests if request.turn == 2]
+            self.assertEqual(len(requests), len(lock.run_order))
+            for request in requests:
+                events = store.replay_events(request.run_id)
+                terminal = next(event["payload"]["state"] for event in events
+                                if event["kind"] == "search_completed")
+                # First-turn feedback is delivered after both candidates have been
+                # searched and the winner profiled; terminal feedback covers turn 2.
+                # Neither later result may replace candidate zero's failed oracle.
+                for source_turn, feedback in ((1, request.feedback),
+                                              (2, terminal["previous_feedback"])):
+                    with self.subTest(run=request.run_id, source_turn=source_turn):
+                        failed, winner, unsearched = feedback["candidate_results"]
+                        actions = next(event["payload"]["actions"] for event in events
+                                       if event["kind"] == "author_actions_resolved"
+                                       and event["payload"]["turn"] == source_turn)
+                        self.assertEqual(feedback["source_turn"], source_turn)
+                        self.assertEqual(failed["candidate_sha256"], actions[0]["candidate_sha256"])
+                        self.assertEqual(failed["status"], "evaluated")
+                        self.assertFalse(failed["correctness_passed"])
+                        self.assertEqual(failed["candidate_disposition"], "correctness_rejected")
+                        self.assertEqual(failed["measurement_quality"], "stable")
+                        self.assertEqual(failed["search_latency_ms"], 0.1)
+                        self.assertFalse(failed["search_qualified"])
+                        self.assertFalse(failed["selected"])
+                        self.assertIsNone(failed["profile"])
+                        self.assertEqual(failed["findings"][0]["code"], "FIXTURE_VARIANT_0")
+                        self.assertTrue(winner["correctness_passed"])
+                        self.assertTrue(winner["search_qualified"])
+                        self.assertEqual(winner["search_latency_ms"], 1.0)
+                        self.assertEqual(feedback["selected_candidate_sha256"], actions[1]["candidate_sha256"])
+                        self.assert_no_measurement(unsearched)
+                        later_assays = [event["payload"] for event in events
+                                        if event["kind"] == "candidate_evaluated"
+                                        and event["payload"]["candidate_sha256"] == failed["candidate_sha256"]
+                                        and event["payload"]["purpose"] in {"attribution", "confirmatory"}]
+                        self.assertEqual(later_assays, [])
+            self.assertTrue(lab.audit(campaign).semantic_replay_passed)
 
     def test_all_build_rejections_select_diagnostics_without_claiming_evaluation(self):
         with self.campaign("all_rejected") as (lab, lock, provider, campaign, store):
