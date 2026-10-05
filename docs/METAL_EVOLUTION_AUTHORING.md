@@ -190,11 +190,33 @@ CPU 反例覆盖缺失/重复、串 Run/轮次、配置和材料变化、原始�
 admission 对保留输入与 custody 的共同验证。不能删拒绝分支后沿用旧收据，不能仅凭
 `qualified=True` 或当时的 audit 摘要放行；fixture 收据仍只用于 fixture。
 准入需覆盖证据丢失、互换、旧格式和 custody-false，并检查零轮及首轮故障入口。
-当前故障路径仍主要保留 provider stdout；启用前还须保留被拒绝的原生输入/绑定，
-独立回放其拒绝原因并保留实际 token 消耗，不能将失败记成完成轮次。
+[PR #337](https://github.com/qhy991/open-cake-ir/pull/337) 已在 `main@79957ff5`
+为已返回 Turn 的原生输入校验拒绝保留有界输入、调用绑定及缺失状态。现有 `run_fault`
+回放用冻结材料、已验证前轮和 stdout 的线程/用量重跑校验，必须得到同一拒绝原因。
+缺失、应保留却丢失、重复、换身份、改原因和替换成有效输入是不同检查；不写完成事件，
+不抹去已用 token。记录见 `native-skill-fault-4bdea637/report.json`。
+超界或非 bytes 输入只记为未保留，拒绝原因无法独立验证；采集前超时、缺日志等失败
+仍保留原来的 stdout/stderr、诊断和可见费用，输入明确未验证。它们不能授权候选或
+充当资格，但属于需要保留的失败结果，不必为没有观察到的输入制造完整性证明。
 负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察、
 把历史 skill 正文当成本轮加载，以及旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
 不填补缺口。已有包、home 与 cell owner 继续复用，不再造安装器或第二套资格流程。
+
+资格接入沿现有 owner 进行，验收范围如下，不新增并行资格流程：
+
+| 边界 | 需要证明 | 明确拒绝 |
+| --- | --- | --- |
+| 收据能力 | 原生输入合同版本与原有 CLI、配置、材料、system 身份相容 | 旧 v1/v2 收据因字段默认值而自动获得投递能力 |
+| 保留事实 | 从原有 invocation、qualification reference 和冻结包重建每个已声明 arm 的 initial/resume | 从观察摘要反向复制模型、路径或材料作为预期值；缺失、重复或跨 arm 互换 |
+| 证据准入 | 复读 anchor 指向的实际 Evidence，同时验证 archive integrity、历史 custody 和语义 | 仅凭 `qualified=True`、当时的 audit 摘要或当前 mode bits 放行 |
+| 作用域 | fixture 仍为 fixture；实际启用固定 `gpt-6.1-sol / xhigh` 和材料 treatment | fixture 收据、旧 auth-only 收据授权真实作者 |
+| 执行入口 | Run、Campaign、factory、直接绑定、回放和零轮/故障路径共同遵守能力门 | 提前返回或缺失输入绕过验收、接受候选 |
+
+qualifier 已支持输出合同声明的一或两个 arm。资格应覆盖该集合每 arm 的两轮，不为
+单 Cake 的 Metal 工程实验硬加 CUDA 配对。技能名称仍由原生 loader 解释；目录名不能
+代替名称。若某项 treatment 要求正文投递，应在冻结资格任务中明确原生名称/选择，并
+从本轮实际输入验证；目录出现、历史正文残留和模型自报都不能代替本轮正文。
+
 固定源码入口审计见 `native-skill-qualification-readiness-e68aa623/report.json`。
 
 任务技能草案位于 [`cake-metal-optimization`](../skills/cake-metal-optimization/SKILL.md)。
