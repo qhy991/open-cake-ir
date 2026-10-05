@@ -250,7 +250,7 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
                         raise ValueError('native skill catalog role differs')
                     observed = _catalog(text)
                     paths = {entry['path'] for entry in observed}
-                    if paths != allowed:
+                    if paths - allowed or not set(package_paths) <= paths:
                         raise ValueError('native skill catalog has undeclared or missing sources')
                     if catalog is not None and (observed != catalog or text != catalog_text):
                         raise ValueError('native skill catalog drifted across turns')
@@ -278,6 +278,7 @@ def project_rollout(raw: bytes, *, previous: bytes | None, thread_id: str,
             'cwd': cwd, 'model': model, 'reasoning_effort': effort, 'resumed': resumed,
             'prior_turn_count': len(completed) - 1, 'catalog_turn_id': catalog_turn,
             'catalog': catalog, 'loaded_this_turn': current_bodies, 'native_skill_frames': retained,
+            'system_entrypoints_not_in_catalog': sorted(set(system_paths) - {item['path'] for item in catalog}),
             'coverage': 'retained_native_skill_input_not_wire_capture_or_model_use'}
 
 

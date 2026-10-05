@@ -242,8 +242,9 @@ CLI 资源查找。采用 `isolated_auth_only_v1` 的新 Codex Run 另建私有
 
 `CodexProviderAdapter` 对受控技能包策略另采集同次 exec 的有界原生技能输入记录。
 当前格式限定 CLI `0.159.2`：核对 session/thread、workspace、模型与 effort，以及恰好
-一个完整的新 turn；resume 要求既有日志前缀未改写。有效 catalog 必须恰好来自本包入口和
-CLI system 入口；本轮显式加载的包内正文必须与冻结原包一致。原生 frontmatter 仍由 CLI
+一个完整的新 turn；resume 要求既有日志前缀未改写。有效 catalog 必须完整列出本包入口，
+其余条目只能来自 CLI system 入口；未投递的已安装 system 技能单列记录，不能推断已加载。
+本轮显式加载的包内正文必须与冻结原包一致。原生 frontmatter 仍由 CLI
 解析；不会因目录名推断原生技能名称。
 
 结果保留在 `ProviderTurn.native_skill_input`，fixture qualifier 将其写入既有 Evidence

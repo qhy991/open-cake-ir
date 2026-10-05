@@ -110,8 +110,10 @@ class NativeSkillObservationTests(unittest.TestCase):
                 self.project(data)
         with self.assertRaisesRegex(ValueError, 'missing sources'):
             self.project(package_paths=(SKILL, '/fixture/home/.agents/skills/other/SKILL.md'))
-        with self.assertRaisesRegex(ValueError, 'missing sources'):
-            self.project(system_paths=('/fixture/codex/skills/.system/example/SKILL.md',))
+        hidden_system = '/fixture/codex/skills/.system/example/SKILL.md'
+        observed = self.project(system_paths=(hidden_system,))
+        self.assertEqual(observed['system_entrypoints_not_in_catalog'], [hidden_system])
+        self.assertNotIn(hidden_system, [entry['path'] for entry in observed['catalog']])
 
     def test_selected_frame_requires_native_current_turn_and_catalog_membership(self):
         for field, value in (('role', 'assistant'), ('internal_chat_message_metadata_passthrough', {})):
