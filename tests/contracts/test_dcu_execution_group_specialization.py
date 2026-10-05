@@ -127,3 +127,16 @@ class ExecutionGroupSpecialization(unittest.TestCase):
         document = self.cast_loop(widen=False)
         self.assertTrue(self.compiler.assess(document).lowering_eligible)
         self.assertEqual(self.apply(document).reason, 'loop_domain')
+
+    def test_dynamic_output_validity_is_preserved_without_changing_its_index_domain(self):
+        document = self.gemm('sm_100a')
+        shape = next(b['shape'] for b in document['buffers'] if b['name'] == 'c')
+        document['buffers'].append(dict(name='lengths', space='global', dtype='int32',
+                                       shape=[shape[0]], mode='input'))
+        output = next(b for b in document['buffers'] if b['name'] == 'c')
+        output['valid_extent'] = dict(dimension=1, buffer='lengths', indexed_by=[0])
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        result = self.apply(document)
+        self.assertTrue(result.applied, result.message)
+        self.assertEqual(result.schedule['buffers'], document['buffers'])
+        self.assertEqual(result.schedule['access_maps'], document['access_maps'])

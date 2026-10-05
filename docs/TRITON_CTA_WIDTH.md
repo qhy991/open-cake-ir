@@ -24,6 +24,8 @@ kernels to 16. A fresh common evaluation determines the useful width per task.
   canonical verifier still refuses identity casts. Its body, trip count,
   tile and precision stay unchanged. Multiple loops, loop exits and loop-level
   warp specialization remain outside this rewrite.
+  Runtime `valid_extent` masks and their integer length inputs remain unchanged;
+  they describe logical output validity, not an execution-group commitment.
 - The caller requests a positive power-of-two count within the bound Target's
   `maximum_warps_per_cta`, checked before constructing the new role list. Triton
   preflight also owns this compile-option constraint for non-pass callers.
