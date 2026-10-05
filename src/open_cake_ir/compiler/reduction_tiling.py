@@ -129,7 +129,8 @@ def _build_candidate(compiler, input, *, output_tile, k_tile, loop_unroll_factor
     x, c, sub, square, fold, store = ops
     buffers = {b['name']: b for b in d['buffers']}
     row = d['program_map']['axes'][0]
-    names = set(buffers) | {op['id'] for op in ops} | {row['name']}
+    names = set(buffers) | {op['id'] for op in ops} | {row['name'], entry_point}
+    names.update(role.name for role in input.schedule.roles)
     d['schedule_id'] = schedule_id
     d['lowering']['entry_point'] = entry_point
     if output_tile < N:
@@ -139,11 +140,20 @@ def _build_candidate(compiler, input, *, output_tile, k_tile, loop_unroll_factor
             buffer=input.centroids['name'], dimension=0, tile=output_tile))
         for op in (c, sub, square, fold):
             buffers[op['writes'][0]]['shape'][0] = output_tile
+        if output_tile == 1:
+            # A unit ProgramAxis owns a scalar coordinate, not an offset vector.
+            # Drop the selected N dimension of loaded/elementwise values; the
+            # reduced value uses the existing scalar [1] representation.
+            for op in (c, sub, square):
+                buffers[op['writes'][0]]['shape'].pop(0)
+            del sub['parameters']['broadcast_axis']
+            fold['parameters']['axis'] = 0
+        column_index = {'source': 'program' if output_tile == 1 else 'program_tile', 'name': column}
         for access in d['access_maps']:
             if access['operation'] == c['id']:
-                access['indices'][0] = {'source': 'program_tile', 'name': column}
+                access['indices'][0] = dict(column_index)
             elif access['operation'] == store['id']:
-                access['indices'][1] = {'source': 'program_tile', 'name': column}
+                access['indices'][1] = dict(column_index)
     if k_tile < K:
         iterator = _fresh_name('contracted_tile', names)
         loop_name = _fresh_name(iterator + '_loop', names)

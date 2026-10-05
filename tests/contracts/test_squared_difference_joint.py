@@ -68,16 +68,18 @@ class JointSquaredDifference(unittest.TestCase):
                 buffer['shape'] = [depth if n == 16 else columns if n == 8 else n
                                    for n in buffer['shape']]
             seed['schedule_id'] = 'synthetic_tail_seed'
-            for target, factor in itertools.product(('xcore1002', 'sm_100a'), (1, 2)):
-                if ((depth + 3) // 4) % factor:
+            for target, output_tile, k_tile, factor in itertools.product(
+                    ('xcore1002', 'sm_100a'), (1, 4), (1, 4), (1, 2)):
+                if ((depth + k_tile - 1) // k_tile) % factor:
                     continue
-                with self.subTest(depth=depth, columns=columns, target=target, factor=factor):
+                with self.subTest(depth=depth, columns=columns, target=target,
+                                  output_tile=output_tile, k_tile=k_tile, factor=factor):
                     seed['target'] = target
                     # Source-wide arange refusals alone are repairable; the whole
                     # Program API must still reach masked joint candidates.
                     program = Program.from_schedule(seed)
                     result = self.compiler.rewrite_program(program, 'specialize_squared_difference',
-                        dict(stage=program.stages[0].name, output_tile=4, k_tile=4,
+                        dict(stage=program.stages[0].name, output_tile=output_tile, k_tile=k_tile,
                              loop_unroll_factor=factor, schedule_id='joint', entry_point='joint'))
                     self.assertTrue(result.applied, result.message)
                     schedule = result.program.document['stages'][0]['schedule']
@@ -129,6 +131,17 @@ class JointSquaredDifference(unittest.TestCase):
         self.assertEqual(refused.reason, 'execution_commitments')
         self.assertIn('tile_loops:', refused.message)
         self.assertEqual(self.candidate(seed, schedule_id=seed['schedule_id']).reason, 'result_identity')
+
+    def test_input_rescue_never_hides_an_unrelated_backend_refusal(self):
+        seed, _ = self.seed()
+        seed['lowering']['entry_point'] = 'class'
+        program = Program.from_schedule(seed)
+        result = self.compiler.rewrite_program(program, 'specialize_squared_difference',
+            dict(stage=program.stages[0].name, output_tile=4, k_tile=4,
+                 loop_unroll_factor=2, schedule_id='joint', entry_point='joint'))
+        self.assertEqual(result.reason, 'input_refused')
+        self.assertEqual(result.region, (program.stages[0].name,))
+        self.assertIn('BACKEND_IDENTIFIER_UNSAFE', result.message)
 
     def test_generated_names_avoid_existing_buffers_and_loop_names(self):
         seed, _ = self.seed()

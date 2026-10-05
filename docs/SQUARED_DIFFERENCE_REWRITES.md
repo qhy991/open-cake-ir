@@ -30,7 +30,11 @@ Program tensors and bindings remain unchanged.
 A tile equal to its full extent leaves that dimension unchanged. Smaller tiles
 must be positive powers of two. An actual K loop is single-stage; its explicit
 unroll factor must divide the fixed ceiling trip count. Without a K loop the
-factor must be one. Tail accesses retain masks. FP32 subtraction precedes square;
+factor must be one. Tail accesses retain masks. Unit output partitions use a scalar program coordinate,
+rank-one differences and an axis-zero sum; the reduced scalar remains `[1]`.
+Only an input refusal for the replaced non-power-of-two arange extent can be
+repaired through the Program API; all other input refusals remain blocking. The
+fixed contraction Workload still owns its admitted shapes. FP32 subtraction precedes square;
 K tiling changes reduction grouping, so external-oracle evaluation remains
 mandatory. Backend qualification is not expanded by this constructor.
 
