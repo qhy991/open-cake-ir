@@ -5,6 +5,7 @@ integers. It makes no claim about floating-point error or device performance.
 """
 import copy
 import itertools
+from types import SimpleNamespace
 from pathlib import Path
 import unittest
 
@@ -80,7 +81,8 @@ class JointSquaredDifference(unittest.TestCase):
                     xv = [(i * 3) % 11 - 5 for i in range(3 * depth)]
                     cv = [(i * 7) % 13 - 6 for i in range(columns * depth)]
                     memories = {x_name: xv, c_name: cv, out_name: [None] * (3 * columns)}
-                    observed = _execute(emission, memories)
+                    observed = _execute(SimpleNamespace(source=emission.source,
+                        toolchain=emission.toolchain_requirements), memories)
                     expected = [sum((cv[n*depth+k] - xv[r*depth+k])**2 for k in range(depth))
                                 for r in range(3) for n in range(columns)]
                     self.assertEqual(memories[out_name], expected)
@@ -140,12 +142,12 @@ class JointSquaredDifference(unittest.TestCase):
     def test_backend_refusal_retains_category_path_and_explanation(self):
         seed, _ = self.seed()
         # The existing backend, not this pass, owns identifier safety.
-        result = self.candidate(seed, entry_point='float4')
+        result = self.candidate(seed, entry_point='class')
         self.assertFalse(result.applied)
         self.assertEqual(result.reason, 'result_refused')
         self.assertIn('BACKEND_IDENTIFIER_UNSAFE', result.message)
         self.assertIn('lowering.entry_point', result.message)
-        self.assertIn('program_safety', result.message)
+        self.assertIn('hardware_conformance', result.message)
 
 
 if __name__ == '__main__':
