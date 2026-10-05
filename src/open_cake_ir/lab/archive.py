@@ -197,7 +197,30 @@ def _archive_provider_turn(
     provider_turn: ProviderTurn,
     thread_id: str,
     turn_number: int,
+    task_package=None,
+    previous_native_input=None,
+    previous_native_binding=None,
 ) -> None:
+    from .native_skill_run import validate_run_input
+    if task_package is not None and (task_package.run_id != ledger.run_id or task_package.arm != arm):
+        raise ValueError('native skill TaskPackage differs from Run ledger')
+    try:
+        validate_run_input(native_input=provider_turn.native_skill_input,
+            binding=provider_turn.native_skill_binding, previous_input=previous_native_input,
+            previous_binding=previous_native_binding, task_package=task_package,
+            provider=provider_document, thread_id=thread_id, turn=turn_number)
+    except ValueError as error:
+        from .author_home import ISOLATED_SKILL_PACKAGE_V1
+        if provider_document.get('author_home_policy') != ISOLATED_SKILL_PACKAGE_V1:
+            raise
+        from .native_skill_fault import rejected_input_fault
+        raise rejected_input_fault(error, provider_turn=provider_turn,
+            run_id=ledger.run_id, arm=arm, turn=turn_number, thread_id=thread_id) from error
+    native_objects = []
+    if provider_turn.native_skill_input is not None:
+        native_objects = [evidence.put(payload, media_type='application/json').reference(role)
+            for role, payload in (('provider_native_skill_input', provider_turn.native_skill_input),
+                                  ('provider_native_skill_binding', provider_turn.native_skill_binding))]
     submission_contract = provider_document.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1)
     source_file = submission_contract in {PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1}
     reference_bundle = provider_turn.reference_bundle
@@ -280,6 +303,7 @@ def _archive_provider_turn(
                 if reference_object is not None
                 else []
             ),
+            *native_objects,
             events_object.reference("provider_events"),
             submission_object.reference("provider_source_file" if source_file else "provider_submission_envelope"),
             *(

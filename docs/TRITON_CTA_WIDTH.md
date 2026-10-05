@@ -118,3 +118,20 @@ active version pointers. The historical GPU evidence remains bound to its record
 Executor v126; integrating a newer Executor does not rebind or upgrade that evidence.
 Next experiments can vary a shape or dtype under a new frozen workload boundary,
 keeping the selected mechanism and fixed baseline explicit before measuring again.
+
+## Streamed MMA output tiles
+
+The explicit width rewrite also admits one fixed sequential MMA loop containing
+ordinary output stores. The existing backend preflight requires output stores to cover every active loop
+and program axis; the pass retains that owner and its refusal. An FP32-to-FP16/BF16 rounding cast is admitted only when all
+consumers are those stores in the same loop. Intermediate rounded MMA inputs,
+repeated non-tiled output stores, state, dynamic stops, synchronization and explicit
+resource commitments remain outside this domain.
+
+The rewrite changes width and candidate identity only. It preserves the exact
+operation graph, rounding sites, tile loop, masks, access maps and public ABI.
+Existing typing, effects, ownership and backend assessment run before and after;
+no new IR operation or hardware instruction is introduced. Correctness, resource
+use and performance still require external device evaluation. Manual width choices
+in retained DCU PV runs motivate this API coverage; they do not establish a new
+Compiler speedup or a default preferred width.
