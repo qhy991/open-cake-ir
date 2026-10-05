@@ -116,9 +116,13 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
                 or s.tile_loops[0].stop is not None
                 or s.tile_loops[0].range_options.warp_specialize
                 or not any(by_id[name].kind is OperationKind.MMA for name in s.tile_loops[0].body)
-                or any(by_id[name].kind not in {OperationKind.LOAD, OperationKind.MMA}
+                or any(by_id[name].kind not in {OperationKind.LOAD, OperationKind.CAST, OperationKind.MMA}
+                       for name in s.tile_loops[0].body)
+                or any(by_id[name].kind is OperationKind.CAST and
+                       (by_id[name].parameters.to is not DType.FP32
+                        or s.buffer(by_id[name].reads[0]).dtype not in {DType.FP16, DType.BF16, DType.FP32})
                        for name in s.tile_loops[0].body)):
-            return refused('loop_domain', 'Only one sequential load/MMA loop is admitted; its body and trip count stay unchanged.')
+            return refused('loop_domain', 'Only one sequential load/FP32-widen/MMA loop is admitted; its body and trip count stay unchanged.')
     if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
                           OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
         return refused('operation_domain', 'Only pure tensor arithmetic, MMA, CTA reductions and ordinary loads/stores are admitted.')
