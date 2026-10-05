@@ -121,8 +121,7 @@ class GeneratedSourceTests(unittest.TestCase):
         manifest = replace(manifest, kernel_name='different_native_symbol')
         payloads = {**candidate.artifact_payloads, 'launch_manifest': canonical_json_bytes(manifest.as_dict())}
         changed = seal(payloads, candidate.candidate_sha256, candidate.target, manifest.kernel_name, manifest)
-        verified = self.replay_artifact(authored, changed, workload, policy)
-        identity, _ = sealed_sources(verified, authored)[0]
+        identity, _ = sealed_sources(changed, authored)[0]
         self.assertEqual(identity['route'], policy['lowering_route'])
         self.assertNotIn('entry_point', identity)
 

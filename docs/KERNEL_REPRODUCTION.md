@@ -136,10 +136,26 @@ CUDA 工程、注册新 Workload 或将外部源码编译为测量基线。管�
 ## 低层代码怎样进入任务
 
 规范要求分别判断 Cake 表达、lowering 实现与设备收益。冻结输入时，管理 Agent 应列明
-作者实际能看到的材料层级、来源、目标和候选归属。当前 `lab/feedback.py` 的 Ralph 反馈
-交付诊断、正确性、计时和 profile，**不交付生成源码或 artifact 正文**。因此绑定本规范
-能要求 Cake 探索，但不能单靠提示词让作者检查生成代码。维护者在 Run 外读到源码，也
-不构成作者利用源码的行为证据；需要源码交付的研究应先完成后继 Lab 投影与回放验证。
+作者实际能看到的材料层级、来源、目标和候选归属。生成源码反馈默认关闭；显式向
+`tools/launch_task.py` 传入 `--generated-source-feedback`，或在管理输入 schema v2 的
+相应 cell 设置 `"generated_source_feedback": true`，才会把 `generated_source_v1`
+绑定到新 Run 的 authoring feedback。schema v1 和未开启的旧 Run 保持原行为。
+
+此权限只允许 `open_cake` + `known_kernel_reproduction` 的作者检查自己该轮已封存且
+完成搜索评测的候选 `lowered_source`。反馈逐候选保留原声明 stage 身份（独立 Schedule
+为 null）、精确 target、lowering route 和 Compiler 声明的源码语言；route 的入口属于
+源码，不证明 native binary 符号。它不交付 baseline/其他 Run 的实现，也不授予低层
+authoring、读取任意 artifact 或额外工具的权限。独立回放从既有封存件及原作者程序
+重新 lowering 验证对应关系，再重建下一轮反馈，无第二套源码存储或 history 副本。
+
+原文按提交顺序、Program 声明 stage 顺序有界交付：UTF-8 正文每候选最多 32 KiB、
+每轮最多 64 KiB；每候选最多 32 个 stage，含 metadata 的 JSON 视图最多 64 KiB。
+总视图上界为该限制乘以 Run 冻结的最大候选数。保留的源码完整不截断，行号从 1
+开始，已有 CAKE_OP 标记原样保留；缺失、未搜索或超界省略都有明确原因与计数。
+只有下一次实际 provider 请求及其保留 bundle 才能证明投递；末轮结果或 provider fault
+本身不证明作者收到了源码，更不证明模型使用了它。Run-local optimization history
+仍只汇总观察；provider 自身会话历史可能保留先前请求。Metal 多 stage Program 仍不准入，
+源码反馈不扩大任何目标的 executor 能力。
 
 Metal 的几个层级不可混称：
 
@@ -157,8 +173,8 @@ Metal 的几个层级不可混称：
 
 当前 Cake Metal builder 留存 `lowered_source` 和 `metal_binary_archive`，通过运行时
 `MTLDevice.makeLibrary` 构建，没有向作者提供 AIR 或机器指令检查通道。
-`Compiler.lower` 的 operation source map 是后续区域对应的入口；新交付应复用既有
-candidate/artifact 身份、保留作者收到的实际内容并独立回放。缺失证据保持 unknown，
+`Compiler.lower` 的 operation source map 仍是区域对应的 owner；当前交付保留原文行号和
+CAKE_OP 标记，复用既有 candidate/artifact 身份并独立回放。缺失证据保持 unknown，
 不能从 logical slots 或 timestamp profile 补出寄存器、spill、occupancy 或指令事实。
 修改源码可见性属于 authoring treatment 变更，须绑定后继 Run；参考访问与工具权限仍适用。
 
