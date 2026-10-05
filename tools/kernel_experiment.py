@@ -84,11 +84,14 @@ def validate(config):
         if version == 2:
             required.add("references")
             optional.add("agents_md")
+            optional.add('generated_source_feedback')
         object_fields(cell, required, optional)
         if version == 2:
             validate_references(cell["references"])
             if "agents_md" in cell:
                 absolute(cell["agents_md"])
+            if 'generated_source_feedback' in cell and type(cell['generated_source_feedback']) is not bool:
+                raise ValueError('cell generated_source_feedback must be an explicit boolean')
         if 'pointer_alignment' in cell:
             value = cell['pointer_alignment']
             if type(value) is not int or value <= 0 or value & (value - 1):
@@ -258,6 +261,8 @@ for group in (p["provider"], p["budget"]):
                 args += ["--response-model-alias", alias]
         elif value is not None:
             args += ["--" + name.replace("_", "-"), str(value)]
+if p["cell"].get("generated_source_feedback"):
+    args += ["--generated-source-feedback"]
 environment = dict(os.environ)
 if "codex_home" in n:
     home = pathlib.Path(n["codex_home"])

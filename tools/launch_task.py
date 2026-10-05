@@ -550,6 +550,8 @@ def main(argv=None) -> int:
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
                         default='known_kernel_reproduction',
                         help='clean_start is reserved until provider read isolation is qualified')
+    parser.add_argument('--generated-source-feedback', action='store_true',
+                        help='deliver bounded own-candidate Compiler source from sealed searches; known-kernel authoring only')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument('--local-device', type=int, help='physical device ordinal selected by the existing local broker')
@@ -656,7 +658,7 @@ def main(argv=None) -> int:
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
-        source_file=args.source_file)
+        source_file=args.source_file, generated_source_feedback=args.generated_source_feedback)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     if args.harness != 'codex' and args.auth_source is not None:
         raise ValueError('--auth-source applies only to the Codex harness')
