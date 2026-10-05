@@ -79,18 +79,29 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 本机静态接口审计还发现版本差异：bundled Codex CLI 为 `0.159.2`，其导出的
 `skills/list` 参数只有 `cwds` / `forceReload`，没有最新文档中的
 `perCwdExtraUserRoots`；`extraRoots` 只增加来源，不排除默认来源。响应 schema 能表示
-`path`、`scope`、`enabled`、`pluginId` 与错误，但没有执行该查询，也未观察真实 exec
+`path`、`scope`、`enabled`、`pluginId` 与错误，但该静态审计没有执行查询或观察真实 exec
 加载的 catalog。help/schema 命令退出 0，同时保留 PATH alias 的 EPERM 警告；未修复
 宿主后重跑。schema、独立 app-server 的查询和 agent 自报都不能充当实际作者输入证明。
 见 [官方技能接口](https://learn.chatgpt.com/docs/app-server#skills)。
+
+后续独立 CPU 软件探针使用临时 HOME/CODEX_HOME、哨兵技能和本机确定性 Responses
+服务，不使用真实凭据或模型。v1 在网络边界自检失败，CLI 尚未启动；独立语法诊断保留在
+`codex-skill-exec-probe-v1/profile-parse-diagnostic.json`。修正脚本后的 v2 通过了
+网络边界、独立 Git 仓库和 CLI 版本检查，但 initial exec 在 45 秒内未观察到发往测试服务的请求，
+按预定上限终止，没有执行 resume 或无 Git 仓库的第二案例。只读检查同一 exec 的 retained
+context，已见 `host_skills.instructions` 与 `world_state.host_skills.body` 中的任务/私有 HOME
+技能目录哨兵，未见技能正文哨兵。这里的 retained context 尚无实际投递证据，不能声称已投递模型，
+也不能声称两轮隔离、完整来源覆盖或模型使用通过。超时原因仍未确定，没有调整环境重跑。
+原始软件探针与只读投影分别见外部台账的 `codex-skill-exec-probe-v2/report.json` 和
+`codex-skill-exec-inspection-v2/report.json`；它们不构成 Provider qualification。
 
 最小后继应沿现有 `author_home` / `ProviderInvocation` / qualification owner：为每 Run
 绑定私有用户 HOME 与明确技能包，initial/resume 使用相同绑定，保留既有独立
 CODEX_HOME；旧 auth-only 策略不改，也不把 user skills 塞入其禁止的位置。技能脚本、
 引用资源、依赖和工具权限须显式声明，不自动安装插件或授予执行权。祖先、admin、system
 和插件来源仍需检查；发现未知来源、重复/缺失技能或漂移时拒绝。先建立同一次 exec 的
-实际 catalog / 上下文来源观测，再实现并验证此策略；当前没有已验证的 exec catalog
-导出接口，不能用旁路进程补出“隔离通过”。这项接口条件未满足时，继续准备和验证已审阅的任务
+实际 catalog / 上下文来源观测，再实现并验证此策略；目前已有 retained context 的观察入口，
+尚未验证它与实际请求及 resume 的关系，不能用旁路进程补出“隔离通过”。这项条件未满足时，继续准备和验证已审阅的任务
 材料投递，并明确原生技能环境未验收；不把它计为完成用户要求的独立 skill 环境。
 
 技能资格的最小验收步骤：
