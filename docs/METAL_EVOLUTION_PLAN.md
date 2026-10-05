@@ -7,7 +7,9 @@
 `main@08e89422` 的祖先。#324 的三个 Python CI 版本各 2704 通过、35 跳过。
 [PR #327](https://github.com/qhy991/open-cake-ir/pull/327) 已将 `main@53f5aa70` 的技能包
 准备后继和本计划集成到 `metal@25f1faf2`；其平台三版本 CI 各 2749 通过、35 跳过。
-这些软件结果不授予 Metal 设备或原生技能资格。
+[PR #329](https://github.com/qhy991/open-cake-ir/pull/329) 已将资格边界合入
+`metal@1e5785bd`，三版本 CPU CI 各 2749 通过、35 跳过。这些软件结果不授予 Metal
+设备或原生技能资格；后继本地探针已观察 initial/resume 的实际技能目录与显式正文投递。
 以下分别标注旧探针与当前实现；旧证据在原提交回放，不自动升级为同步后的资格。验证记录见外部准入台账。
 本页是开发计划，不是实验报告或验收记录。模板见 [TASK / AGENTS 规划](METAL_EVOLUTION_AUTHORING.md)。
 
@@ -73,7 +75,7 @@ H1/H2 是同类算子迁移，H3 是不同收缩语义；这些不能声称是�
 
 | 门 | 验收内容 | 失败后去向 |
 | --- | --- | --- |
-| G0 主机与冻结权限 | 精确 M4、OS、SDK、Swift/Python、helper 一致；干净固定提交；provider 身份与权限明确；确认 GPU 使用规则 | 环境/Executor，停止本次准入，不现场修好重跑制造通过 |
+| G0 主机与冻结权限 | 精确 M4、OS、SDK、Swift/Python、helper 一致；干净固定提交；provider 身份、权限与实际网络路由明确；确认 GPU 使用规则 | 环境/Executor，停止本次准入，不现场修好重跑制造通过 |
 | G1 任务与 Compiler | 六个 starter 构造、assess、lower、原生编译；已有 Corpus Gate 与适用合同测试通过；oracle 覆盖完整输入 | 区分 frontend、verifier、lowering、任务 ABI；按 owner 修复后作为后继验证 |
 | G2 可搜索性 | 每任务至少两个非改名、非纯 group 调参的结构策略可表达；至少两个代表任务验证完整策略对 | 若只有一种实现可走，先补关键表达能力，不能通过奖励调参掩盖 |
 | G3 设备与测量 | 封存基线全部输入正确；A/A 对照、已知慢化对照、配对顺序、时间戳与独立确认通过 | 无可信计时就只报正确性/覆盖，不能开启性能研究 |
@@ -395,7 +397,8 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 1. **任务与环境基线。** 处理环境问题需单独环境维护工作；保留本次失败，不修改原始记录。
    在一致的后继环境上完成 G0/G1 和固定基线。代码编写前检查冻结与 source owner。
    当前离线任务与结构表达已完成；下一步优先解决主机声明/工具链的一致性，以及 G2 原生语义，
-   不先扩大 dtype 或增加 primitive。
+   不先扩大 dtype 或增加 primitive。用户已选择临时子进程回环直连，CPU 技能探针的
+   initial/resume 投递已观察；工具链是独立待定事项，不因网络通过而获得资格。
 2. **共享反馈修复与两轮经验验收。** PR #319 已将 `main@354a670f` 的默认 bundle、
    候选归因、peer 结果、Run 内历史和任务资料隔离经 CPU 集成验证合入 Metal；本机 custody
    条件和真实资格保持各自未验证状态。继续按
@@ -432,10 +435,10 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G2 表达 | 六个发现任务均有结构替代程序 | 原生数值、代表策略对设备验证、D1 是否保留为负对照 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | 未执行 | 基线、A/A、慢化、profiling、确认 | 无设备证据 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | PR #325 已合入 main，PR #327 已合入 metal；完整包、home/cell 及 fixture 证据重建通过 | 实际输入观测及 qualifier/准入后继尚未实现；真实入口仍拒绝；不能以 auth-only 替代 | `native-skill-main-225e9e6e/report.json`、`native-skill-qualification-readiness-e68aa623/report.json`；首轮失败另保留 |
-| G4 原生技能观察 | v2 retained context 有任务/私有 HOME catalog；诊断后继保留四次请求连接失败，45 秒停止，本地服务零请求 | 连接目的地及底层原因未知；实际投递、resume 与其他来源未验证；没有资格通过 | `codex-skill-exec-inspection-v2/report.json`、`codex-skill-exec-diagnostic-20261005/inspection.json`；旧失败保持原记录 |
+| G4 技能软件准备 | PR #325 已合入 main，PR #327 已合入 metal；完整包、home/cell 及 fixture 证据重建通过；任务技能草案已准备 | 生产输入观测及 qualifier/准入后继尚未实现；真实入口仍拒绝；不能以 auth-only 替代 | `native-skill-main-225e9e6e/report.json`、`native-skill-qualification-readiness-e68aa623/report.json`；首轮失败另保留 |
+| G4 原生技能观察 | 本地直连；有/无 Git 任务各 initial/resume：4 次目录投递、另 4 次显式正文投递；同轮次绑定一致 | admin/插件、脚本/依赖与生产输入观测尚未覆盖；无真实模型使用或 provider 资格 | `codex-skill-actual-input-20261005/report.json`；旧代理与脚本误判记录保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
-| 平台软件集成 | PR #327 合入 metal@25f1faf2，保留 main@53f5aa70 祖先；全套三版本 CPU CI 各 2749/35 | 这些软件检查不授予主机、设备或作者资格 | `metal-skill-integration-e68aa623/report.json` |
+| 平台软件集成 | PR #327 与 #329 合入，最新 metal@1e5785bd；三版本 CPU CI 各 2749/35 | 这些软件检查不授予主机、设备或作者资格 | `metal-skill-integration-e68aa623/report.json`、`metal-qualification-boundaries-9bc36cec/report.json` |
 
 ## 8. 走向更完整的 Metal 工具
 

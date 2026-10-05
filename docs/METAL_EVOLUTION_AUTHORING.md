@@ -87,26 +87,32 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 宿主后重跑。schema、独立 app-server 的查询和 agent 自报都不能充当实际作者输入证明。
 见 [官方技能接口](https://learn.chatgpt.com/docs/app-server#skills)。
 
-后续独立 CPU 软件探针使用临时 HOME/CODEX_HOME、哨兵技能和本机确定性 Responses
-服务，不使用真实凭据或模型。v1 在网络边界自检失败，CLI 尚未启动；独立语法诊断保留在
-`codex-skill-exec-probe-v1/profile-parse-diagnostic.json`。修正脚本后的 v2 通过了
-网络边界、独立 Git 仓库和 CLI 版本检查，但 initial exec 在 45 秒内未观察到发往测试服务的请求，
-按预定上限终止，没有执行 resume 或无 Git 仓库的第二案例。只读检查同一 exec 的 retained
-context，已见 `host_skills.instructions` 与 `world_state.host_skills.body` 中的任务/私有 HOME
-技能目录哨兵，未见技能正文哨兵。这里的 retained context 尚无实际投递证据，不能声称已投递模型，
-也不能声称两轮隔离、完整来源覆盖或模型使用通过。超时原因仍未确定，没有调整环境重跑。
-原始软件探针与只读投影分别见外部台账的 `codex-skill-exec-probe-v2/report.json` 和
-`codex-skill-exec-inspection-v2/report.json`；它们不构成 Provider qualification。
+本机 `0.159.2` 的后继 CPU 探针已观察到**实际 Responses 请求**，不再仅靠 retained
+context 推断投递。用户选择临时子进程回环地址 `NO_PROXY/no_proxy` 后，本地固定响应
+服务收到了请求；宿主代理配置未改变，网络仍仅允许测试端口与本地 Unix IPC。
+模型配置固定为 `gpt-6.1-sol / xhigh`，服务不调用真实模型、不返回工具调用、不使用凭据或 GPU。
 
-独立诊断后继只增加故障 stdout/stderr 的私有保留，原版本、配置、网络边界和 45 秒上限
-保持不变。它复现了超时，并在同进程输出中观察到 thread/turn 开始及四次请求连接失败；
-本地 Responses 服务仍为零请求，未执行 resume 或无仓库案例。记录见
-`codex-skill-exec-diagnostic-20261005/inspection.json`。这把失败缩小到请求连接阶段，
-尚不能确定实际连接目的地或底层原因；没有修环境重跑，也没有获得输入投递资格。
-同版本公开源码的 [Responses 重试分支](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core/src/responses_retry.rs)
-与该等待文案一致：连接错误可走独立重试路径，普通 request/stream 重试上限不能据此
-解释为整个 exec 只尝试一次。这是源码对应分析，不证明安装二进制的字节来源；外层有限
-时限继续生效，延长时限或更换网络条件都不能算旧检查通过。
+| 检查 | 有独立 Git 边界的任务目录 | 无仓库任务目录 | 观察范围 |
+| --- | --- | --- | --- |
+| 普通提示，initial / resume | 两次均有任务与私有 HOME catalog | 两次均有相同 catalog | 4 个实际请求；均未自动投递技能正文 |
+| 显式 `$skill-name`，initial / resume | 两次均有两项技能正文 | 两次均有两项技能正文 | 另 4 个请求；正文作为 user skill 输入，目录作为 developer 输入 |
+| 非授权来源哨兵 | 祖先、邻任务、未选 HOME 均未进入 | 同三类均未进入 | 仅对这些具体目录与布局成立 |
+| CLI 自带技能 | 两轮相同 4 项 | 两轮相同 4 项 | imagegen、openai-docs、skill-creator、skill-installer；不是只剩任务技能 |
+
+resume 同时携带历史正文和本轮显式加载的正文；验收必须区分它们，不能用旧轮残留证明
+本轮加载。保留的投影含输入位置和 role，未复制完整请求。记录及脚本见外部台账
+`codex-skill-actual-input-20261005/report.json`。这些是原生 CLI 与本地测试传输的观察，
+尚未覆盖 admin/插件哨兵、技能脚本执行及依赖、全部引用资源、真实 provider 或模型使用；
+也没有证明文件读取隔离。真实 qualifier/准入仍未接入这些观察。
+
+旧失败保持原记录：早期 v2 只有 retained context，之后日志定位到数值回环和 localhost
+请求都被转到超出允许端口的 `127.0.0.1:7890` 代理。OS 声明的 localhost 豁免没有在该
+客户端路径生效；不把原因归给 Cake、Metal 或未验证的插件。记录见
+`codex-skill-proxy-routing-20261005/report.json`。连接失败有独立重试分支，普通
+request/stream 上限不代表整次 exec 只尝试一次；外层 45 秒上限保持有效。
+用户选定直连后的首个请求已经成功，但旧探针把任何 stderr 判成失败；软件后继改用
+完整固定回复的事件/请求合同，拒绝错误、缺轮次、额外请求或工具事件，5 项检查通过。
+诊断 stderr 单独保留；没有静默忽略实际失败，也没有将旧记录改判为通过。
 
 最小后继应沿现有 `author_home` / `ProviderInvocation` / qualification owner：为每 Run
 绑定私有用户 HOME 与明确技能包，initial/resume 使用相同绑定，保留既有独立
@@ -116,8 +122,8 @@ SKILL.md、脚本、引用资料和二进制资源，依赖说明继续由技能
 漂移拒绝与 fixture 证据重建的软件实现和 CPU 检查；真正启用此策略仍须同一次 exec 的实际 catalog /
 输入观测以及独立 qualification，旧 auth-only 收据不能放行。
 祖先、admin、system 和插件来源仍需检查；发现未知来源、重复/缺失技能或漂移时拒绝。
-目前已有 retained context 的观察入口，尚未验证它与实际请求及 resume 的关系，不能用旁路
-进程补出“隔离通过”。实现完成、CPU 检查通过、原生输入资格、模型实际使用和设备收益
+当前探针已直接观察 initial/resume 请求；生产入口还须验证其观测机制与实际调用一致，
+不能用独立测试服务的结果代替真实作者资格。实现完成、CPU 检查通过、原生输入资格、模型实际使用和设备收益
 分别报告；前两项不计为已经完成用户要求的独立 skill 环境。
 
 通用软件后继 [PR #325](https://github.com/qhy991/open-cake-ir/pull/325) 已合入
@@ -143,10 +149,17 @@ v2 cell 保存并发送自己的快照；
 `author_home.require_live_skill_qualification` 对新策略无条件拒绝，现有 qualifier 也只允许
 `--fixture-only`。先在实际 initial/resume invocation 上证明可用的输入观测，再沿原
 qualifier、证据与 admission/replay owner 同步接入验证；不能删拒绝分支后直接沿用旧收据。
-负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察，以及
-旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
+负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察、
+把历史 skill 正文当成本轮加载，以及旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
 不填补缺口。已有包、home 与 cell owner 继续复用，不再造安装器或第二套资格流程。
 固定源码入口审计见 `native-skill-qualification-readiness-e68aa623/report.json`。
+
+任务技能草案位于 [`cake-metal-optimization`](../skills/cake-metal-optimization/SKILL.md)。
+它面向本计划的 known-kernel authoring，仅含通用机制探索与证据使用要求，不包含本次探针
+找到的胜出策略或设备成绩。冻结前把它作为完整包的一部分交给每个 cell，C0/C1 保持相同
+内容和调用方式；现阶段未安装到全局，也未部署到 Run。任务语义、形状、预算与许可仍由
+该任务 TASK/AGENTS 和现有 owner 持有。显式加载是已观测的资格测试动作，是否在实验
+首轮也显式引用须作为 authoring treatment 固定，不能仅对某一比较组额外提示。
 
 技能资格的最小验收步骤：
 
