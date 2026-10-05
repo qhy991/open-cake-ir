@@ -326,7 +326,8 @@ def _admit_allocator(runtime) -> None:
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
                     kernelctl=None, infra_socket=None, auth_source=None,
-                    local_device=None, local_queue_seconds=0, local_lock_scope="user"):
+                    local_device=None, local_queue_seconds=0, local_lock_scope="user",
+                    local_runtime_device=None, local_expected_pci=None):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -335,7 +336,7 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     refused every DCU launch for lacking a CUDA cluster allocator it has no use for.
     """
     from open_cake_ir.evaluation.source_bootstrap import module_command
-    if (local_device is not None or local_queue_seconds != 0 or local_lock_scope != "user") and (allocation != 'local_broker' or kernelctl is not None):
+    if (local_device is not None or local_queue_seconds != 0 or local_lock_scope != "user" or local_runtime_device is not None or local_expected_pci is not None) and (allocation != 'local_broker' or kernelctl is not None):
         raise ValueError('local device selection and queue require the local broker allocation')
     python = executor.document["host_environment"]["python"]["invocation_path"]
     if kernelctl is not None:
@@ -370,12 +371,15 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             command = module_command(python, "open_cake_ir.evaluation.local_broker",
                                      "--kind", local_kind,
                                      "--worker-module", "open_cake_ir.tasks.evaluate")
-        from open_cake_ir.evaluation.local_broker import _selection_environment
+        from open_cake_ir.evaluation.local_broker import _selection_environment, validate_namespace_mapping
         _selection_environment(local_kind, local_device)
         if local_lock_scope not in {'user', 'device'} or (local_lock_scope == 'device' and local_device is None):
             raise ValueError('device lock scope requires an explicit local device')
         if local_lock_scope != 'user':
             command.extend(('--local-lock-scope', local_lock_scope))
+        validate_namespace_mapping(local_kind, local_device, local_lock_scope, local_runtime_device, local_expected_pci)
+        if local_runtime_device is not None or local_expected_pci is not None:
+            command.extend(('--local-runtime-device', str(local_runtime_device), '--local-expected-pci', local_expected_pci))
         if local_device is not None:
             command.extend(('--local-device', str(local_device)))
         if local_queue_seconds != 0:
@@ -428,7 +432,7 @@ def _admit_local_allocator(runtime, executor, target, workspace):
         'open_cake_ir.evaluation.local_broker', '--kind', 'maca', '--probe-target', target,
         '--runtime-library', host['runtime_library'], '--output', str(output))
     wait = 0.0
-    for flag in ('--local-device', '--local-queue-seconds', '--local-lock-scope'):
+    for flag in ('--local-device', '--local-queue-seconds', '--local-lock-scope', '--local-runtime-device', '--local-expected-pci'):
         if flag in broker['command']:
             value = broker['command'][broker['command'].index(flag) + 1]
             command.extend((flag, value))
@@ -566,6 +570,8 @@ def main(argv=None) -> int:
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument('--local-device', type=int, help='physical device ordinal selected by the existing local broker')
     parser.add_argument('--local-lock-scope', choices=('user', 'device'), default='user')
+    parser.add_argument('--local-runtime-device', type=int)
+    parser.add_argument('--local-expected-pci')
     parser.add_argument('--local-queue-seconds', type=float, default=0, help='bounded wait for the existing local lock; no lease held while waiting')
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
@@ -693,7 +699,8 @@ def main(argv=None) -> int:
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
                                kernelctl=args.kernelctl, infra_socket=args.infra_socket,
                                auth_source=auth_source, local_device=args.local_device,
-                               local_queue_seconds=args.local_queue_seconds, local_lock_scope=args.local_lock_scope))
+                               local_queue_seconds=args.local_queue_seconds, local_lock_scope=args.local_lock_scope,
+                               local_runtime_device=args.local_runtime_device, local_expected_pci=args.local_expected_pci))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for
