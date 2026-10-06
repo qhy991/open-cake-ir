@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-06-005 — Claude 2.1.289 emits a UI invalidation before init; bounded v4 parser and usage repair prepared for retained GLM qualification replay.
+
 - F-2026-10-06-001 — streamed MMA output stores and store-only narrowing casts are outside the width API despite lowerable manual choices; bounded pass extension and component/source replay prepared, full Task evidence remains separate.
 
 - F-2026-10-05-008 — maintenance reader rejected the current Run policy location; current/historical authority reading verified on14 sealed C550 Runs at27def9a2. No outcome reclassification or hardware promotion.
