@@ -53,7 +53,7 @@ def native_event_starter(workload, source: str) -> str:
             f'        left_error_{i} = ({before} - total_{i}) + sum_{i}',
             f'        right_error_{i} = (sum_{i} - total_{i}) + {before}',
             f'        error_{i} = lm.select(larger_{i}, left_error_{i}, right_error_{i})',
-            f'        correction_{i} = '+(f'error_{i}' if i == 1 else f'correction_{i-1} + error_{i}')])
+            f'        correction_{i} = '+(f'error_{i} + 0.0' if i == 1 else f'correction_{i-1} + error_{i}')])
     body.append('        totals = total_4 + correction_4')
     reduction = '        totals = lm.reduce(products, op="sum", axis=0, scope="cta", across_loop=False, id="sum_k")'
     if reduction not in bounded:
