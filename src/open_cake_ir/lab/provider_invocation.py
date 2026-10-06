@@ -18,6 +18,7 @@ from .provider_documents import (
     PYTHON_SOURCE_FILE_V1,
     PYTHON_CANDIDATE_BUNDLE_V1,
     CODEX_DISABLED_FEATURES,
+    expected_codex_disabled_features,
     ProviderInvocation,
     _THREAD_ID,
 )
@@ -187,10 +188,7 @@ class CodexInvocationBuilder:
             or any(not isinstance(feature, str) or not feature for feature in disabled_features)
         ):
             raise ValueError("disabled feature names must be unique and non-empty")
-        if (disabled_features, event_contract) not in {
-            (CODEX_DISABLED_FEATURES, "closed_file_change_v1"),
-            ((), "tool_rich_candidate_v1"),
-        }:
+        if disabled_features != expected_codex_disabled_features(event_contract, author_home_policy):
             raise ValueError("Codex feature and event contracts differ")
         if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
                                        PYTHON_CANDIDATE_BUNDLE_V1}:

@@ -38,6 +38,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         pretty_submission: bool = False,
         omit_skill_body_in_turn: int = 0,
         runtime_turns: bool = False,
+        expected_tool_rich_disabled: tuple[str, ...] = (),
     ) -> None:
         path.write_text(
             textwrap.dedent(
@@ -101,7 +102,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     raise SystemExit(32)
                 if 'approval_policy="never"' not in arguments:
                     raise SystemExit(33)
-                if {tool_rich!r} and "--disable" in arguments:
+                disabled = tuple(arguments[i + 1] for i, value in enumerate(arguments[:-1]) if value == "--disable")
+                if {tool_rich!r} and disabled != {expected_tool_rich_disabled!r}:
                     raise SystemExit(36)
                 if resumed and arguments[-2] != thread_id:
                     raise SystemExit(34)

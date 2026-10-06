@@ -85,6 +85,8 @@ _RECORDS = (
     _mma(COMPENSATED_FP8_MMA, {DType.FP8_E4M3}),
     InstructionContract("triton.atomic_add.i32.relaxed.gpu", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
+    _elementwise("ocml.sin.f32", ElementwiseOp.SIN, DType.FP32),
+    _elementwise("ocml.cos.f32", ElementwiseOp.COS, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.fma.f32", ElementwiseOp.FMA, DType.FP32),

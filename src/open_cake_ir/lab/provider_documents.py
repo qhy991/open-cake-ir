@@ -426,3 +426,19 @@ CODEX_DISABLED_FEATURES = (
     "tool_suggest",
     "workspace_dependencies",
 )
+
+
+
+def expected_codex_disabled_features(event_contract: str, author_home_policy: str | None) -> tuple[str, ...]:
+    """The declared tool surface and author-home boundary jointly own CLI features.
+
+    Native task skills remain available in the explicitly projected user HOME.
+    Isolated homes cannot import account plugins or connector integrations on
+    startup; their existing file and native-input checks still decide admission.
+    This is configuration, not proof that a CLI actually honored the restriction.
+    """
+    if event_contract == 'closed_file_change_v1':
+        return CODEX_DISABLED_FEATURES
+    if event_contract == 'tool_rich_candidate_v1':
+        return () if author_home_policy is None else ('apps', 'plugins', 'remote_plugin')
+    raise ValueError('Codex feature and event contracts differ')

@@ -22,14 +22,13 @@ from open_cake_ir.lab.author_home import (
     ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, provision_codex_home, provision_user_home,
 )
 from open_cake_ir.lab.native_skills import NativeSkillPackage
-from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1
+from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1, expected_codex_disabled_features
 from open_cake_ir.lab.bindings import external_file
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
     PYTHON_CANDIDATE_BUNDLE_V1,
-    CODEX_DISABLED_FEATURES,
     resolve_codex_code_mode_host,
     CodexInvocationBuilder,
     CodexProviderAdapter,
@@ -408,7 +407,7 @@ def main() -> int:
                         help='Exact native skill name to select in both qualification turns; repeat for multiple skills')
     parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1))
     parser.add_argument('--author-skill-package', type=Path,
-                        help='controlled native skill package; only fixture qualification is currently supported')
+                        help='controlled native skill package; requires explicit names and retained two-turn input qualification')
     parser.add_argument('--auth-source', type=Path,
                         help='private external Codex credential for an isolated author home')
     parser.add_argument('--claude-event-contract', choices=('claude_stream_candidate_v3','claude_stream_candidate_v4'), default=CLAUDE_EVENT_CONTRACT)
@@ -436,8 +435,6 @@ def main() -> int:
         args.author_home_policy = ISOLATED_SKILL_PACKAGE_V1
     if (args.author_home_policy == ISOLATED_SKILL_PACKAGE_V1) != (args.author_skill_package is not None):
         parser.error('isolated_skill_package_v1 requires --author-skill-package and no other author-home policy accepts it')
-    if args.author_home_policy == ISOLATED_SKILL_PACKAGE_V1 and not args.fixture_only:
-        parser.error('native skill discovery and delivery on initial/resume are not verified; refusing live provider qualification')
     if ((args.author_home_policy is None) != (args.auth_source is None)
         or args.author_home_policy is not None and args.harness != 'codex'):
         parser.error('isolated Codex author home requires its credential source and Codex harness')
@@ -448,13 +445,16 @@ def main() -> int:
 
     if args.claude_isolation_policy and args.harness != 'claude-code':
         parser.error('Claude isolation requires the Claude harness')
-    native_skill_package = (NativeSkillPackage.read(ROOT, args.author_skill_package)
-        if args.author_skill_package is not None else None)
     from open_cake_ir.lab.native_skill_qualification import selection_instruction
-    if native_skill_package is not None:
-        skill_instruction = selection_instruction(args.native_skill_name)
+    if args.author_skill_package is not None:
+        try:
+            skill_instruction = selection_instruction(args.native_skill_name)
+        except ValueError as error:
+            parser.error(str(error))
     elif args.native_skill_name:
         parser.error('--native-skill-name requires --author-skill-package')
+    native_skill_package = (NativeSkillPackage.read(ROOT, args.author_skill_package)
+        if args.author_skill_package is not None else None)
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
     workspace = _new_path(args.workspace)
@@ -526,18 +526,18 @@ def main() -> int:
                             "Use Read for the task files and Write/Edit for candidate-set.json; only Read, Write, Edit, Glob and Grep are permitted.")
         receipt_scope = "live_two_turn_tool_rich_provider"
     elif args.feature_policy == "closed_research":
-        disabled_features = CODEX_DISABLED_FEATURES
         event_contract = "closed_file_change_v1"
         tool_instruction = "Do not invoke auxiliary tools."
         receipt_scope = "live_two_turn_current_provider"
     else:
-        disabled_features = ()
         event_contract = "tool_rich_candidate_v1"
         tool_instruction = (
             "First use the shell tool to run `pwd` without writing a file or "
             "invoking a network/GPU operation."
         )
         receipt_scope = "live_two_turn_tool_rich_provider"
+    if args.harness == 'codex':
+        disabled_features = expected_codex_disabled_features(event_contract, args.author_home_policy)
     if args.fixture_only:
         receipt_scope = "zero_gpu_contract_fixture_only"
     if (
