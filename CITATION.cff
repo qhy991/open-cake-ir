@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "Cite the technical report below for the design and methods. Record the report commit and chapter; for software or measurements, also identify the source revision, target and workload used."
 type: software
-title: "open-cake-ir: Agent-driven compiler and kernel co-evolution"
+title: "open-cake-ir: Reusable optimization mechanisms across hardware"
 authors:
   - family-names: "Qin"
     given-names: "Haiyan"
@@ -10,12 +10,13 @@ authors:
 repository-code: "https://github.com/qhy991/open-cake-ir"
 license: Apache-2.0
 abstract: >-
-  A research system for agent-driven co-evolution of GPU kernels and compiler
-  capabilities. Agents author kernels through a structured execution plan, use
-  compiler and on-device feedback, and improve the compiler when real workloads
-  expose representation, verification, lowering, or analysis gaps. Source identity
-  is the git commit of the checkout, so a citation should name the commit the work
-  was run at along with the target and workload.
+  A Compiler-centered research framework for reusing conditional optimization
+  mechanisms across hardware. Agents author explicit execution plans; reviewed
+  discoveries from structured and native exploration may become transformations,
+  diagnostics or lowering capabilities. Target implementations require independent
+  correctness and performance validation. Controlled studies test search cost,
+  coverage and the incremental effects of materials and executable tools. Cite the
+  source commit, exact target, workload and measurement contract for each result.
 keywords:
   - GPU kernels
   - compilers
@@ -27,7 +28,7 @@ keywords:
 
 preferred-citation:
   type: report
-  title: "open-cake-ir: A Technical Report on Agent-Driven GPU Kernel and Compiler Co-Evolution"
+  title: "open-cake-ir: A Technical Report on Cross-Hardware Optimization Reuse and Compiler Co-Evolution"
   authors:
     - family-names: "Qin"
       given-names: "Haiyan"
