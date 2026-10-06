@@ -34,7 +34,7 @@ from open_cake_ir.lab.native_skill_qualification import selection_instruction, v
 from open_cake_ir.tasks.compose import execute_run_from_config
 from open_cake_ir.tasks.preparation import prepare_task_run
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
-from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, task_run_inputs, _ROUTE_CALLS_PER_COHORT
+from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, task_run_inputs
 from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort_payload
 from open_cake_ir.tasks.aka_v3.workload import LAUNCHABLE_TASKS as AKA_TASKS
 from open_cake_ir.tasks.metax_fp8_gemm import TASK as METAX_FP8_GEMM_TASK
@@ -562,6 +562,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
+    parser.add_argument('--metal-timing', choices=('mean30', 'legacy'),
+                        help='Metal default: 30 batched samples per arm, arithmetic mean; legacy retains median/IQR assay')
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
@@ -692,9 +694,11 @@ def main(argv=None) -> int:
     # F-2026-09-10-002: the Metal observer refuses an oversized snapshot cohort before it
     # dispatches anything, so a shape that exceeds the bound dies at the first evaluation
     # with the campaign's authoring tokens already spent. Check the same arithmetic here.
-    if route == "metal":
-        admit_cohort_payload(workload, args.case,
-                             _ROUTE_CALLS_PER_COHORT)
+    if args.metal_timing is not None and route != 'metal':
+        raise ValueError('--metal-timing requires a Metal backend')
+    metal_mean30 = route == 'metal' and args.metal_timing != 'legacy'
+    if metal_mean30 and (args.maximum_cv is not None or args.required_pair_wins is not None):
+        raise ValueError('mean30 retains dispersion/pair wins as diagnostics; use --metal-timing legacy for these gates')
     authoring_source_path = source_path
     inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
@@ -704,7 +708,10 @@ def main(argv=None) -> int:
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
         source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
-        native_skill_package=args.author_skill_package)
+        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30)
+    if route == 'metal':
+        admit_cohort_payload(workload, args.case,
+            inputs['evaluation_protocol']['paired_timing']['route_calls_per_cohort'])
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     if args.harness != 'codex' and args.auth_source is not None:
         raise ValueError('--auth-source applies only to the Codex harness')
