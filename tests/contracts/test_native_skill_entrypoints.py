@@ -36,7 +36,7 @@ class NativeSkillEntrypointTests(unittest.TestCase):
                 '--workspace', '/unread-skill-fixture/workspace',
                 '--author-skill-package', '/unread-skill-fixture/skills.tar']
 
-    def test_live_qualification_refuses_before_reading_provider_auth_or_package(self):
+    def test_missing_selection_refuses_before_reading_provider_auth_or_package(self):
         for policy in ([], ['--author-home-policy', ISOLATED_SKILL_PACKAGE_V1]):
             arguments = self.qualification_args() + policy + [
                 '--author-skill-package', '/unread-skill-fixture/skills.tar']
@@ -48,9 +48,56 @@ class NativeSkillEntrypointTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as error:
                     qualifier.main()
                 self.assertEqual(error.exception.code, 2)
-                self.assertIn('native skill discovery and delivery', stderr.getvalue())
+                self.assertIn('native skill selection differs', stderr.getvalue())
                 for operation in (read, external, output):
                     operation.assert_not_called()
+
+    def test_selected_live_qualification_reaches_material_validation_without_provider_use(self):
+        # Reaching this existing reader proves CLI activation; the full qualifier
+        # fixtures separately cover initial/resume evidence and receipt publication.
+        for fixture in ([], ['--fixture-only']):
+            args = self.qualification_args() + fixture + [
+                '--author-skill-package', '/unread-skill-fixture/skills.tar',
+                '--native-skill-name', 'cake:metal']
+            with (self.subTest(fixture=fixture),
+                  mock.patch.object(sys, 'argv', ['qualify'] + args),
+                  mock.patch.object(qualifier.NativeSkillPackage, 'read',
+                                    side_effect=ValueError('material sentinel')) as read,
+                  mock.patch.object(qualifier, 'external_file') as auth,
+                  mock.patch.object(qualifier, '_new_path') as output):
+                with self.assertRaisesRegex(ValueError, 'material sentinel'):
+                    qualifier.main()
+                read.assert_called_once_with(qualifier.ROOT, Path('/unread-skill-fixture/skills.tar'))
+                auth.assert_not_called()
+                output.assert_not_called()
+
+    def test_selected_launch_reaches_preparation_without_authorizing_execution(self):
+        for options in ([], ['--preflight-only'],
+                        ['--qualification', '/unread-skill-fixture/receipt.json',
+                         '--qualification-anchor', '/unread-skill-fixture/anchor.json']):
+            with (self.subTest(options=options),
+                  mock.patch.object(launch_task, '_new_workspace',
+                                    side_effect=ValueError('preparation sentinel')) as workspace,
+                  mock.patch.object(launch_task, '_provider_executable') as executable,
+                  mock.patch.object(launch_task, '_codex_auth_source') as auth,
+                  mock.patch.object(launch_task, '_qualify') as qualify):
+                with self.assertRaisesRegex(ValueError, 'preparation sentinel'):
+                    launch_task.main(self.launch_args() + ['--native-skill-name', 'cake:metal'] + options)
+                workspace.assert_called_once()
+                for operation in (executable, auth, qualify):
+                    operation.assert_not_called()
+
+    def test_invalid_qualification_selection_refuses_before_material_read(self):
+        for names in (['bad name'], ['cake', 'cake'], ['x'] * 33):
+            args = self.qualification_args() + ['--author-skill-package', '/unread/skills.tar']
+            args += [item for name in names for item in ('--native-skill-name', name)]
+            with (self.subTest(names=names), mock.patch.object(sys, 'argv', ['qualify'] + args),
+                  mock.patch.object(qualifier.NativeSkillPackage, 'read') as read,
+                  contextlib.redirect_stderr(io.StringIO()) as stderr):
+                with self.assertRaises(SystemExit):
+                    qualifier.main()
+                self.assertIn('native skill selection differs', stderr.getvalue())
+                read.assert_not_called()
 
     def test_fixture_qualification_requires_matching_package_policy(self):
         for options in (
@@ -79,7 +126,7 @@ class NativeSkillEntrypointTests(unittest.TestCase):
             self.assertIn('Codex harness', stderr.getvalue())
             read.assert_not_called()
 
-    def test_launch_refuses_live_skill_policy_before_preparation_or_existing_receipt(self):
+    def test_launch_missing_selection_refuses_before_preparation_or_existing_receipt(self):
         for options in ([], ['--preflight-only'],
                         ['--qualification', '/unread-skill-fixture/receipt.json',
                          '--qualification-anchor', '/unread-skill-fixture/anchor.json']):
@@ -91,7 +138,7 @@ class NativeSkillEntrypointTests(unittest.TestCase):
                   contextlib.redirect_stderr(io.StringIO()) as stderr):
                 with self.assertRaises(SystemExit):
                     launch_task.main(self.launch_args() + options)
-                self.assertIn('native skill discovery and delivery', stderr.getvalue())
+                self.assertIn('native skill selection differs', stderr.getvalue())
                 for operation in (workspace, executable, auth, qualify):
                     operation.assert_not_called()
 
@@ -110,8 +157,8 @@ class NativeSkillEntrypointTests(unittest.TestCase):
                 workspace.assert_not_called()
 
     def test_qualification_command_carries_the_explicit_package_policy(self):
-        # Only command construction is exercised. Main's live gate stays in force,
-        # and neither the provider nor the qualifier subprocess is executed here.
+        # Only command construction is exercised; neither the provider nor the
+        # qualifier subprocess is executed here. Runtime evidence gates remain separate.
         arguments = SimpleNamespace(qualification=None, provider_revision='fixture-provider',
             harness='codex', model='fixture-model', effort='xhigh', max_candidates=1,
             source_file=True, auth_source=Path('/unread-skill-fixture/auth.json'),
