@@ -55,6 +55,9 @@ class MetaXMean10Tests(unittest.TestCase):
                               'block':list(self.manifest.block),'dynamic_shared_memory_bytes':0},
                     'samples':[{'index':i,'elapsed_ms':v,'reset_enqueued_before_start':True,
                                 'end_synchronized':True} for i,v in enumerate(values)]}
+                if graph:
+                    self.last_activity.update(graph_structure_verified=True,
+                        graph_work={'target_kernel_nodes':1,'cache_reset_memset_nodes':1,'external_event_record_nodes':2})
                 return values
         if native or graph:
             def capture_loaded_cohort(assay, loaded, arguments, *, dry_run_iters, repeat_iters):

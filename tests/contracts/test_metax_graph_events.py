@@ -16,6 +16,8 @@ class GraphSubmissionTests(unittest.TestCase):
         Begin=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_int)
         End=C.CFUNCTYPE(C.c_int,C.c_void_p,C.POINTER(C.c_void_p))
         Instantiate=C.CFUNCTYPE(C.c_int,C.POINTER(C.c_void_p),C.c_void_p,C.c_void_p,C.c_void_p,C.c_size_t)
+        Nodes=C.CFUNCTYPE(C.c_int,C.c_void_p,C.POINTER(C.c_void_p),C.POINTER(C.c_size_t))
+        NodeType=C.CFUNCTYPE(C.c_int,C.c_void_p,C.POINTER(C.c_int))
         count=[0];current=[None];graphs={};actual=[];closed=[];flags=[]
         def create(out,flag):count[0]+=1;out[0]=count[0];return 0
         def create_stream(out,flag):out[0]=9;flags.append(flag);return 0
@@ -35,11 +37,17 @@ class GraphSubmissionTests(unittest.TestCase):
         def close(value):closed.append(value);return 0
         event_flags=[]
         def record_flags(event,stream,flag):event_flags.append(flag);return record(event,stream)
+        def nodes(graph,out,count):
+            count[0]=4
+            if out:
+                for i in range(4):out[i]=graph*10+i
+            return 0
+        def node_type(node,out):out[0]=[2,7,0,7][node%10];return 0
         callbacks=[Create(create),Record(record),Event(lambda event:0),Elapsed(elapsed),Event(close),
             Reset(reset),Launch(launch),Event(lambda stream:0),Create(create_stream),Event(close),
             Begin(begin),End(end),Instantiate(instantiate),Record(graph_launch),Event(close),Event(close),
-            RecordFlags(record_flags)]
-        api=(C.c_void_p*17)(*(C.cast(callback,C.c_void_p).value for callback in callbacks))
+            RecordFlags(record_flags),Nodes(nodes),NodeType(node_type)]
+        api=(C.c_void_p*19)(*(C.cast(callback,C.c_void_p).value for callback in callbacks))
         values=[C.c_void_p(i+1000) for i in range(16)]
         slots=[(C.c_void_p*1)(C.addressof(value)) for value in values]
         pointers=(C.POINTER(C.c_void_p)*16)(*slots)

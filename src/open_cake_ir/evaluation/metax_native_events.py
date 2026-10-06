@@ -16,7 +16,8 @@ SYMBOLS = ('mcEventCreateWithFlags', 'mcEventRecord', 'mcEventSynchronize',
            'mcModuleLaunchKernel', 'mcStreamSynchronize')
 GRAPH_SYMBOLS = SYMBOLS + ('mcStreamCreateWithFlags', 'mcStreamDestroy',
     'mcStreamBeginCapture', 'mcStreamEndCapture', 'mcGraphInstantiate', 'mcGraphLaunch',
-    'mcGraphDestroy', 'mcGraphExecDestroy', 'mcEventRecordWithFlags')
+    'mcGraphDestroy', 'mcGraphExecDestroy', 'mcEventRecordWithFlags',
+    'mcGraphGetNodes', 'mcGraphNodeGetType')
 
 
 def prepare_helper():

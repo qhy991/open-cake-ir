@@ -91,6 +91,7 @@ class MacaEventBenchmark:
 
 class MacaNativeEventBenchmark(MacaEventBenchmark):
     """Submit one cohort in native code with tensor checks outside all samples."""
+    native_graph = False
 
     def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
         import torch
@@ -132,6 +133,10 @@ class MacaNativeEventBenchmark(MacaEventBenchmark):
                 'reset_enqueued_before_start': True, 'end_synchronized': True}
                 for i, value in enumerate(values)],
         }
+        if self.native_graph:
+            self.last_activity['graph_structure_verified'] = True
+            self.last_activity['graph_work'] = {'target_kernel_nodes': 1,
+                'cache_reset_memset_nodes': 1, 'external_event_record_nodes': 2}
         if any(not math.isfinite(v) or v <= 0 for v in values):
             raise ValueError('Native MACA event interval must be finite and positive')
         return values
@@ -160,6 +165,9 @@ def validate_cohort(record, manifest, *, sample_count, native=False, graph=False
                 'l2_cache_bytes': target.l2_cache_bytes,
                 'reset_bytes': 4 * target.l2_cache_bytes if target.l2_cache_bytes else None,
                 'warmup_calls': 11, 'event_pair_primed': True, 'launch': expected_launch}
+    if graph:
+        expected.update(graph_structure_verified=True,
+            graph_work={'target_kernel_nodes':1,'cache_reset_memset_nodes':1,'external_event_record_nodes':2})
     if (target.code_object is not CodeObject.MCFATBIN or isinstance(manifest, ProgramLaunchManifest)
             or manifest.aligned_variant or not isinstance(raw, Mapping)
             or set(raw) != set(expected) | {'samples'}
@@ -229,4 +237,3 @@ def validate_paired_device(raw, launch, participants):
         manifest = raw['launch_manifests'][role]
         if values['dynamic_shared_bytes'] != manifest['dynamic_shared_memory_bytes']:
             raise ValueError('MACA event loaded shared memory differs')
-    native_graph = False

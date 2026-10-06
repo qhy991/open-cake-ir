@@ -80,6 +80,8 @@ extern "C" int cake_maca_graph_event_cohort(
   using Instantiate = int (*)(void **, void *, void **, char *, std::size_t);
   using GraphLaunch = int (*)(void *, void *);
   using RecordFlags = int (*)(void *, void *, unsigned);
+  using Nodes = int (*)(void *, void **, std::size_t *);
+  using NodeType = int (*)(void *, int *);
   void *begin = nullptr, *end = nullptr, *stream = nullptr;
   std::vector<void *> graphs(warmups + samples, nullptr), executions(warmups + samples, nullptr);
   int status = 0; bool capturing = false;
@@ -105,6 +107,26 @@ extern "C" int cake_maca_graph_event_cohort(
     GRAPH_CHECK(20, reinterpret_cast<RecordFlags>(api[16])(end, stream, 1));
     GRAPH_CHECK(21, reinterpret_cast<EndCapture>(api[11])(stream, &graphs[i]));
     capturing = false;
+    {
+      std::size_t count = 0;
+      GRAPH_CHECK(27, reinterpret_cast<Nodes>(api[17])(graphs[i], nullptr, &count));
+      if (count < 4 || count > 16) { status = -10001; *phase = 27; goto finish; }
+      std::vector<void *> nodes(count);
+      GRAPH_CHECK(28, reinterpret_cast<Nodes>(api[17])(graphs[i], nodes.data(), &count));
+      unsigned kernels = 0, memsets = 0, records = 0;
+      for (void *node : nodes) {
+        int type = -1;
+        GRAPH_CHECK(29, reinterpret_cast<NodeType>(api[18])(node, &type));
+        // These values are declared by this MACA SDK, not a CUDA layout.
+        if (type == 0) ++kernels;
+        else if (type == 2) ++memsets;
+        else if (type == 7) ++records;
+        else if (type != 5) { status = -10002; *phase = 29; goto finish; }
+      }
+      if (kernels != 1 || memsets != 1 || records != 2) {
+        status = -10003; *phase = 29; goto finish;
+      }
+    }
     GRAPH_CHECK(22, reinterpret_cast<Instantiate>(api[12])(&executions[i], graphs[i], nullptr, nullptr, 0));
   }
   for (unsigned i = 0; i < warmups + samples; ++i) {
