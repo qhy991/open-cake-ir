@@ -17,7 +17,7 @@ FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `met
 CI `37389739785` 三个 Python 版本各 **2816 passed、35 skipped**，完整 Corpus
 181/181；定向后继回归 56 项、238 个子测试通过。完整测试此前暴露的 Executor/arm
 夹具缺字段、非隔离 Codex 路径的局部 import 和旧 mock 参数均已修正，旧失败保留。
-共享修复已同步到本 Metal 任务分支，平台 PR #344 的整合 CI 另行验收。
+共享修复已同步；平台 PR #344 的完整 CPU 与适用 Triton CI 随后通过，已合入 `metal@7dac842e`。
 
 prepare、provider 构造、Run/Campaign、factory 与回放按真实环境类别验证 anchor 的
 实际归档和两轮包内正文；缺失、旧版、fixture 收据、材料/配置错配与零轮早退均有覆盖。
@@ -41,6 +41,16 @@ CI `37396396477` 在 Python 3.10/3.11/3.12 各 **2824 passed、35 skipped**，Co
 确认远程插件目录默认启用，但关闭开关是否足以维持本实验的材料边界尚待后继验证。
 当前 Metal 分支尚未吸收共享 CLI PR；其自身主机与真实结果 PR #344 已合入 `metal@7dac842e`。
 作者资格不证明 kernel 优化或经验迁移；性能 Run 仍必须通过测量与设备 phase 门。
+
+共享后继 [PR #350](https://github.com/qhy991/open-cake-ir/pull/350) 为隔离的 tool-rich
+作者显式关闭 `apps`、`plugins` 和 `remote_plugin`，保持 native task skills 与既有文件、
+材料、收据检查。固定 CLI 的 feature list 确认三个开关关闭、`shell_tool` 和 `skill_search`
+仍开启；这不是实际启动资格。`14029261` 的 Python 3.11 完整 CI 为 2827 passed、
+35 skipped、1 failed：新增两轮测试误用了另一夹具的技能包，既有脚本/二进制材料检查
+以 exit 42 拒绝。`c881a98b` 改为资格夹具要求的完整材料，检查不变，后继 CI 待完成。
+此前本机 custody 目录写入被沙箱拒绝的验收已停止，没有修改权限重跑。
+仍未执行新的真实 initial/resume，不把软件夹具成功替代真实作者资格。
+
 
 已准备完整技能材料 `author-material-3d430a13/author-skills.tar`，包含主技能与 AIR
 参考，现有 NativeSkillPackage reader 通过。独立 quick validator 因缺 PyYAML 未运行，
@@ -166,9 +176,23 @@ oracle/input；若调整这个边界，须在 Executor/source 后继中实现并
 随后 `cf481581` 修正内层新建进程组导致外层取消遗漏 helper 的问题：子进程保留外层
 监督组，并 exec 原生 helper；CPU 超时会终止并回收同一设备进程。新增外层取消回归后，
 独立固定源码的 CPU 验收 **24 项、26 个子测试通过**。原生编译失败未重跑。
-[PR #348](https://github.com/qhy991/open-cake-ir/pull/348) 的完整 CI 与固定 Xcode 的原生资格
-仍待完成。该修复还未改变正式 Evaluation 的 oracle 准备及后处理阶段，不能据此宣布整个
-phase 门已通过。
+[PR #348](https://github.com/qhy991/open-cake-ir/pull/348) 的固定 `9c34f28f` 完整 CI
+`37398153575` 在三个 Python 版本各 **2827 passed、35 skipped**，其余软件门通过，
+已合入 `metal@10d9e437`；固定 Xcode 的原生资格仍未完成。此提交只覆盖 archive/inspection。
+
+正式 Evaluation 的后继 `task/metal-evaluation-phases@33abec50` 已实现三阶段：
+`launch_task` 使用 `tasks.evaluate --local-kind metal`；原 task 生成全部五种输入和 oracle，
+不可变 `PreparedTensorCase` 留在 CPU 父进程；打包后，既有 broker 在独立子进程准入并
+exec observer；整段预检、配对 cohort、后检或独立 profile 保持同一次设备租约；原生进程
+结束并回收后，父进程读取快照、独立比较输出及生成公共 receipt。host admission 的零 dispatch
+检查仍通过同一既有 broker 的短子进程完成。已有外部租约保持原 owner，不提前释放。
+
+该后继不修改 observer Swift、配对次序、warmup、dispatch 数、容差或五种输入覆盖；
+attribution 仍检查全部五种输入。进程准入记录仅保留真实 job 与 admitted 状态，忙碌拒绝仍
+进入既有 `LocalBrokerBusy` 处理；超时和原生失败保留输出。实际 CPU executable double
+证明输入/oracle 在租约前、全计划在一个持锁子进程、独立比较和报告在回收后；忙碌、失败、
+profile 和 oracle 失败路径也有覆盖。固定 `33abec50` 的专项验收 **30 项、18 个子测试通过**，
+未定义名称检查通过。完整软件 CI、固定工具链的原生端到端资格仍待完成，**phase 门尚未通过**。
 
 本次同步的 `LOCAL_DEVICE_LEASES.md` 所述按设备编号并行和分配前 CPU 准备不适用于当前
 Metal 路径；Metal 不支持 `--local-lock-scope device`。其中编译不占用 lease 的说明也
@@ -507,7 +531,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G2 表达 | 六个发现任务均有结构替代程序 | 六 starter 与两结构替代数值通过；其余代表策略仍待设备验证 | `search-space-and-corpus.json`、`remaining-search-space.json` |
 | G3 测量 | RMSNorm 同产物 A/A 数值正确但 20/20 cohort 的 relative IQR 超过 0.05；独立工作量与 timestamp 控制通过 | 测量稳定性未获资格；不启动性能搜索或声称收益 | `metal-xcode16-20261006/g3-rmsnorm-*`；F-2026-10-06-002 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | PR #335/#337 完成轮次与拒绝回放；PR #339 从保留材料重建资格两轮输入及当前正文 | PR #342 已合 main；CLI 开放与真实作者资格未完成 | `native-skill-qualification-b6ba8dc6/report.json`；旧失败记录保留 |
+| G4 技能软件准备 | PR #342/#347 已合 main；CLI 显式技能入口的软件门已通过；首轮真实模型输入已保留 | PR #350 隔离插件后继软件门及新的真实两轮资格 | `native-skill-cli-f8621d06/`；拒绝发生在 resume 前，无 receipt |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | admin/插件哨兵、脚本/依赖、真实模型使用与正式 provider 资格未完成 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
 | 平台软件集成 | PR #338 合入 metal@f404dbf5，三版本 CPU CI 各 2790/35；本任务吸收 PR #339 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-fault-7fa4ac02/report.json`；后继记录另列 |
