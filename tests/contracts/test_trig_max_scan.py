@@ -37,6 +37,7 @@ class TrigContract(unittest.TestCase):
             self.assertEqual(list(Draft202012Validator(schedule_schema()).iter_errors(doc)), [])
             s = Schedule.from_dict(doc)
             target = Target.load(ROOT/'compiler/targets/gfx938.json')
+            target = replace(target, instruction_contracts=target.instruction_contracts - {'ocml.sin.f32','ocml.cos.f32'})
             # A synthetic admission isolates shared semantics. The real Target changes
             # only after its separate device qualification.
             admitted = replace(target, instruction_contracts=target.instruction_contracts | {f'ocml.{op}.f32'})

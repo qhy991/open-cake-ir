@@ -8,8 +8,8 @@
 ## Compiler
 
 - 声明的目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, gfx1151, gfx938, sm_100a, sm_103a, xcore1002`
-- 语料检查： `181/181` 项符合预期
-- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（10）、`sm_100a`（103）、`sm_103a`（35）、`xcore1002`（16）
+- 语料检查： `196/196` 项符合预期
+- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（25）、`sm_100a`（103）、`sm_103a`（35）、`xcore1002`（16）
 - 未检查的已声明目标： `apple_gpu_family7, apple_gpu_family9`（上面的通过数不涵盖这些目标）
 - 只用于拒绝检查的未声明目标： `apple_gpu_family10`（1）
 - 结构排序： 已退役；显式经验模型仍独立提供条件估计
@@ -32,7 +32,7 @@
 ### `apple_gpu_family9`
 
 - 主机类型： `metal`
-- 解释器： `/opt/homebrew/opt/python@3.14/bin/python3.14`（3.14.3）
+- 解释器： `/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-xcode16-20261006/venv/bin/python`（3.14.3）
 - 采集文件： [`runtime/hosts/apple_gpu_family9.json`](../../runtime/hosts/apple_gpu_family9.json)
 
 ### `gfx1151`

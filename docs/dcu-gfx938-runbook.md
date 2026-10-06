@@ -122,3 +122,12 @@ run_terminal  protocol_adherence: adhered
 `Task performance ... "missing": ["target_memory_bandwidth_reference"]` is expected: gfx938
 has no bandwidth calibration, so the efficiency score is reported unavailable rather than
 estimated from another target's number.
+
+## Independent Compiler qualification, 2026-10-05
+
+The newer per-user HCU gateway and original SOL Task confirmation are separate
+from the historical Lab runs above. See [rounded tiled epilogue confirmation](
+dcu-tiled-epilogue-confirmation.md) for the fixed source, strong community
+baseline, original correctness, paired timing, actual profiler rows and release
+receipts. Its complete-call ratio is not a marginal gain over an earlier
+manually fused incumbent.

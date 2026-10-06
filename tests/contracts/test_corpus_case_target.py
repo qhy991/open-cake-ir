@@ -92,8 +92,8 @@ class CorpusCaseTarget(unittest.TestCase):
         # Routing adds two measured compositions and two unqualified top-k forms.
         # The C550 indexed-gather successor adds one exact ABI-bound positive case.
         # The fixed compensated FP8 SIMT route adds one independently device-checked case.
-        # One output-prefix GEMM pins empty-program pruning without changing dense cases.
-        self.assertEqual(report.case_count, 181)
+        # Seven retained DCU admissions/refusals and one output-prefix GEMM extend the180-case shared corpus.
+        self.assertEqual(report.case_count, 196)
 
 
 if __name__ == "__main__":

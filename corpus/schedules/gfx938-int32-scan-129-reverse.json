@@ -1,0 +1,170 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "x",
+      "indices": [
+        {
+          "name": "batch",
+          "source": "program"
+        },
+        {
+          "name": "features",
+          "source": "program_tile"
+        }
+      ],
+      "operation": "values"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "y",
+      "indices": [
+        {
+          "name": "batch",
+          "source": "program"
+        },
+        {
+          "name": "features",
+          "source": "program_tile"
+        }
+      ],
+      "operation": "store_y"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "int32",
+      "mode": "input",
+      "name": "x",
+      "shape": [
+        2,
+        129
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "int32",
+      "mode": "output",
+      "name": "y",
+      "shape": [
+        2,
+        129
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "int32",
+      "mode": "scratch",
+      "name": "values",
+      "shape": [
+        256
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "int32",
+      "mode": "scratch",
+      "name": "prefix",
+      "shape": [
+        256
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "qualify_scan_int32_129_reverse"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "values",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "x"
+      ],
+      "role": "compute",
+      "writes": [
+        "values"
+      ]
+    },
+    {
+      "depends_on": [
+        "values"
+      ],
+      "id": "prefix",
+      "kind": "scan",
+      "parameters": {
+        "axis": 0,
+        "direction": "reverse",
+        "op": "sum"
+      },
+      "reads": [
+        "values"
+      ],
+      "role": "compute",
+      "writes": [
+        "prefix"
+      ]
+    },
+    {
+      "depends_on": [
+        "prefix"
+      ],
+      "id": "store_y",
+      "kind": "store",
+      "parameters": {
+        "coalesced": true
+      },
+      "reads": [
+        "prefix"
+      ],
+      "role": "compute",
+      "writes": [
+        "y"
+      ]
+    }
+  ],
+  "outputs": [
+    "y"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 1,
+        "buffer": "x",
+        "dimension": 0,
+        "name": "batch",
+        "tile": 1
+      },
+      {
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 1,
+        "name": "features",
+        "tile": 256
+      }
+    ]
+  },
+  "roles": [
+    {
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "name": "compute"
+    }
+  ],
+  "schedule_id": "qualify_scan_int32_129_reverse",
+  "schema_version": 2,
+  "target": "gfx938",
+  "tile_loops": []
+}

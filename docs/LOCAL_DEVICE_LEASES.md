@@ -49,3 +49,23 @@ measurements; it does not require waiting for the entire old Study to finish.
 After mapping, serial A/A and simultaneous A/A/profiler controls pass, this can be
 qualified as four device-scoped measurement slots. This document is not evidence
 that those device controls have passed.
+
+## Metal local evaluation phases
+
+Metal uses the existing user-scoped single-device lock; device-ordinal selection is
+not supported. Its local launcher starts `tasks.evaluate --local-kind metal` without
+a lease. The task prepares every required input and original CPU reference, including
+all validation distributions for attribution. A short-lived broker child then execs
+the already admitted native observer for the entire declared plan. Paired candidate
+and baseline cohorts, warmups, snapshots and required synchronization remain inside
+that one device interval. The parent compares retained snapshots and writes reports
+after the child exits and is reaped. Release does not mean correctness acceptance.
+
+The same process runner admits archive build/reload and host inspection separately;
+Metal archive construction itself touches the device and therefore needs a lease.
+An inherited allocation retains its existing owner and lifetime. Neither the parent
+nor reporting code unlocks another process's allocation. Retained admission identifies
+the actual job, including an unsuccessful broker attempt; it does not establish
+physical exclusion of other applications. CPU regression tests prove process and
+oracle ordering only. A successor still needs native host/device acceptance before
+this route is used by formal performance experiments.

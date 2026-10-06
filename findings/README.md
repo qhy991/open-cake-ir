@@ -43,7 +43,20 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
+assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
+to F-2026-10-06-007. Their original F-2026-10-06-002 records remain at the platform
+commits named in each record's `evidence.integration_identity`; raw observations,
+decisions and Run outcomes are unchanged. IDs in historical evidence resolve with
+their original source commit, never through today's id alone.
+
+The Metal A/A record first published as F-2026-10-06-001 at 3d430a13 is assigned sequence002 here before integration. Main sequence001 belongs to the streamed-MMA applicability record at f0372ecd; original Metal evidence remains at its cited paths.
+
+- F-2026-10-06-007 — M4 identical-artifact RMSNorm A/A is numerically correct but all 20 cohorts fail the original relative-IQR gate; separate work-volume and timestamp controls pass. Measurement qualification remains closed; no Compiler or performance promotion.
 - F-2026-10-06-005 — Claude 2.1.289 emits a UI invalidation before init; bounded v4 parser and usage repair prepared for retained GLM qualification replay.
+- [F-2026-10-06-002](2026-10-06-002-ocml-trig-capacity.json) — explicit OCML FP32 trig capacity; bounded component equality, no full fused RoPE performance claim.
+- [F-2026-10-06-003](2026-10-06-003-integer-max-scan-capacity.json) — INT32 inclusive maximum scan for segment starts; whole sort/scatter remains separate.
+- [F-2026-10-06-004](2026-10-06-004-reduction-loop-width-applicability.json) — width API coverage for legal CTA-reduction loops; retained-choice full-task replay is not a new search gain.
 
 - F-2026-10-06-001 — streamed MMA output stores and store-only narrowing casts are outside the width API despite lowerable manual choices; bounded pass extension and component/source replay prepared, full Task evidence remains separate.
 
@@ -51,10 +64,18 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - F-2026-10-05-007 — multi-candidate author feedback lacked candidate identity; bounded result attribution and independent feedback replay prepared at 5453a4f5 with CPU contracts. Proposed protocol successor; no hardware or learning qualification.
 
+- F-2026-10-05-006 — gfx938 register broadcasts/coordinate predicates and resident INT32/FP32 scans pass63 exact component checks on25 proposed-Target sources; admission and five Corpus cases added without changing188 prior expectations. Whole-task strong-baseline replay remains pending.
+
+- F-2026-10-03-004 — exact gfx938 INT32 relaxed device-scope fetch-add is device-qualified150/150 with native buffer_atomic_add; original malformed histogram still refuses its edge/output guards. No scan, scatter or stable-sort performance claim.
+
+- F-2026-10-03-005 — gfx938 target admission omits existing cast and BF16/FP32 dot. Successor component qualification passes eleven device checks with native BF16 v_mmac; full operator campaign and independent integration review remain pending.
+
+This integration assigns the DCU cast/BF16 record first published as F-2026-10-03-001 on dcu to F-2026-10-03-005. The original record remains at f0f465f6:findings/2026-10-03-001-gfx938-cast-bf16-admission.json; its device receipts and implementation history remain unchanged. Main retains F-2026-10-03-001 for the distinct native-cohort custody observation.
 - F-2026-10-05-002 — three sibling Softmax regions expose the Triton two-loop cap; flat-region admission is software verified, including isolated compilation of retained events99/100. Device qualification remains open.
 - F-2026-10-05-003 — confirmed SiLU column partition motivates an explicit guarded pointwise rewrite; public ABI, tail effects and refusal ownership are software verified. Original candidate performance does not qualify the successor pass.
 - F-2026-10-05-004 — exact retained maxnreg,16-group, pipelined-unroll and warp-specialization requests remain deferred MACA route qualifications; fixed single-stage Softmax unroll is separately lowerable under the existing main repair. No new hardware qualification.
 - F-2026-10-05-005 — RMSNorm event57's two-stage Program lowers, but common MACA optimization-Run timing and attribution cover one dispatch. Defer the Lab/Executor measurement gap; standalone Program attribution does not qualify the Run.
+- F-2026-10-06-006 — SDK-default MCPTI records retain a zero-width L2 reset interval in a C550 search; strict rejection is correct, the Run remains missing, and no timer change is promoted.
 
 - F-2026-10-04-005 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
 
@@ -203,6 +224,7 @@ The 2026-10-01 integration assigns the four records first published on `metax@5f
 
 - F-2026-09-20-011 — three retained normalization kernels compile to scalar b16 memory operations without pointer attributes; a CPU-only 16-byte-alignment hypothesis switches them to v4.b32 vector operations. The ABI does not yet guarantee this assumption, so it is not launched or promoted; align compile facts with launch checks before GPU qualification (capacity, proposed). Software implementation: PR #108; GPU verification pending.
 
+Output-prefix003 preserves original002 at751ead87; main002 describes independent local admission. DCU cast005 preserves original001 atf0f465f6. Historical receipts remain unchanged.
 - F-2026-10-04-003 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded qualification passed; review and integration status are owned by the canonical Finding.
 
 The output-prefix pruning record first published as F-2026-10-04-002 on task/core-valid-extent-work-pruning-20261004 is assigned global sequence003 here. Original record and evidence remain at751ead87; main sequence002 belongs to the separate local-device admission observation.
