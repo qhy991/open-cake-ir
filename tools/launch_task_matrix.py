@@ -144,7 +144,7 @@ def main(argv=None) -> int:
     parser.add_argument('--local-expected-pci')
     parser.add_argument('--local-queue-seconds', type=float, default=0)
     parser.add_argument("--provider-executable", type=Path)
-    parser.add_argument("--metax-timing", choices=("mean10-events", "native-mean10-events", "torch-reset-mean10-events", "legacy"))
+    parser.add_argument("--metax-timing", choices=("mean10-events", "native-mean10-events", "torch-reset-mean10-events", "gated-mean10-events", "legacy"))
     parser.add_argument("--provider-revision")
     parser.add_argument(
         "--incumbent-registry",

@@ -14,6 +14,8 @@ _LOCK = threading.Lock()
 SYMBOLS = ('mcEventCreateWithFlags', 'mcEventRecord', 'mcEventSynchronize',
            'mcEventElapsedTime', 'mcEventDestroy', 'mcMemsetD32Async',
            'mcModuleLaunchKernel', 'mcStreamSynchronize')
+GATED_SYMBOLS = SYMBOLS + ('mcStreamCreateWithFlags','mcStreamDestroy',
+                          'mcStreamWaitEvent','mcLaunchHostFunc')
 
 
 
@@ -42,6 +44,8 @@ def prepare_helper():
         function.argtypes = [C.POINTER(C.c_void_p), C.c_void_p, C.POINTER(C.c_uint), C.c_uint,
                             C.POINTER(C.POINTER(C.c_void_p)), C.c_uint, C.c_uint, C.c_void_p,
                             C.c_size_t, C.POINTER(C.c_float), C.POINTER(C.c_uint), C.POINTER(C.c_uint)]
+        library.cake_maca_gated_event_cohort.restype = function.restype
+        library.cake_maca_gated_event_cohort.argtypes = function.argtypes
         _DIRECTORY, _HELPER = directory, library
         return library
 
@@ -52,7 +56,7 @@ def _cpu_environment():
         ('CUDA_VISIBLE_DEVICES', 'MACA_VISIBLE_DEVICES', 'HIP_VISIBLE_DEVICES', 'ROCR_VISIBLE_DEVICES')}}
 
 
-def capture(loaded, argument_sets, reset, *, warmups, samples, torch_reset=False):
+def capture(loaded, argument_sets, reset, *, warmups, samples, torch_reset=False, gated=False):
     """Validate and pack every distinct tensor set before the first timed event."""
     from .metax_driver import LoadedMetaxCandidate
     if (type(loaded.loaded) is not LoadedMetaxCandidate or loaded.loaded.closed
@@ -64,17 +68,22 @@ def capture(loaded, argument_sets, reset, *, warmups, samples, torch_reset=False
     packed = [kernel.prepare_arguments(args, tensor_contract=loaded.manifest)
               for args in argument_sets]
     pointers = (C.POINTER(C.c_void_p) * len(packed))(*(row[1] for row in packed))
-    addresses = [C.cast(getattr(kernel._api, name), C.c_void_p).value for name in SYMBOLS]
+    if gated and not torch_reset:
+        raise ValueError('Gated MACA events require the explicit Torch reset')
+    symbols = GATED_SYMBOLS if gated else SYMBOLS
+    addresses = [C.cast(getattr(kernel._api, name), C.c_void_p).value for name in symbols]
     reset_errors = []
     reset_callback = None
     if torch_reset:
         Reset = C.CFUNCTYPE(C.c_int, C.c_size_t, C.c_uint, C.c_size_t, C.c_void_p)
         def fill(address, value, words, stream):
             try:
-                if address != reset.data_ptr() or words != reset.numel() or value != 0x3f800000 or stream:
+                if address != reset.data_ptr() or words != reset.numel() or value != 0x3f800000 or (stream and not gated):
                     raise ValueError('Torch reset buffer or default stream differs')
                 import torch
-                with torch.cuda.stream(torch.cuda.default_stream(0)):
+                selected = (torch.cuda.ExternalStream(stream,device=0)
+                            if gated else torch.cuda.default_stream(0))
+                with torch.cuda.stream(selected):
                     reset.fill_(1.0)
                     reset.fill_(1.0)
                 return 0
@@ -85,7 +94,7 @@ def capture(loaded, argument_sets, reset, *, warmups, samples, torch_reset=False
     api = (C.c_void_p * len(addresses))(*addresses)
     dimensions = (C.c_uint * 6)(*loaded.manifest.grid, *loaded.manifest.block)
     elapsed, calls, phase = (C.c_float * samples)(), C.c_uint(), C.c_uint()
-    entry = _HELPER.cake_maca_event_cohort
+    entry = _HELPER.cake_maca_gated_event_cohort if gated else _HELPER.cake_maca_event_cohort
     status = entry(api, kernel._function, dimensions,
         loaded.manifest.dynamic_shared_memory_bytes, pointers, warmups, samples,
         reset.data_ptr(), reset.numel(), elapsed, C.byref(calls), C.byref(phase))

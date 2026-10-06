@@ -14,7 +14,7 @@ class RealAdapterTests(unittest.TestCase):
             empty=lambda *args,**kwargs:object(),cuda=SimpleNamespace(
                 default_stream=lambda device:SimpleNamespace(cuda_stream=0),
                 get_device_properties=lambda device:SimpleNamespace(L2_cache_size=8388608)))
-        for cls,torch_reset in [(event.MacaNativeEventBenchmark,False),(event.MacaTorchResetEventBenchmark,True)]:
+        for cls,torch_reset in [(event.MacaNativeEventBenchmark,False),(event.MacaTorchResetEventBenchmark,True),(event.MacaGatedEventBenchmark,True)]:
             assay=cls(manifest,l2_cache_bytes=8388608)
             loaded=SimpleNamespace(manifest=manifest)
             with patch.dict(sys.modules,torch=torch),patch(
@@ -22,6 +22,7 @@ class RealAdapterTests(unittest.TestCase):
                 self.assertEqual(assay.capture_loaded_cohort(loaded,[object() for _ in range(16)],
                     dry_run_iters=11,repeat_iters=5),[.001]*5)
                 self.assertEqual(capture.call_args.kwargs['torch_reset'],torch_reset)
-            self.assertEqual(assay.last_activity['stream'],0)
+            gated=cls is event.MacaGatedEventBenchmark
+            self.assertEqual(assay.last_activity['stream'],'owned_nonblocking' if gated else 0)
             event.validate_cohort({'native_activity':assay.last_activity,'samples_ms':[.001]*5},
-                                  manifest,sample_count=5,native=not torch_reset,torch_reset=torch_reset)
+                                  manifest,sample_count=5,native=not torch_reset,torch_reset=torch_reset and not gated,gated=gated)

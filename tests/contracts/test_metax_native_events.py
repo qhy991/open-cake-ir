@@ -1,6 +1,7 @@
 """Exercise the compiled submission loop with deterministic CPU runtime APIs."""
 import ctypes as C
 import unittest
+import threading
 from unittest.mock import patch
 
 from open_cake_ir.evaluation import metax_native_events as native
@@ -10,7 +11,7 @@ from tests.contracts import test_metax_paired as fixtures
 
 
 class NativeSubmissionTests(unittest.TestCase):
-    def run_cohort(self, fail_launch=None):
+    def run_cohort(self, fail_launch=None, gated=False):
         calls, resets, closed, ordering = [], [], [], []
         Create = C.CFUNCTYPE(C.c_int, C.POINTER(C.c_void_p), C.c_uint)
         Record = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)
@@ -32,18 +33,40 @@ class NativeSubmissionTests(unittest.TestCase):
             return 32 if fail_launch == len(calls) else 0
         def elapsed(out, begin, end): out[0] = .001; return 0
         def destroy(event): closed.append(event); return 0
-        callbacks = [Create(create), Record(record), Event(lambda event: 0),
+        threads=[]
+        def synchronized(event):
+            if gated and event==2:
+                threads[-1].join(timeout=3)
+                if threads[-1].is_alive():return 999
+            return 0
+        callbacks = [Create(create), Record(record), Event(synchronized),
                      Elapsed(elapsed), Event(destroy), Reset(reset), Launch(launch),
                      Event(lambda stream: 0)]
-        api = (C.c_void_p * 8)(*(C.cast(fn, C.c_void_p).value for fn in callbacks))
+        if gated:
+            Host=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_void_p,C.c_void_p)
+            Wait=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_void_p,C.c_uint)
+            def host(stream,callback,data):
+                call=C.CFUNCTYPE(None,C.c_void_p)(callback)
+                thread=threading.Thread(target=call,args=(data,));thread.start();threads.append(thread)
+                return 0
+            callbacks += [Create(create),Event(destroy),Wait(lambda *args:0),Host(host)]
+        api = (C.c_void_p * len(callbacks))(*(C.cast(fn, C.c_void_p).value for fn in callbacks))
         values = [C.c_void_p(i + 100) for i in range(16)]
         packed = [(C.c_void_p * 1)(C.addressof(value)) for value in values]
         pointers = (C.POINTER(C.c_void_p) * 16)(*packed)
         output, actual, phase = (C.c_float * 5)(), C.c_uint(), C.c_uint()
         helper = native.prepare_helper()
-        status = helper.cake_maca_event_cohort(api, 9, (C.c_uint * 6)(1, 1, 1, 64, 1, 1),
+        entry=helper.cake_maca_gated_event_cohort if gated else helper.cake_maca_event_cohort
+        status = entry(api, 9, (C.c_uint * 6)(1, 1, 1, 64, 1, 1),
             0, pointers, 11, 5, 1234, 8388608, output, C.byref(actual), C.byref(phase))
         return status, actual.value, phase.value, calls, resets, closed, ordering, list(output)
+
+    def test_gated_loop_releases_host_callbacks_after_all_sample_commands_are_queued(self):
+        status,actual,phase,calls,resets,closed,order,samples=self.run_cohort(gated=True)
+        self.assertEqual((status,actual),(0,16));self.assertEqual(calls,list(range(100,116)))
+        self.assertEqual(len(resets),16)
+        self.assertEqual(sorted(closed),[1,2,3,4,5])
+        self.assertTrue(all(value>0 for value in samples))
 
     def test_real_native_loop_uses_every_fresh_output_and_reset_before_each_sample(self):
         status, actual, phase, calls, resets, closed, order, samples = self.run_cohort()
