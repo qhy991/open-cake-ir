@@ -6,23 +6,27 @@
 
 ## 一个明确的启动入口
 
-新修复显式选择 `tools/launch_task.py --backend triton-metax --metax-timing torch-reset-mean10-events`。
+新修复显式选择 `tools/launch_task.py --backend triton-metax --metax-timing gated-mean10-events`。
 任务获得固定 starter、完整 Workload、允许的变换、生成源码反馈及研究记录要求。
 普通任务保持任务自有 starter；GEMM+Bias 使用逐列输出、幅度分组和补偿合并的 MACA
 工程 starter，保留完整 K 归约、FP32 产品、全部输出和原容差。
 
 这是新的固定基线，不能把其收益与旧大驻留起点的分数混用。
-`native-mean10-events` 保留 D32 重置的原生提交控制；`mean10-events` 保留 Python 事件；
+`torch-reset-mean10-events` 保留默认流双填充控制；`native-mean10-events` 保留 D32 原生控制；`mean10-events` 保留 Python 事件；
 `legacy` 保留 MCPTI。冻结记录在其原提交重放，各路径的计时区间与结果分开展示。
 
 ## 十次采样的具体含义
 
 - 每个实现共十个正式样本，取算术平均：候选/基线、基线/候选两块，各五次。
 - 每块十一轮预热另计。每次目标启动使用不同的初始化输出。
-- 参数检查和指针打包在采样前完成；原生循环记录设备事件、提交封存 kernel 并同步结束事件。
-- 开始事件前，在默认 stream 两次填充四倍声明 L2 大小的 FP32-one 缓冲区。
+- 参数检查和指针打包在采样前完成。执行器创建独立目标 stream 和门控 stream。
+- 门控 stream 的 host callback 只等待主机标志，不调用设备 API；开始、目标、结束命令
+  全部排队后才释放标志。目标 stream 等待门控事件后开始，结束事件同步后读取耗时。
+- 回调两秒内未释放则拒绝该次采样；失败仍释放两个 stream 和相关事件。
+- 开始事件前，在目标 stream 两次填充四倍声明 L2 大小的 FP32-one 缓冲区。
   这两次填充均在测量区间外；动作和顺序保留在协议与原始记录中。
-- 事件区间仍可能包含暴露的原生提交空隙。通过 A/A 后才授予对应任务的资格。
+- GPU 开始前已提交完整采样命令；原生非门控路线仍可能包含提交间隙。
+  各任务通过本路线的 A/A 与独立归因后才授予启动资格。
 - 正式计时不启用 profiler。独立 MCPTI 提供一次设备归因与资源诊断。
 
 该路径声明可信执行器的动作与顺序，不声称已经观测缓存清空或外部 dispatch。
@@ -53,10 +57,13 @@ GEMM+Bias 原产物私有内存21572字节，首次启动报 `mcErrorMemoryValue
 
 ## 验收来源
 
-`6dd68212` 通过115项受影响合同和完整196项 Corpus；C550 CPU准备/逐项设备验收继续
+`eeff134f` 通过117项受影响合同，完整196项 Corpus保持通过。固定实现 `fa322406` 的
+54项 CPU准备和完整 Run绑定完成。RMSNorm与SiLU已通过全数值/A/A/独立归因，两臂差异
+分别约1.2%与0.85%。GEMM+Bias已在前一个直接事件后继通过全部五类输入和独立归因；
+门控后继继续接受自己的验收。全量逐项设备验收继续
 保存在 checkout 外。只有正式完成设备验收的任务可计入可启动集合。
 
-- 当前后继：`c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/native-torch-task-readiness-20261006/`
+- 当前后继：`c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/gated-event-task-readiness-20261006/`
 - 原生控制：`c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/native-events-task-readiness-final-20261006/`
 - 图拒绝证据：`c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/verified-graph-task-readiness-20261006/`
 
