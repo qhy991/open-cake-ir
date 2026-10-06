@@ -768,8 +768,7 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(runtime["provider"]["workspace_root"], str(self.workspace/"actors"))
         self.assertEqual(runtime["toolchain"], {"output_root":str(self.workspace/"builds")})
         self.assertEqual(runtime["broker"]["command"], ["/unit-test/python", "-I", str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py"),
-                         "open_cake_ir.evaluation.local_broker", "--kind", "metal",
-                         "--worker-module", "open_cake_ir.tasks.evaluate"])
+                         "open_cake_ir.tasks.evaluate", "--local-kind", "metal"])
         self.assertFalse((self.workspace/'study.json').exists())
         self.assertFalse((self.workspace/'campaign-lock.json').exists())
         self.assertFalse((self.workspace/'execution-bindings.json').exists())
