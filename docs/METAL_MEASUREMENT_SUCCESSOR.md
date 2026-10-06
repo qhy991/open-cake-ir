@@ -32,8 +32,10 @@ This is an Evaluation protocol hypothesis, not an IR or verifier defect.
 Keep the same two sealed artifacts, exact host/toolchain, input cases, external
 oracle, tolerances, 64 dispatches per command, 3 warmups per arm per pair, 25 timed
 samples per arm per pair, ten AB/BA pairs, and the existing IQR and direction gates.
-Change only launch order within a pair: interleave corresponding warmup samples,
-then interleave corresponding timed samples in the pair's declared arm order.
+Interleave corresponding warmup samples, then corresponding timed samples in
+the pair's declared arm order. This necessarily also moves snapshot persistence
+from each arm's cohort end to the pair end. The treatment therefore bundles sample
+order and persistence boundary; it cannot isolate an order-only causal effect.
 Retain all raw timestamps and separate correctness snapshots.
 
 This needs an explicit successor protocol rather than silently changing v2.
@@ -62,7 +64,8 @@ extra discarded warmups, a runtime-selected batch size or a retry-until-stable l
 ## Bounded device validation after software acceptance
 
 Predeclare a matched blocked/interleaved diagnostic using both exact artifacts,
-including both role orientations and identical-artifact null controls. Retain every
+including both role orientations and identical-artifact null controls. Both
+protocols must use the same successor observer and captured host. Retain every
 outcome and stop on environment/protocol/correctness failures. Measurement failures
 remain outcomes, not permission to add runs. Fix the count and order before launch.
 Only a reviewed, independently confirmed protocol may be used by later Ralph runs;
@@ -100,3 +103,29 @@ owned copies, partial failure flushing and overwrite refusal. Evidence is in
 `/private/tmp/cake-metal-interleaved-swift-a375e295-private-cache/`; the original
 environment failure remains separate. This CPU-only build defines
 `SNAPSHOT_TESTS`, excludes Metal device execution, and does not qualify timing.
+
+## Proposed fixed diagnostic sequence
+
+After the software and successor-host gates pass, execute exactly the following
+six evaluations, each using the existing 10-pair policy. This is a bounded
+engineering diagnostic, not a protocol superiority study or a Ralph campaign.
+
+| Order | Protocol | Candidate | Baseline | Expected valid classification |
+| --- | --- | --- | --- | --- |
+| 1 | v2 blocked | redundant RMSNorm | original RMSNorm | second_arm_faster |
+| 2 | v3 interleaved | redundant RMSNorm | original RMSNorm | second_arm_faster |
+| 3 | v3 interleaved | original RMSNorm | redundant RMSNorm | first_arm_faster |
+| 4 | v2 blocked | original RMSNorm | redundant RMSNorm | first_arm_faster |
+| 5 | v2 blocked | original RMSNorm | original RMSNorm | close_null |
+| 6 | v3 interleaved | original RMSNorm | original RMSNorm | close_null |
+
+Maximum: 3,480 command buffers, 215,160 dispatches, 3,000 timed samples, no provider
+calls, 300 seconds per evaluation. Stop on environment, protocol, correctness or
+unexpected valid direction failures. An ordinary IQR failure is retained as an
+outcome and does not add, retry or reorder evaluations. Do not pool protocols or
+discard cohorts. A/A also requires the original [0.95, 1.05] ratio interval.
+
+Even if all v3 controls pass, independent confirmation is still required before
+promotion. If v3 fails, do not introduce another scheduling mechanism without
+better attribution. This small, ordered diagnostic cannot establish causality,
+exclude external GPU clients or establish generalization beyond R128 C1024.
