@@ -478,7 +478,7 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, variants)
         manifest = _read(EXTRACTION / "manifest.json")
-        self.assertEqual(manifest["counts"]["implementation_count"], 15)
+        self.assertEqual(manifest["counts"]["implementation_count"], 16)
         non_claims = " ".join(manifest["selection_policy"]["non_claims"])
         for boundary in (
             "does not establish a common thread or SIMDgroup ownership model",
@@ -486,6 +486,74 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
             "zero-centered versus direct normalization-weight factors",
             "independent of hierarchical-simdgroup-threadgroup-reduction",
             "does not admit a Compiler RMS operation",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, non_claims)
+
+    def test_qwen25_avg_pool_observation_remains_below_candidate_threshold(
+        self,
+    ) -> None:
+        observation = _read(
+            EXTRACTION
+            / "observations/apxinf-qwen25-omni-audio-avg-pool1d-tap-reduction.json"
+        )
+
+        self.assertEqual(
+            (
+                observation["implementation_id"],
+                observation["operator_id"],
+                observation["source_locator"]["path"],
+                observation["source_locator"]["symbol"],
+                observation["source_span"]["start_line"],
+                observation["source_span"]["end_line"],
+            ),
+            (
+                "apxinf.cuda-qwen25-omni-audio-avg-pool1d-bf16",
+                "pooling.average_pool_1d",
+                "crates/apxinf-cuda/kernels/custom/preprocess.cuh",
+                "avg_pool1d_bf16_kernel",
+                22,
+                35,
+            ),
+        )
+        self.assertEqual(
+            set(observation["observed_primitives"]),
+            {
+                "bf16_input_load",
+                "bf16_output_conversion",
+                "flat_output_element_guard",
+                "fp32_divide_by_kernel_extent",
+                "fp32_positive_zero_accumulator",
+                "output_element_thread_ownership",
+                "tap_order_serial_reduction",
+                "window_stride_addressing",
+            },
+        )
+
+        manifest = _read(EXTRACTION / "manifest.json")
+        candidates = [_read(EXTRACTION / path) for path in manifest["candidates"]]
+        self.assertTrue(
+            all(
+                observation["observation_id"] not in candidate["observation_ids"]
+                for candidate in candidates
+            )
+        )
+        self.assertTrue(
+            all(
+                observation["pattern_signature"] != candidate["pattern_signature"]
+                for candidate in candidates
+            )
+        )
+        notes = " ".join(observation["variant_notes"])
+        self.assertIn("one implementation ID in one Git blob", notes)
+        non_claims = " ".join(manifest["selection_policy"]["non_claims"])
+        for boundary in (
+            "remains below the local candidate threshold",
+            "host-argument validation",
+            "odd-tail safety",
+            "generated instruction order",
+            "Compiler primitive",
+            "Stage 3 result",
         ):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, non_claims)
@@ -666,10 +734,10 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
         self.assertEqual(
             manifest["counts"],
             {
-                "observation_count": 17,
+                "observation_count": 18,
                 "candidate_count": 6,
-                "implementation_count": 15,
-                "source_count": 2,
+                "implementation_count": 16,
+                "source_count": 3,
             },
         )
         non_claims = " ".join(manifest["selection_policy"]["non_claims"])
@@ -793,10 +861,10 @@ class AbstractionExtractionSchemaTests(unittest.TestCase):
         self.assertEqual(
             manifest["counts"],
             {
-                "observation_count": 17,
+                "observation_count": 18,
                 "candidate_count": 6,
-                "implementation_count": 15,
-                "source_count": 2,
+                "implementation_count": 16,
+                "source_count": 3,
             },
         )
         non_claims = " ".join(manifest["selection_policy"]["non_claims"])

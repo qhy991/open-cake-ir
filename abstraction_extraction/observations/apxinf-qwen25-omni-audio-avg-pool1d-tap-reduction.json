@@ -1,0 +1,45 @@
+{
+  "$schema": "../schema.json#/$defs/observation",
+  "schema_version": 1,
+  "observation_id": "apxinf-cuda-qwen25-omni-audio-avg-pool1d.tap-reduction",
+  "pattern_signature": "output-element.window-tap-order-fp32-sum.divide.bf16-store",
+  "implementation_id": "apxinf.cuda-qwen25-omni-audio-avg-pool1d-bf16",
+  "operator_id": "pooling.average_pool_1d",
+  "source_id": "apxinf-qwen25-omni-32ba4d4",
+  "source_locator": {
+    "path": "crates/apxinf-cuda/kernels/custom/preprocess.cuh",
+    "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+    "git_object": "06b2ffd84bc8ae4fc4e3e51ae34eeab4f12c3086",
+    "symbol": "avg_pool1d_bf16_kernel"
+  },
+  "source_span": {
+    "start_line": 22,
+    "end_line": 35,
+    "sha256": "9b973accb115a869015dba7b253c8d97d63f3ca93668721a210541e66a4fc0a8",
+    "hash_contract": "sha256-utf8-lf-inclusive-lines-v1"
+  },
+  "observed_structure": [
+    "One CUDA thread owns one output-frame and channel element after a flat-index guard against output_frames multiplied by channels.",
+    "The thread decomposes its flat index into channel and output frame, initializes one source-level FP32 accumulator to positive zero, and traverses taps in increasing integer order.",
+    "Each tap loads one BF16 input at output_frame multiplied by stride plus tap, converts it to FP32, and adds it to the accumulator.",
+    "After the tap loop, the kernel divides the FP32 sum by the runtime kernel extent and performs one BF16 conversion for the output store."
+  ],
+  "observed_primitives": [
+    "bf16_input_load",
+    "bf16_output_conversion",
+    "flat_output_element_guard",
+    "fp32_divide_by_kernel_extent",
+    "fp32_positive_zero_accumulator",
+    "output_element_thread_ownership",
+    "tap_order_serial_reduction",
+    "window_stride_addressing"
+  ],
+  "variant_notes": [
+    "The collected Qwen2.5-Omni occurrence pins kernel two, stride two and floor-divided output length through its wider source path, while this cited kernel span itself accepts runtime kernel, stride and output-frame arguments.",
+    "The span contains no per-tap bounds branch and does not independently establish that host-provided output_frames makes every window in bounds, including the odd-frame tail case.",
+    "Source-level tap order, conversions and division do not establish generated instruction order, bitwise numerical equivalence, correctness, memory safety or performance.",
+    "This is one implementation ID in one Git blob, so it remains below the local two-implementation and two-blob candidate threshold."
+  ],
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_structure_only"
+}

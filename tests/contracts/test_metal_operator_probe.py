@@ -64,6 +64,8 @@ def _write_fake_xcrun(path: Path) -> None:
                     expected = "kernel void cake_indexed_gather_b8_metal"
                 elif "weighted_combine" in source.name:
                     expected = "kernel void cake_kda_weighted_combine_b8_metal"
+                elif "avg_pool1d_k2_s2" in source.name:
+                    expected = "kernel void cake_qwen25_omni_audio_avg_pool_k2_s2_metal"
                 else:
                     print("unknown lowered source", file=sys.stderr)
                     raise SystemExit(66)
@@ -83,7 +85,12 @@ def _write_fake_xcrun(path: Path) -> None:
                 launch = json.loads(pathlib.Path(arguments[-1]).read_text(encoding="utf-8"))
                 operators = []
                 for item in launch["operators"]:
-                    count = 1024 if item["kind"] == "indexed_gather" else 128
+                    counts = {
+                        "indexed_gather": 1024,
+                        "weighted_combine": 128,
+                        "avg_pool1d_k2_s2": 2560,
+                    }
+                    count = counts[item["kind"]]
                     expected = [index & 0xffff for index in range(count)]
                     observed = expected.copy()
                     if mode == "wrong_bits" and item["kind"] == "weighted_combine":
@@ -99,6 +106,15 @@ def _write_fake_xcrun(path: Path) -> None:
                     if item["kind"] == "weighted_combine":
                         result.update({
                             "cpu_oracle_accumulation_order": "route_0_through_7_fp32",
+                            "output_conversion": "bfloat16_round_to_nearest_ties_to_even",
+                            "bf16_exact_halfway_cases": 2,
+                            "bf16_exact_halfway_even_lsb_cases": 1,
+                            "bf16_exact_halfway_odd_lsb_cases": 1,
+                        })
+                    if item["kind"] == "avg_pool1d_k2_s2":
+                        result.update({
+                            "cpu_oracle_accumulation_order": "positive_zero_then_tap_0_then_tap_1_fp32",
+                            "mean_scaling": "fp32_divide_by_2",
                             "output_conversion": "bfloat16_round_to_nearest_ties_to_even",
                             "bf16_exact_halfway_cases": 2,
                             "bf16_exact_halfway_even_lsb_cases": 1,
@@ -120,10 +136,10 @@ def _write_fake_xcrun(path: Path) -> None:
                         "result": result,
                     })
                 observation = {
-                    "schema_version": 1,
-                    "kind": "open_cake_metal_operator_dispatch_v1",
+                    "schema_version": 2,
+                    "kind": "open_cake_metal_operator_dispatch_v2",
                     "status": "passed",
-                    "kernel_calls": 2,
+                    "kernel_calls": len(operators),
                     "device": {
                         "name": "Apple test double",
                         "registry_id": 1,
@@ -167,14 +183,14 @@ class MetalOperatorProbeContractTests(unittest.TestCase):
         self.assertFalse(result["performance_measured"])
         self.assertFalse(result["scientific_claim_authorized"])
         self.assertTrue(result["temporary_directory_cleaned"])
-        self.assertEqual(result["toolchain"]["compiled_air_count"], 2)
+        self.assertEqual(result["toolchain"]["compiled_air_count"], 3)
         self.assertTrue(result["toolchain"]["linked_metallib"])
         self.assertEqual(
             [item["kind"] for item in result["lowerings"]],
-            ["indexed_gather", "weighted_combine"],
+            ["indexed_gather", "weighted_combine", "avg_pool1d_k2_s2"],
         )
         dispatch = result["dispatch_observation"]
-        self.assertEqual(dispatch["kernel_calls"], 2)
+        self.assertEqual(dispatch["kernel_calls"], 3)
         self.assertEqual(dispatch["input_coverage"]["valid_pairs"], 32)
         for operator in dispatch["operators"]:
             self.assertEqual(operator["kernel_calls"], 1)
@@ -296,10 +312,23 @@ class MetalOperatorProbeContractTests(unittest.TestCase):
             self.assertEqual(operator["result"]["mismatch_count"], 0)
             self.assertTrue(operator["result"]["all_bits_match"])
             self.assertEqual(operator["result"]["command_buffer_status"], "completed")
-        weighted = result["dispatch_observation"]["operators"][1]["result"]
+        observations = {
+            item["kind"]: item["result"]
+            for item in result["dispatch_observation"]["operators"]
+        }
+        weighted = observations["weighted_combine"]
         self.assertEqual(weighted["bf16_exact_halfway_cases"], 2)
         self.assertEqual(weighted["bf16_exact_halfway_even_lsb_cases"], 1)
         self.assertEqual(weighted["bf16_exact_halfway_odd_lsb_cases"], 1)
+        pool = observations["avg_pool1d_k2_s2"]
+        self.assertEqual(
+            pool["cpu_oracle_accumulation_order"],
+            "positive_zero_then_tap_0_then_tap_1_fp32",
+        )
+        self.assertEqual(pool["mean_scaling"], "fp32_divide_by_2")
+        self.assertEqual(pool["bf16_exact_halfway_cases"], 2)
+        self.assertEqual(pool["bf16_exact_halfway_even_lsb_cases"], 1)
+        self.assertEqual(pool["bf16_exact_halfway_odd_lsb_cases"], 1)
 
 
 if __name__ == "__main__":

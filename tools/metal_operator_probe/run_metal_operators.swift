@@ -2,12 +2,15 @@ import Darwin
 import Foundation
 import Metal
 
-private let dispatchKind = "open_cake_metal_operator_dispatch_v1"
+private let dispatchKind = "open_cake_metal_operator_dispatch_v2"
 private let tokenCount = 8
 private let expertCount = 4
 private let rowCount = 8
 private let routeCount = 8
 private let featureCount = 16
+private let poolInputFrameCount = 4
+private let poolOutputFrameCount = 2
+private let poolFeatureCount = 1280
 
 private enum ProbeError: Error, CustomStringConvertible {
     case failed(String)
@@ -93,9 +96,9 @@ private func parseLaunches(path: String) throws -> [Launch] {
         try JSONSerialization.jsonObject(with: Data(contentsOf: url)),
         "launch document"
     )
-    guard try integer(document["schema_version"], "schema_version", minimum: 1) == 1,
+    guard try integer(document["schema_version"], "schema_version", minimum: 1) == 2,
           let values = document["operators"] as? [Any],
-          values.count == 2 else {
+          values.count == 3 else {
         throw ProbeError.failed("launch document route contract differs")
     }
     let launches = try values.enumerated().map { index, value -> Launch in
@@ -124,8 +127,10 @@ private func parseLaunches(path: String) throws -> [Launch] {
             )
         )
     }
-    guard launches.map(\.kind) == ["indexed_gather", "weighted_combine"] else {
-        throw ProbeError.failed("launch document must name the two admitted operator kinds")
+    guard launches.map(\.kind) == [
+        "indexed_gather", "weighted_combine", "avg_pool1d_k2_s2",
+    ] else {
+        throw ProbeError.failed("launch document must name the three admitted operator kinds")
     }
     return launches
 }
@@ -476,11 +481,84 @@ private func runProbe(metallibPath: String, launchPath: String) throws -> [Strin
         throw ProbeError.failed("weighted_combine BF16 bit mismatch count: \(combineMismatch)")
     }
 
+    // This fixture is independent of the generated kernel.  The first output frame
+    // contains one exact BF16 halfway case for each retained-LSB parity.  The second
+    // covers a negative result and exact cancellation; all other channels are +0.
+    var poolInput = [UInt16](
+        repeating: 0,
+        count: poolInputFrameCount * poolFeatureCount
+    )
+    poolInput[0 * poolFeatureCount + 0] = 0x3f80
+    poolInput[0 * poolFeatureCount + 1] = 0x3f81
+    poolInput[1 * poolFeatureCount + 0] = 0x3f81
+    poolInput[1 * poolFeatureCount + 1] = 0x3f82
+    poolInput[2 * poolFeatureCount + 0] = 0xc080
+    poolInput[2 * poolFeatureCount + 1] = 0x4780
+    poolInput[3 * poolFeatureCount + 0] = 0x4000
+    poolInput[3 * poolFeatureCount + 1] = 0xc780
+
+    var expectedPool = [UInt16]()
+    expectedPool.reserveCapacity(poolOutputFrameCount * poolFeatureCount)
+    var poolHalfwayEvenLSB = 0
+    var poolHalfwayOddLSB = 0
+    for outputFrame in 0..<poolOutputFrameCount {
+        for feature in 0..<poolFeatureCount {
+            var poolSum = Float(0)
+            let tap0 = bfloat16ToFloat(
+                poolInput[(outputFrame * 2 + 0) * poolFeatureCount + feature]
+            )
+            let tap1 = bfloat16ToFloat(
+                poolInput[(outputFrame * 2 + 1) * poolFeatureCount + feature]
+            )
+            poolSum = poolSum + tap0
+            poolSum = poolSum + tap1
+            let poolAverage = poolSum / Float(2)
+            if poolAverage.bitPattern & 0xffff == 0x8000 {
+                if (poolAverage.bitPattern >> 16) & 1 == 0 {
+                    poolHalfwayEvenLSB += 1
+                } else {
+                    poolHalfwayOddLSB += 1
+                }
+            }
+            expectedPool.append(floatToBFloat16RNE(poolAverage))
+        }
+    }
+    guard poolHalfwayEvenLSB == 1, poolHalfwayOddLSB == 1 else {
+        throw ProbeError.failed(
+            "avg_pool1d_k2_s2 oracle no longer covers both BF16 halfway parities"
+        )
+    }
+    guard Array(expectedPool.prefix(2)) == [0x3f80, 0x3f82],
+          expectedPool[poolFeatureCount] == 0xbf80,
+          expectedPool[poolFeatureCount + 1] == 0x0000 else {
+        throw ProbeError.failed("avg_pool1d_k2_s2 edge oracle values drifted")
+    }
+
+    let poolInputBuffer = try makeBuffer(device, values: poolInput, label: "input")
+    let poolOutput = try makeOutputBuffer(
+        device,
+        elementCount: expectedPool.count,
+        label: "avg_pool_output"
+    )
+    let poolLaunch = launches[2]
+    let (poolPipeline, poolStatus) = try dispatch(
+        device: device,
+        queue: queue,
+        library: library,
+        launch: poolLaunch,
+        buffers: ["input": poolInputBuffer, "output": poolOutput]
+    )
+    let observedPool = readBFloat16Bits(poolOutput, count: expectedPool.count)
+    let poolMismatch = zip(observedPool, expectedPool).filter { $0 != $1 }.count
+    guard poolMismatch == 0 else {
+        throw ProbeError.failed("avg_pool1d_k2_s2 BF16 bit mismatch count: \(poolMismatch)")
+    }
+
     return [
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": dispatchKind,
         "status": "passed",
-        "kernel_calls": 2,
+        "kernel_calls": 3,
         "device": [
             "name": device.name,
             "registry_id": device.registryID,
@@ -521,6 +599,28 @@ private func runProbe(metallibPath: String, launchPath: String) throws -> [Strin
                     "bf16_exact_halfway_cases": exactHalfwayEvenLSB + exactHalfwayOddLSB,
                     "bf16_exact_halfway_even_lsb_cases": exactHalfwayEvenLSB,
                     "bf16_exact_halfway_odd_lsb_cases": exactHalfwayOddLSB,
+                ],
+            ],
+            [
+                "kind": poolLaunch.kind,
+                "entry_point": poolLaunch.entryPoint,
+                "kernel_calls": 1,
+                "pipeline": pipelineObservation(poolPipeline, launch: poolLaunch),
+                "result": [
+                    "output_element_count": observedPool.count,
+                    "expected_bf16_bits": expectedPool,
+                    "observed_bf16_bits": observedPool,
+                    "mismatch_count": poolMismatch,
+                    "all_bits_match": true,
+                    "command_buffer_status": poolStatus,
+                    "cpu_oracle_accumulation_order":
+                        "positive_zero_then_tap_0_then_tap_1_fp32",
+                    "mean_scaling": "fp32_divide_by_2",
+                    "output_conversion": "bfloat16_round_to_nearest_ties_to_even",
+                    "bf16_exact_halfway_cases":
+                        poolHalfwayEvenLSB + poolHalfwayOddLSB,
+                    "bf16_exact_halfway_even_lsb_cases": poolHalfwayEvenLSB,
+                    "bf16_exact_halfway_odd_lsb_cases": poolHalfwayOddLSB,
                 ],
             ],
         ],

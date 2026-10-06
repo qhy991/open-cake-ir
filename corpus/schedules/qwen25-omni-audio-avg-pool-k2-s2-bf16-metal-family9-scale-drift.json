@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "schedule_id": "qwen25-omni-audio-avg-pool-k2-s2-bf16-metal-family9-scale-drift-v1",
+  "target": "apple_gpu_family9",
+  "roles": [
+    {
+      "name": "compute",
+      "warps": [
+        0
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "input",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        4,
+        1280
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "output",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        2,
+        1280
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "pool_window",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        2,
+        1280
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "pool_sum",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        1280
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "pool_average",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        1280
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_pool_window",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "input"
+      ],
+      "writes": [
+        "pool_window"
+      ],
+      "parameters": {
+        "movement": "global",
+        "reuse": "streamed"
+      }
+    },
+    {
+      "id": "sum_pool_window",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "pool_window"
+      ],
+      "writes": [
+        "pool_sum"
+      ],
+      "depends_on": [
+        "load_pool_window"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 0,
+        "scope": "cta"
+      }
+    },
+    {
+      "id": "average_pool_window",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "pool_sum"
+      ],
+      "writes": [
+        "pool_average"
+      ],
+      "depends_on": [
+        "sum_pool_window"
+      ],
+      "parameters": {
+        "op": "div",
+        "scalar": 4.0
+      }
+    },
+    {
+      "id": "store_output",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "pool_average"
+      ],
+      "writes": [
+        "output"
+      ],
+      "depends_on": [
+        "average_pool_window"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "outputs": [
+    "output"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "output_frame",
+        "axis": 0,
+        "buffer": "input",
+        "dimension": 0,
+        "tile": 2
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_pool_window",
+      "buffer": "input",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "output_frame"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_output",
+      "buffer": "output",
+      "indices": [
+        {
+          "source": "program",
+          "name": "output_frame"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {
+    "workload_contract_sha256": "4c643e9b42ff399b20efd9871b53186dde04e946873b0421bc789c622a61cf58"
+  },
+  "lowering": {
+    "backend": "metal",
+    "entry_point": "cake_qwen25_omni_audio_avg_pool_k2_s2_metal"
+  }
+}

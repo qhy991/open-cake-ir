@@ -548,6 +548,30 @@
       }
     },
     {
+      "case_id": "qwen25-omni-audio-avg-pool-metal-accepted",
+      "schedule": "corpus/schedules/qwen25-omni-audio-avg-pool-k2-s2-bf16-metal-family9.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "7bd5856fa1a6be0b1781fc45a6afffc56d032692ddfb3860f5a57f1fd0801baa",
+        "lowering_source_sha256": "2012ffaacfb5d46ebc456910e3f0ba0013aff1ddc0872673c8b145b31ec33720"
+      }
+    },
+    {
+      "case_id": "qwen25-omni-audio-avg-pool-metal-scale-drift",
+      "schedule": "corpus/schedules/qwen25-omni-audio-avg-pool-k2-s2-bf16-metal-family9-scale-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "METAL_OPERATION_CONTRACT_UNSUPPORTED"
+        ],
+        "schedule_sha256": "e75f5e74892f31fcb0a120334dc7440279e4ab579d5b17a75794d43e0d3b4bb7",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "rope-b8-fused-subrange",
       "schedule": "corpus/schedules/rope-b8-fused.json",
       "expected": {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lower, compile, and correctness-smoke two finite Metal operator graphs.
+"""Lower, compile, and correctness-smoke three finite Metal operator graphs.
 
 This is an engineering probe, not an Evaluation assay.  It takes no timings and grants
 no scientific claim authority.  Launch geometry and buffer order come from each live
@@ -28,8 +28,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler.core import Compiler, Lowering  # noqa: E402
 
 
-_PROBE_KIND = "open_cake_metal_operator_probe_v1"
-_DISPATCH_KIND = "open_cake_metal_operator_dispatch_v1"
+_PROBE_KIND = "open_cake_metal_operator_probe_v2"
+_DISPATCH_KIND = "open_cake_metal_operator_dispatch_v2"
 _RUNNER = ROOT / "tools/metal_operator_probe/run_metal_operators.swift"
 _OPERATORS = (
     (
@@ -43,6 +43,12 @@ _OPERATORS = (
         "corpus/schedules/kda-weighted-combine-b8-metal-family9.json",
         ("expert_rows", "expert_ids", "row_ids", "route_weights", "output"),
         8 * 16,
+    ),
+    (
+        "avg_pool1d_k2_s2",
+        "corpus/schedules/qwen25-omni-audio-avg-pool-k2-s2-bf16-metal-family9.json",
+        ("input", "output"),
+        2 * 1280,
     ),
 )
 _MAXIMUM_OUTPUT_BYTES = 4 * 1024 * 1024
@@ -299,7 +305,7 @@ def _launch_document(
                 ),
             }
         )
-    return {"schema_version": 1, "operators": operators}
+    return {"schema_version": 2, "operators": operators}
 
 
 def _bits(value: object, count: int, context: str) -> tuple[int, ...]:
@@ -321,10 +327,10 @@ def _validate_dispatch(
             "dispatch_output", "Swift runner output is not one JSON document"
         ) from error
     if (
-        document.get("schema_version") != 1
+        document.get("schema_version") != 2
         or document.get("kind") != _DISPATCH_KIND
         or document.get("status") != "passed"
-        or _integer(document.get("kernel_calls"), "kernel_calls") != 2
+        or _integer(document.get("kernel_calls"), "kernel_calls") != len(_OPERATORS)
     ):
         raise ProbeFailure("dispatch_output", "Swift runner route contract differs")
     device = _mapping(document.get("device"), "device")
@@ -360,7 +366,7 @@ def _validate_dispatch(
     if (
         not isinstance(requested, list)
         or not isinstance(observed, list)
-        or len(observed) != 2
+        or len(observed) != len(_OPERATORS)
     ):
         raise ProbeFailure(
             "dispatch_output", "Swift runner operator observations differ"
@@ -442,6 +448,19 @@ def _validate_dispatch(
             raise ProbeFailure(
                 "dispatch_output", "weighted_combine oracle contract differs"
             )
+        if kind == "avg_pool1d_k2_s2" and (
+            result.get("cpu_oracle_accumulation_order")
+            != "positive_zero_then_tap_0_then_tap_1_fp32"
+            or result.get("mean_scaling") != "fp32_divide_by_2"
+            or result.get("output_conversion")
+            != "bfloat16_round_to_nearest_ties_to_even"
+            or result.get("bf16_exact_halfway_cases") != 2
+            or result.get("bf16_exact_halfway_even_lsb_cases") != 1
+            or result.get("bf16_exact_halfway_odd_lsb_cases") != 1
+        ):
+            raise ProbeFailure(
+                "dispatch_output", "avg_pool1d_k2_s2 oracle contract differs"
+            )
     return document
 
 
@@ -452,7 +471,7 @@ def probe(
     timeout_seconds: int = 120,
     _host_system: str | None = None,
 ) -> dict[str, object]:
-    """Lower, compile, link, and dispatch both operator graphs exactly once."""
+    """Lower, compile, link, and dispatch all operator graphs exactly once."""
 
     host_system = platform.system() if _host_system is None else _host_system
     if host_system != "Darwin":
@@ -564,7 +583,7 @@ def probe(
         dispatch = _validate_dispatch(dispatch_process.stdout, launch_document)
         first_lowering = lowerings[0][2]
         result = {
-            "schema_version": 1,
+            "schema_version": 2,
             "kind": _PROBE_KIND,
             "status": "passed",
             "scientific_claim_authorized": False,
@@ -612,7 +631,7 @@ def probe(
 
 def _failure_document(error: ProbeFailure) -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": _PROBE_KIND,
         "status": "failed",
         "stage": error.stage,

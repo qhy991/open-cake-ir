@@ -21,8 +21,8 @@ the whole library is forbidden as clean-start authoring input.
 The initial seed is a representative tracer corpus, not a claim to reproduce the paper's
 unpublished full corpus or its reported count of roughly 28 families. It covers every
 top-level family visible in the frozen FlashInfer CAKE tracker, a focused cross-section of
-MLX's production Metal kernels, and four current ApxInf/M4 decode hotspots. No upstream
-source code is vendored.
+MLX's production Metal kernels, four current ApxInf/M4 decode hotspots, and the ApxInf
+Qwen2.5-Omni CUDA audio average-pooling path. No upstream source code is vendored.
 
 ## Validate and summarize
 

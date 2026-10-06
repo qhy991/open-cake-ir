@@ -1,0 +1,64 @@
+{
+  "$schema": "../schema.json#/$defs/operator_occurrence",
+  "schema_version": 1,
+  "operator_id": "pooling.average_pool_1d",
+  "implementation_id": "apxinf.cuda-qwen25-omni-audio-avg-pool1d-bf16",
+  "source_id": "apxinf-qwen25-omni-32ba4d4",
+  "family": "pooling",
+  "variant": "Qwen2.5-Omni audio BF16 average pool with kernel 2, stride 2 and no padding",
+  "scope": "single_kernel",
+  "semantic_role": "Halve the Qwen2.5-Omni audio encoder sequence by loading each adjacent BF16 frame pair, accumulating the two taps in FP32, dividing by two, and converting once to BF16; an unpaired trailing frame is outside the output window.",
+  "input_regime": {
+    "dtypes": ["bf16"],
+    "extent_class": "bounded_dynamic",
+    "shape_constraints": [
+      "Input is rank two with frame-major layout",
+      "The pinned Qwen2.5-Omni audio hidden width is 1280 channels",
+      "Kernel and stride are both two with no padding",
+      "Input frame count is at least two and the audio convolution length is at most 1500",
+      "Output frame count is floor(input frames divided by two), so an odd final frame is not read"
+    ]
+  },
+  "hardware_targets": ["cuda_gpu"],
+  "mechanisms": ["convolution_window", "elementwise_fusion", "reduction"],
+  "locators": [
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-cuda/kernels/custom/preprocess.cuh",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "git_object": "06b2ffd84bc8ae4fc4e3e51ae34eeab4f12c3086",
+      "symbol": "avg_pool1d_bf16_kernel"
+    },
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-cuda/src/kernels/preprocess.rs",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "git_object": "d29935ccb13602bd952ecb3be24c8b34b093dd47",
+      "symbol": "avg_pool1d_bf16"
+    },
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-model/src/qwen25_omni/audio.rs",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "git_object": "e4b03c98c93a07fc2ff992de1e212e17262e4c1d",
+      "symbol": "forward"
+    },
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-model/src/qwen25_omni/audio.rs",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "git_object": "e4b03c98c93a07fc2ff992de1e212e17262e4c1d",
+      "symbol": "output_token_count"
+    },
+    {
+      "kind": "repository_path",
+      "value": "crates/apxinf-model/src/qwen25_omni/config.rs",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "git_object": "02a4bac8d3b6d1b49484d5224b9dda5044c3dba7",
+      "symbol": "validate_pinned_contract"
+    }
+  ],
+  "upstream_state": "open",
+  "review_status": "semantics_reviewed",
+  "claim_scope": "source_fact_only"
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "../schema.json#/$defs/source_snapshot",
+  "schema_version": 1,
+  "source_id": "apxinf-qwen25-omni-32ba4d4",
+  "kind": "git_repository",
+  "title": "ApxInf Qwen2.5-Omni CUDA audio source tree",
+  "url": "https://github.com/qhy991/ApxInf",
+  "revision_kind": "git_commit",
+  "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+  "tree": "cba91dc9d9283d739abc6a83d824f5451ad01db9",
+  "observed_at": "2026-08-27",
+  "license_spdx": "NOASSERTION",
+  "visibility": "public",
+  "code_copied": false,
+  "authoring_access": {
+    "known_kernel_reproduction": true,
+    "clean_start": false
+  },
+  "catalog_entries": []
+}

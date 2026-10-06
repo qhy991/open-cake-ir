@@ -9,7 +9,7 @@
     "inclusions": [
       "Representative operator occurrences named by the CAKE paper and the frozen FlashInfer CAKE tracker, including both merged and open work with explicit review maturity.",
       "Production Metal kernel families from an exact MLX Git snapshot, selected to span contraction, normalization, attention, indexing, transforms, selection and convolution.",
-      "Current ApxInf Apple-silicon decode hotspots from an exact Git snapshot, selected as locally relevant known-kernel reproduction inputs.",
+      "Current ApxInf Apple-silicon decode hotspots and the Qwen2.5-Omni CUDA audio average-pooling path from exact Git snapshots, selected as locally relevant known-kernel reproduction inputs.",
       "Only source facts that can be traced to an immutable paper revision, tracker observation or Git commit and blob identity."
     ],
     "exclusions": [
@@ -34,6 +34,7 @@
     "indexing",
     "moe",
     "normalization",
+    "pooling",
     "recurrent",
     "routing",
     "selection",
@@ -90,6 +91,7 @@
   ],
   "sources": [
     "sources/apxinf-qhy-main-df5c55a.json",
+    "sources/apxinf-qwen25-omni-32ba4d4.json",
     "sources/cake-paper-v1.json",
     "sources/flash-kmeans-a44c93f.json",
     "sources/flashinfer-cake-tracker-20260826.json",
@@ -101,6 +103,7 @@
     "operators/apxinf-metal-w8-gdn-decode.json",
     "operators/apxinf-metal-w8-lm-head-top4.json",
     "operators/apxinf-metal-w8-mlp-block.json",
+    "operators/apxinf-qwen25-omni-audio-avg-pool1d-bf16.json",
     "operators/flash-kmeans-assign-bf16-online-argmin.json",
     "operators/flash-kmeans-centroid-update-sort-inverse.json",
     "operators/flashinfer-all-gather-matmul.json",

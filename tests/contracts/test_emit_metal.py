@@ -24,6 +24,14 @@ COMBINE = ROOT / "corpus/schedules/kda-weighted-combine-b8-metal-family9.json"
 COMBINE_DRIFT = (
     ROOT / "corpus/schedules/kda-weighted-combine-b8-metal-family9-role-drift.json"
 )
+AVG_POOL = (
+    ROOT
+    / "corpus/schedules/qwen25-omni-audio-avg-pool-k2-s2-bf16-metal-family9.json"
+)
+AVG_POOL_DRIFT = (
+    ROOT
+    / "corpus/schedules/qwen25-omni-audio-avg-pool-k2-s2-bf16-metal-family9-scale-drift.json"
+)
 
 
 def _schedule(path: Path) -> Schedule:
@@ -31,10 +39,10 @@ def _schedule(path: Path) -> Schedule:
 
 
 class MetalPreflightTest(unittest.TestCase):
-    def test_two_primitive_graphs_are_admitted_without_a_workload_registry(
+    def test_three_primitive_graphs_are_admitted_without_a_workload_registry(
         self,
     ) -> None:
-        for path in (GATHER, COMBINE):
+        for path in (GATHER, COMBINE, AVG_POOL):
             with self.subTest(path=path.name):
                 self.assertEqual(preflight(_schedule(path), TARGET), ())
 
@@ -42,6 +50,7 @@ class MetalPreflightTest(unittest.TestCase):
         expected = {
             GATHER_DRIFT: "METAL_OPERATION_CONTRACT_UNSUPPORTED",
             COMBINE_DRIFT: "METAL_EXECUTION_GROUPS_UNSUPPORTED",
+            AVG_POOL_DRIFT: "METAL_OPERATION_CONTRACT_UNSUPPORTED",
         }
         for path, code in expected.items():
             with self.subTest(path=path.name):
@@ -49,6 +58,20 @@ class MetalPreflightTest(unittest.TestCase):
                     code,
                     {item.code for item in preflight(_schedule(path), TARGET)},
                 )
+
+    def test_average_pool_shape_relation_drift_is_refused(self) -> None:
+        document = json.loads(AVG_POOL.read_text(encoding="utf-8"))
+        output = next(
+            buffer for buffer in document["buffers"] if buffer["name"] == "output"
+        )
+        output["shape"][0] = 3
+
+        findings = preflight(Schedule.from_dict(document), TARGET)
+
+        self.assertIn(
+            "METAL_OPERATION_GRAPH_UNSUPPORTED",
+            {item.code for item in findings},
+        )
 
     def test_buffer_order_is_part_of_the_lowering_abi(self) -> None:
         document = json.loads(GATHER.read_text(encoding="utf-8"))
@@ -117,6 +140,29 @@ class MetalEmissionTest(unittest.TestCase):
         for operation in schedule.operations:
             self.assertEqual(emission.source.count(f"CAKE_OP:{operation.op_id}"), 1)
 
+    def test_average_pool_uses_fp32_tap_order_and_one_bf16_store(self) -> None:
+        schedule = _schedule(AVG_POOL)
+
+        emission = emit(schedule, TARGET)
+
+        self.assertEqual(emission.toolchain["buffer_order"], ["input", "output"])
+        self.assertEqual(emission.toolchain["threadgroups_per_grid"], [2, 1, 1])
+        self.assertEqual(emission.toolchain["threads_per_threadgroup"], [32, 1, 1])
+        self.assertEqual(emission.constants["INPUT_FRAMES"], 4)
+        self.assertEqual(emission.constants["OUTPUT_FRAMES"], 2)
+        self.assertEqual(emission.constants["FEATURES"], 1280)
+        self.assertIn("float pool_sum = 0.0f", emission.source)
+        self.assertIn("pool_sum += float(pool_window[tap])", emission.source)
+        self.assertIn("pool_sum / float(KERNEL)", emission.source)
+        self.assertEqual(
+            emission.source.count(
+                "output[output_frame * FEATURES + feature] = bfloat(pool_average)"
+            ),
+            1,
+        )
+        for operation in schedule.operations:
+            self.assertEqual(emission.source.count(f"CAKE_OP:{operation.op_id}"), 1)
+
     def test_emission_is_deterministic(self) -> None:
         schedule = _schedule(COMBINE)
 
@@ -129,11 +175,11 @@ class MetalEmissionTest(unittest.TestCase):
         sys.platform == "darwin" and shutil.which("xcrun") is not None,
         "requires the Apple Metal command-line toolchain",
     )
-    def test_both_sources_compile_and_link_as_metal32(self) -> None:
+    def test_all_sources_compile_and_link_as_metal32(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             air_paths: list[Path] = []
-            for path in (GATHER, COMBINE):
+            for path in (GATHER, COMBINE, AVG_POOL):
                 emission = emit(_schedule(path), TARGET)
                 source = output / f"{path.stem}.metal"
                 air = output / f"{path.stem}.air"
@@ -179,7 +225,11 @@ class MetalCompilerIntegrationTest(unittest.TestCase):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def test_assess_and_lower_use_the_generated_backend_seam(self) -> None:
-        for path, expected_threads in ((GATHER, 128), (COMBINE, 32)):
+        for path, expected_threads in (
+            (GATHER, 128),
+            (COMBINE, 32),
+            (AVG_POOL, 32),
+        ):
             with self.subTest(path=path.name):
                 assessment = self.compiler.assess_file(path)
                 self.assertTrue(assessment.accepted)
@@ -199,7 +249,7 @@ class MetalCompilerIntegrationTest(unittest.TestCase):
                 )
 
     def test_drift_is_refused_before_lowering(self) -> None:
-        for path in (GATHER_DRIFT, COMBINE_DRIFT):
+        for path in (GATHER_DRIFT, COMBINE_DRIFT, AVG_POOL_DRIFT):
             with self.subTest(path=path.name):
                 assessment = self.compiler.assess_file(path)
                 self.assertTrue(assessment.accepted)

@@ -7,7 +7,7 @@
   "input_library": {
     "manifest_path": "operator_library/manifest.json",
     "library_id": "open-cake-operator-library-v1",
-    "canonical_sha256": "1d93ccef930b49a3e4d8b4e9c167799c4af9708d2ed53da6030966c299040b57"
+    "canonical_sha256": "fb2998131bc270408aa7a73505f41934b8d9255de538b32476a402012c79c228"
   },
   "selection_policy": {
     "name": "source-grounded-recurrence-tracer-v1",
@@ -39,12 +39,15 @@
       "The matrix-loop recurrence establishes no asynchronous overlap, double buffering, resource, occupancy, throughput, instruction mapping, Compiler or Target contract, Schedule or lowering result, and does not alter the frozen Stage 3 candidate closure.",
       "The scan and sort observations share only a generic thread-state and threadgroup-scratch handoff; they have no common state algebra, participant topology, scratch shape, consumption transform, or advancement rule, so no candidate is admitted from that intersection.",
       "The contiguous-scan observation does not widen hierarchical-simdgroup-threadgroup-reduction: its last-lane publication and first-SIMDgroup exclusive prefix scan are not lane-zero partial publication followed by a second reduction. The sort observation supplies no SIMDgroup reduction, and neither observation is evidence for an existing candidate.",
-      "The standalone scan and sort observations establish no barrier safety, bounds, memory safety, stability, deterministic or numerical equivalence, correctness, performance, resource, instruction-mapping, Compiler, Target, Schedule, lowering, or Stage 3 result."
+      "The standalone scan and sort observations establish no barrier safety, bounds, memory safety, stability, deterministic or numerical equivalence, correctness, performance, resource, instruction-mapping, Compiler, Target, Schedule, lowering, or Stage 3 result.",
+      "The ApxInf average-pool observation has only one implementation ID and one Git blob, so it remains below the local candidate threshold and does not widen the six-candidate Stage 3 closure.",
+      "The average-pool observation establishes no host-argument validation, odd-tail safety, generated instruction order, bitwise numerical equivalence, correctness, performance, Compiler primitive, Target capability, Schedule form, lowering route, or Stage 3 result."
     ]
   },
   "observations": [
     "observations/apxinf-full-attention-input-rms-modulation.json",
     "observations/apxinf-full-attention-qgkv-row-projection.json",
+    "observations/apxinf-qwen25-omni-audio-avg-pool1d-tap-reduction.json",
     "observations/apxinf-w8-gdn-input-row-projection.json",
     "observations/apxinf-w8-gdn-norm-gate-rms-modulation.json",
     "observations/apxinf-w8-lm-head-row-projection.json",
@@ -70,9 +73,9 @@
     "candidates/two-pass-row-rms-modulation.json"
   ],
   "counts": {
-    "observation_count": 17,
+    "observation_count": 18,
     "candidate_count": 6,
-    "implementation_count": 15,
-    "source_count": 2
+    "implementation_count": 16,
+    "source_count": 3
   }
 }

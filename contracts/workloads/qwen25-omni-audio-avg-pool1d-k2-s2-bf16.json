@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "workload_id": "qwen25-omni-audio-avg-pool1d-k2-s2-bf16-independent-v1",
+  "revision": "1",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "upstream_git_callsite",
+      "repository": "https://github.com/qhy991/ApxInf.git",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "path": "crates/apxinf-model/src/qwen25_omni/audio.rs",
+      "call": "avg_pool1d(&hidden, 2, 2)"
+    },
+    {
+      "kind": "upstream_git_kernel",
+      "repository": "https://github.com/qhy991/ApxInf.git",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "path": "crates/apxinf-cuda/kernels/custom/preprocess.cuh",
+      "symbol": "avg_pool1d_bf16_kernel"
+    },
+    {
+      "kind": "upstream_git_configuration",
+      "repository": "https://github.com/qhy991/ApxInf.git",
+      "revision": "32ba4d47b961b495dd878ccb99dfe6bd21d7970f",
+      "path": "crates/apxinf-model/src/qwen25_omni/config.rs",
+      "assertion": "audio.hidden_size == 1280"
+    }
+  ],
+  "operator": "qwen25_omni_audio_avg_pool1d_bf16",
+  "cases": [
+    {
+      "case_id": "rounding_fixture_frames4_features2",
+      "shape": {
+        "input_frames": 4,
+        "output_frames": 2,
+        "features": 2
+      },
+      "seed": null,
+      "mode": "constructed_bf16_rounding_fixture"
+    },
+    {
+      "case_id": "audio_hidden_smoke_frames4_features1280",
+      "shape": {
+        "input_frames": 4,
+        "output_frames": 2,
+        "features": 1280
+      },
+      "seed": null,
+      "mode": "constructed_finite_bf16_smoke"
+    }
+  ],
+  "tensors": {
+    "input": {
+      "shape": [
+        "input_frames",
+        "features"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "finite_only": true
+    },
+    "output": {
+      "shape": [
+        "output_frames",
+        "features"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    }
+  },
+  "semantics": {
+    "definition": "output[o,c] = bf16_rne((fp32(input[2*o,c]) + fp32(input[2*o+1,c])) / fp32(2))",
+    "kernel_size": 2,
+    "stride": 2,
+    "padding": 0,
+    "frame_domain": "input_frames_is_even_and_output_frames_equals_input_frames_div_2",
+    "odd_input_frames": "unsupported",
+    "accumulator_dtype": "fp32",
+    "accumulation_order": "positive_zero_then_tap_0_then_tap_1",
+    "mean_scaling": "fp32_divide_by_2",
+    "output_conversion": "one_bfloat16_round_to_nearest_ties_to_even",
+    "nonfinite": "reject_before_oracle"
+  },
+  "oracle": {
+    "kind": "packed_little_endian_bf16_fp32_tap_order",
+    "rounding_fixture_input_bf16_bits": [
+      16256,
+      16257,
+      16257,
+      16258,
+      49280,
+      18304,
+      16384,
+      51072
+    ],
+    "rounding_fixture_output_bf16_bits": [
+      16256,
+      16258,
+      49024,
+      0
+    ],
+    "smoke_input_formula": "bf16_rne(fp32((((frame * 17 + feature * 13) % 257) - 128) / 16))"
+  },
+  "validation": {
+    "canonical": "exact_bf16_output_bits",
+    "atol": 0.0,
+    "rtol": 0.0,
+    "paper_acceptance_rule": "not_applicable_operator_representation_probe"
+  }
+}

@@ -1,10 +1,11 @@
 """Emit the first finite Metal Shading Language subset from a Schedule.
 
-The Module is an Adapter behind the generated-backend Seam.  It recognizes two
-operation graphs rather than workload names: a runtime-indexed BF16 gather and the same
-gather followed by FP32 weighting and reduction.  Every accepted commitment is checked
-by :func:`preflight`; direct emitter users and ``Compiler.assess`` therefore refuse the
-same unsupported Schedule before source generation.
+The Module is an Adapter behind the generated-backend Seam.  It recognizes three
+operation graphs rather than workload names: a runtime-indexed BF16 gather, the same
+gather followed by FP32 weighting and reduction, and a two-frame BF16 average pool with
+FP32 accumulation.  Every accepted commitment is checked by :func:`preflight`; direct
+emitter users and ``Compiler.assess`` therefore refuse the same unsupported Schedule
+before source generation.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ SUPPORTED_OPERATION_KINDS = frozenset(
 class _GraphKind(str, Enum):
     INDEXED_GATHER = "indexed_gather"
     WEIGHTED_COMBINE = "weighted_combine"
+    AVG_POOL_1D_K2_S2 = "avg_pool1d_k2_s2"
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,18 @@ _WEIGHTED_COMBINE = _Graph(
     ),
     1,
     ("expert_rows", "expert_ids", "row_ids", "route_weights", "output"),
+)
+
+_AVG_POOL_1D_K2_S2 = _Graph(
+    _GraphKind.AVG_POOL_1D_K2_S2,
+    (
+        "load_pool_window",
+        "sum_pool_window",
+        "average_pool_window",
+        "store_output",
+    ),
+    1,
+    ("input", "output"),
 )
 
 
@@ -163,6 +177,14 @@ _COMBINE_BUFFER_ORDER = (
     "selected_rows",
     "weighted_rows",
     "combined_row",
+)
+
+_AVG_POOL_BUFFER_ORDER = (
+    "input",
+    "output",
+    "pool_window",
+    "pool_sum",
+    "pool_average",
 )
 
 
@@ -249,6 +271,37 @@ _COMBINE_OPERATIONS = (
     ),
 )
 
+_AVG_POOL_OPERATIONS = (
+    (
+        "load_pool_window",
+        OperationKind.LOAD,
+        ("input",),
+        ("pool_window",),
+        (),
+    ),
+    (
+        "sum_pool_window",
+        OperationKind.REDUCE,
+        ("pool_window",),
+        ("pool_sum",),
+        ("load_pool_window",),
+    ),
+    (
+        "average_pool_window",
+        OperationKind.ELEMENTWISE,
+        ("pool_sum",),
+        ("pool_average",),
+        ("sum_pool_window",),
+    ),
+    (
+        "store_output",
+        OperationKind.STORE,
+        ("pool_average",),
+        ("output",),
+        ("average_pool_window",),
+    ),
+)
+
 
 def _index(
     source: AccessIndexKind, name: str | None = None, dimension: int | None = None
@@ -311,12 +364,64 @@ _COMBINE_ACCESS = {
     ),
 }
 
+_AVG_POOL_ACCESS = {
+    ("load_pool_window", "input"): (
+        (
+            _index(AccessIndexKind.PROGRAM_TILE, "output_frame"),
+            _index(AccessIndexKind.DIMENSION, dimension=1),
+        ),
+        BoundaryPolicy.MASK_TILED_AXES,
+    ),
+    ("store_output", "output"): (
+        (
+            _index(AccessIndexKind.PROGRAM, "output_frame"),
+            _index(AccessIndexKind.DIMENSION, dimension=1),
+        ),
+        BoundaryPolicy.MASK_TILED_AXES,
+    ),
+}
+
 
 def _buffer_signature(schedule: Schedule) -> dict[str, tuple[object, ...]]:
     return {
         item.name: (item.space, item.dtype, item.shape, item.mode)
         for item in schedule.buffers
     }
+
+
+def _avg_pool_buffers_match(schedule: Schedule) -> bool:
+    if tuple(item.name for item in schedule.buffers) != _AVG_POOL_BUFFER_ORDER:
+        return False
+    input_buffer = schedule.buffer("input")
+    output = schedule.buffer("output")
+    window = schedule.buffer("pool_window")
+    pool_sum = schedule.buffer("pool_sum")
+    average = schedule.buffer("pool_average")
+    if any(item is None for item in (input_buffer, output, window, pool_sum, average)):
+        return False
+    assert input_buffer is not None
+    assert output is not None
+    assert window is not None
+    assert pool_sum is not None
+    assert average is not None
+    if len(input_buffer.shape) != 2 or len(output.shape) != 2:
+        return False
+    input_frames, features = input_buffer.shape
+    output_frames, output_features = output.shape
+    return (
+        (input_buffer.space, input_buffer.dtype, input_buffer.mode)
+        == (MemorySpace.GLOBAL, DType.BF16, BufferMode.INPUT)
+        and (output.space, output.dtype, output.mode)
+        == (MemorySpace.GLOBAL, DType.BF16, BufferMode.OUTPUT)
+        and input_frames == output_frames * 2
+        and features == output_features
+        and (window.space, window.dtype, window.shape, window.mode)
+        == (MemorySpace.REGISTER, DType.BF16, (2, features), BufferMode.SCRATCH)
+        and (pool_sum.space, pool_sum.dtype, pool_sum.shape, pool_sum.mode)
+        == (MemorySpace.REGISTER, DType.FP32, (features,), BufferMode.SCRATCH)
+        and (average.space, average.dtype, average.shape, average.mode)
+        == (MemorySpace.REGISTER, DType.FP32, (features,), BufferMode.SCRATCH)
+    )
 
 
 def _graph_from_buffers(schedule: Schedule) -> _Graph | None:
@@ -326,15 +431,17 @@ def _graph_from_buffers(schedule: Schedule) -> _Graph | None:
         return _INDEXED_GATHER
     if signature == _COMBINE_BUFFERS and buffer_order == _COMBINE_BUFFER_ORDER:
         return _WEIGHTED_COMBINE
+    if _avg_pool_buffers_match(schedule):
+        return _AVG_POOL_1D_K2_S2
     return None
 
 
 def _operation_graph_matches(schedule: Schedule, graph: _Graph) -> bool:
-    expected = (
-        _GATHER_OPERATIONS
-        if graph.kind is _GraphKind.INDEXED_GATHER
-        else _COMBINE_OPERATIONS
-    )
+    expected = {
+        _GraphKind.INDEXED_GATHER: _GATHER_OPERATIONS,
+        _GraphKind.WEIGHTED_COMBINE: _COMBINE_OPERATIONS,
+        _GraphKind.AVG_POOL_1D_K2_S2: _AVG_POOL_OPERATIONS,
+    }[graph.kind]
     observed = tuple(
         (item.op_id, item.kind, item.reads, item.writes, item.depends_on)
         for item in schedule.operations
@@ -365,18 +472,31 @@ def _operation_parameters_match(schedule: Schedule, graph: _Graph) -> bool:
             if not isinstance(parameters, StoreParameters) or not parameters.coalesced:
                 return False
         elif operation.kind is OperationKind.ELEMENTWISE:
-            if not (
+            weighted_combine = (
                 graph.kind is _GraphKind.WEIGHTED_COMBINE
                 and isinstance(parameters, ElementwiseParameters)
                 and parameters.op is ElementwiseOp.MUL
                 and parameters.scalar is None
                 and parameters.broadcast_axis == 0
                 and parameters.instruction is None
-            ):
+            )
+            average_pool = (
+                graph.kind is _GraphKind.AVG_POOL_1D_K2_S2
+                and isinstance(parameters, ElementwiseParameters)
+                and parameters.op is ElementwiseOp.DIV
+                and parameters.scalar == 2.0
+                and parameters.broadcast_axis is None
+                and parameters.instruction is None
+            )
+            if not (weighted_combine or average_pool):
                 return False
         elif operation.kind is OperationKind.REDUCE:
             if not (
-                graph.kind is _GraphKind.WEIGHTED_COMBINE
+                graph.kind
+                in {
+                    _GraphKind.WEIGHTED_COMBINE,
+                    _GraphKind.AVG_POOL_1D_K2_S2,
+                }
                 and isinstance(parameters, ReduceParameters)
                 and parameters.op is ReduceOp.SUM
                 and parameters.axis == 0
@@ -387,9 +507,11 @@ def _operation_parameters_match(schedule: Schedule, graph: _Graph) -> bool:
 
 
 def _access_maps_match(schedule: Schedule, graph: _Graph) -> bool:
-    expected = (
-        _GATHER_ACCESS if graph.kind is _GraphKind.INDEXED_GATHER else _COMBINE_ACCESS
-    )
+    expected = {
+        _GraphKind.INDEXED_GATHER: _GATHER_ACCESS,
+        _GraphKind.WEIGHTED_COMBINE: _COMBINE_ACCESS,
+        _GraphKind.AVG_POOL_1D_K2_S2: _AVG_POOL_ACCESS,
+    }[graph.kind]
     observed = {
         (item.operation, item.buffer): (
             tuple(
@@ -446,35 +568,46 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
         "this Metal subset admits no allocations, pipelines, barriers, tile loops, or residency override",
     )
 
-    program_map = schedule.program_map
-    program_ok = False
-    if (
-        program_map is not None
-        and not program_map.persistent
-        and len(program_map.axes) == 1
-    ):
-        axis = program_map.axes[0]
-        program_ok = (
-            axis.name == "token"
-            and axis.axis == 0
-            and axis.buffer == "expert_ids"
-            and axis.dimension == 0
-            and axis.tile == 1
-            and program_map.traversal is None
-        )
-    add(
-        program_ok,
-        "METAL_PROGRAM_MAP_UNSUPPORTED",
-        "program_map",
-        "this Metal subset requires one non-persistent token program axis",
-    )
-
     graph = _graph_from_buffers(schedule)
     add(
         graph is not None,
         "METAL_OPERATION_GRAPH_UNSUPPORTED",
         "buffers",
-        "the Metal Adapter implements only the declared indexed-gather and weighted-combine graphs",
+        "the Metal Adapter implements only the declared indexed-gather, weighted-combine, and two-frame average-pool graphs",
+    )
+
+    program_map = schedule.program_map
+    program_ok = False
+    if (
+        graph is not None
+        and program_map is not None
+        and not program_map.persistent
+        and len(program_map.axes) == 1
+    ):
+        axis = program_map.axes[0]
+        if graph.kind is _GraphKind.AVG_POOL_1D_K2_S2:
+            program_ok = (
+                axis.name == "output_frame"
+                and axis.axis == 0
+                and axis.buffer == "input"
+                and axis.dimension == 0
+                and axis.tile == 2
+                and program_map.traversal is None
+            )
+        else:
+            program_ok = (
+                axis.name == "token"
+                and axis.axis == 0
+                and axis.buffer == "expert_ids"
+                and axis.dimension == 0
+                and axis.tile == 1
+                and program_map.traversal is None
+            )
+    add(
+        program_ok,
+        "METAL_PROGRAM_MAP_UNSUPPORTED",
+        "program_map",
+        "this Metal subset requires the graph's exact non-persistent program axis",
     )
     if graph is None:
         return tuple(findings)
@@ -512,11 +645,11 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
     )
     add(
         schedule.outputs
-        == (
-            ("gathered_rows",)
-            if graph.kind is _GraphKind.INDEXED_GATHER
-            else ("output",)
-        ),
+        == {
+            _GraphKind.INDEXED_GATHER: ("gathered_rows",),
+            _GraphKind.WEIGHTED_COMBINE: ("output",),
+            _GraphKind.AVG_POOL_1D_K2_S2: ("output",),
+        }[graph.kind],
         "METAL_OUTPUT_UNSUPPORTED",
         "outputs",
         "the declared output differs from the admitted operation graph",
@@ -524,7 +657,21 @@ def preflight(schedule: Schedule, target: Target) -> tuple[BackendPrecondition, 
     return tuple(findings)
 
 
-def _dimensions(schedule: Schedule) -> dict[str, int]:
+def _dimensions(schedule: Schedule, graph: _Graph) -> dict[str, int]:
+    if graph.kind is _GraphKind.AVG_POOL_1D_K2_S2:
+        input_buffer = schedule.buffer("input")
+        output = schedule.buffer("output")
+        assert input_buffer is not None and output is not None
+        input_frames, features = input_buffer.shape
+        output_frames, output_features = output.shape
+        assert features == output_features
+        return {
+            "INPUT_FRAMES": input_frames,
+            "OUTPUT_FRAMES": output_frames,
+            "FEATURES": features,
+            "KERNEL": 2,
+            "STRIDE": 2,
+        }
     expert_rows = schedule.buffer("expert_rows")
     expert_ids = schedule.buffer("expert_ids")
     assert expert_rows is not None and expert_ids is not None
@@ -539,8 +686,8 @@ def _dimensions(schedule: Schedule) -> dict[str, int]:
     }
 
 
-def _preamble(schedule: Schedule) -> list[str]:
-    dimensions = _dimensions(schedule)
+def _preamble(schedule: Schedule, graph: _Graph) -> list[str]:
+    dimensions = _dimensions(schedule, graph)
     schedule_id = source_comment_text(schedule.schedule_id)
     return [
         "#include <metal_stdlib>",
@@ -555,7 +702,7 @@ def _preamble(schedule: Schedule) -> list[str]:
 
 
 def _emit_indexed_gather(schedule: Schedule, entry_point: str) -> str:
-    lines = _preamble(schedule)
+    lines = _preamble(schedule, _INDEXED_GATHER)
     lines.extend(
         [
             f"kernel void {entry_point}(",
@@ -595,7 +742,7 @@ def _emit_indexed_gather(schedule: Schedule, entry_point: str) -> str:
 
 
 def _emit_weighted_combine(schedule: Schedule, entry_point: str) -> str:
-    lines = _preamble(schedule)
+    lines = _preamble(schedule, _WEIGHTED_COMBINE)
     lines.extend(
         [
             f"kernel void {entry_point}(",
@@ -658,6 +805,43 @@ def _emit_weighted_combine(schedule: Schedule, entry_point: str) -> str:
     return "\n".join(lines)
 
 
+def _emit_avg_pool_1d_k2_s2(schedule: Schedule, entry_point: str) -> str:
+    lines = _preamble(schedule, _AVG_POOL_1D_K2_S2)
+    lines.extend(
+        [
+            f"kernel void {entry_point}(",
+            "    device const bfloat *input [[buffer(0)]],",
+            "    device bfloat *output [[buffer(1)]],",
+            "    uint3 threadgroup_position [[threadgroup_position_in_grid]],",
+            "    uint thread_index [[thread_index_in_threadgroup]]) {",
+            "  const uint output_frame = threadgroup_position.x;",
+            "  const uint input_frame = output_frame * STRIDE;",
+            "  if (output_frame >= OUTPUT_FRAMES || input_frame + KERNEL > INPUT_FRAMES) return;",
+            "  for (uint feature = thread_index; feature < FEATURES; feature += 32u) {",
+            "    // CAKE_OP:load_pool_window",
+            "    bfloat pool_window[KERNEL];",
+            "    for (uint tap = 0; tap < KERNEL; ++tap)",
+            "      pool_window[tap] = input[(input_frame + tap) * FEATURES + feature];",
+            "",
+            "    // CAKE_OP:sum_pool_window",
+            "    float pool_sum = 0.0f;",
+            "    for (uint tap = 0; tap < KERNEL; ++tap)",
+            "      pool_sum += float(pool_window[tap]);",
+            "",
+            "    // CAKE_OP:average_pool_window",
+            "    const float pool_average = pool_sum / float(KERNEL);",
+            "",
+            "    // CAKE_OP:store_output",
+            "    output[output_frame * FEATURES + feature] = bfloat(pool_average);",
+            "  }",
+            "  // CAKE_KERNEL_END",
+            "}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def emit(
     schedule: Schedule,
     target: Target,
@@ -671,19 +855,27 @@ def emit(
     graph = _graph_from_buffers(schedule)
     assert graph is not None
     symbol = entry_point or schedule.lowering.entry_point
-    source = (
-        _emit_indexed_gather(schedule, symbol)
-        if graph.kind is _GraphKind.INDEXED_GATHER
-        else _emit_weighted_combine(schedule, symbol)
-    )
+    source = {
+        _GraphKind.INDEXED_GATHER: _emit_indexed_gather,
+        _GraphKind.WEIGHTED_COMBINE: _emit_weighted_combine,
+        _GraphKind.AVG_POOL_1D_K2_S2: _emit_avg_pool_1d_k2_s2,
+    }[graph.kind](schedule, symbol)
     threads = graph.execution_groups * target.execution_group_width
     constants = {
-        **_dimensions(schedule),
+        **_dimensions(schedule, graph),
         "EXECUTION_GROUPS": graph.execution_groups,
     }
     toolchain = {
         "buffer_order": list(graph.buffer_order),
-        "threadgroups_per_grid": [constants["TOKENS"], 1, 1],
+        "threadgroups_per_grid": [
+            constants[
+                "OUTPUT_FRAMES"
+                if graph.kind is _GraphKind.AVG_POOL_1D_K2_S2
+                else "TOKENS"
+            ],
+            1,
+            1,
+        ],
         "threads_per_threadgroup": [threads, 1, 1],
         "threadgroup_memory_bytes": 0,
         "language_standard": "metal3.2",

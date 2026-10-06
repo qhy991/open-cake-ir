@@ -50,13 +50,17 @@ The executable argument signature is derived from global Buffers and is never re
 an ABI label. Metadata may bind a Workload digest, but the Compiler does not infer a
 Workload from a route or hard-code its tensor shapes.
 
-The first `metal` Adapter targets `apple_gpu_family9` and admits two exact primitive
-compositions: a BF16 load indexed by two runtime INT32 Buffer coordinates, and that load
-followed by FP32 route weighting and a route-axis sum. Invalid expert or row coordinates
-produce zero, as required by `mask_tiled_axes`. The indexed gather uses four contiguous
-32-wide SIMDgroups; weighted combine uses one. Other roles, access maps, operation graphs,
-load-reuse commitments, or Target architectures are lowering-blocking backend Findings,
-never a fallback to Triton or a reinterpretation of the Schedule.
+The first `metal` Adapter targets `apple_gpu_family9` and admits three exact primitive
+compositions: a BF16 load indexed by two runtime INT32 Buffer coordinates; that load
+followed by FP32 route weighting and a route-axis sum; and an even-frame BF16
+`avg_pool1d(kernel=2, stride=2)` expressed as a two-frame load, tap-order FP32 sum, divide
+by `2.0`, and one BF16 store conversion. Invalid expert or row coordinates produce zero,
+as required by `mask_tiled_axes`. The indexed gather uses four contiguous 32-wide
+SIMDgroups; weighted combine and average pool each use one. Average pool requires the
+input frame extent to equal twice the output frame extent and does not admit an odd-frame
+tail. Other roles, access maps, operation graphs, load-reuse commitments, scalar values,
+shape relations, or Target architectures are lowering-blocking backend Findings, never a
+fallback to Triton or a reinterpretation of the Schedule.
 
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from

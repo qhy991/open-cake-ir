@@ -4,8 +4,8 @@ This directory is the first tracer for stage 2 of the method described in
 [CAKE v1 Appendix A](https://arxiv.org/html/2608.12629v1#A1): extract recurring
 abstractions from concrete operator implementations after corpus collection.
 The stage remains `in_progress`; this tracer records six recurring source
-patterns and does not claim that extraction over the operator library is
-complete.
+patterns plus three below-threshold source observations and does not claim that
+extraction over the operator library is complete.
 
 ## Contract
 
@@ -44,7 +44,7 @@ upstream bytes are intentionally not vendored, it does not fetch a repository or
 recompute a source-span hash. `semantics_reviewed` is therefore a reviewer
 attestation, not an automated source-content proof. The authoring/review workflow
 must independently recompute each Git blob and span hash from the pinned checkout;
-the seventeen observations in this tracer were checked that way before admission.
+the eighteen observations in this tracer were checked that way before admission.
 Free-text semantics likewise remain reviewer-attested: the validator enforces the
 closed `source_structure_only` and `source_pattern_only` claim scopes, but does
 not pretend that a lexical filter can prove the meaning of prose.
@@ -82,6 +82,16 @@ not pretend that a lexical filter can prove the meaning of prose.
   projected-SiLU fusion remain explicit variants.
 
 ## Below-threshold observations
+
+The ApxInf Qwen2.5-Omni audio average-pooling observation records one CUDA
+thread's source-level BF16 window loads, ordered FP32 tap accumulation, division
+by the runtime kernel extent, and one BF16 output conversion. The wider collected
+occurrence pins kernel two and stride two, but the cited kernel remains
+parameterized and does not itself validate the host-provided output extent or an
+odd-frame tail. With only one implementation ID and one Git blob, this structure
+does not meet the local two-implementation and two-blob candidate threshold.
+It therefore adds no `pooling.average_pool_1d` candidate and does not widen the
+six-candidate Stage 3 closure.
 
 The MLX contiguous-scan and block-merge-sort observations are intentionally not
 promoted to a candidate. Both carry thread-local state through a barrier,
