@@ -176,3 +176,55 @@ class MetalEvaluationPhases(unittest.TestCase):
                 local_broker._acquire(self.lock)
         finally:
             os.close(descriptor)
+
+    def submit_through_temporary_transport(self, *, fail=False):
+        import grp
+        import pwd
+        from hashlib import sha256
+        from open_cake_ir.lab.executor import ExecutorRevision
+        from open_cake_ir.lab.runtime import CommandBrokerSubmitter
+        from open_cake_ir.serialization import canonical_json_bytes
+        from tests.contracts._executor_fixture import compiler_reference
+        source = Path(__file__).resolve().parents[2]
+        workload_path = self.root / 'workload.json'
+        workload_path.write_bytes(canonical_json_bytes(self.workload.document))
+        wrapper = self.root / 'worker.py'
+        wrapper.write_text(
+            'import sys; sys.path.insert(0, ' + repr(str(source / 'src')) + ')\n'
+            'from unittest.mock import patch\n'
+            'from open_cake_ir.lab.executor import ExecutorRevision\n'
+            'from open_cake_ir.tasks import evaluate\n'
+            'with patch.object(ExecutorRevision, "admit_host", return_value=' + repr({
+                'kind': 'metal', 'host': fixtures.HOST, 'observer_executable': str(self.helper)}) + '):\n'
+            '    raise SystemExit(evaluate.main())\n')
+        policy = fixtures.policy_fixture()
+        submitter = CommandBrokerSubmitter(command=(sys.executable, str(wrapper), '--local-kind', 'metal'),
+            workload_path=workload_path, workload_sha256=self.workload.canonical_sha256,
+            protocol_sha256=sha256(canonical_json_bytes(policy)).hexdigest(), cwd=source,
+            executor=ExecutorRevision.for_target(source, self.candidate.target),
+            compiler_reference=compiler_reference(source),
+            service_user=pwd.getpwuid(os.geteuid()).pw_name,
+            service_group=grp.getgrgid(os.getegid()).gr_name,
+            evaluation_protocol=policy, baseline=self.baseline, workload_loader=workloads.load_workload)
+        env = dict(PATH=os.defpath, TMPDIR=str(self.root))
+        if fail:
+            env['METAL_FIXTURE_FAIL'] = '1'
+        with patch.dict(os.environ, env, clear=True):
+            return submitter.submit(self.candidate, case_id='primary', purpose='search', attempt=1)
+
+    def test_actual_submitter_accepts_job_and_receipt_after_temporary_transport_closes(self):
+        attempt = self.submit_through_temporary_transport()
+        self.assertTrue(attempt.admitted)
+        self.assertIsNone(attempt.error)
+        self.assertTrue(attempt.receipt.correctness_passed)
+        request = json.loads(attempt.artifact_payloads['evaluator_request'])
+        # TemporaryDirectory has exited; retained bytes must suffice.
+        self.assertFalse(Path(request['artifact_paths']['launch_manifest']).is_absolute())
+        self.assertIn(attempt.job_id.encode(), attempt.artifact_payloads['stderr'])
+
+    def test_actual_submitter_keeps_failed_native_streams_after_temporary_transport_closes(self):
+        attempt = self.submit_through_temporary_transport(fail=True)
+        self.assertTrue(attempt.admitted)
+        self.assertIsNone(attempt.receipt)
+        self.assertIn(b'retained native fixture failure', attempt.artifact_payloads['failure_metal_observer_stderr'])
+        self.assertEqual(json.loads(attempt.artifact_payloads['failure_metal_allocation'])['job_id'], attempt.job_id)
