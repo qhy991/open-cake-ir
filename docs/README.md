@@ -1,6 +1,7 @@
 # open-cake-ir 技术报告 / Technical Report
 
-**中文题名：open-cake-ir：Agent 驱动的 GPU Kernel 与编译器协同演进技术报告**
+**报告正文 / Report:** [已导出 PDF（proposal 增补前）](open-cake-ir-technical-report.pdf) ·
+[TeX 源码 / TeX source](open-cake-ir-technical-report.tex)
 
 **推荐中文引文题名：open-cake-ir：跨硬件优化机制复用与编译器协同演进技术报告**
 
@@ -8,16 +9,21 @@
 
 作者 / Author：秦海岩（Haiyan Qin） · 2026
 
-本页是仓库技术报告的统一入口。报告由现有中英文技术文档组成，覆盖系统架构、IR、
-编译与验证、实验方法及有明确证据范围的结果；章节沿用原路径持续维护，不另复制一份正文。
-中文与英文是同一报告的阅读版本，部分页面为导读或摘要，并非逐句翻译；历史材料保留原日期与结论。
+当前 TeX 已纳入 2026-10-06 proposal 的四项假设、路线分配与成本核算。仓库 PDF 保留
+`2bc0be30` 时的导出版本，尚不包含这次增补；最新正文以 TeX 和编辑器预览为准。
 
-This is the canonical entry point for the repository's technical report. The existing Chinese
-and English documents form its chapters, covering architecture, IR, compilation and verification,
-experimental methods, and results within their stated evidence scope. Chapters remain at their
-existing paths and evolve with the repository. The language editions describe the same report;
-some companion pages are guides or summaries rather than literal translations. Historical material
-retains its original dates and conclusions.
+PDF 是由仓库中的 TeX 编译得到的技术报告，封面注明所读源码快照；引用具体实验仍需追溯
+该实验自己的执行版本和测量记录。本页连接报告正文、引用信息和持续维护的中英文专题文档。
+2026-09-28 增补的 [B300 MoE 案例](WEAVE_CASE_STUDY.md)单独说明实验源码、证据和未合入主线的边界。
+专题页面提供架构、接口、方法与最新结果的详细入口，不充当另一份报告正文；历史材料保留
+原日期与结论。
+
+The current TeX includes the October 6 proposal refinements. The stored PDF is the export from
+`2bc0be30`, before those refinements; use the source/editor preview for the latest text.
+The TeX-compiled PDF states its source snapshot on the cover.
+This page links the report, citation guidance, and living Chinese and English companion docs.
+Those guides track implementation and evidence by topic; historical records retain their own
+source and measurement boundaries.
 
 [中文阅读入口](zh-CN/README.md) · [English reading guide](en/README.md)
 
@@ -47,12 +53,12 @@ new-Run budget convention. Historical implementations and results retain their o
 | 初次了解 / First visit | [项目 README](../README.md) → [系统概览](ARCHITECTURE.md) → [无需 GPU 的入门](GETTING_STARTED.md) |
 | 查实验与外部差距 / Inspect evidence | [硬件结果](RESULTS.md) → [FlashInfer 逐任务综述](results/nvidia/FLASHINFER_STATUS.md) → 各行的 Finding 与原始报告 |
 | 编写或优化 Kernel / Author a kernel | [Python 前端](zh-CN/PYTHON_FRONTEND.md) → [IR 指南](IR_GUIDE.md) → [Lab 任务流程](wiki/experiments.md) |
-| 研究或引用 / Research and citation | 下方章节 → [研究设计](OPTIMIZATION_TRANSFER_ABLATION.md) → [引用方式](#引用--citation) |
+| 研究或引用 / Research and citation | 下方专题 → [研究设计](OPTIMIZATION_TRANSFER_ABLATION.md) → [引用方式](#引用--citation) |
 | 维护代码 / Contribute | [职责地图](../CONTEXT-MAP.md) → [开发分支](DEVELOPMENT_BRANCHES.md) → [贡献说明](../CONTRIBUTING.md) |
 
-## 报告章节 / Report chapters
+## 配套专题 / Companion reading
 
-| 章节 / Chapter | 中文入口 | English | 内容范围 / Scope |
+| 专题 / Topic | 中文入口 | English | 内容范围 / Scope |
 |---|---|---|---|
 | 系统架构 / Architecture | [系统概览](ARCHITECTURE.md) · [面向 Agent 的接口](ARCHITECTURE.md#面向-agent-的设计如何起作用) | [Architecture](en/ARCHITECTURE.md) · [Agent-facing interface](en/ARCHITECTURE.md#why-the-interface-is-agent-facing) | Compiler、Lab、Evaluation、Evidence 的职责与依赖 |
 | IR 与编写 / IR and authoring | [IR 与 Schedule 图解](IR_GUIDE.md#阅读前irschedule-ir-与-cake-ir) · [FMA 实例](IR_GUIDE.md#fma同一公式两种不同的信息) · [Python](zh-CN/PYTHON_FRONTEND.md) | [IR guide](en/IR_GUIDE.md) · [Python](en/PYTHON_FRONTEND.md) | Schedule、Program、数据与执行计划；精确字段见 [Authoring Contract](../compiler/AUTHORING_CONTRACT.md) |
@@ -72,12 +78,13 @@ new-Run budget convention. Historical implementations and results retain their o
 - **查设计原因：** [ADR 目录](adr/README.md)是完整设计决策索引。
 - **查历史调查与数据：** [总目录](catalog.md)保留日期、原路径及中英文对照；历史观察不替代[当前状态](../reports/current/STATUS.md)。
 
-本页组织章节，完整专题与历史清单由总目录维护；文档归属见 [Context map](../CONTEXT-MAP.md)。
-The report entry organizes chapters; the catalog owns detailed reading links and historical material.
+本页连接 PDF 与配套专题；完整专题和历史清单由[文档总目录](catalog.md)维护，模块归属见
+[Context map](../CONTEXT-MAP.md)。
+The [catalog](catalog.md) owns the complete companion and historical index.
 
 ## 引用 / Citation
 
-推荐引用下面的技术报告。机器可读引用元数据由仓库根目录的
+推荐引用上方的 PDF 技术报告。机器可读引用元数据由仓库根目录的
 [`CITATION.cff`](../CITATION.cff) 维护，其中 `preferred-citation` 指向本报告，根级条目描述软件。
 
 秦海岩. *open-cake-ir：跨硬件优化机制复用与编译器协同演进技术报告*. 2026.
@@ -91,19 +98,19 @@ Qin, Haiyan. *open-cake-ir: A Technical Report on Cross-Hardware Optimization Re
   institution = {open-cake-ir project},
   year        = {2026},
   type        = {Technical report},
-  url         = {https://github.com/qhy991/open-cake-ir/blob/main/docs/README.md},
-  note        = {Living technical report; Chinese and English editions}
+  url         = {https://github.com/qhy991/open-cake-ir/blob/main/docs/open-cake-ir-technical-report.pdf},
+  note        = {TeX-compiled technical report; cite the report commit and page}
 }
 ```
 
-本报告随 Git 提交演进。引用具体论点时，请记录所读提交及章节路径，并在 GitHub 文件页按 `y`
-取得包含完整提交号的永久链接，替换上面的滚动 `main` URL；在引用的 note 中注明提交。
+本报告随 Git 提交演进。引用具体论点时，请记录所读 PDF 的提交与页码，并在 GitHub
+文件页按 `y` 取得包含完整提交号的永久链接，替换上面的滚动 `main` URL。
 引用实验结果时，还需注明该结果自身绑定的源码版本、精确目标、工作负载及计时范围，
 不能以阅读报告的版本替代实验版本。代码使用可另引用 `CITATION.cff` 的软件条目。
 
-The report evolves with Git commits. For a specific claim, record the chapter path and the
-commit you read. Press `y` on its GitHub file page to obtain a commit permalink, replace the
-rolling `main` URL above, and identify that commit in the citation note. For measurements, also
+The report evolves with Git commits. For a specific claim, record the PDF page and the
+commit you read. Press `y` on its GitHub file page to obtain a commit permalink and replace the
+rolling `main` URL above. For measurements, also
 cite the experiment's own source revision, exact target, workload, and timing boundary; the report
 revision does not replace the experiment revision. Cite the software entry separately when needed.
 
