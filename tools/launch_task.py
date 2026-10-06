@@ -678,6 +678,10 @@ def main(argv=None) -> int:
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
                                    depth=args.depth, case_id=args.case)
+    if args.metax_timing == 'native-mean10-events':
+        from open_cake_ir.tasks.metax_authoring import native_event_starter
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        source = native_event_starter(WorkloadContract(document), source)
     # `--baseline-only` stops before provider qualification, so the provider it would
     # have used is not part of this run. Resolving it here anyway refused a DCU baseline
     # build for not having `claude` installed in a compile container -- a refusal about a
