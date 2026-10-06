@@ -9,8 +9,9 @@ FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `met
 四次均为 `close_null`。3 次预热的两个对照也通过，因此没有证据支持增加预热；
 原失败保留、根因未明、G3 整体仍未关闭。真实 Ralph 优化尚未启动。
 
-当前阻点已收敛为：测量跨批次可靠性与慢化对照的完整资格、D2/D6 真实两轮优化与
-经验行为、最终预算冻结。继续用原测量协议，不把成功诊断当作修复，也不反复运行验收直到通过。
+当前阻点已收敛为：慢化 artifact 对照中短基线仍有 3/10 组不稳定，G3 尚未通过；
+后续为配对粒度的协议后继、D2/D6 真实两轮优化与经验行为、最终预算冻结。旧测量协议
+及失败保持原状，不把成功诊断当作修复，也不反复运行验收直到通过。
 
 2026-10-06 后继验收已恢复：用户选择现有 Xcode 16 / SDK 15，仅通过子进程
 `DEVELOPER_DIR` / `SDKROOT` / 编译器路径绑定，不修改全局 xcode-select。
@@ -749,6 +750,57 @@ GPU 命令跨度依次约 1.237、1.982、2.165、1.035 秒；worker 墙钟约 4
 成功的跨批次差异未获因果解释；这不是独立慢化对照资格，也不关闭 G3 或原 Finding。
 后续先从现有样本检查时间区段、长尾和提交间隙；新设备实验必须有能区分机制的干预与
 固定停止规则，不能继续同条件抽样直到得到希望的通过率。
+
+### Artifact 方向控制：G3 的关键缺口现在已有实际反例
+
+原 16/256 dispatch 对照证明计时器对工作量敏感，但不能替代相同测量协议下两个封存
+kernel 的方向验收。新控制完全使用现有 Cake：R128 C1024 的每个输出列重新计算整行
+归约，grid 从 `[128,1,1]` 到 `[128,1024,1]`，每个输出仍只有一个写入者。归约工作
+按结构重复 1024 次；未改 Compiler，也未手写或替换生成 MSL。
+
+CPU 准备首先遇到外部报告序列化错误（Assessment 含 bytes），无 GPU 调用；保留部分
+目录后改用语义字段投影。随后首个候选将列映射声明在一维 weight 的 axis0/dimension1，
+被 `PROGRAM_AXIS_DIMENSION_RANGE` 和 `PROGRAM_AXIS_DUPLICATE_NUMBER` 拒绝。
+改为矩阵 x 的 axis1/dimension1 后，构造、Verifier 与 Metal lowering 通过。
+这是作者声明修正，不是新 primitive 或 Verifier 放宽；三个阶段记录都保留在外部。
+
+固定 `28e36de4` 的公共 OpenCakeEnvironment / MetalToolchainBuilder 完成一次原生
+编译及严格 archive-only reload，既有 broker 下五种输入检查加一次 attribution 共六次
+dispatch 全正确。单次 command interval 约 1.78854 ms，满足预先声明的 2 ms 成本门；
+它仅决定是否值得准备完整方向对照，不是性能结论。证据为
+`g3-redundant-rmsnorm-native-28e36de4/`。这也补充了该整合源码真实 archive build
+路径的有限资格；不回填为其他提交或其他 kernel 的资格。
+
+随后固定三项顺序：冗余候选对原基线、交换角色、独立 A/A confirmatory。保持旧 v2
+全部输入、3+25 次 cohort、64 dispatch/sample、10 对 AB/BA 及原质量门；任何一项
+失败立即停止。**第一项全部输出正确，但 quality 失败，后两项没有执行。**
+冗余 arm 的 10/10 cohort 通过，原基线在 pair 0、1、6 的 IQR 分别约 0.06549、
+0.09417、0.05474，3/10 失败。虽然 10/10 pair 都把冗余控制排为更慢，整体仍是
+`measurement_quality_failed`，不能把方向一致当作验收通过或报告优化倍数。
+完整样本与派生诊断在 `g3-artifact-direction-controls-28e36de4/`，原 lease 已释放。
+
+这次交替工作中，冗余 arm 的 command 中位数约 59.7 ms，原基线约 0.274 ms；原方案
+先连续执行一个 arm 的 28 个 command，再执行另一个。负载差异与短基线的不同耗时
+区段同时出现，但没有同步频率或逐进程 GPU 证据，尚不能确定 DVFS 或外部干扰。
+`timing-regime-comparison.json` 还保留此前六批全部 timed samples 的统计；四批 C/W/W/C
+的耗时—前置间隙相关约 0.008–0.086，长尾仍在，不支持任意 host pacing 修复。
+
+**下一项只检验配对粒度。** [测量后继方案](METAL_MEASUREMENT_SUCCESSOR.md) 提议
+在每对内逐样本交错两个 arm，保持每 arm 的预热、样本、dispatch 总量及质量门不变。
+这需要显式新协议、精确次序验证，以及在 dispatch 前通过的 pair 快照内存界限；
+不能改旧 v2 或绕过当前连续 cohort 检查。先实现与测试，再绑定新 observer 和 Executor
+进行固定次数的阻塞/交错对照。当前只是提案，G3 和 F-2026-10-06-002 仍开放。
+
+本次也给 TASK/AGENTS 增加一条有边界的检查：比较结构时同时解释 grid、每 program
+工作量与逻辑私有存储。该冗余控制的 lane-owned Buffer 峰值从原 97 降到 64 FP32，
+但归约重复 1024 次；更少私有存储不能独自支撑“更快”的假设。反向也不能制定“输出
+细分总是更慢”的规则，D6 的列划分仍有不同的资源与复用权衡。它是机制分析材料，
+不是已验证的模型学习或自动推广的 Compiler tactic。
+
+#353 已合入 `metal@1200bd62`。最终文档提交的 CI `37405628345` 实际 checkout
+`17af4496`，三个 Python 版本各 2848 passed、35 skipped；两项离线编译通过。
+本节设备结果仍引用实际执行的 `28e36de4`。后继任务为
+`task/metal-interleaved-measurement`，没有改变这些固定实验的输入或源码。
 
 ## 8. 走向更完整的 Metal 工具
 
