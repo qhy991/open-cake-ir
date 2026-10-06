@@ -64,6 +64,18 @@ class TrigContract(unittest.TestCase):
             next(o for o in d['operations'] if o['id']=='result')['parameters']['instruction']['contract']='ocml.tanh.f32'
             self.assertIn('ELEMENTWISE_INSTRUCTION_KIND_DIFFERS',{f.code for f in verify(Schedule.from_dict(d),admitted)})
 
+    def test_an_ocml_name_on_another_code_object_is_an_early_backend_refusal(self):
+        from open_cake_ir.compiler.backends.common import EmitError
+        for target_id in ('sm_103a','xcore1002'):
+            for op in ('sin','cos'):
+                source=TRIG_SOURCE.replace('gfx938',target_id).replace('sin',op)
+                schedule=Schedule.from_dict(frontend.parse(source).document)
+                target=Target.load(ROOT/f'compiler/targets/{target_id}.json')
+                target=replace(target,instruction_contracts=target.instruction_contracts | {f'ocml.{op}.f32'})
+                self.assertIn('TRITON_ELEMENTWISE_UNSUPPORTED',{f.code for f in preflight(schedule,target)})
+                with self.assertRaises(EmitError):
+                    emit(schedule,target)
+
     def test_direct_unary_jail_calls_are_hsaco_only_without_escape(self):
         source='import triton\nimport triton.language as tl\nfrom triton.language.extra import libdevice\n@triton.jit\ndef kernel(a,b):\n    x=tl.load(a)\n    y=libdevice.sin(x)\n    tl.store(b,y)\n'
         req={'kernel_entry_point':'kernel','signature':{'a':'*fp32','b':'*fp32'},'compile_constants':{},'code_object':'hsaco'}

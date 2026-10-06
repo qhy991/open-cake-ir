@@ -500,6 +500,14 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 f"operations[{index}].parameters.op",
                 f"the Triton backend does not implement {operation.parameters.op.value!r}",
             )
+            if operation.parameters.op in _TRITON_TRIG_CONTRACTS:
+                instruction = operation.parameters.instruction
+                add(target.code_object is CodeObject.HSACO
+                    and instruction is not None
+                    and instruction.contract == _TRITON_TRIG_CONTRACTS[operation.parameters.op],
+                    "TRITON_ELEMENTWISE_UNSUPPORTED",
+                    f"operations[{index}].parameters.instruction",
+                    "OCML FP32 trig requires the HSACO route and the matching explicit contract")
             # Global arguments are pointers; _operand only names already-produced
             # values. Arithmetic does not implement access maps or memory effects.
             for edge in ("reads", "writes"):
@@ -1722,7 +1730,8 @@ class _TritonEmitter:
                     raise EmitError("the Triton fma body requires its target's admitted FMA contract")
                 expression = f"libdevice.{function}({operands[0]}, {operands[1]}, {operands[2]})"
         elif parameters.op in _TRITON_TRIG_CONTRACTS:
-            _require(parameters.instruction is not None
+            _require(self.target.code_object is CodeObject.HSACO
+                     and parameters.instruction is not None
                      and parameters.instruction.contract == _TRITON_TRIG_CONTRACTS[parameters.op],
                      "Triton trig requires its explicit OCML FP32 contract")
             expression = f"libdevice.{parameters.op.value}({operands[0]})"
