@@ -14,7 +14,7 @@ import subprocess
 
 from .core import compare_tile_outputs
 from .metal_manifest import MetalTensorLaunchManifest
-from .metal_device_process import run_metal_process
+from .metal_device_process import read_metal_admission, run_metal_process
 from .metal_observations import command_buffer_ms, validate_host
 
 OBSERVER_SOURCE = Path(__file__).with_name("metal") / "observer.swift"
@@ -150,6 +150,10 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
         raise
     (directory / "observer.stdout.json").write_bytes(completed.stdout)
     (directory / "observer.stderr.log").write_bytes(completed.stderr)
+    allocation = read_metal_admission(directory / 'allocation.json')
+    if not allocation['admitted']:
+        from .local_broker import LocalBrokerBusy
+        raise LocalBrokerBusy('metal', allocation['job_id'])
     report = json.loads(completed.stdout)
     if (completed.returncode or report.get("status") != "completed" or report.get("host") != expected_host
             or report.get("source_library_rebuilt") is not False

@@ -1,5 +1,4 @@
 """CPU executable double checks the actual Metal process/worker phase boundary."""
-from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -157,3 +156,23 @@ class MetalEvaluationPhases(unittest.TestCase):
         self.assertFalse(result['admitted'])
         self.assertIsNone(result['receipt'])
         self.assertFalse((self.root / 'metal-observation').exists())
+
+    def test_busy_observer_keeps_the_other_owner_and_preserves_refusal_identity(self):
+        from open_cake_ir.evaluation.metal_device_process import run_metal_process, read_metal_admission
+        request = self.root / 'device-request.json'
+        request.write_text('{}')
+        record = self.root / 'allocation.json'
+        descriptor = local_broker._acquire(self.lock)
+        try:
+            with patch.dict(os.environ, dict(PATH=os.defpath, TMPDIR=str(self.root)), clear=True):
+                result = run_metal_process(self.helper, request, target=self.candidate.target,
+                    timeout_seconds=5, allocation_output=record)
+            self.assertEqual(result.returncode, 3)
+            self.assertEqual(result.stdout, b'')
+            admission = read_metal_admission(record)
+            self.assertFalse(admission['admitted'])
+            self.assertRegex(admission['job_id'], r'^metal-[0-9a-f]{12}$')
+            with self.assertRaises(BlockingIOError):
+                local_broker._acquire(self.lock)
+        finally:
+            os.close(descriptor)

@@ -869,12 +869,13 @@ def _evaluate_metal_candidate(authority, result):
         # observe returns or raises; existing external allocations keep their owner.
         allocation = directory / 'allocation.json'
         if allocation.exists():
-            from open_cake_ir.evaluation.metal_device_process import read_metal_job
-            observed_job = read_metal_job(allocation)
+            from open_cake_ir.evaluation.metal_device_process import read_metal_admission
+            process_admission = read_metal_admission(allocation)
+            observed_job = process_admission['job_id']
             if job_id and observed_job != job_id:
                 raise ValueError('Metal observation allocation differs from its worker')
             job_id = observed_job
-            result.update(job_id=job_id, mode=job_mode(job_id), admitted=True)
+            result.update(job_id=job_id, mode=job_mode(job_id), admitted=process_admission['admitted'])
     if not job_id:
         raise ValueError('Metal observation lacks its native process admission')
     launches = observation['launches']

@@ -255,7 +255,7 @@ class MetalEvaluationContracts(unittest.TestCase):
                  'profile': False, 'dispatches': 1}]
         def process(executable, request_path, **kwargs):
             command = [str(executable), str(request_path)]
-            kwargs['allocation_output'].write_text(json.dumps({'job_id': JOB}))
+            kwargs['allocation_output'].write_text(json.dumps({'job_id': JOB, 'admitted': True}))
             request = json.loads(request_path.read_text()); directory = Path(request['output_directory'])
             (directory / 'x.bin').write_bytes(struct.pack('<2f', 1.0, 2.0))
             (directory / 'out.bin').write_bytes(struct.pack('<2f', 1.0, 2.0))

@@ -15,29 +15,30 @@ from pathlib import Path
 import subprocess
 import sys
 
-from open_cake_ir.evaluation.local_broker import admit_local_job, observe_local_metal_job
+from open_cake_ir.evaluation.local_broker import LocalBrokerBusy, admit_local_job, observe_local_metal_job
 from open_cake_ir.evaluation.source_bootstrap import module_command
 
 
-def _record_job(path: Path | None, job: str):
+def _record_job(path: Path | None, job: str, *, admitted: bool = True):
     if path is not None:
         with path.open('x') as output:
-            json.dump({'job_id': job}, output)
+            json.dump({'job_id': job, 'admitted': admitted}, output)
 
 
-def read_metal_job(path: Path) -> str:
+def read_metal_admission(path: Path) -> dict:
     """Read the process admission retained before the trusted helper was exec'd."""
     if path.is_symlink() or not path.is_file():
         raise ValueError('Metal process allocation record is unavailable')
     record = json.loads(path.read_bytes())
     from .attempts import valid_job_mode
-    if (not isinstance(record, dict) or set(record) != {'job_id'}
+    if (not isinstance(record, dict) or set(record) != {'job_id', 'admitted'}
+            or type(record['admitted']) is not bool
             or not isinstance(record['job_id'], str)
             or not (valid_job_mode(record['job_id'], 'exclusive')
                     or re.fullmatch(r'metal-[0-9a-f]{12}', record['job_id'])
                     and valid_job_mode(record['job_id'], 'local_serialized'))):
         raise ValueError('Metal process allocation record differs')
-    return record['job_id']
+    return record
 
 
 def run_metal_process(executable: Path, request: Path, *, target: str,
@@ -91,7 +92,12 @@ def main() -> int:
             or not os.access(args.executable, os.X_OK)
             or not args.request.is_absolute() or not args.request.is_file()):
         parser.error('prepared Metal helper executable and request are required')
-    job = admit_local_job('metal', queue_seconds=args.queue_seconds)
+    try:
+        job = admit_local_job('metal', queue_seconds=args.queue_seconds)
+    except LocalBrokerBusy as error:
+        _record_job(args.allocation_output, error.job_id, admitted=False)
+        print(str(error), file=sys.stderr)
+        return 3
     _record_job(args.allocation_output, job)
     # Same PID, same descriptor, same process group. Exit, failure and supervisor
     # timeout all end device ownership before the parent parses the report.
