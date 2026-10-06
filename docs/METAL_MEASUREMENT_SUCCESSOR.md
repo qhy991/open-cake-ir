@@ -1,6 +1,9 @@
 # Metal measurement successor: reduce separation between matched samples
 
-Status: proposal only; no protocol, Compiler or frozen result has changed.
+Status: explicit v3 implemented at `a375e295`; targeted Python checks passed.
+All eight native CPU snapshot cases passed in a separately user-approved
+Xcode16/SDK15 environment with a private temporary module cache. Full CI and
+device qualification remain pending. Compiler and frozen results are unchanged.
 
 ## Evidence and ownership
 
@@ -68,3 +71,32 @@ as an optimization speedup.
 
 No promotion is also a valid result. If interleaving fails, acquire better device
 state/process attribution before introducing another scheduling mechanism.
+
+## Implementation evidence (2026-10-06)
+
+`fixed_baseline_paired_metal_v3` explicitly selects interleaved physical command
+order; v1/v2 and task defaults keep their prior semantics. Execution and receipt
+replay share `metal_cohort_calls`. v3 requires pair-sized snapshot admission
+before the native lease, and the observer must report that it honored the pair
+window. Attribution remains separate. No Compiler or author configuration changed.
+
+At fixed checkout `a375e295`, the targeted Python suite passed **99 tests and
+189 subtests**; eight native Swift tests were excluded from this Python run.
+Counterexamples cover relabelled blocked receipts, missing/duplicate/misordered
+samples, wrong pairing, pair snapshot overflow, and an observer ignoring the new
+request. This is software verification, not measurement qualification.
+
+The separate Xcode16/SDK15 CPU-only harness attempt stopped before compilation:
+the sandbox refused the compiler's default ModuleCache output. No behavior case
+ran and no GPU work occurred. Exact command and failure are retained in
+`/private/tmp/cake-metal-interleaved-swift-a375e295/contract.json` and `build.json`.
+The failed attempt is not normalized or reported as a pass. A separately approved
+successor environment is required before continuing that native CPU acceptance.
+
+The user then explicitly approved a successor CPU environment with a private
+temporary module cache. At the same fixed source and Xcode16/SDK15, all eight
+snapshot behavior cases passed, including interleaved pair boundaries, overflow,
+owned copies, partial failure flushing and overwrite refusal. Evidence is in
+`/private/tmp/cake-metal-interleaved-swift-a375e295-private-cache/`; the original
+environment failure remains separate. This CPU-only build defines
+`SNAPSHOT_TESTS`, excludes Metal device execution, and does not qualify timing.

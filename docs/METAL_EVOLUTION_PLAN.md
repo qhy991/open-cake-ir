@@ -789,7 +789,13 @@ dispatch 全正确。单次 command interval 约 1.78854 ms，满足预先声明
 在每对内逐样本交错两个 arm，保持每 arm 的预热、样本、dispatch 总量及质量门不变。
 这需要显式新协议、精确次序验证，以及在 dispatch 前通过的 pair 快照内存界限；
 不能改旧 v2 或绕过当前连续 cohort 检查。先实现与测试，再绑定新 observer 和 Executor
-进行固定次数的阻塞/交错对照。当前只是提案，G3 和 F-2026-10-06-002 仍开放。
+进行固定次数的阻塞/交错对照。显式 v3 已在 `a375e295` 实现，固定源码的 Python
+检查为 99 passed、189 subtests passed；8 项 Swift 行为测试另行验收。Xcode16/SDK15
+CPU 验收在编译前因沙箱拒绝默认 ModuleCache 写入而停止，未执行测试或 GPU 工作；
+失败保存在 `/private/tmp/cake-metal-interleaved-swift-a375e295/`。用户随后授权独立临时
+模块缓存的后继 CPU 环境；同一源码与工具链的 8 项 Swift 行为检查全部通过，证据在
+同路径的 `-private-cache/` 后继目录。完整 CI、新 observer/host 绑定及设备对照仍尚缺，
+G3 和 F-2026-10-06-002 仍开放。
 
 本次也给 TASK/AGENTS 增加一条有边界的检查：比较结构时同时解释 grid、每 program
 工作量与逻辑私有存储。该冗余控制的 lane-owned Buffer 峰值从原 97 降到 64 FP32，
