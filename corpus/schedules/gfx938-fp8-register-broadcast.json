@@ -1,0 +1,169 @@
+{
+  "schema_version": 2,
+  "schedule_id": "qualify_broadcast_fp8_e4m3",
+  "target": "gfx938",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "a",
+      "shape": [
+        1,
+        4
+      ],
+      "mode": "input",
+      "space": "global",
+      "dtype": "fp8_e4m3"
+    },
+    {
+      "name": "out",
+      "shape": [
+        1,
+        4,
+        8
+      ],
+      "mode": "output",
+      "space": "global",
+      "dtype": "fp8_e4m3"
+    },
+    {
+      "name": "at",
+      "shape": [
+        4
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp8_e4m3"
+    },
+    {
+      "name": "aw",
+      "shape": [
+        4,
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp8_e4m3"
+    }
+  ],
+  "operations": [
+    {
+      "id": "la",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "a"
+      ],
+      "writes": [
+        "at"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "ba",
+      "kind": "broadcast_in_dim",
+      "role": "compute",
+      "reads": [
+        "at"
+      ],
+      "writes": [
+        "aw"
+      ],
+      "depends_on": [
+        "la"
+      ],
+      "parameters": {
+        "dimensions": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "store",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "aw"
+      ],
+      "writes": [
+        "out"
+      ],
+      "depends_on": [
+        "ba"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "row",
+        "axis": 0,
+        "buffer": "a",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "la",
+      "buffer": "a",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ]
+    },
+    {
+      "operation": "store",
+      "buffer": "out",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    "out"
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "qualify_broadcast_fp8_e4m3"
+  }
+}

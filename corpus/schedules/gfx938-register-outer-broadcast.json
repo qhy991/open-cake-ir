@@ -1,0 +1,275 @@
+{
+  "schema_version": 2,
+  "schedule_id": "qualify_outer_broadcast",
+  "target": "gfx938",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "a",
+      "shape": [
+        1,
+        4
+      ],
+      "mode": "input",
+      "space": "global",
+      "dtype": "fp32"
+    },
+    {
+      "name": "b",
+      "shape": [
+        1,
+        8
+      ],
+      "mode": "input",
+      "space": "global",
+      "dtype": "fp32"
+    },
+    {
+      "name": "out",
+      "shape": [
+        1,
+        4,
+        8
+      ],
+      "mode": "output",
+      "space": "global",
+      "dtype": "fp32"
+    },
+    {
+      "name": "at",
+      "shape": [
+        4
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "bt",
+      "shape": [
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "aw",
+      "shape": [
+        4,
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "bw",
+      "shape": [
+        4,
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "product",
+      "shape": [
+        4,
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    }
+  ],
+  "operations": [
+    {
+      "id": "la",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "a"
+      ],
+      "writes": [
+        "at"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "lb",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "b"
+      ],
+      "writes": [
+        "bt"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "ba",
+      "kind": "broadcast_in_dim",
+      "role": "compute",
+      "reads": [
+        "at"
+      ],
+      "writes": [
+        "aw"
+      ],
+      "depends_on": [
+        "la"
+      ],
+      "parameters": {
+        "dimensions": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "bb",
+      "kind": "broadcast_in_dim",
+      "role": "compute",
+      "reads": [
+        "bt"
+      ],
+      "writes": [
+        "bw"
+      ],
+      "depends_on": [
+        "lb"
+      ],
+      "parameters": {
+        "dimensions": [
+          1
+        ]
+      }
+    },
+    {
+      "id": "mul",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "aw",
+        "bw"
+      ],
+      "writes": [
+        "product"
+      ],
+      "depends_on": [
+        "ba",
+        "bb"
+      ],
+      "parameters": {
+        "op": "mul"
+      }
+    },
+    {
+      "id": "store",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "product"
+      ],
+      "writes": [
+        "out"
+      ],
+      "depends_on": [
+        "mul"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "row",
+        "axis": 0,
+        "buffer": "a",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "la",
+      "buffer": "a",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ]
+    },
+    {
+      "operation": "lb",
+      "buffer": "b",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ]
+    },
+    {
+      "operation": "store",
+      "buffer": "out",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    "out"
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "qualify_outer_broadcast"
+  }
+}

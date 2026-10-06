@@ -28,6 +28,35 @@ from open_cake_ir.compiler.toolchain import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
+class CastAndBf16AdmissionTest(unittest.TestCase):
+    """Public admission/lowering; actual device qualification is separate."""
+
+    def setUp(self) -> None:
+        self.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+
+    def test_declared_casts_lower_without_a_different_target(self) -> None:
+        for name in ("gfx938-cast-bf16-fp32-b8-smoke", "gfx938-cast-i32-fp32-b8-smoke"):
+            with self.subTest(schedule=name):
+                assessment = self.compiler.assess(_document(name))
+                self.assertTrue(assessment.lowering_eligible, [f.to_dict() for f in assessment.findings])
+                lowered = self.compiler.lower(assessment)
+                self.assertEqual(lowered.target, "gfx938")
+                self.assertIn(".to(tl.float32)", lowered.source)
+
+    def test_bf16_contraction_keeps_bf16_operands_and_fp32_result(self) -> None:
+        assessment = self.compiler.assess(_document("gfx938-gemm-bias-bf16-b1-smoke"))
+        self.assertTrue(assessment.lowering_eligible, [f.to_dict() for f in assessment.findings])
+        lowered = self.compiler.lower(assessment)
+        self.assertEqual(lowered.target, "gfx938")
+        self.assertIn("torch.bfloat16", lowered.source)
+        self.assertIn("tl.dot(", lowered.source)
+
+    def test_fp16_contract_does_not_accept_bf16_operands(self) -> None:
+        assessment = self.compiler.assess(_document("gfx938-gemm-bf16-fp16-contract-refusal"))
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertIn("MMA_OPERAND_DTYPE_DIFFERS", {f.code for f in assessment.findings})
+
+
 def _document(name: str) -> dict:
     return json.loads((ROOT / "corpus/schedules" / f"{name}.json").read_text(encoding="utf-8"))
 
@@ -558,7 +587,7 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         # oracle at 64x64x64, the tanh across its saturating tails.
         self.assertEqual(
             sorted(target.instruction_contracts),
-            ["ocml.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
+            ["ocml.cos.f32", "ocml.sin.f32", "ocml.tanh.f32", "triton.atomic_add.i32.relaxed.gpu", "triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
              "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"])
 
     def test_gfx938_admits_no_other_vendors_spelling_of_the_same_function(self) -> None:
@@ -603,28 +632,10 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         test_instruction_contracts.py::DeclaredContractsTheGateCannotSpeakFor rather than
         left to be inferred from this one's silence.
         """
-        import json
-        manifest = json.loads((ROOT / "corpus/manifest.json").read_text())
+        from tests.contracts.test_instruction_contracts import DeclaredContractsTheGateCannotSpeakFor
         declared = set(Target.load(ROOT / "compiler/targets/gfx938.json").instruction_contracts)
-        used = set()
-        for case in manifest["cases"]:
-            path = ROOT / case["schedule"]
-            # Twelve manifest entries are Python schedules under examples/; they declare
-            # their target in the decorator rather than in a readable document, and none
-            # of them is a gfx938 case.
-            if path.suffix != ".json":
-                continue
-            document = json.loads(path.read_text())
-            if document.get("target") != "gfx938":
-                continue
-            for operation in document["operations"]:
-                instruction = (operation.get("parameters") or {}).get("instruction") or {}
-                if instruction.get("contract"):
-                    used.add(instruction["contract"])
-        self.assertEqual(
-            sorted(declared - used), [],
-            "gfx938 declares contracts no Corpus case exercises, so the Gate passes "
-            "whether or not they are true")
+        used = DeclaredContractsTheGateCannotSpeakFor()._reached().get("gfx938", set())
+        self.assertEqual(declared - used, set())
 
     def test_a_triton_target_admits_no_contract_its_route_cannot_emit(self) -> None:
         """Otherwise the Target admits by name what the only backend then refuses.
@@ -635,8 +646,8 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         then failed -- correctly, on a contract the route could in fact emit.
         """
         from open_cake_ir.compiler.backends.triton import (
-            _ATOMIC_RMW_CONTRACT, _TRITON_MMA_CONTRACTS, _TRITON_TANH_CONTRACTS)
-        emittable = set(_TRITON_MMA_CONTRACTS) | set(_TRITON_TANH_CONTRACTS) | {
+            _ATOMIC_RMW_CONTRACT, _TRITON_MMA_CONTRACTS, _TRITON_TANH_CONTRACTS, _TRITON_TRIG_CONTRACTS)
+        emittable = set(_TRITON_MMA_CONTRACTS) | set(_TRITON_TANH_CONTRACTS) | set(_TRITON_TRIG_CONTRACTS) | {
             _ATOMIC_RMW_CONTRACT}
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
         self.assertEqual(sorted(set(target.instruction_contracts) - emittable), [])
