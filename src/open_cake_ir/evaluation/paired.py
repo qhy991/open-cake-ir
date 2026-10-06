@@ -83,7 +83,8 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
         return None
     kind = value.get('kind') if isinstance(value, Mapping) else None
     successor = {'dispatches_per_sample', 'maximum_relative_iqr'}
-    expected_fields = _BASE_FIELDS | (successor if kind == PAIRED_METAL_BATCHED_KIND else set())
+    expected_fields = (_BASE_FIELDS | (successor if kind == PAIRED_METAL_BATCHED_KIND else set())
+                       | ({'statistic'} if isinstance(value, Mapping) and 'statistic' in value else set()))
     if (not isinstance(value, Mapping) or set(value) != expected_fields
             or kind not in PAIRED_KINDS or value.get('arms') != ['candidate', 'baseline']):
         raise ValueError('fixed-baseline paired policy fields or roles differ')
@@ -94,7 +95,9 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     order = value['pair_order']
     if (not isinstance(order, list) or any(not isinstance(p, list) or len(p) != 2 or any(type(role) is not str for role in p) for p in order)
         or any(type(value[k]) is not int for k in ('samples_per_cohort', 'route_calls_per_cohort', 'required_pair_wins'))
-        or any(type(value[k]) not in (int, float) for k in ('maximum_cv', 'materiality_ratio'))):
+        or type(value['materiality_ratio']) not in (int, float)
+        or (type(value['maximum_cv']) not in (int, float)
+            and not (value.get('statistic') == 'mean' and value['maximum_cv'] is None))):
         raise ValueError('fixed-baseline paired policy value types differ')
     dispatches = value.get('dispatches_per_sample', 1)
     spread = value.get('maximum_relative_iqr')
@@ -102,7 +105,8 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
         raise ValueError('fixed-baseline paired policy value types differ')
     protocol = PairedTimingProtocol(tuple(value['arms']), tuple(tuple(p) for p in order),
         value['samples_per_cohort'], value['route_calls_per_cohort'], value['maximum_cv'],
-        value['materiality_ratio'], value['required_pair_wins'], dispatches, spread)
+        value['materiality_ratio'], value['required_pair_wins'], dispatches, spread,
+        value.get('statistic', 'median'))
     # This is the retained helper's existing invocation contract, not another engine.
     if value['kind'] == PAIRED_KIND and protocol.route_calls_per_cohort != 6 + 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from retained CUPTI callback contract')
@@ -217,6 +221,11 @@ def paired_summary(raw):
                                          dispatches_per_sample=protocol.dispatches_per_sample)
     observation = derive_paired_timing(measurements, protocol)
     return {'kind': kind,
+        **({'statistic': 'mean',
+            'dispersion_gate': ('relative_iqr' if protocol.maximum_relative_iqr is not None
+                                else 'cv' if protocol.maximum_cv is not None else 'diagnostic_only'),
+            'pooled_mean_ms': observation.pooled_means_ms['candidate'],
+            'pooled_means_ms': dict(observation.pooled_means_ms)} if protocol.statistic == 'mean' else {}),
         'measurement_quality_passed': observation.measurement_quality_passed,
         'pooled_median_ms': observation.pooled_medians_ms['candidate'],
         'pooled_medians_ms': dict(observation.pooled_medians_ms),
