@@ -22,14 +22,16 @@ Under `bench/campaign/results/`, `component-summary.json`, `component-isa.json`,
 `api-replay.json`, `full-task-summary.json` and each admission/terminal retain
 source, correctness, timing and release evidence. The initial device carrier is
 `82b79910`; reviewed successor metadata/code changes require source replay at the
-final handoff boundary. All four device phases completed and released HCU2.
+final handoff boundary. `final-source-replay.json` binds all four component
+emissions and all199 complete-task emissions byte-for-byte to `f92cc4e1`;
+this is a source handoff relation, not a second GPU execution. All four device phases completed and released HCU2.
 The HCU0 historical load was preserved.
 
 ## Disposition of the other leads
 
 | Lead | Current judgement | Next meaningful action |
 | --- | --- | --- |
-| Power-of-two resident padding for96-element rows | Existing `program_tile` with tile128 and grid17x1 already emits masked loads. A single-trip loop is unnecessary. | Provide the existing-IR example; masks must neutralize padded lanes at every affected reduction. This does not establish full layernorm performance. |
+| Power-of-two resident padding for96-element rows | Existing `program_tile` with tile128 and grid17x1 already emits masked loads. A single-trip loop is unnecessary. | [Existing-IR example](../../examples/gfx938-padded-resident-row.py) passed a separate17-row exact CPU-oracle/device replay and released HCU2 (`padded-summary.json`). Masks must neutralize padded lanes at every affected reduction; no full-layernorm performance is established. |
 | Exp2 sigmoid instead of the tanh chain | Existing mul/exp2/add/reciprocal operations can express the alternative. It changes the numerical formula and the frozen Task contract excludes it. | Keep separate numerical-contract research; do not add a duplicate sigmoid primitive or silently substitute approximate math. Native full-call gain was below1% materiality. |
 | Cyclic head modulo gathering | Capacity lead with parity/worse component results; no full-call benefit demonstrated. | Investigate composition using existing coordinate/remainder/indirect access before extending AccessMap. |
 | MMA-side transpose or shifted convolution stencil | Native prototypes did not beat the strong community implementations. | Establish a useful implementation and concrete semantics before adding a new commitment. |
