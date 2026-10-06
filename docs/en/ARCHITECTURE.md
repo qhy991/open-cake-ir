@@ -4,6 +4,8 @@
 
 open-cake-ir makes computation choices explicit, locates errors, and preserves evidence for improvements. This page explains stable responsibilities. Read the [generated status](../../reports/current/STATUS.md) for released identities.
 
+The [shared research agenda](RESEARCH_AGENDA.md) studies conditional optimization reuse and target adaptation. Compiler remains the product core; qualified native exploration is a separate Lab Run, with reviewed discoveries validated again in successor implementations. Representation effects, lowering freedom and experience effects need distinct comparisons.
+
 ## Why write a Schedule?
 
 Even summing each row of a table involves choices: which threads handle a row, how large each tile is, whether data can be reused, and whether writers collide. A Schedule describes those choices between the mathematical task and final machine code. The Compiler checks it and generates source; external checks and GPU measurements decide correctness and speed.
