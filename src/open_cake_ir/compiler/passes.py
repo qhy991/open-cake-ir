@@ -113,7 +113,7 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
     if s.tile_loops:
         by_id = {op.op_id: op for op in s.operations}
         if len(s.tile_loops) != 1:
-            return refused('loop_domain', 'Require one fixed sequential MMA loop.')
+            return refused('loop_domain', 'Require one fixed sequential MMA or CTA-reduction loop.')
         loop = s.tile_loops[0]
         body = [by_id[name] for name in loop.body]
         # Initial backend assessment already owns output-store affine coverage
@@ -132,12 +132,18 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
                     and bool(consumers)
                     and all(use in stores for use in consumers))
 
+        mma_body = any(op.kind is OperationKind.MMA for op in body)
+        reduction_body = any(op.kind is OperationKind.REDUCE for op in body)
+        allowed = {OperationKind.LOAD, OperationKind.CAST, OperationKind.STORE}
+        if mma_body:
+            allowed.add(OperationKind.MMA)
+        elif reduction_body:
+            allowed.update({OperationKind.REDUCE, OperationKind.ELEMENTWISE})
         if (loop.stop is not None or loop.range_options.warp_specialize
-                or not any(op.kind is OperationKind.MMA for op in body)
-                or any(op.kind not in {OperationKind.LOAD, OperationKind.CAST,
-                                      OperationKind.MMA, OperationKind.STORE} for op in body)
+                or not (mma_body or reduction_body)
+                or any(op.kind not in allowed for op in body)
                 or any(op.kind is OperationKind.CAST and not width_cast(op) for op in body)):
-            return refused('loop_domain', 'Require a fixed load/cast/MMA loop; optional rounded output stores must follow its tiled axis without intermediate consumers.')
+            return refused('loop_domain', 'Require a fixed MMA or CTA-reduction loop with ordinary loads/casts/stores; rounded output stores must have no intermediate consumers.')
     if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
                           OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
         return refused('operation_domain', 'Only pure tensor arithmetic, MMA, CTA reductions and ordinary loads/stores are admitted.')

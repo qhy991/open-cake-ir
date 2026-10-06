@@ -58,6 +58,8 @@
 | `exp2` | 以 2 为底的指数。硬件上通常比 `exp` 便宜，但**不是** `exp` 的改写：想用它，计划要自己把操作数乘以 `log2(e)`，并承担那一步的舍入 | `3 → 8` |
 | `reciprocal` | 倒数。与 `div` 的区别是它只需要一个操作数，归约结果只算一次倒数就能乘给整行 | `4 → 1/4` |
 | `relu` | 负数变零，非负数保留 | `[-2,3] → [0,3]` |
+| `sin` | FP32 sine with an explicit `ocml.sin.f32` contract; no fast hardware approximation. |
+| `cos` | FP32 cosine with an explicit `ocml.cos.f32` contract; no fast hardware approximation. |
 | `tanh` | 把数压向 −1 到 1 之间 | `0 → 0` |
 | `add` | 加 | `2+3 → 5` |
 | `sub` | 减 | `2−3 → −1` |
@@ -133,8 +135,10 @@
 ## scan
 
 **保留每一步的累计结果。** 前向求和把 `[2,5,1]` 变成 `[2,7,8]`；反向则是 `[8,6,1]`。
-当前扫描操作是 `sum`，方向用 `forward` 或 `reverse` 表示。
-浮点输入以 FP32 累加；INT32 输入以 INT32 累加，溢出按模 (2^{32}) 回绕并解释为有符号整数，
+扫描操作是 `sum` 或 `max`，方向用 `forward` 或 `reverse` 表示。
+`max` 目前只接受 INT32，在每个 CTA 内沿声明轴返回 inclusive prefix/suffix maximum；
+它不跨 CTA 累计，也不隐式将最大值扫描替换为求和。浮点 max scan 未声明 NaN 与 signed-zero 规则，因此拒绝。
+`sum` 的浮点输入以 FP32 累加；INT32 输入以 INT32 累加，溢出按模 (2^{32}) 回绕并解释为有符号整数，
 不经过浮点转换。这是寄存器常驻块的扫描，不隐式携带跨块前缀。
 
 扫描中的顺序和浮点舍入属于实际数值行为；不要用一个普通求和结果替代整列累计输出。
