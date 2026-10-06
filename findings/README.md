@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-10-06-008 — unprofiled MACA event mean10 rejects short-task identical-artifact controls at the declared 5% A/A boundary; bounded contraction controls pass. Retain all samples and task-scoped acceptance; no global measurement-reliability or Compiler promotion.
+
 The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
 assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
 to F-2026-10-06-007. Their original F-2026-10-06-002 records remain at the platform
