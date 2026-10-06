@@ -146,6 +146,15 @@ capture 和 archive 构建自身不申请 Evaluation lease；GPU Infra 的 submi
 封存产物，不能用它引导首次 archive。后继环境必须明确这些接触设备阶段的既有资源绑定，
 不能声称 Evaluation 的 allocator 自动覆盖全过程。Metal 目前也在取得 lease 后准备 CPU
 oracle/input；若调整这个边界，须在 Executor/source 后继中实现并验证原测量合同。
+后继 `task/metal-device-phase@7e548840` 已为 archive build/reload 与 host inspection
+实现短生命周期子进程准入：请求在租约外准备，子进程取得既有本地 broker 租约后 exec
+原生 helper，退出后父进程处理报告；合法已有 Evaluation 租约只借用，不另开或提前释放。
+五项真实 CPU 子进程测试覆盖正常退出、争用、继承、超时/失败和非法身份，均通过。
+整批结果为 29 passed、46 subtests passed、1 failed；误包含的 Darwin 原生 archive 测试
+使用默认 CLT/SDK 27，编译失败。该次验收停止，未修环境重跑；不能作为后继设备资格。
+完整 CI 与固定 Xcode 的原生资格仍待完成。该修复还未改变正式 Evaluation 的 oracle
+准备及后处理阶段，不能据此宣布整个 phase 门已通过。
+
 本次同步的 `LOCAL_DEVICE_LEASES.md` 所述按设备编号并行和分配前 CPU 准备不适用于当前
 Metal 路径；Metal 不支持 `--local-lock-scope device`。其中编译不占用 lease 的说明也
 不代表 Metal archive 编译无需设备资源准入。
