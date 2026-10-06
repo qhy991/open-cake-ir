@@ -192,7 +192,15 @@ attribution 仍检查全部五种输入。进程准入记录仅保留真实 job 
 进入既有 `LocalBrokerBusy` 处理；超时和原生失败保留输出。实际 CPU executable double
 证明输入/oracle 在租约前、全计划在一个持锁子进程、独立比较和报告在回收后；忙碌、失败、
 profile 和 oracle 失败路径也有覆盖。固定 `33abec50` 的专项验收 **30 项、18 个子测试通过**，
-未定义名称检查通过。完整软件 CI、固定工具链的原生端到端资格仍待完成，**phase 门尚未通过**。
+未定义名称检查通过。
+完整 submitter 交接的后继测试 `41d3337c` 随后复现两项失败：子进程捕获了 broker 接受行，
+外层 `CommandBrokerSubmitter` 收不到实际 job 观测；原生失败的文件也没有进入临时目录清理前的
+失败证据通道。`e1239a88` 转发与进程准入相符的**实际 broker 行**（不根据 job 名制造接受），
+并沿现有 failed-worker v2 通道交付非空原生 stdout/stderr 和 allocation 记录。
+固定后继验收 **32 项、18 个子测试通过**，包含实际 submitter 的成功 receipt 和临时目录
+清理后的失败诊断交接；未定义名称检查通过。仍不是实际 GPU 或模型证据。
+[PR #352](https://github.com/qhy991/open-cake-ir/pull/352) 的后继完整软件 CI、固定工具链的
+原生端到端资格仍待完成，**phase 门尚未通过**。
 
 本次同步的 `LOCAL_DEVICE_LEASES.md` 所述按设备编号并行和分配前 CPU 准备不适用于当前
 Metal 路径；Metal 不支持 `--local-lock-scope device`。其中编译不占用 lease 的说明也
