@@ -592,7 +592,7 @@ def main(argv=None) -> int:
     parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int,
                         help="contracted K extent; only a contraction task declares one")
-    parser.add_argument("--metax-timing", choices=("mean10-events", "native-mean10-events", "legacy"),
+    parser.add_argument("--metax-timing", choices=("mean10-events", "native-mean10-events", "graph-mean10-events", "legacy"),
                         help="Explicit MACA event mean10 successor; legacy retains MCPTI timing")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=32)
@@ -678,7 +678,7 @@ def main(argv=None) -> int:
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
                                    depth=args.depth, case_id=args.case)
-    if args.metax_timing == 'native-mean10-events':
+    if args.metax_timing in {'native-mean10-events', 'graph-mean10-events'}:
         from open_cake_ir.tasks.metax_authoring import native_event_starter
         from open_cake_ir.evaluation.workload import WorkloadContract
         source = native_event_starter(WorkloadContract(document), source)
@@ -704,9 +704,10 @@ def main(argv=None) -> int:
         raise ValueError('--metal-timing requires a Metal backend')
     metax_mean10 = args.metax_timing == 'mean10-events'
     metax_native_mean10 = args.metax_timing == 'native-mean10-events'
+    metax_graph_mean10 = args.metax_timing == 'graph-mean10-events'
     if args.metax_timing is not None and _local_kind_of(args.backend) != 'maca':
         raise ValueError('--metax-timing requires a MACA backend')
-    if (metax_mean10 or metax_native_mean10) and (args.maximum_cv is not None or args.required_pair_wins is not None):
+    if (metax_mean10 or metax_native_mean10 or metax_graph_mean10) and (args.maximum_cv is not None or args.required_pair_wins is not None):
         raise ValueError('MACA mean10 records dispersion/pair wins as diagnostics; use legacy for hard gates')
     metal_mean30 = route == 'metal' and args.metal_timing != 'legacy'
     if metal_mean30 and (args.maximum_cv is not None or args.required_pair_wins is not None):
@@ -720,7 +721,7 @@ def main(argv=None) -> int:
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
         source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
-        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10)
+        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_graph_mean10=metax_graph_mean10)
     if route == 'metal':
         admit_cohort_payload(workload, args.case,
             inputs['evaluation_protocol']['paired_timing']['route_calls_per_cohort'])

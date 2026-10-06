@@ -41,7 +41,7 @@ def native_event_starter(workload, source: str) -> str:
         else:
             body.extend([f'        low_{i} = lm.compare(product_abs, {bands[i-1]!r}, op="ge")',
                          f'        high_{i} = lm.compare(product_abs, {bands[i]!r}, op="lt")',
-                         f'        mask_{i} = low_{i} & high_{i}'])
+                         f'        mask_{i} = lm.mul(low_{i}, high_{i})'])
         body.extend([f'        band_{i} = lm.select(mask_{i}, products, 0.0)',
             f'        sum_{i} = lm.reduce(band_{i}, op="sum", axis=0, scope="cta", across_loop=False, id="sum_band_{i}")'])
     for i in range(1, 5):

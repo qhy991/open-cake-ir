@@ -7,7 +7,7 @@ from pathlib import Path
 
 from open_cake_ir.compiler import frontend
 from open_cake_ir.evaluation.paired import (
-    ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_MACA_KIND, PAIRED_MACA_EVENT_KIND, PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
+    ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_MACA_KIND, PAIRED_MACA_EVENT_KIND, PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_GRAPH_EVENT_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
     paired_protocol)
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING, source_reference_path
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
@@ -35,16 +35,16 @@ def arm_feedback(evaluation) -> list[str]:
 
 def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sample: int | None = None,
                       maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
-                      metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False) -> dict:
+                      metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False, metax_graph_mean10: bool = False) -> dict:
     if type(searches_per_turn) is not int or searches_per_turn <= 0:
         raise ValueError("searches per Turn must be a positive integer")
     backend = backend_for_target(workload.target)
     if backend is None:
         raise ValueError("evaluation policy requires a supported exact target")
     metal = BACKENDS[backend]["route"] == "metal"
-    if metax_mean10 or metax_native_mean10:
+    if metax_mean10 or metax_native_mean10 or metax_graph_mean10:
         from open_cake_ir.evaluation.platforms import platform_for
-        if metax_mean10 and metax_native_mean10:
+        if sum((metax_mean10, metax_native_mean10, metax_graph_mean10)) != 1:
             raise ValueError('Select exactly one MACA event submission protocol')
         if PAIRED_MACA_EVENT_KIND not in platform_for(workload.target).paired_kinds:
             raise ValueError("MACA mean10 requires a declared MACA event target")
@@ -119,12 +119,12 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
             statistic="mean", pair_order=[["candidate", "baseline"], ["baseline", "candidate"]],
             samples_per_cohort=15, route_calls_per_cohort=18,
             maximum_cv=None, maximum_relative_iqr=None, required_pair_wins=0)
-    if metax_mean10 or metax_native_mean10:
-        source = 'maca_native_event' if metax_native_mean10 else 'maca_event'
+    if metax_mean10 or metax_native_mean10 or metax_graph_mean10:
+        source = 'maca_graph_event' if metax_graph_mean10 else 'maca_native_event' if metax_native_mean10 else 'maca_event'
         policy['search_evaluation'] = f'correctness_then_paired_{source}'
         policy['confirmatory_evaluation'] = f'fresh_fixed_candidate_correctness_then_paired_{source}'
         policy['paired_timing'].update(
-            kind=PAIRED_MACA_NATIVE_EVENT_KIND if metax_native_mean10 else PAIRED_MACA_EVENT_KIND, statistic='mean',
+            kind=PAIRED_MACA_GRAPH_EVENT_KIND if metax_graph_mean10 else PAIRED_MACA_NATIVE_EVENT_KIND if metax_native_mean10 else PAIRED_MACA_EVENT_KIND, statistic='mean',
             pair_order=[['candidate', 'baseline'], ['baseline', 'candidate']],
             samples_per_cohort=5, route_calls_per_cohort=16,
             maximum_cv=None, required_pair_wins=0)
@@ -176,7 +176,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    reference_access: str = 'known_kernel_reproduction',
                    lowering_route=None, source_file: bool = False,
                    generated_source_feedback: bool = False,
-                   native_skill_package: Path | None = None, metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False) -> dict:
+                   native_skill_package: Path | None = None, metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False, metax_graph_mean10: bool = False) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -275,7 +275,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
             provider['native_skill_package'] = skill_package_reference
     evaluation = evaluation_policy(workload, searches_per_turn=searches_per_turn,
                                    dispatches_per_sample=dispatches_per_sample,
-                                   maximum_cv=maximum_cv, required_pair_wins=required_pair_wins, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10)
+                                   maximum_cv=maximum_cv, required_pair_wins=required_pair_wins, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_graph_mean10=metax_graph_mean10)
     return {
         "schema_version": 1, "run_id": "open_cake-1", "sequence": 1, "assignment": None,
         "compiler_revision": dict(CURRENT_RELEASE_BINDING),

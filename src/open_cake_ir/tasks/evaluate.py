@@ -183,8 +183,8 @@ def _prepare_local_tensor_work(authority, kind):
     _admit_program_assay(authority, collect_timing=authority.timed_assay_available
                          and authority.request['purpose'] != 'attribution')
     policy = authority.request['evaluation_protocol']
-    from open_cake_ir.evaluation.paired import PAIRED_MACA_NATIVE_EVENT_KIND
-    if (policy.get('paired_timing', {}).get('kind') == PAIRED_MACA_NATIVE_EVENT_KIND
+    from open_cake_ir.evaluation.paired import PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_GRAPH_EVENT_KIND
+    if (policy.get('paired_timing', {}).get('kind') in {PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_GRAPH_EVENT_KIND}
             and authority.request['purpose'] != 'attribution'):
         from open_cake_ir.evaluation.metax_native_events import prepare_helper
         prepare_helper()  # Host compilation precedes the device lease.
@@ -1047,10 +1047,11 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
     if collect_timing:
         if authority.baseline is None:
             raise ValueError('MACA timing requires the declared paired baseline')
-        from open_cake_ir.evaluation.paired import MACA_EVENT_KINDS, PAIRED_MACA_NATIVE_EVENT_KIND
+        from open_cake_ir.evaluation.paired import MACA_EVENT_KINDS, PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_GRAPH_EVENT_KIND
         if authority.request['evaluation_protocol']['paired_timing']['kind'] in MACA_EVENT_KINDS:
-            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark
-            assay = (MacaNativeEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
+            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark, MacaGraphEventBenchmark
+            assay = (MacaGraphEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
+                     == PAIRED_MACA_GRAPH_EVENT_KIND else MacaNativeEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
                      == PAIRED_MACA_NATIVE_EVENT_KIND else MacaEventBenchmark)
             _evaluate_paired_tile(authority, result,
                 lambda role, manifest: assay(manifest,

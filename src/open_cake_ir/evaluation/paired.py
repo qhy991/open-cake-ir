@@ -46,7 +46,8 @@ PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
 PAIRED_MACA_KIND = 'fixed_baseline_paired_mcpti_dispatch_v1'
 PAIRED_MACA_EVENT_KIND = 'fixed_baseline_paired_maca_event_v1'
 PAIRED_MACA_NATIVE_EVENT_KIND = 'fixed_baseline_paired_maca_native_event_v1'
-MACA_EVENT_KINDS = frozenset({PAIRED_MACA_EVENT_KIND, PAIRED_MACA_NATIVE_EVENT_KIND})
+PAIRED_MACA_GRAPH_EVENT_KIND = 'fixed_baseline_paired_maca_graph_event_v1'
+MACA_EVENT_KINDS = frozenset({PAIRED_MACA_EVENT_KIND, PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_GRAPH_EVENT_KIND})
 METAL_KINDS = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].paired_kinds
 PAIRED_KINDS = frozenset().union(*(row.paired_kinds for row in PLATFORMS.values()))
 # How many times a cohort calls the route, per measurement source that declares it on its
