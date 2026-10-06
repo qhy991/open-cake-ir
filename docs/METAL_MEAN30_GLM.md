@@ -9,7 +9,7 @@ GLM Metal engineering results; Codex qualifications do not qualify this treatmen
 
 New Metal CLI launches default to `--metal-timing mean30`. Each participant has two
 cohorts, in AB then BA order, with 3 untimed warmup calls and 15 timed command buffers
-per cohort. Each timed buffer encodes 64 dispatches. Divide each buffer's GPU interval
+per cohort. Warmup and timed buffers each encode 64 dispatches; warmups are not samples. Divide each buffer's GPU interval
 by 64, then take the arithmetic mean of all 30 samples. No trimming, outlier removal,
 automatic repetition, or CV/IQR refusal. Raw samples and their dispersion remain
 available. The 1.05 materiality threshold uses pooled means; pair wins are diagnostic.
@@ -24,8 +24,10 @@ selects the previous assay; the Python helper's absent option also retains that 
 Begin with a bounded two-turn RMSNorm run at R=128, C=1024, followed by GEMM+SiLU.
 Declare these as engineering pilots for the evolution loop, not H1-H4 results or
 independent search replications. Keep the Compiler fixed, retain distinct Cake
-candidates, their own MSL/AIR observations, negative findings and proposed compiler
-changes. Each task keeps its own workspace, provider home and task instructions.
+candidates, their own emitted MSL observations, negative findings and proposed compiler
+changes. Automatic feedback currently supplies MSL and separate profiler evidence;
+AIR guidance is included, but an AIR artifact is not automatically supplied. Record
+unavailable AIR and physical register/ISA observations honestly. Each task keeps its own workspace, provider home and task instructions.
 Claude safe mode disables native skill auto-discovery; deliver the complete Cake
 skill and AIR guidance in the frozen AGENTS scaffold for this treatment, and report
 that delivery mechanism honestly. A future native-skill treatment needs its own

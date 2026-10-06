@@ -108,7 +108,7 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
         if dispatches != 64:
             raise ValueError("Metal mean30 requires 64 dispatches per sample")
         # One AB and one BA cohort, fifteen timed samples each: thirty per arm.
-        # Three single-dispatch warmups per cohort are excluded from that count.
+        # Three warmup command buffers per cohort are excluded from that count.
         policy["paired_timing"].update(
             statistic="mean", pair_order=[["candidate", "baseline"], ["baseline", "candidate"]],
             samples_per_cohort=15, route_calls_per_cohort=18,

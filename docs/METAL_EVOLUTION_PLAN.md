@@ -19,7 +19,8 @@ GLM 使用 Claude Code v4 的工程单臂路径、high effort，完整 Cake/AIR 
 各任务 AGENTS 中；不声称与 Codex 原生技能发现等价或完成科学 arm 对照。
 
 先完成 D2 RMSNorm 两轮 pilot，再启动 D6 GEMM+SiLU。首批检查 agent 是否保留结构不同
-的 Cake 假设、读取自己的 MSL/AIR、依据反馈修正候选并记录 Compiler 建议。随后以
+的 Cake 假设、读取自己的 MSL、依据反馈修正候选并记录 Compiler 建议。自动反馈提供
+MSL 与独立 profiler 证据；AIR 仅有方法说明，尚未自动提供产物，不推断物理寄存器或机器指令。随后以
 新模型/新计时作为统一基线再研究演进；它们与旧 Codex/中位数结果不能归因比较。
 
 最新验收：通用均值支持 #361 与 Claude v4 UI 前导修复 #362 的 Python
@@ -35,7 +36,16 @@ HOME 后继位于 `provider-homes/<task workspace relative path>`，不进入作
 发布到新的 `glm-mean30-20261006/baselines/`，由既有 bundle loader 验证新交接。
 两轮 pilot 的上限为每轮 3 候选、6 次编译、6 次 search/attribution、400k provider
 tokens、10800 秒总 wall（包含最终确认）；这些是上限，不是耗尽目标。
-当前仍待本平台整合 CI，尚无 GLM GPU 优化结果。
+平台 PR #364 已合入 `metal@bc82e375`；CI `37413939296` 在固定测试提交
+`f3ee2d8c` 的 Python 3.10/3.11/3.12 各 **2860 passed、35 skipped**（3.12 一项 warning）。
+后继先导固定使用该独立、干净的测试 checkout；状态记录修改不改变实验源码。
+
+2026-10-06 04:45 UTC 的 RMSNorm 启动被自动审批拒绝，进程未创建、没有 provider/GPU
+优化调用；原因是既有端点及合成资格授权没有明确覆盖完整真实任务与生成反馈载荷。
+已向用户请求限定范围授权：公开 Cake 材料、数学任务/starter、本轮候选/MSL、正确性、
+计时/profiler 反馈以及任务路径和设备信息。凭据仅用于认证。两项启动命令与材料已准备在
+外部 `glm-mean30-20261006/pilot-commands.json`；等待该答复期间不间接执行或重试。
+此处不是 Compiler、CI 或均值计时门失败；尚无 GLM GPU 优化结果。
 
 本地一次整合测试在索引冲突尚未提交时被误启动，报告 69 passed 与一个 clean-commit
 前置条件失败；该次不计入验收，不在修复现场后重跑。最终平台提交由独立 CI checkout
