@@ -2,15 +2,15 @@
 % Compile: latexmk -xelatex -interaction=nonstopmode -halt-on-error open-cake-ir-technical-report.tex
 % This single source intentionally has no external figure or bibliography files.
 \documentclass[UTF8,11pt,a4paper,fontset=none]{ctexart}
-\setmainfont{Times New Roman}
-\setsansfont{Avenir Next}
-\setmonofont{Menlo}
-% Use embedded TrueType faces with ToUnicode maps. The prior Hiragino CID
-% subsets had no Unicode map and disappeared in some PDF previewers.
-\setCJKmainfont{Songti SC}[BoldFont={Songti SC Bold}]
-\setCJKsansfont{Arial Unicode MS}[AutoFakeBold=1.4]
-\setCJKmonofont{Songti SC}
-\setCJKfamilyfont{zhhei}{Arial Unicode MS}[AutoFakeBold=1.4]
+% TeX-bundled OpenType fonts keep the same source usable in the built-in
+% compiler, which cannot read macOS system font paths.
+\setmainfont{texgyretermes-regular.otf}[BoldFont=texgyretermes-bold.otf,ItalicFont=texgyretermes-italic.otf,BoldItalicFont=texgyretermes-bolditalic.otf]
+\setsansfont{texgyreheros-regular.otf}[BoldFont=texgyreheros-bold.otf,ItalicFont=texgyreheros-italic.otf,BoldItalicFont=texgyreheros-bolditalic.otf]
+\setmonofont{texgyrecursor-regular.otf}[BoldFont=texgyrecursor-bold.otf]
+\setCJKmainfont{FandolSong-Regular.otf}[BoldFont=FandolSong-Bold.otf,ItalicFont=FandolKai-Regular.otf]
+\setCJKsansfont{FandolHei-Regular.otf}[BoldFont=FandolHei-Bold.otf]
+\setCJKmonofont{FandolFang-Regular.otf}
+\setCJKfamilyfont{zhhei}{FandolHei-Regular.otf}[BoldFont=FandolHei-Bold.otf]
 \xeCJKsetup{CJKecglue={\hskip 0.16em plus 0.06em}}
 \hyphenpenalty=10000
 \exhyphenpenalty=10000
@@ -59,7 +59,7 @@
 \renewcommand{\footrulewidth}{0pt}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/677eb444fec593294c470dcc5793262ae769fce2/#1}{#2}}
-\newcommand{\researchrepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/bdcb8e628413a63bb22da9a01187404fe3f36992/#1}{#2}}
+\newcommand{\researchrepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/761f6aa1f798afe8ab6d2ace7bf44cbc120918a0/#1}{#2}}
 \newcommand{\weaverepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/93d052021cc3b4b0d8a5580837f7d87bbbd2fc02/#1}{#2}}
 \newcommand{\scope}[1]{\textcolor{accent}{\textbf{#1}}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
@@ -253,9 +253,11 @@ Compiler 拥有完整 Program、叶子 Schedule、合法性检查、确定性改
 反例和版本范围；收益假设仍由实机确认。\researchrepo{docs/RESEARCH_AGENDA.md}{共同研究约定}
 统一各硬件分支的问题与对照，具体实验仍由 Workload、Run 和 Study 的现有职责承接。
 
-研究区分三项假设：表示与工具是否改善有限预算搜索；来源经验和可执行化是否各有增量；
-经审查的系统后继是否帮助未参与修复的任务。多目标接入、单次本机加速与一个可调用 pass
-分别提供局部证据，不能直接替代这些受控比较。
+研究区分四项假设：H1 检验表示与诊断在质量和覆盖约束下的搜索成本；H2 区分来源经验
+与可执行化的增量；H3 检验冻结策略如何在多条合格路线间分配总预算；H4 检验系统后继
+能否帮助未参与修复的任务。先做 H1/H2 的受控先导，再依据能力与信号安排 H3/H4。
+若原生路线持续占优，应收窄结构化接口的适用范围；若改进仅出现在修复用例上，则尚未支持
+后续搜索收益。未显著优于对照时报告不确定性，不据此宣称等效。
 
 \subsection{相关路线与增量贡献}
 CAKE 和 TIRx Harness 已研究 Agent 编写接口、编译分析与优化反馈\cite{cake,tirxharness}；
@@ -315,6 +317,34 @@ IR 保持默认开发接口。具体假设暴露表达或 lowering 缺口时，L
 \end{tikzpicture}
 \caption{发现、晋升与目标复用的研究流程。各阶段有独立证据，图中没有实测收益。}
 \end{figure}
+
+\subsection{自由探索与结构化复用：路线和成本的边界}
+“自由探索，结构化复用”描述两类工作的分工。H3 是拟议的 Lab 策略研究：在开发集冻结
+选择规则和触发条件，在多个独立冻结的 Run 之间分配同一总预算。每个 Run 内保持作者
+环境、源码和路线。对照为开发集选定的最佳固定路线及等额分配；逐任务事后选优只作
+描述性上界。衔接、材料处理、失败编译和确认均计费，继承参考访问逐次保留。
+默认一个多路线优化任务仍为三小时，各子 Run 分享该额度；这项设计尚不代表已实现自动
+路线选择。Workload、Study、RunSpecification 与 Target/Executor 继续分别拥有语义、
+研究处理、一次执行的权限预算和目标执行事实。
+
+起始基线与强参考分别冻结。前者用于报告优化幅度；后者检验性能竞争力。新研究可在
+共同正确性与测量门通过后，采用以下预注册质量终点：
+\[
+  L_{\mathrm{confirm}}(P) \leq (1+\delta)\,L_{\mathrm{ref}}.
+\]
+参考实现、容忍度 $\delta$、主次终点和检验顺序由具体研究决定；示例容忍度不是通用验收
+门槛。既有 E/P 研究保留原来的基线提升终点。首次达到门槛的成本来自预设独立确认检查点；
+未达到者保留右删失。计时样本、重复 Run 与独立任务分别估计不同层次的波动，正式规模
+由独立先导确定；小规模试点只报告逐任务结果。
+
+经验已存在时的边际价值与从零形成经验的累计价值分别报告。后续节省需要覆盖新增的
+发现、提炼、实现、适配和维护成本，才支持摊销收益。人时、GPU 时间、token 和货币成本
+分别记录，声明换算假设后才汇总。任务面板同时保留结构性受益候选、低余量任务、原生
+能力缺口和不适用或负迁移案例。
+
+验证层区分明确语义违反、未建模、表达或实现缺口、数值失败、计时无效与有效但无收益。
+对拒绝候选的采样复核在受限诊断环境中进行；额外证明覆盖与共同验收分别报告。方法应
+同时经受有效候选的误拒和非法候选的漏检检查，不能依靠排除难任务获得表面成功率。
 
 \subsection{各硬件分支回答同一主问题}
 各分支选择自身已能可靠评测的任务，贡献不同技术差异的证据。NVIDIA 优先提供结构性发现、
