@@ -1,7 +1,5 @@
 # open-cake-ir
 
-**Agent 驱动的 GPU Kernel 搜索与 Compiler 演进。**
-
 <p align="center"><strong>面向跨硬件优化经验复用的 Agent–Compiler 框架。</strong><br />
 An agent–compiler framework for reusable optimization mechanisms across hardware.</p>
 
