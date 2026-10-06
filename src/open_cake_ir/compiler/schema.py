@@ -265,7 +265,7 @@ _PARAMETERS = {
             ),
             _object(
                 {
-                    "op": {"const": ElementwiseOp.TANH.value},
+                    "op": {"enum": [ElementwiseOp.TANH.value, ElementwiseOp.SIN.value, ElementwiseOp.COS.value]},
                     "instruction": _object({"contract": {"type": "string"}}),
                 },
                 {
@@ -279,7 +279,7 @@ _PARAMETERS = {
                         "enum": [
                             member.value
                             for member in ElementwiseOp
-                            if member not in (ElementwiseOp.TANH, ElementwiseOp.FMA)
+                            if member not in (ElementwiseOp.TANH, ElementwiseOp.FMA, ElementwiseOp.SIN, ElementwiseOp.COS)
                         ]
                     }
                 },

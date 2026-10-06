@@ -12,6 +12,7 @@ from .author_home import ISOLATED_SKILL_PACKAGE_V1
 from .native_skill_observation import _unique
 from .native_skill_run import validate_run_input, _path
 from .native_skills import NativeSkillPackage
+from .provider_documents import NATIVE_SKILL_QUALIFICATION_V1
 from .provider_events import parse_codex_turn_events
 from .provider_policy import execution_configuration
 from .task_package import TaskPackage, render_task_request
@@ -26,12 +27,14 @@ def selection_instruction(names):
     return 'Use these native skills in every turn: ' + ', '.join('$' + name for name in names) + '.\n'
 
 
-def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, receipt):
+def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, receipt, requested_names=None):
     """Recheck each declared arm's initial/resume pair; do not reopen its original files.
 
     Reuses Run command-policy/native reconstruction with an in-memory binding derived
     from the retained invocation. The binding is not a second archived record.
     Receipt and authority are expected to be independently anchored by the caller.
+    Requested names, when supplied for reuse, must be current package bodies in
+    every arm and both turns; a system skill of the same name cannot satisfy them.
     """
     if (authority.get('author_home_policy') != ISOLATED_SKILL_PACKAGE_V1
         or authority.get('harness') != 'codex'
@@ -43,9 +46,13 @@ def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, re
     context = authority.get('native_skill_context')
     if (not isinstance(context, dict)
         or set(context) != {'kind', 'executable', 'output_schema', 'arms', 'selected_names'}
-        or context['kind'] != 'native_skill_qualification_v1'):
+        or context['kind'] != NATIVE_SKILL_QUALIFICATION_V1):
         raise ValueError('native qualification lacks its frozen context')
     instruction = selection_instruction(context['selected_names'])
+    if requested_names is not None:
+        selection_instruction(requested_names)
+    # A reused qualification must cover this request, not just its original TASK.
+    names = list(dict.fromkeys(context['selected_names'] + (requested_names or [])))
     arms = authority.get('arms')
     if (not isinstance(arms, list) or not 0 < len(arms) <= 2
         or any(not isinstance(arm, str) or not arm for arm in arms) or len(set(arms)) != len(arms)
@@ -153,12 +160,90 @@ def reconstruct_qualification_inputs(*, evidence, run_id, authority, payload, re
                 task_package=task, provider=provider, thread_id=thread_id, turn=number)
             entry_paths = {str(_path(paths['user_home'])/'.agents/skills'/name/'SKILL.md')
                            for name in package.entry_names}
-            for name in context['selected_names']:
+            for name in names:
                 matches = [item for item in observation['catalog']
                            if item['name'] == name and item['path'] in entry_paths]
                 if (len(matches) != 1 or not any(item['name'] == name and item['path'] == matches[0]['path']
                     for item in observation['loaded_this_turn'])):
-                    raise ValueError('native qualification selected body was not delivered this turn')
+                    raise ValueError(f'native qualification selected body was not delivered this turn: {arm}/{phase}/{name}')
             result[arm].append(observation)
             previous_input, previous_binding = native_input, binding
     return result
+
+
+def verify_qualification_evidence(*, qualification, anchor, requested_names=None,
+                                  required_environment_kinds=()):
+    """Open actual sealed evidence and verify the receipt's native-input capability.
+
+    Scope admission and the external anchor reference belong to admission. This
+    verifier preserves the receipt's own scope: fixture evidence remains fixture
+    evidence. A capability name or an immediate-audit flag cannot replace this check.
+    """
+    from open_cake_ir.evidence import EvidenceStore
+    if (not isinstance(required_environment_kinds, (tuple, list))
+        or any(not isinstance(kind, str) or not kind for kind in required_environment_kinds)):
+        raise ValueError('native qualification requested environment kinds differ')
+    if requested_names is not None:
+        selection_instruction(requested_names)
+    if qualification.native_skill_input_contract != NATIVE_SKILL_QUALIFICATION_V1:
+        raise ValueError('native skill input capability is not qualified by this receipt')
+    if (not isinstance(anchor, dict)
+        or set(anchor) != {'schema_version', 'kind', 'run_id', 'evidence_root', 'authority_sha256',
+                           'qualification_receipt_sha256', 'immediate_audit_integrity', 'terminal_seal_sha256'}
+        or anchor.get('schema_version') != 1 or anchor.get('immediate_audit_integrity') is not True
+        or anchor.get('kind') != 'codex_provider_qualification_evidence_anchor'
+        or anchor.get('qualification_receipt_sha256') != qualification.canonical_sha256
+        or not isinstance(anchor.get('run_id'), str) or not anchor['run_id']
+        or not isinstance(anchor.get('evidence_root'), str) or not anchor['evidence_root']):
+        raise ValueError('native qualification anchor differs from receipt')
+    evidence = EvidenceStore.open(anchor['evidence_root'])
+    audit = evidence.audit_run(anchor['run_id'])
+    if (not audit.archive_integrity or not audit.filesystem_custody_verified
+        or audit.authority_sha256 != anchor.get('authority_sha256')
+        or audit.terminal_seal_sha256 != anchor.get('terminal_seal_sha256')
+        or audit.protocol_adherence != 'adhered' or audit.endpoint_observation != 'qualified'
+        or not isinstance(audit.endpoint, dict)):
+        raise ValueError('native qualification archive integrity, custody or outcome is unverified')
+    authority = evidence.replay_authority(audit.run_id)
+    endpoint = audit.endpoint
+    if (endpoint.get('qualification_receipt_sha256') != qualification.canonical_sha256
+        or endpoint.get('qualification_scope') != qualification.scope
+        or endpoint.get('arms_qualified') != authority.get('arms')
+        or endpoint.get('harness') != 'codex'
+        or endpoint.get('gpu_execution_authorized') is not False
+        or any(endpoint.get(key) is not True for key in (
+            'add_observed', 'update_observed', 'thread_continuity_observed', 'usage_observed',
+            'sandbox_observed', 'cwd_observed', 'candidate_changed', 'reference_visibility_observed'))
+        or any(endpoint.get(key) != authority.get(key) for key in (
+            'event_contract', 'feature_policy', 'submission_contract', 'maximum_candidates_per_turn'))):
+        raise ValueError('native qualification terminal endpoint differs')
+    events = evidence.replay_events(audit.run_id)
+    observations = [event['payload'] for event in events if event['kind'] == 'provider_qualification_observed']
+    if len(observations) != 1 or any(event['kind'] == 'provider_qualification_failed' for event in events):
+        raise ValueError('native qualification must retain exactly one successful observation')
+    result = reconstruct_qualification_inputs(evidence=evidence, run_id=audit.run_id,
+        authority=authority, payload=observations[0], receipt=qualification, requested_names=requested_names)
+    missing = set(required_environment_kinds) - set(result)
+    if missing:
+        raise ValueError('native qualification has no retained turns for environment: ' + ', '.join(sorted(missing)))
+    return result
+
+
+def require_live_native_receipt(*, qualification, anchor):
+    """Reject absent/old/fixture receipts early; this never grants admission."""
+    if (anchor is None or not getattr(qualification, "qualified", False)
+        or getattr(qualification, "scope", None) not in {
+            "live_two_turn_current_provider", "live_two_turn_tool_rich_provider"}
+        or getattr(qualification, "native_skill_input_contract", None) != NATIVE_SKILL_QUALIFICATION_V1):
+        raise ValueError("native skill discovery and actual initial/resume delivery are not qualified; live evidence is required")
+
+
+def verify_live_qualification_evidence(*, qualification, anchor, required_environment_kinds=(),
+                                       expected_configuration=None):
+    """Live construction needs the archive itself; receipt fields are not permission."""
+    require_live_native_receipt(qualification=qualification, anchor=anchor)
+    if (expected_configuration is not None
+        and sha256(canonical_json_bytes(expected_configuration)).hexdigest() != qualification.configuration_sha256):
+        raise ValueError('native provider qualification bytes or capability differ from the runtime configuration')
+    return verify_qualification_evidence(qualification=qualification, anchor=anchor,
+        required_environment_kinds=required_environment_kinds)

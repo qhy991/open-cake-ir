@@ -17,6 +17,7 @@ from ..ir import (
     OperationKind,
     Schedule,
 )
+from ..ir.vocabulary import ScanOp
 from ..ir.operations import elementwise_result_dtype, ELEMENTWISE_FLOAT_DTYPES as _ELEMENTWISE_FLOAT_DTYPES
 from ..diagnostics import FindingCategory
 from ._collector import _Collector
@@ -1262,12 +1263,15 @@ def _verify_operation_shape(
         if source is not None and result is not None:
             expected_dtype = (DType.INT32 if source.dtype is DType.INT32 else
                               DType.FP32 if source.dtype in _ELEMENTWISE_FLOAT_DTYPES else None)
+            if operation.parameters.op is ScanOp.MAX and source.dtype is not DType.INT32:
+                expected_dtype = None
             if expected_dtype is None or result.dtype is not expected_dtype:
                 out.add(
                     "SCAN_DTYPE_MISMATCH",
                     f"{path}.writes",
-                    f"a {operation.parameters.op.value} scan accumulates bf16/fp16/fp32 "
-                    f"into fp32 or int32 into int32, but {source.name!r} is {source.dtype.value} and "
+                    f"a sum scan promotes floating inputs to fp32; max scan requires int32 "
+                    f"input/result (no floating NaN or signed-zero policy is declared); "
+                    f"{source.name!r} is {source.dtype.value} and "
                     f"{result.name!r} is {result.dtype.value}",
                     category,
                 )

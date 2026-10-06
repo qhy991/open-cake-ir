@@ -294,11 +294,11 @@ class ExperimentInputTests(unittest.TestCase):
                 self.assertEqual(command[command.index(flag) + 1], str(value))
         return command
 
-    def _skill_archive(self, name):
+    def _skill_archive(self, name, native_name=None):
         source = self.root / (name + '.tar')
         with tarfile.open(source, 'w') as archive:
             for path, data in (
-                (f'skills/{name}/SKILL.md', f'---\nname: {name}\ndescription: fixture\n---\n{name} body'.encode()),
+                (f'skills/{name}/SKILL.md', f'---\nname: {native_name or name}\ndescription: fixture\n---\n{name} body'.encode()),
                 (f'skills/{name}/scripts/check.py', f'print({name!r})'.encode()),
                 (f'skills/{name}/assets/table.bin', bytes(range(256))),
             ):
@@ -311,8 +311,10 @@ class ExperimentInputTests(unittest.TestCase):
         config = self._per_cell_config()
         expected = {}
         for cell in config['cells']:
-            source = self._skill_archive(cell['id'])
+            native_name = 'fixture:' + cell['id']
+            source = self._skill_archive(cell['id'], native_name=native_name)
             cell['author_skill_package'] = str(source)
+            cell['native_skill_names'] = [native_name]
             expected[cell['id']] = source.read_bytes()
         config['cells'][1]['node'].update(transport='ssh', host='fixture-host')
         with patch.object(kernel_experiment.NativeSkillPackage, 'read',
@@ -336,12 +338,16 @@ class ExperimentInputTests(unittest.TestCase):
             self.assertEqual(material, workspace.with_name(workspace.name + '-inputs')/'author-skills.tar')
             self.assertEqual(material.read_bytes(), expected[cell['id']])
             self.assertNotIn(cell['author_skill_package'], command)
+            self.assertEqual([command[i+1] for i, value in enumerate(command) if value == '--native-skill-name'],
+                             cell['native_skill_names'])
+            self.assertIn('native_skill_names', (output/'cells'/cell['id']/'TASK.md').read_text())
 
     def test_missing_skill_snapshot_refuses_before_attempt_without_source_or_sibling_fallback(self):
         config = self._per_cell_config()
         source = self._skill_archive('shared')
         for cell in config['cells']:
             cell['author_skill_package'] = str(source)
+            cell['native_skill_names'] = ['shared']
         output = self._prepare_experiment(config)
         first = config['cells'][0]['id']
         (output/'cells'/first/'author-skills.tar').unlink()
@@ -358,6 +364,7 @@ class ExperimentInputTests(unittest.TestCase):
         source = self.root/'invalid.tar'
         source.write_bytes(b'not an archive')
         config['cells'][0]['author_skill_package'] = str(source)
+        config['cells'][0]['native_skill_names'] = ['fixture']
         with self.assertRaises(ValueError):
             self._prepare_experiment(config)
         self.assertFalse((self.root/'experiment').exists())
@@ -371,6 +378,7 @@ class ExperimentInputTests(unittest.TestCase):
     def test_node_refuses_missing_invalid_and_oversized_skill_payload_before_side_effects(self):
         cell = deepcopy(self.config['cells'][0])
         cell['author_skill_package'] = '/unread/original.tar'
+        cell['native_skill_names'] = ['fixture']
         payload = {'cell': cell, 'source_commit': COMMIT, 'scaffold': 'rules',
                    'provider': self.config['provider'], 'budget': self.config['budget']}
         # Exercise the generated transport with a smaller memory bound. The
@@ -388,6 +396,36 @@ class ExperimentInputTests(unittest.TestCase):
                     exec(bounded_node, {})
             execute.assert_not_called()
             self.assertFalse((self.root/'node-run-inputs').exists())
+
+    def test_skill_selection_is_explicit_per_cell_before_preparation(self):
+        config = self._per_cell_config()
+        cell = config['cells'][0]
+        cell['author_skill_package'] = '/unread/skill-directory-is-not-a-name.tar'
+        for names in (None, [], ['cake', 'cake'], 'cake', ['bad name'], ['x']*33, [True]):
+            selected = deepcopy(config)
+            if names is not None: selected['cells'][0]['native_skill_names'] = names
+            with self.subTest(names=names), self.assertRaisesRegex(ValueError, 'native'):
+                self._prepare_experiment(selected)
+            self.assertFalse((self.root/'experiment').exists())
+        selected = deepcopy(config)
+        selected['cells'][0].pop('author_skill_package')
+        selected['cells'][0]['native_skill_names'] = ['cake']
+        with self.assertRaisesRegex(ValueError, 'declared together'):
+            kernel_experiment.validate(selected)
+
+    def test_node_uses_same_selection_rule_before_files_or_subprocess(self):
+        cell = deepcopy(self.config['cells'][0])
+        cell['author_skill_package'] = '/unread/original.tar'
+        for names in (None, [], ['cake', 'cake'], ['bad name'], ['x']*33, [True]):
+            selected = deepcopy(cell)
+            if names is not None: selected['native_skill_names'] = names
+            payload = {'cell': selected, 'author_skill_package': base64.b64encode(b'fixture').decode()}
+            with self.subTest(names=names), patch('sys.stdin', io.StringIO(json.dumps(payload))), \
+                 patch('subprocess.run') as run:
+                with self.assertRaisesRegex(ValueError, 'native|skill names'):
+                    exec(kernel_experiment._NODE, {})
+                run.assert_not_called()
+                self.assertFalse((self.root/'node-run-inputs').exists())
 
     def _resolved_budget(self, command, *, refusal=None):
         # Exercise the real CLI parser and budget owner; stop before stack admission.

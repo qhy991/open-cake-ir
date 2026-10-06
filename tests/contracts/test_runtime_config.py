@@ -243,7 +243,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
         provider = {name: CAMPAIGN_BINDING for name in
                     ("revision", "executable_sha256", "qualification", "qualification_anchor", "code_mode_host")}
         self.study = SimpleNamespace(state="template", document={
-            "arms": {name: {"provider": copy.deepcopy(provider), "toolchain_sha256": CAMPAIGN_BINDING}
+            "arms": {name: {"environment_kind": name, "provider": copy.deepcopy(provider), "toolchain_sha256": CAMPAIGN_BINDING}
                      for name in ("open_cake", "native_triton")},
             "execution": {"executor_revision": {"binding": "current_release"},
                           "broker_execution_sha256": CAMPAIGN_BINDING, "fixed_baseline": CAMPAIGN_BINDING},
@@ -259,6 +259,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
 
         study = copy.deepcopy(self.study)
         study.document["arms"][arm] = study.document["arms"].pop("native_triton")
+        study.document["arms"][arm]["environment_kind"] = arm
         malformed = [
             (("schema_version",), True),
             (("broker", "timeout_seconds"), True),

@@ -30,6 +30,7 @@ from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
 from open_cake_ir.lab.providers import ProviderQualificationReceipt
+from open_cake_ir.lab.native_skill_qualification import selection_instruction, verify_qualification_evidence
 from open_cake_ir.tasks.compose import execute_run_from_config
 from open_cake_ir.tasks.preparation import prepare_task_run
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
@@ -326,7 +327,8 @@ def _admit_allocator(runtime) -> None:
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
                     kernelctl=None, infra_socket=None, auth_source=None,
-                    local_device=None, local_queue_seconds=0, local_lock_scope="user"):
+                    local_device=None, local_queue_seconds=0, local_lock_scope="user",
+                    local_runtime_device=None, local_expected_pci=None):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -335,7 +337,7 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     refused every DCU launch for lacking a CUDA cluster allocator it has no use for.
     """
     from open_cake_ir.evaluation.source_bootstrap import module_command
-    if (local_device is not None or local_queue_seconds != 0 or local_lock_scope != "user") and (allocation != 'local_broker' or kernelctl is not None):
+    if (local_device is not None or local_queue_seconds != 0 or local_lock_scope != "user" or local_runtime_device is not None or local_expected_pci is not None) and (allocation != 'local_broker' or kernelctl is not None):
         raise ValueError('local device selection and queue require the local broker allocation')
     python = executor.document["host_environment"]["python"]["invocation_path"]
     if kernelctl is not None:
@@ -370,12 +372,15 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             command = module_command(python, "open_cake_ir.evaluation.local_broker",
                                      "--kind", local_kind,
                                      "--worker-module", "open_cake_ir.tasks.evaluate")
-        from open_cake_ir.evaluation.local_broker import _selection_environment
+        from open_cake_ir.evaluation.local_broker import _selection_environment, validate_namespace_mapping
         _selection_environment(local_kind, local_device)
         if local_lock_scope not in {'user', 'device'} or (local_lock_scope == 'device' and local_device is None):
             raise ValueError('device lock scope requires an explicit local device')
         if local_lock_scope != 'user':
             command.extend(('--local-lock-scope', local_lock_scope))
+        validate_namespace_mapping(local_kind, local_device, local_lock_scope, local_runtime_device, local_expected_pci)
+        if local_runtime_device is not None or local_expected_pci is not None:
+            command.extend(('--local-runtime-device', str(local_runtime_device), '--local-expected-pci', local_expected_pci))
         if local_device is not None:
             command.extend(('--local-device', str(local_device)))
         if local_queue_seconds != 0:
@@ -428,7 +433,7 @@ def _admit_local_allocator(runtime, executor, target, workspace):
         'open_cake_ir.evaluation.local_broker', '--kind', 'maca', '--probe-target', target,
         '--runtime-library', host['runtime_library'], '--output', str(output))
     wait = 0.0
-    for flag in ('--local-device', '--local-queue-seconds', '--local-lock-scope'):
+    for flag in ('--local-device', '--local-queue-seconds', '--local-lock-scope', '--local-runtime-device', '--local-expected-pci'):
         if flag in broker['command']:
             value = broker['command'][broker['command'].index(flag) + 1]
             command.extend((flag, value))
@@ -469,9 +474,17 @@ def _prepare_baseline(root, workspace, compiler, executor, host, workload, autho
 
 
 def _qualify(root, workspace, args, executable, source_path):
+    names = getattr(args, "native_skill_name", [])
+    if getattr(args, "author_skill_package", None) is not None:
+        selection_instruction(names)
+    elif names:
+        raise ValueError("native skill names require their explicit package")
     if args.qualification is not None:
         receipt_path = external_file(root, str(args.qualification), "provider qualification")
         anchor_path = external_file(root, str(args.qualification_anchor), "provider qualification anchor")
+        if getattr(args, "author_skill_package", None) is not None:
+            verify_qualification_evidence(qualification=ProviderQualificationReceipt.load(receipt_path),
+                anchor=json.loads(anchor_path.read_bytes()), requested_names=names)
         return receipt_path, anchor_path
     version = subprocess.run([str(executable), "--version"], check=True, capture_output=True, text=True, timeout=30)
     if not version.stdout.strip():
@@ -497,6 +510,8 @@ def _qualify(root, workspace, args, executable, source_path):
                         '--auth-source', str(args.auth_source)))
         if skill_package is not None:
             command.extend(('--author-skill-package', str(skill_package)))
+            for name in names:
+                command.extend(('--native-skill-name', name))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -555,6 +570,8 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--native-skill-name', action='append', default=[],
+                        help='exact native skill name to verify in both qualification turns; repeat for multiple skills')
     parser.add_argument('--author-skill-package', type=Path,
                         help='controlled native skill package for a private Codex HOME; live discovery and delivery remain unqualified')
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
@@ -566,6 +583,8 @@ def main(argv=None) -> int:
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument('--local-device', type=int, help='physical device ordinal selected by the existing local broker')
     parser.add_argument('--local-lock-scope', choices=('user', 'device'), default='user')
+    parser.add_argument('--local-runtime-device', type=int)
+    parser.add_argument('--local-expected-pci')
     parser.add_argument('--local-queue-seconds', type=float, default=0, help='bounded wait for the existing local lock; no lease held while waiting')
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
@@ -615,11 +634,21 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if args.native_skill_name:
+        if args.author_skill_package is None:
+            parser.error('--native-skill-name requires --author-skill-package')
+        try:
+            selection_instruction(args.native_skill_name)
+        except ValueError as error:
+            parser.error(str(error))
     if args.author_skill_package is not None:
         if args.harness != 'codex' or args.reference_access != 'known_kernel_reproduction':
             parser.error('--author-skill-package requires Codex known-kernel authoring')
         if not args.baseline_only:
-            parser.error('native skill discovery and delivery on initial/resume are not verified; refusing formal qualification or launch')
+            try:
+                selection_instruction(args.native_skill_name)
+            except ValueError as error:
+                parser.error(str(error))
     if args.local_device is not None and args.local_device < 0:
         parser.error('--local-device must be nonnegative')
     if args.local_queue_seconds < 0 or not math.isfinite(args.local_queue_seconds):
@@ -693,7 +722,8 @@ def main(argv=None) -> int:
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
                                kernelctl=args.kernelctl, infra_socket=args.infra_socket,
                                auth_source=auth_source, local_device=args.local_device,
-                               local_queue_seconds=args.local_queue_seconds, local_lock_scope=args.local_lock_scope))
+                               local_queue_seconds=args.local_queue_seconds, local_lock_scope=args.local_lock_scope,
+                               local_runtime_device=args.local_runtime_device, local_expected_pci=args.local_expected_pci))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for

@@ -2612,6 +2612,45 @@
         "schedule_sha256": "43eaf13c59af5b37b0d3425df1e1ecbf15acfc5474c96c6236d169db40465967",
         "lowering_source_sha256": "c664c2d71bae21491ecb719bafb69ded249153d1937f23ffb22dd228ff8e5b4d"
       }
+    },
+    {
+      "case_id": "gfx938-ocml-sin",
+      "schedule": "corpus/schedules/gfx938-ocml-sin.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "2e1ffd6ab11614f35657e0b3374998a164924d50c016b980cf654b407fee025e",
+        "lowering_source_sha256": "427954b0be07d0872cef9c8a4efab24ca9dfaec3139c667f5bfb0beaf29737a6"
+      }
+    },
+    {
+      "case_id": "gfx938-ocml-cos",
+      "schedule": "corpus/schedules/gfx938-ocml-cos.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "8d0c7aef679303c40bb5d12e46a3208e6a631b2e38750c2ba6cdecd4af200a12",
+        "lowering_source_sha256": "85fa60a758c16f0efbcc6c84453f34045bc11d732ae817f5d1c197113a80c750"
+      }
+    },
+    {
+      "case_id": "gfx938-int32-max-scan",
+      "schedule": "corpus/schedules/gfx938-int32-max-scan.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "8e95a41a43a6970b155a74ec55584b8f00ba099b33c8dc4ab314ecf0c6f90196",
+        "lowering_source_sha256": "048dbdf896ad85979beafbe305d4ac039e874258d9c265f4ec4127fcaa47c7d9"
+      }
     }
   ]
 }

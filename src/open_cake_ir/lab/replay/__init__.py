@@ -101,10 +101,10 @@ def _replay_matched_run(
 ) -> None:
     from ..bindings import load_compiler_reference
     from ..native_skills import author_skill_reference
-    from ..author_home import require_live_skill_qualification
+    from ..admission import admit_native_skill_authoring
     # Validate even the zero-provider and initial-fault paths before their early returns.
     author_skill_reference(lock.document['authoring'])
-    require_live_skill_qualification(lock.document['authoring'].get('provider', {}).get('author_home_policy'))
+    admit_native_skill_authoring(authoring=lock.document['authoring'], project_root=project_root)
     compiler_ref = _identity_reference(lock.document["compiler_revision"], "compiler_revision")
     load_compiler_reference(project_root, compiler_ref, "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)
@@ -194,6 +194,9 @@ def _replay_matched_run(
             replay_optimization_history(events=events, evidence=evidence, receipts={},
                                         arm=lock.environment_kind, specification=lock)
             return
+        from ..native_skill_fault import has_native_rejection
+        native_rejection = any(event.get('kind') == 'run_fault' and has_native_rejection(event['payload'])
+                               for event in events)
         _replay_provider_fault(
             audit=audit,
             checkpoint_events=checkpoint_events,
@@ -201,7 +204,7 @@ def _replay_matched_run(
             lock=lock,
             evidence=evidence,
             expected_task_package=(task_package(lock, audit.run_id)
-                if lock.document['authoring'].get('provider', {}).get('harness') == 'responses' else None),
+                if native_rejection or lock.document['authoring'].get('provider', {}).get('harness') == 'responses' else None),
         )
         replay_feedback(events=events, evidence=evidence, specification=lock)
         replay_optimization_history(events=events, evidence=evidence, receipts={},

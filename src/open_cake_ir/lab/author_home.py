@@ -17,12 +17,6 @@ ISOLATED_SKILL_PACKAGE_V1 = 'isolated_skill_package_v1'
 CODEX_HOME_POLICIES = frozenset({ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1})
 
 
-def require_live_skill_qualification(policy: str | None) -> None:
-    """File/state preparation must not be promoted into native-input qualification."""
-    if policy == ISOLATED_SKILL_PACKAGE_V1:
-        raise ValueError('native skill discovery and actual initial/resume delivery are not qualified; refusing live Run')
-
-
 def provision_user_home(destination: Path, package) -> Path:
     """Project the complete frozen material into one fresh private HOME."""
     from .native_skills import NativeSkillPackage

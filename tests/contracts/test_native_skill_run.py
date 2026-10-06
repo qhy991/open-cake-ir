@@ -2,6 +2,7 @@
 from copy import deepcopy
 from dataclasses import replace
 from hashlib import sha256
+from pathlib import Path
 import json
 from types import SimpleNamespace
 import unittest
@@ -9,7 +10,8 @@ from unittest.mock import patch
 
 from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.archive import _archive_provider_turn
-from open_cake_ir.lab.author_home import system_skills_identity, require_live_skill_qualification
+from open_cake_ir.lab.author_home import system_skills_identity
+from open_cake_ir.lab.admission import admit_native_skill_authoring
 from open_cake_ir.lab.native_skill_observation import project_rollout
 from open_cake_ir.lab.native_skill_run import bind_invocation
 from open_cake_ir.lab.native_skill_fault import NativeSkillRunInputFault
@@ -241,4 +243,5 @@ class NativeSkillRunEvidenceTests(unittest.TestCase):
         self.archive(self.make_turn(1))
         self.replay()
         with self.assertRaisesRegex(ValueError, 'not qualified'):
-            require_live_skill_qualification(self.provider['author_home_policy'])
+            admit_native_skill_authoring(authoring={'environment_kind': 'open_cake',
+                'provider': self.provider}, project_root=Path(__file__).resolve().parents[2])

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import inspect
 import math
 from pathlib import Path
 import re
@@ -24,6 +25,7 @@ from open_cake_ir.tasks.devices import BACKENDS
 from open_cake_ir.tasks.workloads import create_task
 from open_cake_ir.tasks.catalog import task_entry
 from open_cake_ir.lab.native_skills import MAX_ARCHIVE_BYTES, NativeSkillPackage
+from open_cake_ir.lab.native_skill_qualification import selection_instruction
 
 POLICY = ROOT / "contracts/scaffolds/kernel-reproduction/AGENTS.md"
 
@@ -105,7 +107,7 @@ def validate(config):
             required.add("references")
             optional.add("agents_md")
             optional.add('generated_source_feedback')
-            optional.add('author_skill_package')
+            optional.update(('author_skill_package', 'native_skill_names'))
         object_fields(cell, required, optional)
         if version == 2:
             validate_references(cell["references"])
@@ -113,7 +115,10 @@ def validate(config):
                 absolute(cell["agents_md"])
             if 'generated_source_feedback' in cell and type(cell['generated_source_feedback']) is not bool:
                 raise ValueError('cell generated_source_feedback must be an explicit boolean')
+            if ('author_skill_package' in cell) != ('native_skill_names' in cell):
+                raise ValueError('cell skill package and explicit native names must be declared together')
             if 'author_skill_package' in cell:
+                selection_instruction(cell['native_skill_names'])
                 absolute(cell['author_skill_package'])
                 if provider['harness'] != 'codex':
                     raise ValueError('native author skill packages require the Codex provider')
@@ -262,7 +267,10 @@ def prepare(config_path: Path, output: Path) -> None:
 
 # Executed on the explicitly selected node. It creates an isolated checkout at
 # the pinned commit, never edits a shared source tree or chooses a GPU itself.
-_NODE = '''import base64, json, os, pathlib, subprocess, sys
+# Embed the same small pure selection validator: the destination has no checkout
+# to import before transport admission, and must not maintain another name parser.
+_NODE = '''import base64, json, os, pathlib, re, subprocess, sys
+__NATIVE_SKILL_SELECTION_VALIDATOR__
 p = json.load(sys.stdin)
 n = p["cell"]["node"]
 w = pathlib.Path(n["workspace"])
@@ -272,6 +280,10 @@ if any((x / ".git").exists() for x in w.parents):
     raise ValueError("experiment outputs must be outside source")
 if ("author_skill_package" in p["cell"]) != ("author_skill_package" in p):
     raise ValueError("selected cell skill-package transport differs")
+if ("author_skill_package" in p["cell"]) != ("native_skill_names" in p["cell"]):
+    raise ValueError("selected cell skill names and package differ")
+if "native_skill_names" in p["cell"]:
+    selection_instruction(p["cell"]["native_skill_names"])
 skill_bytes = None
 skill_limit = __AUTHOR_SKILL_ARCHIVE_LIMIT__
 if "author_skill_package" in p:
@@ -293,6 +305,8 @@ args = [n["python"], str(source / "tools/launch_task.py"), "--workspace", str(w)
         "--kernelctl", n["kernelctl"], "--infra-socket", n["socket"], "--agents-md", str(inputs / "AGENTS.md")]
 if skill_bytes is not None:
     args += ["--author-skill-package", str(inputs / "author-skills.tar")]
+    for name in p["cell"]["native_skill_names"]:
+        args += ["--native-skill-name", name]
 if "provider_executable" in n:
     args += ["--provider-executable", n["provider_executable"]]
 for field in ("qualification", "qualification_anchor"):
@@ -320,7 +334,8 @@ if "http_proxy" in n:
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
         environment[name] = n["http_proxy"]
 sys.exit(subprocess.run(args, cwd=source, env=environment).returncode)
-'''.replace('__AUTHOR_SKILL_ARCHIVE_LIMIT__', str(MAX_ARCHIVE_BYTES))
+'''.replace('__AUTHOR_SKILL_ARCHIVE_LIMIT__', str(MAX_ARCHIVE_BYTES)).replace(
+    '__NATIVE_SKILL_SELECTION_VALIDATOR__', inspect.getsource(selection_instruction))
 
 
 def run_cell(workspace: Path, cell_id: str) -> int:

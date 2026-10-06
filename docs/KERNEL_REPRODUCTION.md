@@ -275,7 +275,7 @@ system 快照复用 author-home 已验证的目录数据；首次归档/回放�
 后续轮比较此前验证的快照，不重开原安装目录。调用路径是执行器分配的事实，配置拥有
 内容身份；这份日志不证明对抗性写入者确实执行了程序，Evidence custody 仍是独立门槛。
 CPU 合同直接覆盖归档和回放；正式资格收据、anchor、admission 及零轮/故障入口的共同
-验收仍未接通，所有正式入口继续拒绝该策略。不能以这些 fixture 检查放行。
+验收已接通，正式入口检查对应的真实两轮归档。不能以这些 fixture 检查放行。
 
 若返回的 Turn 在原生输入归档检查中被拒绝，`NativeSkillRunInputFault` 沿现有
 `run_fault` 保存有界的被拒绝输入、调用绑定和缺失/保留状态，不写轮次完成事件。
@@ -295,9 +295,9 @@ rollback、目录中缺席的包内 explicit-only/disabled 技能，也未观察
 
 
 `isolated_skill_package_v1` 为 Codex 的 known-kernel 作者准备私有 `HOME` 与完整技能材料。
-当前只开放材料准备和可执行替身的 CPU qualification；原生技能发现、实际请求投递及
-initial/resume 等价仍未获资格。真实 qualification、正式 Run/Campaign 和正式回放均拒绝
-该策略，直接 Lab 入口或旧收据也不能放行。软件准备成功不代表已经能运行带技能的实验。
+命令行可进入实际两轮资格流程，但材料准备不授予运行权限。每次新资格必须观察并保留
+原生技能发现、当前正文投递及 initial/resume 等价；正式 Run/Campaign 与回放验证实际
+归档、配置、环境覆盖和 custody。旧收据与 fixture 资格不能授权正式运行。
 
 包是一个未压缩 tar，包含原生技能目录，例如：
 
@@ -326,7 +326,8 @@ schema v2 的 cell 可显式增加：
 本地和 SSH 传输均读取这个准备快照，在节点的 `run-inputs/` 中重建同一包，传给
 `launch_task.py --author-skill-package`。源文件后续修改不进入已准备 cell；缺少自己的
 快照就拒绝，不向管理根目录或其他 cell 回退。schema v1 不接纳此字段。当前传输接线可做
-CPU 验证，真正启动仍在 launcher 的原生资格门前拒绝；`--preflight-only` 不是豁免。
+CPU 验证；真正启动要求显式 `--native-skill-name` 和合格的原生两轮证据，
+`--preflight-only` 仍执行资格检查。仅构建 baseline 的路径不调用 provider。
 
 Run 的 provider 声明持有唯一原包引用；TaskPackage、技能投影和保留证据使用同一份已读取
 快照。正文只投递位置与“已准备、原生投递未验证”的元数据，不把脚本或二进制塞进提示。
@@ -394,7 +395,66 @@ single Cake arm.
 `lab/native_skill_qualification.py` reuses Run invocation/native validation against the
 frozen qualification paths and policy, retained task projection, actual provider thread,
 complete package and existing system-tree snapshot. Replay reads no original HOME,
-installation or task files. This is a semantic evidence check: receipt versions 1/2
-gain no new admission capability, fixture scope stays fixture-only, and live native-skill
-qualification/Run gates remain closed pending receipt/anchor/admission integration.
-Historical Evidence custody is a separate prerequisite; reconstruction cannot supply it.
+installation or task files. Receipt version 3 explicitly names the `native_skill_qualification_v1` input contract.
+Versions 1/2 load without that capability. The qualifier can publish version 3 only after
+the retained semantic reconstruction and the existing post-seal custody audit succeed;
+the executable CPU fixture keeps its `zero_gpu_contract_fixture_only` scope.
+
+Live-scope native admission opens the anchor's actual Evidence and requires archive
+integrity, historical filesystem custody, matching authority/receipt/terminal, one
+successful qualification observation and successful native reconstruction. An
+`immediate_audit_integrity` flag alone is insufficient. `EvidenceStore.replay_authority`
+reads the audited authority without following links; it does not replace the audit.
+
+The CLI accepts an explicitly selected native-skill package and enters the existing
+two-turn qualification workflow. Library preparation, provider construction, direct Run and
+Campaign execution, factory composition and replay now require actual anchored live
+qualification evidence. This source integration is not authorization to start a Run;
+the contract matrix and actual provider qualification remain acceptance prerequisites.
+No fixture archive establishes a real model capability.
+
+`admit_native_skill_authoring` checks the frozen provider configuration and schema,
+live scope, historical custody and reconstructed inputs before side effects or terminal
+early returns. Coverage is matched to `environment_kind`, not a Run id or Study
+condition label: a generic output schema cannot extend a Cake-only qualification to
+another environment. Direct provider construction takes the actual qualification
+anchor, reopens its evidence and checks all TaskPackage environment kinds.
+
+Preparation rejects missing, old or fixture receipts before reading runtime settings;
+it checks the complete configuration and archive before reading credentials. This early
+receipt check only rejects; it does not grant permission. First-turn native-input
+rejections resolve their TaskPackage during replay, while a failure before observing
+native input keeps its existing missing-evidence semantics. CPU tests exercise boundary
+ordering plus zero-turn stop, first-call failure and returned cross-Run input rejection
+through the real execution and replay owners, with no Evaluation calls. These new tests
+passed in the three-version CPU matrix for PR #342; earlier failed attempts remain
+retained failures, not passing validation. CLI activation has its own successor checks.
+
+The successful two-turn integration fixture now uses `CodexRunProvider`, its real
+invocation builder and subprocess adapter, input capture, Run archive and semantic
+replay. The executable emits synthetic CPU fixture events and candidate envelopes;
+existing CPU environment/evaluator fixtures handle candidates. It checks one resumed
+thread, cumulative-to-delta usage, current package bodies in both turns, and the first
+turn's evaluated history in the second retained request. These are software assertions
+verified in that CPU matrix, not evidence that a real model used the skill or learned from it.
+
+For native-skill qualification, each schema-2 experiment cell declares
+`native_skill_names` alongside `author_skill_package`. These are exact native names,
+not package directory names. The manager snapshots the selection in the cell's TASK
+and experiment input, transports only that cell's names/package, and passes repeated
+`--native-skill-name` arguments through `launch_task` to the qualifier. Local and SSH
+node transport use the same pure selection validator before creating inputs or starting
+a process. No frontmatter parser or native-name guess is introduced.
+
+Selection alone does not authorize execution. Missing, duplicate or malformed selected
+names refuse before CLI preparation or credential access. The live qualifier must finish
+its original semantic reconstruction and custody checks before issuing a receipt.
+Reusing an existing qualification reconstructs its anchored
+inputs and requires every requested name to resolve to a package entry with its body
+delivered in every declared arm, in both the initial and resumed turn. A catalog, an
+earlier body or a system skill with the same name is insufficient. No second list of
+qualified names is stored: the retained package and inputs remain authoritative.
+Receipt scope and runtime configuration/material admission keep their existing owners.
+Existing prepared native
+experiments without an explicit selection remain at their original source commit; use
+a new prepared experiment for this successor interface.

@@ -43,6 +43,10 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-06-002](2026-10-06-002-ocml-trig-capacity.json) — explicit OCML FP32 trig capacity; bounded component equality, no full fused RoPE performance claim.
+- [F-2026-10-06-003](2026-10-06-003-integer-max-scan-capacity.json) — INT32 inclusive maximum scan for segment starts; whole sort/scatter remains separate.
+- [F-2026-10-06-004](2026-10-06-004-reduction-loop-width-applicability.json) — width API coverage for legal CTA-reduction loops; retained-choice full-task replay is not a new search gain.
+
 - F-2026-10-06-001 — streamed MMA output stores and store-only narrowing casts are outside the width API despite lowerable manual choices; bounded pass extension and component/source replay prepared, full Task evidence remains separate.
 
 - F-2026-10-05-008 — maintenance reader rejected the current Run policy location; current/historical authority reading verified on14 sealed C550 Runs at27def9a2. No outcome reclassification or hardware promotion.
