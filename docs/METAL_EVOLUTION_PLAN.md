@@ -521,6 +521,11 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
   `g3-rmsnorm-profile/` 的 5 次数值预检与 1 次采样均通过，compute-stage timestamp
   差为 208750 raw device units，仅用于归因；occupancy、带宽、指令计数未采集。
   两个控制不覆盖 A/A 稳定性失败。
+  后续只读事后检查 `work-control-dispersion-review.json` 保留每 cohort 全部 25 个样本：
+  256 dispatch 的 10 组 relative IQR 为 min/median/max 0.00316/0.04440/12.60198，
+  只有 5 组不超过 0.05；16 dispatch 为 0.00791/0.01961/0.25481，8 组不超过 0.05。
+  该描述没有为工作量控制追加验收门，也不重新判定旧结果；它不支持“批量增大就会稳定”
+  的简单假设。下一份测量诊断应先声明要区分的原因和观测，不能扫批量或删 cohort 到通过。
 - **低层可观察性**：`low-level/rmsnorm-macos.air.ll` 是从本次自有 MSL 用固定 Xcode
   离线生成的可读 AIR/LLVM IR，可见 scalar load/store、`air.simd_sum.f32`、
   `air.rsqrt.f32`、`air.simd_broadcast.f32` 和 5 个 32-float private alloca。
