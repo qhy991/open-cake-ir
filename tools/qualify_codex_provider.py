@@ -22,14 +22,13 @@ from open_cake_ir.lab.author_home import (
     ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, provision_codex_home, provision_user_home,
 )
 from open_cake_ir.lab.native_skills import NativeSkillPackage
-from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1
+from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1, expected_codex_disabled_features
 from open_cake_ir.lab.bindings import external_file
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
     PYTHON_CANDIDATE_BUNDLE_V1,
-    CODEX_DISABLED_FEATURES,
     resolve_codex_code_mode_host,
     CodexInvocationBuilder,
     CodexProviderAdapter,
@@ -527,18 +526,18 @@ def main() -> int:
                             "Use Read for the task files and Write/Edit for candidate-set.json; only Read, Write, Edit, Glob and Grep are permitted.")
         receipt_scope = "live_two_turn_tool_rich_provider"
     elif args.feature_policy == "closed_research":
-        disabled_features = CODEX_DISABLED_FEATURES
         event_contract = "closed_file_change_v1"
         tool_instruction = "Do not invoke auxiliary tools."
         receipt_scope = "live_two_turn_current_provider"
     else:
-        disabled_features = ()
         event_contract = "tool_rich_candidate_v1"
         tool_instruction = (
             "First use the shell tool to run `pwd` without writing a file or "
             "invoking a network/GPU operation."
         )
         receipt_scope = "live_two_turn_tool_rich_provider"
+    if args.harness == 'codex':
+        disabled_features = expected_codex_disabled_features(event_contract, args.author_home_policy)
     if args.fixture_only:
         receipt_scope = "zero_gpu_contract_fixture_only"
     if (

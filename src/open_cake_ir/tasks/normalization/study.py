@@ -236,9 +236,12 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                         tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
     else:
         from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1
-        provider.update(sandbox="workspace-write", service_tier="default", disabled_features=[],
-                        author_home_policy=(ISOLATED_SKILL_PACKAGE_V1 if skill_package_reference is not None
-                                            else ISOLATED_AUTH_ONLY_V1),
+        from open_cake_ir.lab.provider_documents import expected_codex_disabled_features
+        home_policy = (ISOLATED_SKILL_PACKAGE_V1 if skill_package_reference is not None
+                       else ISOLATED_AUTH_ONLY_V1)
+        provider.update(sandbox="workspace-write", service_tier="default",
+                        disabled_features=list(expected_codex_disabled_features('tool_rich_candidate_v1', home_policy)),
+                        author_home_policy=home_policy,
                         event_contract="tool_rich_candidate_v1", code_mode_host=dict(CAMPAIGN_BINDING),
                         output_schema={"path": OUTPUT_SCHEMA, "sha256": sha256((root / OUTPUT_SCHEMA).read_bytes()).hexdigest()})
         if skill_package_reference is not None:

@@ -295,6 +295,22 @@ rollback、目录中缺席的包内 explicit-only/disabled 技能，也未观察
 
 
 `isolated_skill_package_v1` 为 Codex 的 known-kernel 作者准备私有 `HOME` 与完整技能材料。
+
+隔离 Codex 作者的 tool-rich 配置显式禁用 `apps`、`plugins`、`remote_plugin`，从源头限制
+账号连接器和远程插件自动加载；任务自己的原生技能包、shell 与其余声明工具仍可用。
+资格入口、任务 factory、Provider 构造与回放共同绑定 `disabled_features`，不能把旧的
+无限制配置 receipt 用于后继。非隔离的 provider-default 路径与 closed-research 限制保持
+各自原声明。文件系统的额外插件拒绝与 native skill 输入重建仍保留：CLI 是否实际遵守
+这些开关要由新环境资格观察，配置或 CPU 夹具通过不等于真实两轮资格。
+
+该后继来自固定 `f8621d06` 的真实首轮失败：
+`~/.local/share/open-cake-ir/planning/metal-xcode16-20261006/native-skill-cli-f8621d06/`
+保留首次候选及指定技能输入，但 CLI 0.159.2 在私有 author home 生成远程插件包，原检查
+在 resume 前拒绝。该失败、旧 home 和未生成 receipt 的事实不被修改。
+[官方配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)说明远程插件目录
+默认启用；本机同版本 feature list 也观察到上述三项启用。新调用只通过 CLI 参数声明限制，
+不改用户的全局设置，也不删除旧插件来使检查通过。
+
 命令行可进入实际两轮资格流程，但材料准备不授予运行权限。每次新资格必须观察并保留
 原生技能发现、当前正文投递及 initial/resume 等价；正式 Run/Campaign 与回放验证实际
 归档、配置、环境覆盖和 custody。旧收据与 fixture 资格不能授权正式运行。
