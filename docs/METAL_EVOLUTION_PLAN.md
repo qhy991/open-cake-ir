@@ -23,8 +23,13 @@ prepare、provider 构造、Run/Campaign、factory 与回放按真实环境类�
 实际归档和两轮包内正文；缺失、旧版、fixture 收据、材料/配置错配与零轮早退均有覆盖。
 成功两轮 CPU 夹具经过真实 invocation builder、子进程 adapter、输入采集、反馈和
 完整回放，验证历史进入第二轮请求；它不是实际模型的学习证据。
-**命令行 qualifier/launcher 的显式关闭门仍保留。** 下一后继开放入口并完成真实
-Codex `gpt-6.1-sol / xhigh` 两轮资格，性能 Run 还必须通过测量与设备 phase 门。
+共享 CLI 后继 [PR #347](https://github.com/qhy991/open-cake-ir/pull/347)
+在固定提交 `f8621d06` 允许显式选择技能包的请求进入既有资格路径；材料、配置、归档、
+custody 和真实两轮输入检查仍保留。专项验收 **58 项、95 个子测试通过**，全量 CI 待完成。
+用户已明确授权该限定变更，以及软件检查通过后一次无 GPU 的真实
+Codex `gpt-6.1-sol / xhigh` initial/resume 资格；当前 Metal 分支尚未吸收该 PR。
+该资格只验证作者接入与技能输入，不证明 kernel 优化或经验迁移；性能 Run 仍必须通过
+测量与设备 phase 门。
 
 已准备完整技能材料 `author-material-3d430a13/author-skills.tar`，包含主技能与 AIR
 参考，现有 NativeSkillPackage reader 通过。独立 quick validator 因缺 PyYAML 未运行，
