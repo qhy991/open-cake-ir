@@ -51,8 +51,11 @@ class MetaXMean10Tests(unittest.TestCase):
                     'samples':[{'index':i,'elapsed_ms':v,'reset_enqueued_before_start':True,
                                 'end_synchronized':True} for i,v in enumerate(values)]}
                 return values
-        with patch.object(event, 'MacaEventBenchmark', Assay):
+        with patch.object(event, 'MacaEventBenchmark', Assay), \
+             patch('open_cake_ir.evaluation.metax_observations.collect_maca_activity',
+                   side_effect=AssertionError('profiler called during primary timing')) as profiler:
             receipt = f.execute()
+            profiler.assert_not_called()
         return f, receipt
 
     def test_real_worker_mean_counts_and_broker_replay(self):
@@ -83,3 +86,11 @@ class MetaXMean10Tests(unittest.TestCase):
 
     def test_zero_from_producer_is_retained_without_receipt(self):
         with self.assertRaises(ValueError): self.execute(zero=True)
+
+    def test_legacy_measurement_source_and_new_source_share_one_platform_owner(self):
+        from open_cake_ir.evaluation.platforms import platform_for
+        row = platform_for('xcore1002')
+        self.assertEqual(row.measurement_source, 'mcpti_dispatch')
+        self.assertEqual(row.measurement_source_for('fixed_baseline_paired_mcpti_dispatch_v1'), 'mcpti_dispatch')
+        self.assertEqual(row.measurement_source_for('fixed_baseline_paired_maca_event_v1'), 'maca_event')
+        with self.assertRaises(ValueError): row.measurement_source_for('unknown')

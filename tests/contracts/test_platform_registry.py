@@ -76,8 +76,7 @@ class TheTaskSideEvaluateTableCoversEveryRow(unittest.TestCase):
 
 class ProtocolTimingIsTheRowsProtocolTiming(unittest.TestCase):
     def test_every_timing_but_none_is_declared_by_a_row(self) -> None:
-        declared = {row.protocol_timing for row in PLATFORMS.values()
-                    if row.protocol_timing is not None}
+        declared = {timing for row in PLATFORMS.values() for timing in row.protocol_timings}
         self.assertEqual(_TIMINGS - {"none"}, declared)
         # The HIP row's assay could not be declared before the registry.
         self.assertIn("paired_hip", declared)
@@ -87,9 +86,9 @@ class ProtocolTimingIsTheRowsProtocolTiming(unittest.TestCase):
             return EvaluationProtocol("p", "confirmatory", "a" * 64, "case", timing)
 
         for row in PLATFORMS.values():
-            if row.protocol_timing is not None:
-                with self.subTest(timing=row.protocol_timing):
-                    self.assertEqual(protocol(row.protocol_timing).timing, row.protocol_timing)
+            for timing in row.protocol_timings:
+                with self.subTest(timing=timing):
+                    self.assertEqual(protocol(timing).timing, timing)
         protocol("none")
         with self.assertRaisesRegex(ValueError, "EvaluationProtocol differs"):
             protocol("paired_spirv")
