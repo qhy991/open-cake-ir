@@ -1,5 +1,7 @@
 """Author-home isolation constrains extensions without disabling native task skills."""
+import io
 import json
+import tarfile
 from pathlib import Path
 import tempfile
 import unittest
@@ -91,7 +93,19 @@ class IsolatedProviderFeatures(unittest.TestCase):
             executable = root/'codex'
             helper._write_provider(executable, tool_rich=True, expected_tool_rich_disabled=RESTRICTIONS)
             package = root/'skills.tar'
-            package.write_bytes(provider_fixtures.archive_bytes())
+            # Match the qualifier executable's existing full-material fixture.
+            # The invocation-only fixture uses a different asset name and body.
+            with tarfile.open(package, 'w') as archive:
+                for name, payload in (
+                    ('SKILL.md', b'---\nname: cake\ndescription: fixture\n---\nRead references.\n'),
+                    ('scripts/check.py', b"print('fixture')\n"),
+                    ('assets/table.bin', bytes(range(256))),
+                    ('references/notes.md', b'Cake fixture notes.\n'),
+                ):
+                    item = tarfile.TarInfo('skills/cake/' + name)
+                    item.size = len(payload)
+                    item.mode = 0o755 if name.endswith('.py') else 0o644
+                    archive.addfile(item, io.BytesIO(payload))
             auth = root/'auth.json'
             auth.write_bytes(b'fixture credential')
             auth.chmod(0o600)
