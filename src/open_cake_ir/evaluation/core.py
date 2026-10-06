@@ -27,7 +27,7 @@ _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 # timer. Read off the rows so a platform whose timer exists can declare it -- the HIP
 # row's `paired_hip` had no spelling here while the assay itself was already measured.
 _TIMINGS = frozenset({"none"}) | frozenset(
-    row.protocol_timing for row in PLATFORMS.values() if row.protocol_timing is not None)
+    timing for row in PLATFORMS.values() for timing in row.protocol_timings)
 
 
 def _plain_json(value: object) -> object:

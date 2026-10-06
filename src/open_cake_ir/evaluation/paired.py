@@ -44,6 +44,7 @@ PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
 # policy, and a successor states its own.
 PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
 PAIRED_MACA_KIND = 'fixed_baseline_paired_mcpti_dispatch_v1'
+PAIRED_MACA_EVENT_KIND = 'fixed_baseline_paired_maca_event_v1'
 METAL_KINDS = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].paired_kinds
 PAIRED_KINDS = frozenset().union(*(row.paired_kinds for row in PLATFORMS.values()))
 # How many times a cohort calls the route, per measurement source that declares it on its
@@ -88,7 +89,7 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     if (not isinstance(value, Mapping) or set(value) != expected_fields
             or kind not in PAIRED_KINDS or value.get('arms') != ['candidate', 'baseline']):
         raise ValueError('fixed-baseline paired policy fields or roles differ')
-    backend = platform_for_paired_kind(kind).measurement_source
+    backend = platform_for_paired_kind(kind).measurement_source_for(kind)
     if (evaluation.get('search_evaluation') != f'correctness_then_paired_{backend}'
         or evaluation.get('confirmatory_evaluation') != f'fresh_fixed_candidate_correctness_then_paired_{backend}'):
         raise ValueError('paired policy requires search and fresh confirmation')
@@ -114,11 +115,16 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     # has no calibration callbacks of its own, which is where CUPTI's extra six go.
     if value['kind'] == PAIRED_HIP_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from the HIP dispatch invocation contract')
-    if value['kind'] == PAIRED_MACA_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
+    if value['kind'] in {PAIRED_MACA_KIND, PAIRED_MACA_EVENT_KIND} and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from the MACA dispatch invocation contract')
     if kind in METAL_KINDS:
         if protocol.route_calls_per_cohort <= protocol.samples_per_cohort:
             raise ValueError('Metal assay requires declared warmup calls before timestamp samples')
+    if kind == PAIRED_MACA_EVENT_KIND and (
+            protocol.statistic != 'mean' or protocol.samples_per_cohort != 5
+            or protocol.pair_order != (('candidate', 'baseline'), ('baseline', 'candidate'))
+            or protocol.maximum_cv is not None or protocol.required_pair_wins != 0):
+        raise ValueError('MACA event mean10 requires exactly ten samples per arm and diagnostic dispersion')
     if kind in METAL_KINDS or 'validation_case_ids' in evaluation:
         validation_case_ids(evaluation)
     return protocol
@@ -210,6 +216,9 @@ def paired_summary(raw):
     if kind == PAIRED_MACA_KIND:
         from .metax_benchmark import validate_paired_activity
         validate_paired_activity(raw, protocol)
+    if kind == PAIRED_MACA_EVENT_KIND:
+        from .metax_event_benchmark import validate_paired_events
+        validate_paired_events(raw, protocol)
     if kind in METAL_KINDS:
         from .metal_observations import METAL_TIMER, METAL_CACHE, validate_command_samples
         if raw.get('timer') != METAL_TIMER or raw.get('cache_policy') != METAL_CACHE:
@@ -287,6 +296,9 @@ def admit_device_identity(raw, launch, participants) -> None:
                 or raw['job_id'] == f'{row.local_job_prefix}-000000000000'))
                 or launch.get('gpu_uuid') != raw['gpu_uuid']):
             raise ValueError('paired AMDGCN device/host identity differs')
+    elif raw['kind'] == PAIRED_MACA_EVENT_KIND:
+        from .metax_event_benchmark import validate_paired_device
+        validate_paired_device(raw, launch, participants)
     elif raw['kind'] == PAIRED_MACA_KIND:
         from .metax_benchmark import validate_paired_device
         validate_paired_device(raw, launch, participants)
