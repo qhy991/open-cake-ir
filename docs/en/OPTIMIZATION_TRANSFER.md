@@ -2,15 +2,15 @@
 
 [Technical report](../README.md) · [中文](../OPTIMIZATION_TRANSFER.md) · [Ablation protocol](../OPTIMIZATION_TRANSFER_ABLATION.md)
 
-We propose **optimization mechanisms with explicit applicability conditions** as the unit
+This design uses **optimization mechanisms with explicit applicability conditions** as the unit
 of cross-hardware knowledge transfer. An agent explores operator fusion, tiling and memory
 hierarchy optimization on a source platform. Deterministic semantic rewrites become explicit
 Compiler passes; when to apply them and how to choose parameters remain Lab decisions.
 Destination Targets and backends determine realizability, and destination measurements
 determine correctness and benefit.
 
-The research contribution is the loop from **experience discovery to executable rewrites,
-destination validation and feedback**. Experience can inform agent reasoning or provide a
+The research hypothesis is that **source-derived mechanism information, executable rewrites
+and target retuning** can reduce repeated exploration. Experience can inform agent reasoning or provide a
 callable optimization tool. Rejections and negative transfer constrain subsequent reuse.
 The question is whether this accumulation reduces search cost on new hardware, and how much
 of the effect comes from extra explanations versus callable transformations.
@@ -25,6 +25,8 @@ instructions, storage and synchronization remain backend responsibilities. For e
 fusing Add and SiLU may eliminate a private BF16 intermediate's global store/reload while
 preserving its rounding boundary. Tile sizes and execution groups are selected again on
 the destination; a source speedup is not a destination result.
+
+The [shared research agenda](RESEARCH_AGENDA.md) defines the common question, comparison axes and hardware-branch experiment conventions. This page owns transfer mechanisms and their evidence.
 
 ### Porting to domestic accelerators and co-optimizing the target architecture
 
