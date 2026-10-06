@@ -13,18 +13,18 @@
     "register"
   ],
   "operation_kinds": [
-    "load",
+    "atomic_rmw",
+    "broadcast_in_dim",
     "cast",
+    "compare",
+    "coordinate",
     "elementwise",
+    "load",
     "mma",
     "reduce",
-    "store",
-    "atomic_rmw",
-    "coordinate",
-    "compare",
+    "scan",
     "select",
-    "broadcast_in_dim",
-    "scan"
+    "store"
   ],
   "warp_size": 64,
   "resource_limits": {
@@ -37,13 +37,15 @@
     }
   },
   "instruction_contracts": [
+    "ocml.cos.f32",
+    "ocml.sin.f32",
     "ocml.tanh.f32",
-    "triton.dot.fp16_fp32",
+    "triton.atomic_add.i32.relaxed.gpu",
     "triton.dot.bf16_fp32",
+    "triton.dot.fp16_fp32",
     "triton.dot.fp32_ieee",
     "triton.dot.fp32_tf32",
-    "triton.dot.fp8e4m3_fp32",
-    "triton.atomic_add.i32.relaxed.gpu"
+    "triton.dot.fp8e4m3_fp32"
   ],
   "synchronization_contracts": [],
   "occupancy": {
