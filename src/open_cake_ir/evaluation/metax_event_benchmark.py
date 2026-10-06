@@ -107,8 +107,10 @@ class MacaNativeEventBenchmark(MacaEventBenchmark):
                              samples=repeat_iters, graph=self.native_graph)
         except Exception as error:
             self.last_activity = {'kind': 'failed_maca_native_event_capture_v1',
-                'timer': NATIVE_TIMER, 'interval': NATIVE_INTERVAL,
-                'cache_policy': NATIVE_RESET, 'target': self.manifest.target,
+                'timer': GRAPH_TIMER if self.native_graph else NATIVE_TIMER,
+                'interval': GRAPH_INTERVAL if self.native_graph else NATIVE_INTERVAL,
+                'cache_policy': GRAPH_RESET if self.native_graph else NATIVE_RESET,
+                'target': self.manifest.target,
                 'kernel_name': self.manifest.kernel_name,
                 'observations': getattr(error, 'native_observations', None),
                 'error': str(error)}

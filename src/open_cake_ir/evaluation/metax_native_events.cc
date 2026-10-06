@@ -79,6 +79,7 @@ extern "C" int cake_maca_graph_event_cohort(
   using EndCapture = int (*)(void *, void **);
   using Instantiate = int (*)(void **, void *, void **, char *, std::size_t);
   using GraphLaunch = int (*)(void *, void *);
+  using RecordFlags = int (*)(void *, void *, unsigned);
   void *begin = nullptr, *end = nullptr, *stream = nullptr;
   std::vector<void *> graphs(warmups + samples, nullptr), executions(warmups + samples, nullptr);
   int status = 0; bool capturing = false;
@@ -96,11 +97,12 @@ extern "C" int cake_maca_graph_event_cohort(
     capturing = true;
     GRAPH_CHECK(17, reinterpret_cast<Reset>(api[5])(
         reinterpret_cast<std::uintptr_t>(reset), 0x3f800000u, reset_words, stream));
-    GRAPH_CHECK(18, reinterpret_cast<Record>(api[1])(begin, stream));
+    // mcEventRecordExternal=0x01 creates real event-record graph nodes.
+    GRAPH_CHECK(18, reinterpret_cast<RecordFlags>(api[16])(begin, stream, 1));
     GRAPH_CHECK(19, reinterpret_cast<Launch>(api[6])(function,
         dimensions[0], dimensions[1], dimensions[2], dimensions[3], dimensions[4], dimensions[5],
         shared, stream, arguments[i], nullptr));
-    GRAPH_CHECK(20, reinterpret_cast<Record>(api[1])(end, stream));
+    GRAPH_CHECK(20, reinterpret_cast<RecordFlags>(api[16])(end, stream, 1));
     GRAPH_CHECK(21, reinterpret_cast<EndCapture>(api[11])(stream, &graphs[i]));
     capturing = false;
     GRAPH_CHECK(22, reinterpret_cast<Instantiate>(api[12])(&executions[i], graphs[i], nullptr, nullptr, 0));
