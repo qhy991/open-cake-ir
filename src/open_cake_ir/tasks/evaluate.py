@@ -183,6 +183,11 @@ def _prepare_local_tensor_work(authority, kind):
     _admit_program_assay(authority, collect_timing=authority.timed_assay_available
                          and authority.request['purpose'] != 'attribution')
     policy = authority.request['evaluation_protocol']
+    from open_cake_ir.evaluation.paired import PAIRED_MACA_NATIVE_EVENT_KIND
+    if (policy.get('paired_timing', {}).get('kind') == PAIRED_MACA_NATIVE_EVENT_KIND
+            and authority.request['purpose'] != 'attribution'):
+        from open_cake_ir.evaluation.metax_native_events import prepare_helper
+        prepare_helper()  # Host compilation precedes the device lease.
     cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
              and not isinstance(authority.manifest, MetalTensorLaunchManifest)
              else validation_case_ids(policy) if 'validation_case_ids' in policy
@@ -352,8 +357,14 @@ def capture_tile_cohort(loaded, strict_cupti, *, samples_per_cohort, route_calls
                 raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
             loaded.launch(arguments[used])
             used += 1
-        samples = [float(value) for value in strict_cupti(launch_fresh,
-            dry_run_iters=11, repeat_iters=samples_per_cohort, cold_l2_cache=True, use_cuda_graph=False)]
+        native = getattr(strict_cupti, 'capture_loaded_cohort', None)
+        if native is not None:
+            samples = [float(value) for value in native(loaded, arguments,
+                dry_run_iters=11, repeat_iters=samples_per_cohort)]
+            used = len(arguments)  # Native submission independently checks this count.
+        else:
+            samples = [float(value) for value in strict_cupti(launch_fresh,
+                dry_run_iters=11, repeat_iters=samples_per_cohort, cold_l2_cache=True, use_cuda_graph=False)]
         if len(samples) != samples_per_cohort:
             raise ValueError('worker CUPTI sample count differs')
         if used != len(arguments):
@@ -1036,11 +1047,13 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
     if collect_timing:
         if authority.baseline is None:
             raise ValueError('MACA timing requires the declared paired baseline')
-        from open_cake_ir.evaluation.paired import PAIRED_MACA_EVENT_KIND
-        if authority.request['evaluation_protocol']['paired_timing']['kind'] == PAIRED_MACA_EVENT_KIND:
-            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark
+        from open_cake_ir.evaluation.paired import MACA_EVENT_KINDS, PAIRED_MACA_NATIVE_EVENT_KIND
+        if authority.request['evaluation_protocol']['paired_timing']['kind'] in MACA_EVENT_KINDS:
+            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark
+            assay = (MacaNativeEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
+                     == PAIRED_MACA_NATIVE_EVENT_KIND else MacaEventBenchmark)
             _evaluate_paired_tile(authority, result,
-                lambda role, manifest: MacaEventBenchmark(manifest,
+                lambda role, manifest: assay(manifest,
                     l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
         else:
             _evaluate_paired_tile(authority, result,

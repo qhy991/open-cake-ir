@@ -15,6 +15,9 @@ TIMER = 'maca_pytorch_event_elapsed_ms'
 RESET = 'fp32_fill_ones_4x_declared_l2_default_stream_before_start_event'
 INTERVAL = 'default_stream_events_around_sealed_launch_including_submission_gaps'
 COVERAGE = 'trusted_loader_and_host_ordering_without_activity_trace'
+NATIVE_TIMER = 'maca_native_event_elapsed_ms'
+NATIVE_RESET = 'runtime_memset_d32_ones_4x_declared_l2_before_start_event'
+NATIVE_INTERVAL = 'native_default_stream_events_around_prevalidated_sealed_launch'
 
 
 class MacaEventBenchmark:
@@ -83,15 +86,51 @@ class MacaEventBenchmark:
         return [row['elapsed_ms'] for row in observations]
 
 
-def validate_cohort(record, manifest, *, sample_count):
+class MacaNativeEventBenchmark(MacaEventBenchmark):
+    """Submit one cohort in native code with tensor checks outside all samples."""
+
+    def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
+        import torch
+        from .metax_native_events import capture
+        if (loaded.manifest is not self.manifest or dry_run_iters != 11 or repeat_iters != 5
+                or not getattr(torch.version, 'maca', None)
+                or torch.cuda.default_stream(0).cuda_stream != 0
+                or torch.cuda.get_device_properties(0).L2_cache_size != self.l2_cache_bytes):
+            raise ValueError('Native MACA event manifest, stream or reset target differs')
+        if self._reset is None:
+            self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device='cuda:0')
+        values = capture(loaded, arguments, self._reset, warmups=dry_run_iters, samples=repeat_iters)
+        self.last_activity = {
+            'kind': 'maca_native_event_samples_v1', 'timer': NATIVE_TIMER,
+            'cache_policy': NATIVE_RESET, 'interval': NATIVE_INTERVAL,
+            'coverage': COVERAGE, 'profiler_enabled': False,
+            'target': self.manifest.target, 'device': 0, 'stream': 0,
+            'l2_cache_bytes': self.l2_cache_bytes, 'reset_bytes': 4 * self.l2_cache_bytes,
+            'warmup_calls': dry_run_iters, 'event_pair_primed': True,
+            'launch': {'kernel_name': self.manifest.kernel_name,
+                'grid': list(self.manifest.grid), 'block': list(self.manifest.block),
+                'dynamic_shared_memory_bytes': self.manifest.dynamic_shared_memory_bytes},
+            'samples': [{'index': i, 'elapsed_ms': value,
+                'reset_enqueued_before_start': True, 'end_synchronized': True}
+                for i, value in enumerate(values)],
+        }
+        if any(not math.isfinite(v) or v <= 0 for v in values):
+            raise ValueError('Native MACA event interval must be finite and positive')
+        return values
+
+
+def validate_cohort(record, manifest, *, sample_count, native=False):
     from .program import ProgramLaunchManifest
     target = declared_target(manifest.target)
     raw = record.get('native_activity')
     expected_launch = {'kernel_name': manifest.kernel_name,
                        'grid': list(manifest.grid), 'block': list(manifest.block),
                        'dynamic_shared_memory_bytes': manifest.dynamic_shared_memory_bytes}
-    expected = {'kind': 'maca_event_samples_v1', 'timer': TIMER, 'cache_policy': RESET,
-                'interval': INTERVAL, 'coverage': COVERAGE, 'profiler_enabled': False,
+    expected = {'kind': 'maca_native_event_samples_v1' if native else 'maca_event_samples_v1',
+                'timer': NATIVE_TIMER if native else TIMER,
+                'cache_policy': NATIVE_RESET if native else RESET,
+                'interval': NATIVE_INTERVAL if native else INTERVAL,
+                'coverage': COVERAGE, 'profiler_enabled': False,
                 'target': manifest.target, 'device': 0, 'stream': 0,
                 'l2_cache_bytes': target.l2_cache_bytes,
                 'reset_bytes': 4 * target.l2_cache_bytes if target.l2_cache_bytes else None,
@@ -123,6 +162,7 @@ def validate_cohort(record, manifest, *, sample_count):
 
 def validate_paired_events(raw, protocol):
     from .core import TensorLaunchManifest
+    from .paired import PAIRED_MACA_NATIVE_EVENT_KIND
     documents, participants = raw.get('launch_manifests'), raw.get('participants')
     if (not isinstance(documents, Mapping) or set(documents) != set(protocol.arms)
             or not isinstance(participants, Mapping) or set(participants) != set(protocol.arms)):
@@ -136,7 +176,8 @@ def validate_paired_events(raw, protocol):
             raise ValueError('MACA event manifest differs from its sealed participant')
         for measurement in raw['measurements']:
             validate_cohort(measurement['arms'][role], manifest,
-                            sample_count=protocol.samples_per_cohort)
+                            sample_count=protocol.samples_per_cohort,
+                            native=raw['kind'] == PAIRED_MACA_NATIVE_EVENT_KIND)
 
 
 def validate_paired_device(raw, launch, participants):

@@ -18,6 +18,7 @@ _STATUS_NAMES = {
     # MACA 3.5.3 mc_runtime_types.h. This is a runtime request to compile the
     # module, not a broker allocation failure or a malformed tensor ABI.
     1009: "mcErrorRecompile",
+    32: "mcErrorMemoryValueTooLarge",
 }
 
 
@@ -95,7 +96,7 @@ class LoadedMetaxCandidate:
             raise
         return cls(candidate, manifest, runtime, module, function, image, resources)
 
-    def launch(self, arguments: Sequence[object], *, tensor_contract, stream: int = 0) -> None:
+    def prepare_arguments(self, arguments: Sequence[object], *, tensor_contract):
         if self.closed:
             raise RuntimeError("MACA module is closed")
         if tensor_contract is not self.manifest or len(arguments) != len(self.manifest.tensor_abi):
@@ -124,6 +125,10 @@ class LoadedMetaxCandidate:
         pointers.extend(ctypes.c_void_p(0) for _ in range(self.manifest.hidden_null_pointer_parameters))
         slots = (ctypes.c_void_p * len(pointers))(
             *(ctypes.cast(ctypes.pointer(pointer), ctypes.c_void_p) for pointer in pointers))
+        return pointers, slots
+
+    def launch(self, arguments: Sequence[object], *, tensor_contract, stream: int = 0) -> None:
+        pointers, slots = self.prepare_arguments(arguments, tensor_contract=tensor_contract)
         _call(self._api, "mcModuleLaunchKernel", self._function,
               *(ctypes.c_uint(n) for n in (*self.manifest.grid, *self.manifest.block)),
               ctypes.c_uint(self.manifest.dynamic_shared_memory_bytes),
