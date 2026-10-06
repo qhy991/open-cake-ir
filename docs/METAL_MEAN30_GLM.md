@@ -7,6 +7,17 @@ artifact-optimization adapter; qualify initial/resume for the exact executable,
 model and effort before the first search. Use `high` effort, as in the retained
 GLM Metal engineering results; Codex qualifications do not qualify this treatment.
 
+Owner update, 2026-10-06: future Metal experiments use token accounting only.
+Omit `--token-budget`; Run inputs have `budget.limit: null` and `checkpoints: []`.
+Retain provider input, output, cache and cumulative usage. Token count neither stops
+search nor removes a candidate from final-confirmation eligibility. Existing wall,
+active-authoring time, turn, compilation and evaluation caps still apply. Do not add
+a per-turn token cap. Scientific comparisons fix time/device/tool budgets and report
+tokens as an observed cost, unless the owner explicitly selects another treatment.
+The old 400k pilots retain their original limits and terminal outcomes; a fresh Run
+is required. Prepared successor commands live outside source in
+`glm-mean30-20261006/pilot-commands-token-accounting-only.json`; they are not yet launched.
+
 New Metal CLI launches default to `--metal-timing mean30`. Each participant has two
 cohorts, in AB then BA order, with 3 untimed warmup calls and 15 timed command buffers
 per cohort. Warmup and timed buffers each encode 64 dispatches; warmups are not samples. Divide each buffer's GPU interval
