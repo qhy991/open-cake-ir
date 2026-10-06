@@ -119,6 +119,78 @@ class MetalEvaluationContracts(unittest.TestCase):
             sha256(canonical(self.policy)).hexdigest(), 'attribution' if 'profile' in data else 'search', 'primary',
             value['correctness_passed'], value['correctness'], 1, 0, sha256(data['launch_receipt']).hexdigest(), value['timing'], data)
 
+    def use_interleaved_policy(self):
+        from open_cake_ir.evaluation.paired import PAIRED_METAL_INTERLEAVED_KIND
+        self.policy['paired_timing'].update(kind=PAIRED_METAL_INTERLEAVED_KIND,
+            dispatches_per_sample=8, maximum_relative_iqr=0.05)
+
+    def test_interleaved_worker_and_receipt_preserve_exact_order_and_all_checks(self):
+        self.use_interleaved_policy()
+        def observed(**kwargs):
+            self.assertEqual(kwargs['snapshot_grouping'], 'pair')
+            cohort = [row for row in kwargs['launch_plan'] if row['phase'] == 'cohort']
+            self.assertEqual([row['role'] for row in cohort],
+                ['candidate','baseline'] * 3 + ['baseline','candidate'] * 3)
+            self.assertEqual([row['timed'] for row in cohort], [False,False,True,True,True,True] * 2)
+            self.assertEqual([row['dispatches'] for row in cohort], [8] * 12)
+            return fake_observe(**kwargs)
+        result = self.run_worker(observer=observed)
+        receipt = self.receipt(result)
+        validate_paired_broker(receipt, JOB, result['counters'])
+        self.assertEqual(result['counters']['kernel_calls'], 32)
+        self.assertEqual(result['counters']['timing_samples'], 8)
+        self.assertEqual(receipt.timing['classification'], 'first_arm_faster')
+        self.assertAlmostEqual(receipt.timing['speedup'], 2.0)
+        raw = json.loads(receipt.artifact_payloads['timing_samples'])
+        self.assertEqual([c['launch_index'] for c in raw['measurements'][0]['arms']['candidate']['command_buffers']], [10,12,14])
+
+    def test_blocked_samples_cannot_be_relabelled_as_interleaved_receipt(self):
+        result = self.run_worker()
+        self.use_interleaved_policy()
+        # Keep the old single-dispatch observations so only order changes.
+        self.policy['paired_timing']['dispatches_per_sample'] = 1
+        payloads = {role: (self.root/name).read_bytes() for role,name in result['receipt']['artifacts'].items()}
+        raw = json.loads(payloads['timing_samples'])
+        raw['kind'] = self.policy['paired_timing']['kind']; raw['evaluation_protocol'] = self.policy
+        payloads['timing_samples'] = canonical(raw)
+        with self.assertRaisesRegex(ValueError, 'physical launch order'):
+            self.receipt(result, payloads=payloads)
+
+    def test_interleaved_missing_duplicate_reordered_and_mispaired_commands_refuse(self):
+        self.use_interleaved_policy()
+        result = self.run_worker()
+        base = {role: (self.root/name).read_bytes() for role,name in result['receipt']['artifacts'].items()}
+        for mutation in ('missing', 'duplicate', 'reordered', 'mispaired'):
+            payloads = dict(base); raw = json.loads(payloads['timing_samples'])
+            commands = raw['measurements'][0]['arms']['candidate']['command_buffers']
+            if mutation == 'missing': commands.pop()
+            elif mutation == 'duplicate': commands[2] = deepcopy(commands[1])
+            elif mutation == 'reordered': commands[1],commands[2] = commands[2],commands[1]
+            else: raw['measurements'][0]['pair_index'] = 1
+            payloads['timing_samples'] = canonical(raw)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                self.receipt(result, payloads=payloads)
+
+    def test_interleaved_pair_snapshot_bound_refuses_before_observer_call(self):
+        self.use_interleaved_policy()
+        doc = deepcopy(self.workload.document)
+        for case in doc['cases']: case['shape']['C'] = 2_000_000
+        self.workload = WorkloadContract(doc)
+        self.candidate, self.manifest = candidate_fixture(self.workload, 'candidate')
+        self.baseline, _ = candidate_fixture(self.workload, 'baseline')
+        with self.assertRaisesRegex(ValueError, 'snapshot cohort'), patch.object(metal_runtime, 'run_metal_process') as native:
+            self.run_worker(observer=lambda **kw: self.fail('oversized pair reached observer'))
+        native.assert_not_called()
+
+    def test_interleaved_profile_remains_separate_and_uses_no_pair_window(self):
+        self.use_interleaved_policy()
+        def observed(**kwargs):
+            self.assertNotIn('snapshot_grouping', kwargs)
+            return fake_observe(**kwargs)
+        receipt = self.receipt(self.run_worker('attribution', observer=observed))
+        self.assertTrue(receipt.correctness_passed)
+        self.assertIsNone(receipt.timing)
+
     def test_real_worker_path_reuses_common_receipt_derivation_and_all_input_cases(self):
         result = self.run_worker()
         receipt = self.receipt(result)
@@ -253,6 +325,7 @@ class MetalEvaluationContracts(unittest.TestCase):
         inputs = {'primary': {'inputs': {'x': [1.0, 2.0]}, 'expected': {'out': [1.0, 2.0]}}}
         plan = [{'index': 0, 'role': 'candidate', 'phase': 'preflight', 'input_case_id': 'primary', 'timed': False,
                  'profile': False, 'dispatches': 1}]
+        reported_condition = 'owned_snapshots_written_at_cohort_end'
         def process(executable, request_path, **kwargs):
             command = [str(executable), str(request_path)]
             kwargs['allocation_output'].write_text(json.dumps({'job_id': JOB, 'admitted': True}))
@@ -265,7 +338,7 @@ class MetalEvaluationContracts(unittest.TestCase):
                                    'gpu_start_seconds': 1.0, 'gpu_end_seconds': 1.001}}
             report = {'status': 'completed', 'host': HOST, 'source_library_rebuilt': False,
                 'archive_miss_policy': 'failOnBinaryArchiveMiss', 'module_loads': 1, 'launches': [row],
-                'snapshot_persistence': {'condition': 'owned_snapshots_written_at_cohort_end',
+                'snapshot_persistence': {'condition': reported_condition,
                     'pending_payload_limit_bytes': 64 * 1024 * 1024, 'peak_pending_payload_bytes': 0, 'failed_writes': []}}
             return CompletedProcess(command, 0, canonical(report), b'')
         with patch.object(metal_runtime, 'run_metal_process', side_effect=process):
@@ -278,6 +351,20 @@ class MetalEvaluationContracts(unittest.TestCase):
         self.assertEqual(request['participants'][0]['archive_path'].split('.')[-1], 'metallib')
         retained = json.loads((self.root / 'observation' / 'observer.stdout.json').read_text())
         self.assertEqual(retained['snapshot_persistence']['condition'], 'owned_snapshots_written_at_cohort_end')
+        with patch.object(metal_runtime, 'run_metal_process', side_effect=process):
+            with self.assertRaisesRegex(ValueError, 'pair snapshot window'):
+                metal_runtime.observe(workload=self.workload, candidates={'candidate': self.candidate},
+                    manifests={'candidate': self.manifest}, input_cases=inputs, launch_plan=plan,
+                    observer_executable=executable, expected_host=HOST, directory=self.root/'ignored-pair',
+                    snapshot_grouping='pair')
+            reported_condition = 'owned_snapshots_written_at_pair_end'
+            pair_result = metal_runtime.observe(workload=self.workload, candidates={'candidate': self.candidate},
+                manifests={'candidate': self.manifest}, input_cases=inputs, launch_plan=plan,
+                observer_executable=executable, expected_host=HOST, directory=self.root/'pair-observation',
+                snapshot_grouping='pair')
+        self.assertTrue(pair_result['launches'][0]['passed'])
+        pair_request = json.loads((self.root/'pair-observation/request.json').read_text())
+        self.assertEqual(pair_request['snapshot_grouping'], 'pair')
 
 
 _SNAPSHOT_ROOT = Path(__file__).resolve().parents[2]
@@ -346,6 +433,17 @@ case "plan_refusal":
     try rejected { _ = try snapshotFlushPlan([launch(0), launch(1, phase: "preflight", pair: nil, position: nil),launch(2)], participants: [participant()], limit: 96) }
     try rejected { _ = try snapshotFlushPlan([launch(0)], participants: [participant(shape: [Int.max,2])], limit: snapshotPayloadLimit) }
     try check(try snapshotFlushPlan([launch(0),launch(1),launch(2)], participants: [participant()], limit: 96) == Set([2]), "exact memory boundary refused")
+case "interleaved_pair":
+    let participants = [participant(), participant("baseline")]
+    let launches = [launch(0), launch(1, role: "baseline", position: 1),
+        launch(2, timed: true), launch(3, role: "baseline", position: 1, timed: true),
+        launch(4, role: "baseline", pair: 1, position: 0), launch(5, pair: 1, position: 1)]
+    try check(try snapshotFlushPlan(launches, participants: participants, limit: 128, grouping: "pair") == Set([3,5]), "pair window flushed between arms")
+    try rejected { _ = try snapshotFlushPlan(launches, participants: participants, limit: 128) }
+    try rejected { _ = try snapshotFlushPlan(launches, participants: participants, limit: 127, grouping: "pair") }
+    try rejected { _ = try snapshotFlushPlan(launches, participants: participants, limit: 128, grouping: "unknown") }
+    try rejected { _ = try snapshotFlushPlan([launch(0), launch(1, pair: 1), launch(2)], participants: participants, limit: 128, grouping: "pair") }
+    try rejected { _ = try snapshotFlushPlan([launch(0), launch(1, role: "baseline", position: 1, input: "other")], participants: participants, limit: 128, grouping: "pair") }
 case "capture_refusal":
     var writes = 0
     let writer = OwnedSnapshots(directory: directory, limit: 4, write: { _,_ in writes += 1 })
@@ -418,6 +516,7 @@ class MetalCohortSnapshotTests(unittest.TestCase):
     def test_reused_buffer_mutation_cannot_change_owned_snapshots(self): self.run_behavior('owned')
     def test_existing_coordinates_define_complete_and_partial_final_cohorts(self): self.run_behavior('boundaries')
     def test_memory_overflow_missing_coordinates_and_split_cohorts_refuse_before_dispatch(self): self.run_behavior('plan_refusal')
+    def test_interleaved_pair_windows_hold_both_arms_and_preserve_bound(self): self.run_behavior('interleaved_pair')
     def test_capture_bound_preserves_pending_callback_bytes(self): self.run_behavior('capture_refusal')
     def test_later_failure_flushes_all_owned_callback_bytes(self): self.run_behavior('failure_flush')
     def test_flush_failure_preserves_original_error_and_attempts_each_file_once(self): self.run_behavior('write_failure')

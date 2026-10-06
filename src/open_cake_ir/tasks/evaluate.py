@@ -846,18 +846,24 @@ def _evaluate_metal_candidate(authority, result):
     if profile:
         append('candidate', 'profile', authority.case_id, instrumented=True)
     else:
-        for pair_index, order in enumerate(protocol.pair_order):
-            for position, role in enumerate(order):
-                for call in range(protocol.route_calls_per_cohort):
-                    # Warmups share the sample's command shape so the timed buffers
-                    # observe an already warmed pipeline at the same dispatch count.
-                    append(role, 'cohort', authority.case_id,
-                           timed=call >= protocol.route_calls_per_cohort - protocol.samples_per_cohort,
-                           pair_index=pair_index, position=position,
-                           dispatches=protocol.dispatches_per_sample)
+        from open_cake_ir.evaluation.paired import metal_cohort_calls
+        for pair_index, position, role, call in metal_cohort_calls(evaluation):
+            # Warmups keep the same per-arm prefix and command shape in both orders.
+            append(role, 'cohort', authority.case_id,
+                   timed=call >= protocol.route_calls_per_cohort - protocol.samples_per_cohort,
+                   pair_index=pair_index, position=position,
+                   dispatches=protocol.dispatches_per_sample)
         for role in candidates:
             for case_id in cases:
                 append(role, 'postflight', case_id)
+    from open_cake_ir.evaluation.paired import PAIRED_METAL_INTERLEAVED_KIND
+    interleaved = not profile and evaluation['paired_timing']['kind'] == PAIRED_METAL_INTERLEAVED_KIND
+    if interleaved:
+        # Both participants have the same Workload ABI. Refuse the complete pair
+        # window in the CPU worker, before a native child requests its lease.
+        from open_cake_ir.tasks.devices import admit_cohort_payload
+        admit_cohort_payload(authority.workload, authority.case_id, 2 * protocol.route_calls_per_cohort)
+    snapshot_options = {'snapshot_grouping': 'pair'} if interleaved else {}
     directory = authority.request_root / 'metal-observation'
     if directory.exists() or directory.is_symlink():
         raise ValueError('Metal observation requires a fresh output directory')
@@ -865,7 +871,7 @@ def _evaluate_metal_candidate(authority, result):
         observation = observe(workload=authority.workload, candidates=candidates, manifests=manifests,
             input_cases=input_cases, launch_plan=plan, observer_executable=Path(admission['observer_executable']),
             expected_host=dict(admission['host']), directory=directory,
-            queue_seconds=authority.local_queue_seconds)
+            queue_seconds=authority.local_queue_seconds, **snapshot_options)
     finally:
         # This process does not release a lease. The native child has ended before
         # observe returns or raises; existing external allocations keep their owner.
