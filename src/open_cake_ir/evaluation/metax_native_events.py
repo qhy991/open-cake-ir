@@ -14,10 +14,7 @@ _LOCK = threading.Lock()
 SYMBOLS = ('mcEventCreateWithFlags', 'mcEventRecord', 'mcEventSynchronize',
            'mcEventElapsedTime', 'mcEventDestroy', 'mcMemsetD32Async',
            'mcModuleLaunchKernel', 'mcStreamSynchronize')
-GRAPH_SYMBOLS = SYMBOLS + ('mcStreamCreateWithFlags', 'mcStreamDestroy',
-    'mcStreamBeginCapture', 'mcStreamEndCapture', 'mcGraphInstantiate', 'mcGraphLaunch',
-    'mcGraphDestroy', 'mcGraphExecDestroy', 'mcEventRecordWithFlags',
-    'mcGraphGetNodes', 'mcGraphNodeGetType')
+
 
 
 def prepare_helper():
@@ -45,8 +42,6 @@ def prepare_helper():
         function.argtypes = [C.POINTER(C.c_void_p), C.c_void_p, C.POINTER(C.c_uint), C.c_uint,
                             C.POINTER(C.POINTER(C.c_void_p)), C.c_uint, C.c_uint, C.c_void_p,
                             C.c_size_t, C.POINTER(C.c_float), C.POINTER(C.c_uint), C.POINTER(C.c_uint)]
-        library.cake_maca_graph_event_cohort.restype = function.restype
-        library.cake_maca_graph_event_cohort.argtypes = function.argtypes
         _DIRECTORY, _HELPER = directory, library
         return library
 
@@ -57,7 +52,7 @@ def _cpu_environment():
         ('CUDA_VISIBLE_DEVICES', 'MACA_VISIBLE_DEVICES', 'HIP_VISIBLE_DEVICES', 'ROCR_VISIBLE_DEVICES')}}
 
 
-def capture(loaded, argument_sets, reset, *, warmups, samples, graph=False):
+def capture(loaded, argument_sets, reset, *, warmups, samples, torch_reset=False):
     """Validate and pack every distinct tensor set before the first timed event."""
     from .metax_driver import LoadedMetaxCandidate
     if (type(loaded.loaded) is not LoadedMetaxCandidate or loaded.loaded.closed
@@ -69,12 +64,28 @@ def capture(loaded, argument_sets, reset, *, warmups, samples, graph=False):
     packed = [kernel.prepare_arguments(args, tensor_contract=loaded.manifest)
               for args in argument_sets]
     pointers = (C.POINTER(C.c_void_p) * len(packed))(*(row[1] for row in packed))
-    symbols = GRAPH_SYMBOLS if graph else SYMBOLS
-    api = (C.c_void_p * len(symbols))(*(C.cast(getattr(kernel._api, name), C.c_void_p).value
-                                     for name in symbols))
+    addresses = [C.cast(getattr(kernel._api, name), C.c_void_p).value for name in SYMBOLS]
+    reset_errors = []
+    reset_callback = None
+    if torch_reset:
+        Reset = C.CFUNCTYPE(C.c_int, C.c_size_t, C.c_uint, C.c_size_t, C.c_void_p)
+        def fill(address, value, words, stream):
+            try:
+                if address != reset.data_ptr() or words != reset.numel() or value != 0x3f800000 or stream:
+                    raise ValueError('Torch reset buffer or default stream differs')
+                import torch
+                with torch.cuda.stream(torch.cuda.default_stream(0)):
+                    reset.fill_(1.0)
+                    reset.fill_(1.0)
+                return 0
+            except BaseException as error:
+                reset_errors.append(str(error)); return -20001
+        reset_callback = Reset(fill)
+        addresses[5] = C.cast(reset_callback, C.c_void_p).value
+    api = (C.c_void_p * len(addresses))(*addresses)
     dimensions = (C.c_uint * 6)(*loaded.manifest.grid, *loaded.manifest.block)
     elapsed, calls, phase = (C.c_float * samples)(), C.c_uint(), C.c_uint()
-    entry = _HELPER.cake_maca_graph_event_cohort if graph else _HELPER.cake_maca_event_cohort
+    entry = _HELPER.cake_maca_event_cohort
     status = entry(api, kernel._function, dimensions,
         loaded.manifest.dynamic_shared_memory_bytes, pointers, warmups, samples,
         reset.data_ptr(), reset.numel(), elapsed, C.byref(calls), C.byref(phase))
@@ -85,7 +96,7 @@ def capture(loaded, argument_sets, reset, *, warmups, samples, graph=False):
         error.native_observations = {'status': status, 'phase': phase.value,
             'completed_target_calls': calls.value,
             'elapsed_slots_ms': [float(value) for value in elapsed],
-            'coverage': 'partial_native_capture_not_a_valid_timing_receipt'}
+            'coverage': 'partial_native_capture_not_a_valid_timing_receipt', 'reset_errors':reset_errors}
         raise error
     if calls.value != len(argument_sets):
         raise ValueError('MACA native event target-call count differs')

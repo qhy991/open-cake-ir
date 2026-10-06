@@ -18,9 +18,7 @@ COVERAGE = 'trusted_loader_and_host_ordering_without_activity_trace'
 NATIVE_TIMER = 'maca_native_event_elapsed_ms'
 NATIVE_RESET = 'runtime_memset_d32_ones_4x_declared_l2_before_start_event'
 NATIVE_INTERVAL = 'native_default_stream_events_around_prevalidated_sealed_launch'
-GRAPH_TIMER = 'maca_graph_event_elapsed_ms'
-GRAPH_RESET = 'graph_memset_d32_ones_4x_declared_l2_before_start_event'
-GRAPH_INTERVAL = 'owned_nonblocking_stream_graph_events_around_one_sealed_launch'
+TORCH_RESET = 'torch_fp32_fill_ones_twice_4x_declared_l2_before_start_event'
 
 
 class MacaEventBenchmark:
@@ -91,7 +89,7 @@ class MacaEventBenchmark:
 
 class MacaNativeEventBenchmark(MacaEventBenchmark):
     """Submit one cohort in native code with tensor checks outside all samples."""
-    native_graph = False
+    native_torch_reset = False
 
     def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
         import torch
@@ -105,25 +103,25 @@ class MacaNativeEventBenchmark(MacaEventBenchmark):
             self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device='cuda:0')
         try:
             values = capture(loaded, arguments, self._reset, warmups=dry_run_iters,
-                             samples=repeat_iters, graph=self.native_graph)
+                             samples=repeat_iters, torch_reset=self.native_torch_reset)
         except Exception as error:
             self.last_activity = {'kind': 'failed_maca_native_event_capture_v1',
-                'timer': GRAPH_TIMER if self.native_graph else NATIVE_TIMER,
-                'interval': GRAPH_INTERVAL if self.native_graph else NATIVE_INTERVAL,
-                'cache_policy': GRAPH_RESET if self.native_graph else NATIVE_RESET,
+                'timer': NATIVE_TIMER,
+                'interval': NATIVE_INTERVAL,
+                'cache_policy': TORCH_RESET if self.native_torch_reset else NATIVE_RESET,
                 'target': self.manifest.target,
                 'kernel_name': self.manifest.kernel_name,
                 'observations': getattr(error, 'native_observations', None),
                 'error': str(error)}
             raise
         self.last_activity = {
-            'kind': 'maca_graph_event_samples_v1' if self.native_graph else 'maca_native_event_samples_v1',
-            'timer': GRAPH_TIMER if self.native_graph else NATIVE_TIMER,
-            'cache_policy': GRAPH_RESET if self.native_graph else NATIVE_RESET,
-            'interval': GRAPH_INTERVAL if self.native_graph else NATIVE_INTERVAL,
+            'kind': 'maca_native_torch_reset_samples_v1' if self.native_torch_reset else 'maca_native_event_samples_v1',
+            'timer': NATIVE_TIMER,
+            'cache_policy': TORCH_RESET if self.native_torch_reset else NATIVE_RESET,
+            'interval': NATIVE_INTERVAL,
             'coverage': COVERAGE, 'profiler_enabled': False,
             'target': self.manifest.target, 'device': 0,
-            'stream': 'owned_nonblocking' if self.native_graph else 0,
+            'stream': 0,
             'l2_cache_bytes': self.l2_cache_bytes, 'reset_bytes': 4 * self.l2_cache_bytes,
             'warmup_calls': dry_run_iters, 'event_pair_primed': True,
             'launch': {'kernel_name': self.manifest.kernel_name,
@@ -133,41 +131,34 @@ class MacaNativeEventBenchmark(MacaEventBenchmark):
                 'reset_enqueued_before_start': True, 'end_synchronized': True}
                 for i, value in enumerate(values)],
         }
-        if self.native_graph:
-            self.last_activity['graph_structure_verified'] = True
-            self.last_activity['graph_work'] = {'target_kernel_nodes': 1,
-                'cache_reset_memset_nodes': 1, 'external_event_record_nodes': 2}
         if any(not math.isfinite(v) or v <= 0 for v in values):
             raise ValueError('Native MACA event interval must be finite and positive')
         return values
 
 
-class MacaGraphEventBenchmark(MacaNativeEventBenchmark):
-    """Ten independent graph launches, one target dispatch and fresh output each."""
-    native_graph = True
+class MacaTorchResetEventBenchmark(MacaNativeEventBenchmark):
+    """Native event submission after two captured-Torch reset fills outside timing."""
+    native_torch_reset = True
 
 
-def validate_cohort(record, manifest, *, sample_count, native=False, graph=False):
+def validate_cohort(record, manifest, *, sample_count, native=False, torch_reset=False):
     from .program import ProgramLaunchManifest
     target = declared_target(manifest.target)
     raw = record.get('native_activity')
     expected_launch = {'kernel_name': manifest.kernel_name,
                        'grid': list(manifest.grid), 'block': list(manifest.block),
                        'dynamic_shared_memory_bytes': manifest.dynamic_shared_memory_bytes}
-    expected = {'kind': ('maca_graph_event_samples_v1' if graph else
+    expected = {'kind': ('maca_native_torch_reset_samples_v1' if torch_reset else
                         'maca_native_event_samples_v1' if native else 'maca_event_samples_v1'),
-                'timer': GRAPH_TIMER if graph else NATIVE_TIMER if native else TIMER,
-                'cache_policy': GRAPH_RESET if graph else NATIVE_RESET if native else RESET,
-                'interval': GRAPH_INTERVAL if graph else NATIVE_INTERVAL if native else INTERVAL,
+                'timer': NATIVE_TIMER if (native or torch_reset) else TIMER,
+                'cache_policy': TORCH_RESET if torch_reset else NATIVE_RESET if native else RESET,
+                'interval': NATIVE_INTERVAL if (native or torch_reset) else INTERVAL,
                 'coverage': COVERAGE, 'profiler_enabled': False,
                 'target': manifest.target, 'device': 0,
-                'stream': 'owned_nonblocking' if graph else 0,
+                'stream': 0,
                 'l2_cache_bytes': target.l2_cache_bytes,
                 'reset_bytes': 4 * target.l2_cache_bytes if target.l2_cache_bytes else None,
                 'warmup_calls': 11, 'event_pair_primed': True, 'launch': expected_launch}
-    if graph:
-        expected.update(graph_structure_verified=True,
-            graph_work={'target_kernel_nodes':1,'cache_reset_memset_nodes':1,'external_event_record_nodes':2})
     if (target.code_object is not CodeObject.MCFATBIN or isinstance(manifest, ProgramLaunchManifest)
             or manifest.aligned_variant or not isinstance(raw, Mapping)
             or set(raw) != set(expected) | {'samples'}
@@ -195,7 +186,7 @@ def validate_cohort(record, manifest, *, sample_count, native=False, graph=False
 
 def validate_paired_events(raw, protocol):
     from .core import TensorLaunchManifest
-    from .paired import PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_GRAPH_EVENT_KIND
+    from .paired import PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND
     documents, participants = raw.get('launch_manifests'), raw.get('participants')
     if (not isinstance(documents, Mapping) or set(documents) != set(protocol.arms)
             or not isinstance(participants, Mapping) or set(participants) != set(protocol.arms)):
@@ -211,7 +202,7 @@ def validate_paired_events(raw, protocol):
             validate_cohort(measurement['arms'][role], manifest,
                             sample_count=protocol.samples_per_cohort,
                             native=raw['kind'] == PAIRED_MACA_NATIVE_EVENT_KIND,
-                            graph=raw['kind'] == PAIRED_MACA_GRAPH_EVENT_KIND)
+                            torch_reset=raw['kind'] == PAIRED_MACA_TORCH_EVENT_KIND)
 
 
 def validate_paired_device(raw, launch, participants):

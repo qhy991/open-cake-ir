@@ -31,10 +31,10 @@ class MetaXMean10Tests(unittest.TestCase):
             malformed = deepcopy(policy); malformed['paired_timing'][key] = value
             with self.assertRaises(ValueError): paired_protocol(malformed)
 
-    def execute(self, *, zero=False, native=False, graph=False):
+    def execute(self, *, zero=False, native=False, torch_reset=False):
         f = self.fixture(); f.policy = evaluation_policy(f.workload,
-            metax_mean10=not (native or graph), metax_native_mean10=native,
-            metax_graph_mean10=graph)
+            metax_mean10=not (native or torch_reset), metax_native_mean10=native,
+            metax_torch_mean10=torch_reset)
         class Assay:
             def __init__(self, manifest, **kwargs): self.manifest = manifest
             def __call__(self, function, **kwargs):
@@ -43,29 +43,26 @@ class MetaXMean10Tests(unittest.TestCase):
                 values = [1., 1., 1., 1., 6.] if self.manifest.kernel_name == 'candidate' else [4.] * 5
                 if zero: values[0] = 0.
                 self.last_activity = {
-                    'kind':'maca_graph_event_samples_v1' if graph else 'maca_native_event_samples_v1' if native else 'maca_event_samples_v1',
-                    'timer':event.GRAPH_TIMER if graph else event.NATIVE_TIMER if native else event.TIMER,
-                    'cache_policy':event.GRAPH_RESET if graph else event.NATIVE_RESET if native else event.RESET,
-                    'interval':event.GRAPH_INTERVAL if graph else event.NATIVE_INTERVAL if native else event.INTERVAL,
+                    'kind':'maca_native_torch_reset_samples_v1' if torch_reset else 'maca_native_event_samples_v1' if native else 'maca_event_samples_v1',
+                    'timer':event.NATIVE_TIMER if torch_reset else event.NATIVE_TIMER if native else event.TIMER,
+                    'cache_policy':event.TORCH_RESET if torch_reset else event.NATIVE_RESET if native else event.RESET,
+                    'interval':event.NATIVE_INTERVAL if torch_reset else event.NATIVE_INTERVAL if native else event.INTERVAL,
                     'coverage':event.COVERAGE,'profiler_enabled':False,
-                    'target':self.manifest.target,'device':0,'stream':'owned_nonblocking' if graph else 0,
+                    'target':self.manifest.target,'device':0,'stream':0,
                     'l2_cache_bytes':8388608,'reset_bytes':33554432,
                     'warmup_calls':11,'event_pair_primed':True,
                     'launch':{'kernel_name':self.manifest.kernel_name,'grid':list(self.manifest.grid),
                               'block':list(self.manifest.block),'dynamic_shared_memory_bytes':0},
                     'samples':[{'index':i,'elapsed_ms':v,'reset_enqueued_before_start':True,
                                 'end_synchronized':True} for i,v in enumerate(values)]}
-                if graph:
-                    self.last_activity.update(graph_structure_verified=True,
-                        graph_work={'target_kernel_nodes':1,'cache_reset_memset_nodes':1,'external_event_record_nodes':2})
                 return values
-        if native or graph:
+        if native or torch_reset:
             def capture_loaded_cohort(assay, loaded, arguments, *, dry_run_iters, repeat_iters):
                 used = iter(arguments)
                 return assay(lambda: loaded.launch(next(used)), dry_run_iters=dry_run_iters,
                              repeat_iters=repeat_iters)
             Assay.capture_loaded_cohort = capture_loaded_cohort
-        with patch.object(event, 'MacaGraphEventBenchmark' if graph else 'MacaNativeEventBenchmark' if native else 'MacaEventBenchmark', Assay), \
+        with patch.object(event, 'MacaTorchResetEventBenchmark' if torch_reset else 'MacaNativeEventBenchmark' if native else 'MacaEventBenchmark', Assay), \
              patch('open_cake_ir.evaluation.metax_observations.collect_maca_activity',
                    side_effect=AssertionError('profiler called during primary timing')) as profiler:
             receipt = f.execute()
@@ -84,14 +81,14 @@ class MetaXMean10Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             f.receipt({**f.payloads, 'timing_samples':canonical_json_bytes(raw)})
 
-    def test_graph_worker_keeps_one_dispatch_per_fresh_output_and_its_own_interval(self):
-        f, receipt = self.execute(graph=True)
+    def test_torch_reset_worker_keeps_one_dispatch_per_fresh_output_and_its_own_interval(self):
+        f, receipt = self.execute(torch_reset=True)
         self.assertTrue(receipt.correctness_passed)
-        self.assertEqual(receipt.timing['kind'], 'fixed_baseline_paired_maca_graph_event_v1')
+        self.assertEqual(receipt.timing['kind'], 'fixed_baseline_paired_maca_native_event_v2')
         self.assertEqual(f.result['counters']['kernel_calls'], 84)
         validate_paired_broker(receipt, f.admission.broker_job_id, f.result['counters'])
         raw = json.loads(f.payloads['timing_samples'])
-        raw['measurements'][0]['arms']['candidate']['native_activity']['stream'] = 0
+        raw['measurements'][0]['arms']['candidate']['native_activity']['cache_policy'] = event.NATIVE_RESET
         with self.assertRaises(ValueError):
             f.receipt({**f.payloads, 'timing_samples':canonical_json_bytes(raw)})
 
