@@ -59,6 +59,9 @@ class MacaEventBenchmark:
             'samples': observations,
         }
         with torch.cuda.stream(stream):
+            # Warm the reset operation before the first formal interval as well.
+            self._reset.fill_(1.0)
+            stream.synchronize()
             begin, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
             # Instantiate lazy event handles outside the measured interval.
             begin.record(stream); end.record(stream); end.synchronize()
