@@ -13,7 +13,7 @@ from open_cake_ir.evaluation.metal_observations import (
     amortized_dispatch_ms, command_buffer_ms, dispatch_count, validate_command_samples,
 )
 from open_cake_ir.evaluation.paired import (
-    PAIRED_METAL_BATCHED_KIND, PAIRED_METAL_KIND, paired_protocol,
+    PAIRED_METAL_BATCHED_KIND, PAIRED_METAL_KIND, PAIRED_METAL_INTERLEAVED_KIND, paired_protocol, metal_cohort_calls,
 )
 from open_cake_ir.evaluation.timing import (
     PairedTimingProtocol, derive_paired_timing, relative_iqr, summarize_cohort,
@@ -60,6 +60,24 @@ class BatchedMetalAssayTests(unittest.TestCase):
         retained = paired_protocol(original)
         self.assertEqual(retained.dispatches_per_sample, 1)
         self.assertIsNone(retained.maximum_relative_iqr)
+
+    def test_explicit_interleaved_successor_preserves_counts_and_gate(self):
+        blocked = policy()
+        interleaved = copy.deepcopy(blocked)
+        interleaved['paired_timing']['kind'] = PAIRED_METAL_INTERLEAVED_KIND
+        self.assertEqual(paired_protocol(blocked), paired_protocol(interleaved))
+        old_calls = list(metal_cohort_calls(blocked))
+        new_calls = list(metal_cohort_calls(interleaved))
+        self.assertEqual(sorted(old_calls), sorted(new_calls))
+        self.assertNotEqual(old_calls, new_calls)
+        self.assertEqual(new_calls[:4], [(0,0,'candidate',0),(0,1,'baseline',0),
+                                        (0,0,'candidate',1),(0,1,'baseline',1)])
+        self.assertEqual(old_calls[:2], [(0,0,'candidate',0),(0,0,'candidate',1)])
+        self.assertEqual(new_calls[56:58], [(1,0,'baseline',0),(1,1,'candidate',0)])
+        for missing in ('dispatches_per_sample', 'maximum_relative_iqr'):
+            bad = copy.deepcopy(interleaved); del bad['paired_timing'][missing]
+            with self.subTest(missing=missing), self.assertRaises(ValueError): paired_protocol(bad)
+        with self.assertRaises(ValueError): list(metal_cohort_calls({}))
 
     def test_declared_dispatch_count_is_required_and_bounded(self):
         for bad in (0, -1, 4097, 1.0, True):

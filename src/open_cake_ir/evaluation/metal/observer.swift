@@ -21,6 +21,7 @@ struct Launch: Decodable {
 struct Request: Decodable {
     let expected_host: [String: String]; let participants: [Participant]; let cases: [InputCase]
     let launches: [Launch]; let output_directory: String
+    let snapshot_grouping: String? // Absent in retained v1/v2 requests.
 }
 struct Refusal: Error, CustomStringConvertible { let description: String }
 func require(_ value: Bool, _ message: String) throws { if !value { throw Refusal(description: message) } }
@@ -28,7 +29,9 @@ func require(_ value: Bool, _ message: String) throws { if !value { throw Refusa
 // additional pending snapshot payload, not total process or Metal buffer memory.
 let snapshotPayloadLimit = 64 * 1024 * 1024
 struct SnapshotCohort: Hashable { let pair: Int; let position: Int; let role: String }
-func snapshotFlushPlan(_ launches: [Launch], participants: [Participant], limit: Int) throws -> Set<Int> {
+func snapshotFlushPlan(_ launches: [Launch], participants: [Participant], limit: Int,
+                       grouping: String = "cohort") throws -> Set<Int> {
+    try require(grouping == "cohort" || grouping == "pair", "undeclared snapshot grouping")
     var sizes: [String: Int] = [:]
     for participant in participants {
         var total = 0
@@ -54,7 +57,10 @@ func snapshotFlushPlan(_ launches: [Launch], participants: [Participant], limit:
         if launch.phase == "cohort" {
             guard let pair = launch.pair_index, let position = launch.position else { throw Refusal(description: "cohort snapshot requires existing pair and position") }
             try require(pair >= 0 && (position == 0 || position == 1) && !launch.profile, "cohort snapshot metadata differs")
-            cohort = SnapshotCohort(pair: pair, position: position, role: launch.role)
+            // A v3 pair stays contiguous even though its two arms alternate.
+            // Old requests retain the stricter contiguous-arm window unchanged.
+            cohort = SnapshotCohort(pair: pair, position: grouping == "pair" ? -1 : position,
+                                    role: grouping == "pair" ? "" : launch.role)
         } else {
             try require(launch.pair_index == nil && launch.position == nil, "non-cohort snapshot has cohort coordinates")
         }
@@ -256,9 +262,12 @@ final class Prepared {
 var report: [String: Any] = ["schema_version": 1, "status": "failed", "source_library_rebuilt": false]
 var snapshots: OwnedSnapshots? = nil
 var observations: [[String: Any]] = []
+var snapshotGrouping = "cohort"
 do {
     let request = try JSONDecoder().decode(Request.self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
-    let flushAfter = try snapshotFlushPlan(request.launches, participants: request.participants, limit: snapshotPayloadLimit)
+    snapshotGrouping = request.snapshot_grouping ?? "cohort"
+    let flushAfter = try snapshotFlushPlan(request.launches, participants: request.participants,
+                                          limit: snapshotPayloadLimit, grouping: snapshotGrouping)
     let snapshotWriter = OwnedSnapshots(directory: URL(fileURLWithPath: request.output_directory, isDirectory: true))
     snapshots = snapshotWriter
     guard let device = MTLCreateSystemDefaultDevice() else { throw Refusal(description: "Metal device unavailable") }
@@ -298,7 +307,7 @@ do {
     report["error"] = errorDetails(original)
     if let flushError = flushError { report["snapshot_flush_error"] = errorDetails(flushError) }
 }
-report["snapshot_persistence"] = ["condition": "owned_snapshots_written_at_cohort_end",
+report["snapshot_persistence"] = ["condition": snapshotGrouping == "pair" ? "owned_snapshots_written_at_pair_end" : "owned_snapshots_written_at_cohort_end",
     "pending_payload_limit_bytes": snapshotPayloadLimit, "peak_pending_payload_bytes": snapshots?.peakPendingBytes ?? 0,
     "failed_writes": snapshots?.failedWrites ?? []] as [String: Any]
 report["launches"] = observations

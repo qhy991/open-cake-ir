@@ -65,7 +65,7 @@ def _snapshot(directory, name, elements):
 
 def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, launch_plan: list,
             observer_executable: Path, expected_host: dict, directory: Path, timeout_seconds: int = 300,
-            queue_seconds: float = 0) -> dict:
+            queue_seconds: float = 0, snapshot_grouping: str = "cohort") -> dict:
     """Observe fresh output buffers and independently check every returned launch.
 
     ``input_cases`` maps Workload case IDs to trusted ``inputs`` and ``expected``
@@ -73,6 +73,8 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
     Python independently derives the guard again from every actual buffer snapshot.
     """
     validate_host(expected_host)
+    if snapshot_grouping not in {"cohort", "pair"}:
+        raise ValueError("Metal snapshot grouping is undeclared")
     executable = Path(observer_executable)
     if not executable.is_absolute() or not executable.is_file():
         raise ValueError("admitted Metal observer executable is unavailable")
@@ -138,6 +140,8 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
         case_rows.append({"id": case_id, "inputs": paths, "oracles": oracles})
     request = {"expected_host": expected_host, "participants": participant_rows, "cases": case_rows,
                "launches": launch_plan, "output_directory": str(directory)}
+    if snapshot_grouping == "pair":
+        request["snapshot_grouping"] = "pair"
     request_path = directory / "request.json"
     request_path.write_text(json.dumps(request, sort_keys=True))
     try:
@@ -161,6 +165,16 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
                 or report.get("archive_miss_policy") != "failOnBinaryArchiveMiss"
                 or report.get("module_loads") != len(candidates) or not isinstance(report.get("launches"), list)):
             raise ValueError(f"Metal observer failed or changed its admission: {report.get('error')}")
+        if snapshot_grouping == "pair":
+            persistence = report.get("snapshot_persistence", {})
+            if not isinstance(persistence, dict):
+                raise ValueError("Metal observer pair snapshot declaration is missing")
+            peak = persistence.get("peak_pending_payload_bytes")
+            if (persistence.get("condition") != "owned_snapshots_written_at_pair_end"
+                    or persistence.get("pending_payload_limit_bytes") != 64 * 1024 * 1024
+                    or type(peak) is not int or not 0 <= peak <= 64 * 1024 * 1024
+                    or persistence.get("failed_writes") != []):
+                raise ValueError("Metal observer did not honor the declared pair snapshot window")
         checked, preflight_passed = [], True
         for record in report["launches"]:
             index = record.get("index")

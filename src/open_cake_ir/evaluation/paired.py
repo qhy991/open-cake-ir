@@ -39,6 +39,9 @@ PAIRED_METAL_KIND = 'fixed_baseline_paired_metal_v1'
 # kernel shorter than the fixed command overhead is not measured through it. v1 keeps
 # its exact single-dispatch meaning; frozen Studies replay unchanged.
 PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
+# Explicit experimental successor: matched command samples alternate within each pair.
+# Timer, batching and quality semantics are unchanged; task defaults remain v2.
+PAIRED_METAL_INTERLEAVED_KIND = 'fixed_baseline_paired_metal_v3'
 # One dispatch of one AMDGCN kernel, timed by roctracer. Named `v1` for the same reason
 # the others are: what the interval includes and what resets the device are part of the
 # policy, and a successor states its own.
@@ -83,7 +86,7 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
         return None
     kind = value.get('kind') if isinstance(value, Mapping) else None
     successor = {'dispatches_per_sample', 'maximum_relative_iqr'}
-    expected_fields = _BASE_FIELDS | (successor if kind == PAIRED_METAL_BATCHED_KIND else set())
+    expected_fields = _BASE_FIELDS | (successor if kind in {PAIRED_METAL_BATCHED_KIND, PAIRED_METAL_INTERLEAVED_KIND} else set())
     if (not isinstance(value, Mapping) or set(value) != expected_fields
             or kind not in PAIRED_KINDS or value.get('arms') != ['candidate', 'baseline']):
         raise ValueError('fixed-baseline paired policy fields or roles differ')
@@ -118,6 +121,25 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     if kind in METAL_KINDS or 'validation_case_ids' in evaluation:
         validation_case_ids(evaluation)
     return protocol
+
+
+def metal_cohort_calls(evaluation: Mapping):
+    """Physical (pair, position, role, call) order shared by execution and replay.
+
+    v1/v2 exhaust one arm's cohort before the other. v3 alternates arms for
+    corresponding calls, preserving each arm's warmup prefix and sample count.
+    """
+    protocol = paired_protocol(evaluation)
+    kind = evaluation.get('paired_timing', {}).get('kind')
+    if protocol is None or kind not in METAL_KINDS:
+        raise ValueError('Metal launch order requires its explicit paired policy')
+    for pair, order in enumerate(protocol.pair_order):
+        calls = range(protocol.route_calls_per_cohort)
+        coordinates = (((position, call) for call in calls for position in range(2))
+                       if kind == PAIRED_METAL_INTERLEAVED_KIND else
+                       ((position, call) for position in range(2) for call in calls))
+        for position, call in coordinates:
+            yield pair, position, order[position], call
 
 
 def validation_case_ids(evaluation: Mapping) -> tuple[str, ...]:
@@ -382,12 +404,13 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
                 validate_metal_correctness_checks(check, (receipt.case_id,) * protocol.route_calls_per_cohort, timed=True)
             oracle_check(check, check)
             passed = passed and check['passed']
+    summary = paired_summary(raw) if measured else None
     if raw['kind'] in METAL_KINDS:
         from .metal_observations import validate_launch_sequence
         commands = [row['command_buffer'] for role in protocol.arms for row in checks[role]['preflight']['launches']]
         if measured:
-            commands += [command for measurement in raw['measurements'] for role in measurement['order']
-                         for command in measurement['arms'][role]['command_buffers']]
+            commands += [raw['measurements'][pair]['arms'][role]['command_buffers'][call]
+                         for pair, _, role, call in metal_cohort_calls(raw['evaluation_protocol'])]
             commands += [row['command_buffer'] for role in protocol.arms for row in checks[role]['postflight']['launches']]
         if [command['launch_index'] for command in commands] != list(range(len(commands))):
             raise ValueError('Metal receipt physical launch order differs from its assay')
@@ -397,7 +420,6 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
     if passed != receipt.correctness_passed:
         raise ValueError('paired correctness disposition differs from both oracle outputs')
     if measured:
-        summary = paired_summary(raw)
         if _canonical(summary) != _canonical(receipt.timing):
             raise ValueError('paired timing summary differs from raw samples')
         for i, measurement in enumerate(raw['measurements']):
