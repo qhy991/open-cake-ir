@@ -647,7 +647,7 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         """
         from open_cake_ir.compiler.backends.triton import (
             _ATOMIC_RMW_CONTRACT, _TRITON_MMA_CONTRACTS, _TRITON_TANH_CONTRACTS, _TRITON_TRIG_CONTRACTS)
-        emittable = set(_TRITON_MMA_CONTRACTS) | set(_TRITON_TANH_CONTRACTS) | set(_TRITON_TRIG_CONTRACTS.values()) | {
+        emittable = set(_TRITON_MMA_CONTRACTS) | set(_TRITON_TANH_CONTRACTS) | set(_TRITON_TRIG_CONTRACTS) | {
             _ATOMIC_RMW_CONTRACT}
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
         self.assertEqual(sorted(set(target.instruction_contracts) - emittable), [])

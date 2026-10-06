@@ -119,6 +119,11 @@
       "kind": "device_observation",
       "source": "Cake-generated proposed-Target register-value probes on exact gfx938, DTK Triton3.6.0",
       "locator": "/data3/testuser01/experiments/bw1100-cake-compiler-completion-20261005/values/manifest.json and device-result.json at Compiler f2c3d89c; job bw-ac46a77edbb3 terminal completed, HCU2 VRAM0, no container or visible KFD. 25 emitted sources pass63 exact checks: forward/reverse resident INT32 and FP32 prefix at lengths1,33,65,129 including signed wrapping and values beyond2^24; explicit outer and INT32 validity-predicate broadcasts with biased masked-row tails3,5,7; bit-preserving broadcasts in FP32,FP16,BF16,INT32,FP8E4M3. No global scan carry, stable-sort, arbitrary-loop, Task speed or calibrated-rate claim; observed2026-10-05."
+    },
+    {
+      "kind": "device_observation",
+      "source": "BW1100 successor Compiler component qualification, DTK image3ad0ae7, Triton3.6.0/Torch2.11.0",
+      "locator": "/data3/testuser01/experiments/bw1100-compiler-trig-scan-qualification-20261006/bench/campaign/results/component-summary.json and component-isa.json, 2026-10-06, HCU2: explicit ocml.sin.f32/ocml.cos.f32 each match external Torch FP32 and BF16 outputs on8,388,620 finite arguments; no hardware v_sin_f32/v_cos_f32 emitted. Resident INT32 max scan forward/reverse each match CPU maximum-accumulate on17,408 signed integers; this is component capacity, not full RoPE/sort performance."
     }
   ]
 }

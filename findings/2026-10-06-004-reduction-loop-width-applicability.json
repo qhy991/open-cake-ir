@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-06",
+  "id": "F-2026-10-06-004",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Width pass coverage for already-lowerable CTA reduction loops",
+  "executor_revision": "external-bw1100-bench@77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "compiler_revision_id": "open-cake-ir@9187a3b0fc3c06b48b7699800455a480e9b068dd",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-compiler-night-decoder-bwd-width-20261005-r1",
+    "locators": [
+      "campaign/schedules/r7w/refused-r6-lnw2-bwd-m1024/rewrite.json",
+      "campaign/instruction-exploration/HANDOFF.md"
+    ]
+  },
+  "observation": "The frozen pass refuses loop_domain for legal reduction-bearing kernels. Manual execution-group selection is already valid and passed the Task gate; no new ISA operation follows from this failure.",
+  "proposed_change": "Admit one fixed pure CTA-reduction loop with ordinary load/cast/arithmetic/store operations, retaining scope/carry/store, resource, precision and initial/final assessment ownership. Width remains caller-selected.",
+  "implemented_in": "dfb58b84cf41a50eab37f1576f61acc59fe98718",
+  "verified_by": {
+    "cpu": "Independent shared Compiler review approved dfb58b84. Affected91 DCU contracts/167 subtests pass; new hardware Corpus cases supplement the shared suite and preserve existing expectations. Final CI/full-suite outcomes are owned by the current core/hardware PRs.",
+    "device": "/data3/testuser01/experiments/bw1100-compiler-trig-scan-qualification-20261006/bench/campaign/results/api-replay.json preserves all199 retained artifacts and29 API reduction rewrites generate the same complete source as retained choices. full-task-summary.json:160/160 original decoder correctness,4 caller guards and fresh paired wall vs the same community baseline pass; conservative whole-call ratio1.25445698. Same-choice replay is not a performance improvement or a fresh-author fixed-budget result.",
+    "release": "component and decoder correctness/caller/timing admissions exit0, no running container, after_vram0%, no KFD visibility; four terminal receipts under the qualification root.",
+    "scope": "Component capacity for trig/max scan; original whole-task same-choice replay for reduction width. No global performance/search-efficiency/default-width/ISA precision claim."
+  },
+  "promotion_disposition": "Promote reviewed capacity only after shared and hardware branch gates. A fresh equal-budget authoring result remains separate; frozen Runs and native outcomes stay unchanged."
+}
