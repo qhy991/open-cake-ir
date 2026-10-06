@@ -117,8 +117,8 @@ def run_runtime_factory(project_root, runtime_config_path):
     lab = TaskLab(root)
 
     def build(specification, directory):
-        from open_cake_ir.lab.author_home import require_live_skill_qualification
-        require_live_skill_qualification(specification.document['authoring']['provider'].get('author_home_policy'))
+        from open_cake_ir.lab.admission import admit_native_skill_authoring
+        admit_native_skill_authoring(authoring=specification.document['authoring'], project_root=root)
         specification = lab.preflight_run(specification)
         document = specification.document
         require_qualified_clean_start_execution((document['authoring'],))
@@ -252,11 +252,11 @@ def run_runtime_factory(project_root, runtime_config_path):
                 author_home_policy = declared_provider.get('author_home_policy')
                 codex_home = None
                 user_home = None
+                from open_cake_ir.lab.author_home import (
+                    CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1,
+                    provision_codex_home, provision_user_home,
+                )
                 if author_home_policy is not None:
-                    from open_cake_ir.lab.author_home import (
-                        CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1,
-                        provision_codex_home, provision_user_home,
-                    )
                     if (author_home_policy not in CODEX_HOME_POLICIES
                         or 'auth_source' not in provider_config):
                         raise ValueError('Run isolated Codex home policy or credential source differs')
@@ -280,16 +280,21 @@ def run_runtime_factory(project_root, runtime_config_path):
                     author_home_policy=author_home_policy, codex_home=codex_home,
                     user_home=user_home, native_skill_package=package.native_skill_package,
                     qualified_system_skills_sha256=getattr(qualification, 'system_skills_sha256', None))
+                anchor = None
+                if author_home_policy == ISOLATED_SKILL_PACKAGE_V1:
+                    _, anchor_path = qualification_path(root, declared_provider['qualification_anchor']['path'],
+                                                         'provider qualification anchor')
+                    anchor = json.loads(anchor_path.read_bytes())
                 provider = CodexRunProvider(qualification=qualification,builders={specification.run_id:invocation},
-                    task_packages=packages,adapter=CodexProviderAdapter())
+                    task_packages=packages,adapter=CodexProviderAdapter(),qualification_anchor=anchor)
         return {'provider':provider,'environment':environment,'evaluator':evaluator}
     return build
 
 
 def execute_run_from_config(project_root,specification,runtime_config_path,evidence_root):
     from open_cake_ir.lab.custody import admit_new_campaign_path
-    from open_cake_ir.lab.author_home import require_live_skill_qualification
-    require_live_skill_qualification(specification.document['authoring']['provider'].get('author_home_policy'))
+    from open_cake_ir.lab.admission import admit_native_skill_authoring
+    admit_native_skill_authoring(authoring=specification.document['authoring'], project_root=project_root)
     root = Path(project_root).resolve(strict=True)
     output = admit_new_campaign_path(root,evidence_root,role='Run Evidence root')
     require_qualified_clean_start_execution((specification.document['authoring'],))

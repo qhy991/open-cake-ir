@@ -43,6 +43,11 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+The Metal A/A record first published as F-2026-10-06-001 at 3d430a13 is assigned sequence002 here before integration. Main sequence001 belongs to the streamed-MMA applicability record at f0372ecd; original Metal evidence remains at its cited paths.
+
+- F-2026-10-06-002 — M4 identical-artifact RMSNorm A/A is numerically correct but all 20 cohorts fail the original relative-IQR gate; separate work-volume and timestamp controls pass. Measurement qualification remains closed; no Compiler or performance promotion.
+- F-2026-10-06-001 — streamed MMA output stores and store-only narrowing casts are outside the width API despite lowerable manual choices; bounded pass extension and component/source replay prepared, full Task evidence remains separate.
+
 - F-2026-10-05-008 — maintenance reader rejected the current Run policy location; current/historical authority reading verified on14 sealed C550 Runs at27def9a2. No outcome reclassification or hardware promotion.
 
 - F-2026-10-05-007 — multi-candidate author feedback lacked candidate identity; bounded result attribution and independent feedback replay prepared at 5453a4f5 with CPU contracts. Proposed protocol successor; no hardware or learning qualification.

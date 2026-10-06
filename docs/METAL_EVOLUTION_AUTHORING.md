@@ -1,6 +1,8 @@
 # Metal 演进实验：TASK.md / AGENTS.md 与 Run 后提炼
 
 状态：完整技能包软件准备与平台规划已由 PR #327 合入 `metal@25f1faf2`；原生技能资格及演进 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
+2026-10-06：六任务 FP32 starter 的真实 M4 数值检查已通过；RMSNorm A/A 未通过原测量质量门，正式性能搜索仍未启动，详见总计划的真实资格记录。
+
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。
 
@@ -70,6 +72,25 @@ ADR 0081 的 Codex author-home 后继；本计划分支已吸收 `main@354a670f`
 该包在通用管理 schema 中仍可选，但在本计划的实验 treatment 中必需；不能退回文本材料
 或旧 auth-only 资格来声称满足独立 skill 环境。通用 Cake 规则与每任务提示分开审阅后
 组成完整输入，同一比较的独立重复保持相同材料边界。
+
+[PR #341](https://github.com/qhy991/open-cake-ir/pull/341) 已随 #342 合入 main，每个带技能包的
+v2 cell 同时显式声明 `native_skill_names`。本计划现有草案的原生名字已从 SKILL.md
+核对为 `cake-metal-optimization`，因此该 cell 的选择为 `["cake-metal-optimization"]`。
+管理 TASK/config 保存名字列表；local/SSH 节点把它逐项传成 `--native-skill-name`，
+再由 launcher 交给 qualifier。目录名不能替代原生名字；本机与节点使用同一校验规则。
+本项实现已提交；CI `37363612900` 的三个 hosted job 因未取得 runner 而终止，没有执行
+测试。失败记录保留在 `native-selection-runner-5946faf1/`；不重跑或替换环境制造通过，
+不代表任务已经获得真实 skill 环境。
+
+复用已有资格时，必须从已验证的资格归档确认请求名字在各声明 arm 的 initial/resume
+当前输入中都有对应包内正文。包身份相同、目录可见或历史残留都不足以授权一个未观察的
+名字。Run 继续通过既有 qualification/anchor 引用绑定这份证据，不新增第二份资格清单。
+工作提交 `6fa33d5e` 已将请求名字交给同一个重建函数，检查原资格选择与本次请求的并集；
+每个名字须唯一解析为包内 entry，并在本轮加载记录中匹配其路径。目录名不同于原生名字
+的正例、两个 arm 各自首轮/续跑缺正文的反例，以及 launcher 不启动进程的复用检查已编写。
+原资格仅点名 `cake`、额外正文为 `cake:metal` 的夹具能把复用规则与原资格规则分开检查。
+上述复用合同已随 #342 在完整三版本 CI 中通过；fixture scope、配置/材料准入保持原有职责。共享代码已同步到本平台任务分支；CLI 开放与真实作者资格仍待后继。
+
 
 原生 skill 环境是另一项需要资格验证的后继。默认 auth-only 策略仍保留宿主 `HOME`；Codex
 还会从 `$HOME/.agents/skills`、工作目录祖先、admin 与 system 来源发现技能，见
@@ -184,7 +205,7 @@ CPU 反例覆盖缺失/重复、串 Run/轮次、配置和材料变化、原始�
 记录见 `native-skill-run-evidence-b039c49b/report.json`。这没有开放正式入口，
 也不证明对抗性写入者实际执行过该调用；历史 custody 仍须独立检查。
 
-**真实启用还缺一个软件后继，不是仅缺一次命令执行。** 当前
+**真实启用仍需通过软件接入验收。** 当前
 `author_home.require_live_skill_qualification` 对新策略无条件拒绝，现有 qualifier 也只允许
 `--fixture-only`。Run 归档/回放已具有软件校验路径，下一步是资格收据、anchor 和
 admission 对保留输入与 custody 的共同验证。不能删拒绝分支后沿用旧收据，不能仅凭
@@ -201,6 +222,46 @@ admission 对保留输入与 custody 的共同验证。不能删拒绝分支后�
 负例必须覆盖缺轮次、未知或漂移材料、来自另一 invocation/thread/package 的观察、
 把历史 skill 正文当成本轮加载，以及旧 auth-only/fixture 收据。若 native CLI 无法提供所需观察，保持该能力未实现；模型自报
 不填补缺口。已有包、home 与 cell owner 继续复用，不再造安装器或第二套资格流程。
+
+[PR #339](https://github.com/qhy991/open-cake-ir/pull/339) 已在 `main@58d668c4` 实现独立资格
+输入重建，三个 Python CI 版本各 2791 通过、35 跳过。冻结资格 authority 固定模型，context 记录原调用路径
+与原生技能选择；复用既有 Run validator，读取原有 invocation、任务投影/reference、
+provider 事件、完整技能包和唯一 system 快照，不依赖原来的 HOME 或安装目录。
+`--native-skill-name` 可重复指定准确的原生名字；TASK 每轮明确点名，正文必须出现在当前轮。
+实际 qualifier 的单 arm、首轮或 resume 只有目录无正文，以及离线重建/材料互换反例已验收。
+记录见 `native-skill-qualification-b6ba8dc6/report.json`。这不授予旧收据新能力。
+
+[PR #340](https://github.com/qhy991/open-cake-ir/pull/340) 已提交收据 v3 与实际归档准入组件，
+已随 #342 完成软件验收并合入 main。其反例包括旧收据、scope 替换、过期 anchor、custody-false 与语义不符
+的封存归档；库运行入口接线和零轮/首轮故障覆盖已在后继完整 CI 中通过。软件反事实归档只用于测试，
+不能列为真实模型资格。准备与 provider 构造必须在缺失资格时先拒绝，再考虑读取凭据。
+首轮 Python 3.12 CI 有一项新夹具失败：provider 把仓库内 schema 写成绝对外部引用；
+资格重建检查已通过，随后由原有路径规则正确拒绝。后继夹具改用仓库相对引用，原资格
+调用仍保留绝对路径，没有修环境或放宽检查。原日志见 `native-admission-failure-1e5a236e/`。
+修正后 CI `37363906158` 的三个 hosted job 均未取得 runner，测试没有执行；本次环境
+失败另存 `native-admission-runner-d4fae808/`，不覆盖夹具失败，也不重跑或替换环境。
+
+
+运行接线起于 `316ffcc2`，最终 head `59a15feb` 随 #342 合入 `main@5b4be89d`，包含收据、
+选择和复用改动。库入口通过 `admit_native_skill_authoring` 统一核对真实归档、配置、
+schema、live scope 与环境覆盖；覆盖对象是 `environment_kind`，不能使用任意 Run ID
+或 Study condition 名称代替。prepare、Study/Run preflight、Campaign 与 provider 构造
+均传递其实际环境集合，通用输出 schema 不扩展资格覆盖。未认证或 fixture 收据在 runtime
+配置读取前拒绝；完整配置/归档不匹配在凭据读取前拒绝。早期字段检查仅用于拒绝，不是授权。
+
+首轮返回的原生输入被拒绝时，原回放提前返回分支只为 Responses 取得 TaskPackage，
+不能满足原生拒绝重建的上下文要求；后继按实际保留的 native rejection role 延迟取得它。
+未观察到输入的调用失败仍保留原有缺失语义。已编写真实 Run 引擎的零轮、首轮调用失败、
+跨 Run 输入拒绝及整条回放反例，均要求不进入 Evaluation；入口正例和缺失资格拒绝顺序
+也有覆盖。后继 `5ee786b8` 新增成功两轮的整体测试，使用同一资格夹具先生成 executable，
+再封存资格；不在资格后修改 executable。运行时经真实 CodexRunProvider/adapter 子进程
+生成 CPU 候选与原生输入夹具，进入 Run 引擎、既有 CPU evaluator 和完整语义回放。
+断言同线程续跑、累计费用转增量、每轮对应包内正文、原始 TASK 交付，以及第一轮评测
+历史实际存在于第二轮保留输入中；这证明链路的测试范围，不证明模型阅读或行为学习。
+最终 CI `37389739785` 的 Python 3.10/3.11/3.12 各 2816 passed、35 skipped，
+Corpus 181/181；定向回归 56 项、238 子测试通过。此前原夹具、局部 import 与 mock
+失败均保留，后继修复未弱化拒绝断言。代码已合入 main 并同步本 Metal 任务分支，
+命令行 qualifier/launcher 的显式关闭门尚未移除，真实模型 initial/resume 资格尚未执行。
 
 资格接入沿现有 owner 进行，验收范围如下，不新增并行资格流程：
 

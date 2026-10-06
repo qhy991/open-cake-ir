@@ -37,7 +37,7 @@ def prepare_task_run(project_root,inputs,*,compiler_reference,executor,qualifica
     receipt = external_file(root,str(qualification_path),'qualification')
     anchor = external_file(root,str(qualification_anchor_path),'qualification anchor')
     authoring['provider'],config = bind_cli_provider(root,authoring['provider'],row,
-        runtime_path=runtime,receipt_path=receipt,anchor_path=anchor)
+        runtime_path=runtime,receipt_path=receipt,anchor_path=anchor,environment_kinds=(authoring['environment_kind'],))
     authoring['toolchain_sha256'],execution = bind_runtime_execution(root,row,executor,config,runtime)
     document['compiler_revision'] = dict(compiler_reference)
     authoring['compiler_revision'] = dict(compiler_reference)

@@ -112,17 +112,32 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         return refused('execution_commitments', 'Require one zero-based role without explicit storage, synchronization or residency commitments.')
     if s.tile_loops:
         by_id = {op.op_id: op for op in s.operations}
-        if (len(s.tile_loops) != 1
-                or s.tile_loops[0].stop is not None
-                or s.tile_loops[0].range_options.warp_specialize
-                or not any(by_id[name].kind is OperationKind.MMA for name in s.tile_loops[0].body)
-                or any(by_id[name].kind not in {OperationKind.LOAD, OperationKind.CAST, OperationKind.MMA}
-                       for name in s.tile_loops[0].body)
-                or any(by_id[name].kind is OperationKind.CAST and
-                       (by_id[name].parameters.to is not DType.FP32
-                        or s.buffer(by_id[name].reads[0]).dtype not in {DType.FP16, DType.BF16, DType.FP32})
-                       for name in s.tile_loops[0].body)):
-            return refused('loop_domain', 'Only one sequential load/FP32-widen/MMA loop is admitted; its body and trip count stay unchanged.')
+        if len(s.tile_loops) != 1:
+            return refused('loop_domain', 'Require one fixed sequential MMA loop.')
+        loop = s.tile_loops[0]
+        body = [by_id[name] for name in loop.body]
+        # Initial backend assessment already owns output-store affine coverage
+        # (TRITON_LOOP_STORE_OWNERSHIP); do not duplicate that legality rule here.
+        stores = [op for op in body if op.kind is OperationKind.STORE]
+
+        def width_cast(op) -> bool:
+            source = s.buffer(op.reads[0])
+            if op.parameters.to is DType.FP32 and source.dtype in {DType.FP16, DType.BF16, DType.FP32}:
+                return True
+            # A rounding boundary is preserved, not eliminated or moved. Admit
+            # narrow output tiles only when every consumer is a streamed store
+            # in this same fixed loop; intermediate MMA/carry use stays outside.
+            consumers = [use for use in s.operations if op.writes[0] in use.reads]
+            return (source.dtype is DType.FP32 and op.parameters.to in {DType.FP16, DType.BF16}
+                    and bool(consumers)
+                    and all(use in stores for use in consumers))
+
+        if (loop.stop is not None or loop.range_options.warp_specialize
+                or not any(op.kind is OperationKind.MMA for op in body)
+                or any(op.kind not in {OperationKind.LOAD, OperationKind.CAST,
+                                      OperationKind.MMA, OperationKind.STORE} for op in body)
+                or any(op.kind is OperationKind.CAST and not width_cast(op) for op in body)):
+            return refused('loop_domain', 'Require a fixed load/cast/MMA loop; optional rounded output stores must follow its tiled axis without intermediate consumers.')
     if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
                           OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
         return refused('operation_domain', 'Only pure tensor arithmetic, MMA, CTA reductions and ordinary loads/stores are admitted.')

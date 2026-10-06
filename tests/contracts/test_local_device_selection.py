@@ -114,11 +114,14 @@ print(os.environ['MACA_VISIBLE_DEVICES'],flush=True)
         executor=SimpleNamespace(document={'host_environment':{'python':{'invocation_path':sys.executable}}},
                                  admit_host=lambda:{'runtime_library':'/fixture/runtime.so'})
         runtime={'broker':{'command':['worker','--local-kind','maca','--local-device','0',
-                                     '--local-queue-seconds','120','--local-lock-scope','device'],'cwd':str(self.root)}}
+                                     '--local-queue-seconds','120','--local-lock-scope','device','--local-runtime-device','0',
+                                     '--local-expected-pci','0000:34:00'],'cwd':str(self.root)}}
         def probe(command,**kwargs):
             self.assertIn('--local-device',command)
             self.assertEqual(command[command.index('--local-device')+1],'0')
             self.assertEqual(command[command.index('--local-lock-scope')+1],'device')
+            self.assertEqual(command[command.index('--local-runtime-device')+1],'0')
+            self.assertEqual(command[command.index('--local-expected-pci')+1],'0000:34:00')
             self.assertEqual(kwargs['timeout'],240)
             (self.root/'local-device-admission.json').write_text(json.dumps({'admitted':False,
                 'error':'MACA admission requires a MACA PyTorch and one visible device'}))
@@ -132,8 +135,10 @@ print(os.environ['MACA_VISIBLE_DEVICES'],flush=True)
             turns=20,max_candidates=3,searches_per_turn=2,wall_seconds=28800,token_budget=None,
             maximum_cv=None,required_pair_wins=None,dispatches_per_sample=None,gpu_run=None,
             broker_socket=None,rows=None,columns=None,depth=None,provider_executable=None,
-            provider_revision=None,incumbent_registry=None,local_device=0,local_queue_seconds=120,local_lock_scope='device')
+            provider_revision=None,incumbent_registry=None,local_device=0,local_queue_seconds=120,local_lock_scope='device',local_runtime_device=0,local_expected_pci='0000:34:00')
         command=launch_task_matrix._command(args,'silu',self.root,None)
         self.assertEqual(command[command.index('--local-device')+1],'0')
         self.assertEqual(command[command.index('--local-queue-seconds')+1],'120')
         self.assertEqual(command[command.index('--local-lock-scope')+1],'device')
+        self.assertEqual(command[command.index('--local-runtime-device')+1],'0')
+        self.assertEqual(command[command.index('--local-expected-pci')+1],'0000:34:00')
