@@ -20,7 +20,9 @@ kernels to 16. A fresh common evaluation determines the useful width per task.
   allocation or synchronization. Only global/register buffers and ordinary loads,
   pure elementwise arithmetic/casts, MMA, CTA reductions and stores are admitted.
   One fixed sequential loop may contain loads, MMA, FP16/BF16-to-FP32
-  widening and ordinary output stores. FP32-to-FP16/BF16 rounding is allowed
+  widening and ordinary output stores; alternatively it may contain CTA reductions
+  and pure elementwise arithmetic instead of MMA. Resident and cross-loop
+  reductions keep their existing backend scope and carry declarations. FP32-to-FP16/BF16 rounding is allowed
   only when every consumer is an output store in that same loop. Existing
   FP32 operands are used directly; identity casts remain refused. Backend
   preflight owns store coverage of all active axes. Its body, trip count,

@@ -645,7 +645,10 @@ def main(argv=None) -> int:
         if args.harness != 'codex' or args.reference_access != 'known_kernel_reproduction':
             parser.error('--author-skill-package requires Codex known-kernel authoring')
         if not args.baseline_only:
-            parser.error('native skill discovery and delivery on initial/resume are not verified; refusing formal qualification or launch')
+            try:
+                selection_instruction(args.native_skill_name)
+            except ValueError as error:
+                parser.error(str(error))
     if args.local_device is not None and args.local_device < 0:
         parser.error('--local-device must be nonnegative')
     if args.local_queue_seconds < 0 or not math.isfinite(args.local_queue_seconds):

@@ -54,6 +54,8 @@ def elementwise_result_dtype(operands: Iterable[DType], op: ElementwiseOp | None
     dtypes = set(operands)
     if dtypes == {DType.INT32} and op in INT_ARITHMETIC:
         return DType.INT32
+    if op in {ElementwiseOp.SIN, ElementwiseOp.COS}:
+        return DType.FP32 if dtypes == {DType.FP32} else None
     if op in {ElementwiseOp.FLOOR_DIV, ElementwiseOp.REMAINDER}:
         return None
     if not dtypes or not dtypes <= ELEMENTWISE_FLOAT_DTYPES:
@@ -745,12 +747,12 @@ def _operation_parameters(
         )
         op = _enum(ElementwiseOp, obj["op"], f"{context}.op")
         instruction = obj.get("instruction")
-        if op in (ElementwiseOp.TANH, ElementwiseOp.FMA) and instruction is None:
+        if op in (ElementwiseOp.TANH, ElementwiseOp.FMA, ElementwiseOp.SIN, ElementwiseOp.COS) and instruction is None:
             raise ScheduleParseError(
                 f"{context}.instruction is required for {op.value} so the backend does not "
                 "choose its numerical and performance contract"
             )
-        if op not in (ElementwiseOp.TANH, ElementwiseOp.FMA) and instruction is not None:
+        if op not in (ElementwiseOp.TANH, ElementwiseOp.FMA, ElementwiseOp.SIN, ElementwiseOp.COS) and instruction is not None:
             raise ScheduleParseError(
                 f"{context}.instruction has no defined effect for {op.value}"
             )

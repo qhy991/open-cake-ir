@@ -677,7 +677,7 @@ class ElementwiseArityTest(unittest.TestCase):
 
         templates = _TritonEmitter._ELEMENTWISE_TEXT
         # Every operator the IR admits has a body, or the gate admits what cannot lower.
-        self.assertEqual(set(templates) | {ElementwiseOp.TANH}, set(ElementwiseOp))
+        self.assertEqual(set(templates) | {ElementwiseOp.TANH, ElementwiseOp.SIN, ElementwiseOp.COS}, set(ElementwiseOp))
         for op, template in templates.items():
             with self.subTest(op=op.value):
                 for index, operand in enumerate(("a", "b", "c"), start=1):

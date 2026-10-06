@@ -7,8 +7,17 @@
 `cake-metal-optimization` 正文，收据与 anchor 已封存于
 `metal-xcode16-20261006/native-skill-cli-isolated-68544621/`。该收据限定每轮最多
 1 候选；不得用于计划中的每轮 3 候选输入。此结果证明该固定配置的协议和原生输入交付，
-不证明作者已经用 Cake/MSL/AIR 做 kernel 优化或学会复用经验。正式 Ralph treatment 仍待
-平台同步、G3 与最终作者配置准入；正式 attribution 入口的原生阶段交接已在 `de8087cf` 通过，范围见总计划。
+不证明作者已经用 Cake/MSL/AIR 做 kernel 优化或学会复用经验。该次验收完成时，正式 Ralph treatment 尚待
+平台同步、G3 与最终作者配置准入；三候选后继状态见下。正式 attribution 入口的原生阶段交接已在 `de8087cf` 通过，范围见总计划。
+
+
+三候选后继已在整合 CI 实际源码 `28e36de4` 通过：同一固定模型/effort、私有环境和完整
+技能包，无 GPU initial/resume 两轮的每个三成员 bundle 新增/更新合格，正文两轮都保留。
+证据为 `metal-xcode16-20261006/native-skill-cli-max3-28e36de4/`；这是占位函数文件协议
+资格，未执行这些函数，不是真实 Cake/MSL/AIR 优化或经验复用。累计 158,400 tokens，
+超过旧 150k Run 草案；正式预算须在冻结前根据有界先导确定，不在 Run 中加额。
+预热 C/W/W/C 的 80/80 cohort 通过原门，但两个 3 次预热对照也通过，未证明增加预热
+有益。G3 整体尚未关闭，不能从局部成功启动正式性能研究。
 
 
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
