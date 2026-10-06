@@ -67,7 +67,7 @@ class ExecutionGroupSpecialization(unittest.TestCase):
         self.assertEqual(result.program.outputs, program.outputs)
         self.assertEqual(result.program.tensors, program.tensors)
 
-    def test_valid_non_mma_loop_is_refused_by_the_loop_domain(self):
+    def test_valid_pure_reduction_loop_preserves_body_when_specialized(self):
         workload = WorkloadContract(workload_document('pairwise_sqdist', rows=64,
             depth=256, columns=32, backend='triton-b300'))
         source = parse(starter_source(workload)).document
@@ -75,7 +75,16 @@ class ExecutionGroupSpecialization(unittest.TestCase):
             schedule_id='tiled', entry_point='tiled')
         self.assertTrue(tiled.applied, tiled.message)
         self.assertTrue(self.compiler.assess(tiled.schedule).lowering_eligible)
-        self.assertEqual(self.apply(tiled.schedule).reason, 'loop_domain')
+        result=self.apply(tiled.schedule)
+        self.assertTrue(result.applied,(result.reason,result.message))
+        for key in tiled.schedule.keys()-{'roles','lowering','schedule_id'}:
+            self.assertEqual(result.schedule[key],tiled.schedule[key])
+        def kernel(a):
+            lowered=self.compiler.lower(a)
+            n=next(n for n in ast.parse(lowered.source).body
+                   if isinstance(n,ast.FunctionDef) and n.name==lowered.toolchain_requirements['kernel_entry_point'])
+            n.name='same_kernel';return ast.dump(n,include_attributes=False)
+        self.assertEqual(kernel(self.compiler.assess(tiled.schedule)),kernel(result.assessment))
 
     def test_valid_residency_commitment_is_not_silently_changed(self):
         document = self.gemm()

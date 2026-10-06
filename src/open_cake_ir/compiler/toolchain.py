@@ -57,7 +57,8 @@ _TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range", "float"}
 
 def _libdevice_function_allowed(name, requirements) -> bool:
     from .backends.metax import DIRECTED_FMA_FUNCTIONS
-    return (name == "tanh" or requirements.get("code_object") == CodeObject.MCFATBIN.value
+    return (name == "tanh" or name in {"sin", "cos"} and requirements.get("code_object") == CodeObject.HSACO.value
+            or requirements.get("code_object") == CodeObject.MCFATBIN.value
             and name in DIRECTED_FMA_FUNCTIONS.values())
 
 
@@ -68,6 +69,10 @@ def _approved_libdevice_call(node, requirements) -> bool:
         return False
     if node.func.attr == "tanh":
         return True  # Preserve the existing source boundary.
+    if node.func.attr in {"sin", "cos"}:
+        return (_libdevice_function_allowed(node.func.attr, requirements)
+                and len(node.args) == 1 and not node.keywords
+                and not isinstance(node.args[0], ast.Starred))
     return (_libdevice_function_allowed(node.func.attr, requirements)
             and len(node.args) == 3 and not node.keywords
             and all(not isinstance(arg, ast.Starred) for arg in node.args))
@@ -148,7 +153,9 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     """Admit one kernel-only module without importing or evaluating any source.
 
     Module imports and @triton.jit have one spelling. The optional libdevice import
-    admits tanh and direct ternary MACA directed FMA calls on mcfatbin only.
+    admits tanh, unary OCML sin/cos on HSACO, and direct ternary MACA directed
+    FMA calls on mcfatbin only. A max scan may carry its one exact pure JIT
+    combine helper; no general callback or user helper is admitted.
     Constant infinity identities and the exact FP32 FMA instruction
     emitted by this Compiler are admitted; arbitrary inline assembly is not.
     Function annotations are only tl.constexpr, defaults and arbitrary
@@ -159,6 +166,14 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
         tree = ast.parse(source.decode("utf-8"), filename="candidate.triton.py")
     except (UnicodeError, SyntaxError) as error:
         raise ValueError(f"native Triton syntax: {error}") from error
+    from .backends.triton import MAX_SCAN_COMBINE_SOURCE, MAX_SCAN_COMBINE_NAME
+    helper = ast.parse(MAX_SCAN_COMBINE_SOURCE).body[0]
+    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == MAX_SCAN_COMBINE_NAME]
+    has_max_helper = bool(helpers)
+    if has_max_helper:
+        if len(helpers) != 1 or ast.dump(helpers[0]) != ast.dump(helper):
+            raise ValueError("native Triton max scan requires the exact pure combine helper")
+        tree.body.remove(helpers[0])
     imports = _TRITON_IMPORTS + ((_LIBDEVICE_IMPORT,) if len(tree.body) == 4 else ())
     expected_imports = [ast.dump(ast.parse(line).body[0]) for line in imports]
     if (len(tree.body) != len(imports) + 1
@@ -189,8 +204,23 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     for arg in args.args:
         expected = "tl.constexpr" if arg.arg in constants else None
         if ((ast.unparse(arg.annotation) if arg.annotation else None) != expected
-            or arg.arg in _TRITON_RESERVED_NAMES or "__" in arg.arg):
+            or arg.arg in _TRITON_RESERVED_NAMES or arg.arg == MAX_SCAN_COMBINE_NAME or "__" in arg.arg):
             raise ValueError("native Triton parameter annotations or names differ")
+    scans = [n for n in ast.walk(kernel) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name)
+             and n.func.value.id == "tl" and n.func.attr == "associative_scan"]
+    if has_max_helper != bool(scans):
+        raise ValueError("native Triton max scan requires its exact pure combine helper and direct call")
+    def approved_max_scan(node):
+        keywords = {kw.arg: kw.value for kw in node.keywords}
+        return (has_max_helper and len(node.args) == 1 and not isinstance(node.args[0], ast.Starred)
+                and len(keywords) == len(node.keywords) and set(keywords) == {"axis", "combine_fn", "reverse"}
+                and isinstance(keywords["combine_fn"], ast.Name) and keywords["combine_fn"].id == MAX_SCAN_COMBINE_NAME
+                and isinstance(keywords["axis"], ast.Constant) and type(keywords["axis"].value) is int
+                and keywords["axis"].value >= 0 and isinstance(keywords["reverse"], ast.Constant)
+                and type(keywords["reverse"].value) is bool)
+    if any(not approved_max_scan(n) for n in scans):
+        raise ValueError("native Triton max scan requires its exact pure combine helper and direct call")
     forbidden = (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef,
                  ast.ClassDef, ast.Lambda, ast.Global, ast.Nonlocal, ast.With,
                  ast.AsyncWith, ast.Try, ast.Raise, ast.Delete, ast.Await, ast.Yield,
@@ -210,6 +240,12 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
             if isinstance(node, ast.Name) and ("__" in node.id or
                 isinstance(node.ctx, ast.Store) and node.id in _TRITON_RESERVED_NAMES):
                 raise ValueError(f"native Triton reserved name at line {node.lineno}")
+            if isinstance(node, ast.Name) and node.id == MAX_SCAN_COMBINE_NAME:
+                parent = parents.get(node)
+                call = parents.get(parent)
+                if (not isinstance(node.ctx, ast.Load) or not isinstance(parent, ast.keyword)
+                    or parent.arg != "combine_fn" or call not in scans):
+                    raise ValueError("native Triton max scan helper cannot escape its direct combine_fn")
             if isinstance(node, ast.Name) and node.id == "float" and isinstance(node.ctx, ast.Load):
                 if not _infinity_literal(parents.get(node)):
                     raise ValueError(f"native Triton float requires a direct infinity literal at line {node.lineno}")
@@ -219,10 +255,12 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 if (not isinstance(attribute, ast.Attribute) or attribute.value is not node
                     or not isinstance(call, ast.Call) or call.func is not attribute
                     or not _approved_libdevice_call(call, requirements)):
-                    raise ValueError(f"native Triton libdevice requires a direct tanh call or an admitted MACA directed FMA call at line {node.lineno}")
+                    raise ValueError(f"native Triton libdevice requires a direct tanh call, unary HSACO sin/cos call or an admitted MACA directed FMA call at line {node.lineno}")
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES
+                    if node.attr == "associative_scan":
+                        allowed = parents.get(node) in scans and approved_max_scan(parents[node])
                     if node.attr == "inline_asm_elementwise":
                         call = parents.get(node)
                         allowed = (isinstance(call, ast.Call) and call.func is node
@@ -244,6 +282,9 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                         or has_libdevice and _approved_libdevice_call(node, requirements)
                         or fn.attr == "to" and not (isinstance(fn.value, ast.Name) and fn.value.id in _TRITON_MODULES)
                     ))
+                if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
+                    and fn.value.id == "tl" and fn.attr == "associative_scan"):
+                    allowed = node in scans and approved_max_scan(node)
                 if isinstance(fn, ast.Name) and fn.id == "float":
                     allowed = _infinity_literal(node)
                     if not allowed:
@@ -281,7 +322,16 @@ def project_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> 
     libdevice_import = ast.dump(ast.parse(_LIBDEVICE_IMPORT).body[0])
     if any(ast.dump(node) == libdevice_import for node in tree.body):
         imports += (_LIBDEVICE_IMPORT,)
-    result = ("\n".join(imports) + "\n\n" +
+    from .backends.triton import MAX_SCAN_COMBINE_NAME
+    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == MAX_SCAN_COMBINE_NAME]
+    helper_source = ""
+    if helpers:
+        if len(helpers) != 1:
+            raise ValueError("Compiler lowering max scan helper differs")
+        h = helpers[0]
+        begin = min([h.lineno] + [n.lineno for n in h.decorator_list])
+        helper_source = "\n".join(text.splitlines()[begin - 1:h.end_lineno]) + "\n\n"
+    result = ("\n".join(imports) + "\n\n" + helper_source +
               "\n".join(text.splitlines()[start - 1:kernel.end_lineno]) + "\n").encode()
     validate_triton_kernel(result, requirements)
     return result
