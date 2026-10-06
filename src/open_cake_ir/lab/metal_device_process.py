@@ -14,7 +14,6 @@ import sys
 
 from open_cake_ir.evaluation.local_broker import admit_local_job, observe_local_metal_job
 from open_cake_ir.evaluation.source_bootstrap import module_command
-from .process import run_supervised
 
 
 def run_metal_process(executable: Path, request: Path, *, target: str,
@@ -37,9 +36,12 @@ def run_metal_process(executable: Path, request: Path, *, target: str,
         observe_local_metal_job()
         return subprocess.run(command, capture_output=True, timeout=timeout_seconds,
                               pass_fds=(int(os.environ['METAL_BROKER_LOCK_FD']),))
-    return run_supervised(module_command(sys.executable, __name__,
+    # The fixed Swift helpers do not fork. The child execs that helper, so
+    # subprocess.run kills and reaps the device-owning PID on timeout. Keep the
+    # caller's process group: its outer supervisor must also cancel this helper.
+    return subprocess.run(module_command(sys.executable, __name__,
         '--executable', str(executable), '--request', str(request)),
-        cwd=request.parent, timeout_seconds=timeout_seconds, environment=os.environ)
+        cwd=request.parent, capture_output=True, timeout=timeout_seconds)
 
 
 def main() -> int:

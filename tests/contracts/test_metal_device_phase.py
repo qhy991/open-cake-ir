@@ -3,6 +3,9 @@ import json
 import os
 from pathlib import Path
 import sys
+import signal
+import subprocess
+import time
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -27,6 +30,8 @@ finally:
 report = {'job': os.environ.get('METAL_JOB_ID'), 'locked': locked,
           'pid': os.getpid(), 'group': os.getpgrp(),
           'descriptor': os.fstat(int(os.environ['METAL_BROKER_LOCK_FD'])).st_ino}
+if request.get('marker'):
+    Path(request['marker']).write_text(json.dumps(report))
 print(json.dumps(report), flush=True)
 if request.get('sleep'):
     time.sleep(30)
@@ -58,7 +63,8 @@ class MetalDevicePhaseTests(unittest.TestCase):
             report = self.host.invoke({'target': 'apple_gpu_family9'}, self.root / 'first')
             self.assertTrue(report['locked'])
             self.assertRegex(report['job'], r'^metal-[0-9a-f]{12}$')
-            self.assertEqual(report['pid'], report['group'])
+            self.assertEqual(report['group'], os.getpgrp())
+            self.assertNotEqual(report['pid'], os.getpid())
             self.assertNotIn('METAL_BROKER_LOCK_FD', os.environ)
             self.unlocked()
             second = self.host.invoke({'target': 'apple_gpu_family9'}, self.root / 'second')
@@ -113,3 +119,40 @@ class MetalDevicePhaseTests(unittest.TestCase):
                     self.host.invoke({'target': 'apple_gpu_family9'}, destination)
                 self.assertFalse((destination / 'stdout.json').exists())
                 self.unlocked()
+
+    def test_outer_supervisor_cancellation_includes_the_device_helper(self):
+        marker = self.root / 'started.json'
+        code = (
+            'from pathlib import Path; from open_cake_ir.lab.metal_build import MetalArchiveHost; '
+            f'MetalArchiveHost(Path({str(self.helper)!r}), {{}}, timeout_seconds=20).invoke('
+            f'{{"target":"apple_gpu_family9","sleep":True,"marker":{str(marker)!r}}}, '
+            f'Path({str(self.root / "cancelled")!r}))'
+        )
+        source = Path(__file__).resolve().parents[2] / 'src'
+        environment = dict(PATH=os.defpath, TMPDIR=str(self.root), PYTHONPATH=str(source))
+        process = subprocess.Popen([sys.executable, '-c', code], env=environment,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+        try:
+            deadline = time.monotonic() + 10
+            while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(.02)
+            self.assertTrue(marker.exists(), 'native helper did not start')
+            report = json.loads(marker.read_text())
+            self.assertTrue(report['locked'])
+            self.assertEqual(report['group'], process.pid)
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    self.unlocked()
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(.02)
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
