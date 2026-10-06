@@ -859,6 +859,8 @@ def _evaluate_metal_candidate(authority, result):
             for case_id in cases:
                 append(role, 'postflight', case_id)
     directory = authority.request_root / 'metal-observation'
+    if directory.exists() or directory.is_symlink():
+        raise ValueError('Metal observation requires a fresh output directory')
     try:
         observation = observe(workload=authority.workload, candidates=candidates, manifests=manifests,
             input_cases=input_cases, launch_plan=plan, observer_executable=Path(admission['observer_executable']),
@@ -1545,6 +1547,7 @@ def main() -> int:
     except LocalBrokerBusy as error:
         result = _base_result(error.job_id)
         result.update(error=str(error), failure_class='admission')
+        _retain_failure_artifacts(result, error, request_path.parent)
     except Exception as error:
         result["error"] = "evaluator_failed"
         result["failure_class"] = type(error).__name__

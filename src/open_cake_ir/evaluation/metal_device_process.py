@@ -41,14 +41,31 @@ def read_metal_admission(path: Path) -> dict:
     return record
 
 
+def _forward_admission(stderr: bytes, allocation_output: Path):
+    # Forward the broker's actual line, never manufacture an acceptance from a
+    # PID or retained job name. Build/inspection helpers keep their own logs.
+    if not allocation_output.exists():
+        return
+    allocation = read_metal_admission(allocation_output)
+    if not allocation['admitted']:
+        return
+    lines = re.findall(rb'(?m)^\[metal-run\] accepted job (metal-[0-9a-f]{12})\r?$', stderr)
+    if lines != [allocation['job_id'].encode('ascii')]:
+        raise ValueError('Metal child broker observation differs from its admission')
+    line = next(line for line in stderr.splitlines()
+                if line == b'[metal-run] accepted job ' + lines[0])
+    print(line.decode('ascii'), file=sys.stderr, flush=True)
+
+
 def run_metal_process(executable: Path, request: Path, *, target: str,
                       timeout_seconds: int, allocation_output: Path | None = None,
-                      queue_seconds: float = 0) -> subprocess.CompletedProcess:
+                      queue_seconds: float = 0, forward_admission: bool = False) -> subprocess.CompletedProcess:
     executable, request = Path(executable), Path(request)
     if (not executable.is_absolute() or not executable.is_file()
             or not request.is_absolute() or not request.is_file()):
         raise ValueError('Metal device process requires prepared absolute executable and request paths')
-    if (not math.isfinite(queue_seconds) or queue_seconds < 0
+    if (forward_admission and allocation_output is None
+            or not math.isfinite(queue_seconds) or queue_seconds < 0
             or allocation_output is not None and (
                 not allocation_output.is_absolute() or allocation_output.exists()
                 or allocation_output.is_symlink())):
@@ -74,8 +91,16 @@ def run_metal_process(executable: Path, request: Path, *, target: str,
                  '--queue-seconds', str(queue_seconds)]
     if allocation_output is not None:
         arguments.extend(('--allocation-output', str(allocation_output)))
-    return subprocess.run(module_command(sys.executable, __name__, *arguments),
-        cwd=request.parent, capture_output=True, timeout=timeout_seconds + queue_seconds)
+    try:
+        completed = subprocess.run(module_command(sys.executable, __name__, *arguments),
+            cwd=request.parent, capture_output=True, timeout=timeout_seconds + queue_seconds)
+    except subprocess.TimeoutExpired as error:
+        if forward_admission:
+            _forward_admission(error.stderr or b'', allocation_output)
+        raise
+    if forward_admission:
+        _forward_admission(completed.stderr, allocation_output)
+    return completed
 
 
 def main() -> int:
