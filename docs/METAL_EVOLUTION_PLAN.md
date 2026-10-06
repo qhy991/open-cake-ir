@@ -459,6 +459,11 @@ verifier；真实表达缺口进 IR/lowering；测量缺口进 Evaluation；反�
 每任务独立目录，再按 Compiler treatment 与重复编号分层；每个独立 Run 新会话，
 同 Run 内延续 Ralph。维护会话和作者会话隔离，当前分析上下文不得当作无经验组的起点。
 
+**共同研究口径。** 本计划的系统后继问题对应 [共同主题](RESEARCH_AGENDA.md) 的 H4；
+当前 G0–G4 是目标接入与工程资格证据，不能直接证明 H4。先导的单任务一小时是明确
+声明的专项资格预算；后续正式优化 Run 按共同约定显式绑定三小时总预算（含最终确认），
+在先导结束后重新确定轮次、token 与各项配额，不沿用下方早期一小时/150k 草案。
+
 **第一步：工程重复性先导。** 在 G4 完成 D2、D6 各一个至少两轮接入验收，再过 G5，
 然后启动已冻结的发现任务批次，每任务三个独立 Run。资格 Run 不混入发现批次统计。
 先导只报逐任务结果、范围和故障，不声称群体因果效应。
@@ -811,8 +816,10 @@ dispatch 全正确。单次 command interval 约 1.78854 ms，满足预先声明
 CPU 验收在编译前因沙箱拒绝默认 ModuleCache 写入而停止，未执行测试或 GPU 工作；
 失败保存在 `/private/tmp/cake-metal-interleaved-swift-a375e295/`。用户随后授权独立临时
 模块缓存的后继 CPU 环境；同一源码与工具链的 8 项 Swift 行为检查全部通过，证据在
-同路径的 `-private-cache/` 后继目录。完整 CI、新 observer/host 绑定及设备对照仍尚缺，
-G3 和 F-2026-10-06-002 仍开放。
+同路径的 `-private-cache/` 后继目录。后继完整 CI `37408412819` 的实际 checkout
+`ea80a53f` 三个 Python 版本各 2854 passed、36 skipped。该源码的新 observer 已独立
+编译成功，外部后继 host 提案通过零 dispatch 捕获/admission；现有 host 路径的接入
+因自动审批指出冻结绑定风险而等待明确授权。设备对照尚未启动，G3 和 Finding 仍开放。
 
 本次也给 TASK/AGENTS 增加一条有边界的检查：比较结构时同时解释 grid、每 program
 工作量与逻辑私有存储。该冗余控制的 lane-owned Buffer 峰值从原 97 降到 64 FP32，
@@ -845,3 +852,9 @@ G3 和 F-2026-10-06-002 仍开放。
 [CuTe DSL core](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_api/cute.html)、
 [Apple threadgroups](https://developer.apple.com/documentation/metal/creating-threads-and-threadgroups)、
 [Apple Metal capability tables](https://developer.apple.com/metal/capabilities/)。
+
+
+新 observer 的构建和独立后继 host 提案记录见
+[测量后继的原生准备](METAL_MEASUREMENT_SUCCESSOR.md#full-software-gate-and-native-preparation)。
+自动审批拒绝的原 `--replace` 命令未执行；现有任务 host 尚未修改，旧源码/helper/结果均保留。
+这次只完成软件门和零 dispatch 主机准入，不是六次测量诊断或 G3 通过。

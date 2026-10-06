@@ -2,8 +2,9 @@
 
 Status: explicit v3 implemented at `a375e295`; targeted Python checks passed.
 All eight native CPU snapshot cases passed in a separately user-approved
-Xcode16/SDK15 environment with a private temporary module cache. Full CI and
-device qualification remain pending. Compiler and frozen results are unchanged.
+Xcode16/SDK15 environment with a private temporary module cache. Full CI at
+`ea80a53f` passed. A separately compiled observer and external host proposal passed
+preparation/admission; source integration and device qualification remain pending. Compiler and frozen results are unchanged.
 
 ## Evidence and ownership
 
@@ -129,3 +130,29 @@ Even if all v3 controls pass, independent confirmation is still required before
 promotion. If v3 fails, do not introduce another scheduling mechanism without
 better attribution. This small, ordered diagnostic cannot establish causality,
 exclude external GPU clients or establish generalization beyond R128 C1024.
+
+## Full software gate and native preparation
+
+CI `37408412819` completed on its actual merge checkout `ea80a53f`: Python
+3.10/3.11/3.12 each passed 2,854 tests with 36 skips (3.12 also reports one warning).
+This includes `metal@f619ff4c` research-document updates; they change no Compiler or
+Executor source. The fixed checkout is
+`/private/tmp/cake-metal-interleaved-ci-20261006` and the retained log is
+`/private/tmp/metal-interleaved-ci-37408412819.log`.
+
+The observer compiled successfully from that source using Xcode16/SDK15, the
+explicit macOS15 target and an independent temporary module cache. Build records
+and executable are in
+`~/.local/share/open-cake-ir/planning/metal-xcode16-20261006/interleaved-observer-ea80a53f/`.
+No old helper bytes were replaced.
+
+Automatic approval rejected capture with `--replace` into the task's existing
+host path because of the frozen-binding risk; that capture never ran. The safer
+capture wrote a new external host proposal instead:
+`/private/tmp/metal-interleaved-host-proposal-ea80a53f/runtime/hosts/apple_gpu_family9.json`.
+Capture and admission passed with zero dispatches. Only the observer executable
+record differs from the prior host document. Device, OS, SDK, Swift, Python and
+archive helper records are unchanged. Inspection evidence lives in
+`metal-xcode16-20261006/interleaved-host-ea80a53f/`; helper processes ended and no
+broker lock holder remained. Integrating this proposal into a new source commit
+awaits explicit user authorization; no measurement trial has run with it.
