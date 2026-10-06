@@ -22,6 +22,7 @@ from open_cake_ir.lab.author_home import (
     ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, provision_codex_home, provision_user_home,
 )
 from open_cake_ir.lab.native_skills import NativeSkillPackage
+from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1
 from open_cake_ir.lab.bindings import external_file
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
@@ -657,7 +658,7 @@ def main() -> int:
     if native_skill_package is not None:
         authority['native_skill_package'] = native_skill_package.reference
         authority['native_skill_context'] = {
-            'kind': 'native_skill_qualification_v1', 'executable': str(executable),
+            'kind': NATIVE_SKILL_QUALIFICATION_V1, 'executable': str(executable),
             'output_schema': str(output_schema), 'selected_names': args.native_skill_name,
             'arms': {arm: {'cwd': str(workspaces[arm]), 'user_home': str(user_homes[arm]),
                            'codex_home': str(codex_homes[arm])} for arm in qualification_arms},
@@ -879,6 +880,8 @@ def main() -> int:
             usage_observed=True,
             qualified=True,
             scope=receipt_scope,
+            native_skill_input_contract=(NATIVE_SKILL_QUALIFICATION_V1
+                                         if native_skill_package is not None else None),
             system_skills_sha256=(next(iter(qualified_skills))
                                    if args.author_home_policy is not None else None),
         )

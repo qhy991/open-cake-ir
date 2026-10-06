@@ -1406,11 +1406,13 @@ def main() -> int:
                         help="prepare tensor inputs/oracles before requesting this local broker")
     parser.add_argument("--local-device", type=int, help="physical ordinal selected by the local broker after CPU preparation")
     parser.add_argument("--local-queue-seconds", type=float, default=0)
+    parser.add_argument("--local-runtime-device", type=int)
+    parser.add_argument("--local-expected-pci")
     parser.add_argument("--local-lock-scope", choices=("user", "device"), default="user")
     parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.local_kind is None and (args.local_device is not None or args.local_queue_seconds != 0 or args.local_lock_scope != "user"):
+    if args.local_kind is None and (args.local_device is not None or args.local_queue_seconds != 0 or args.local_lock_scope != "user" or args.local_runtime_device is not None or args.local_expected_pci is not None):
         parser.error('local device and queue settings require --local-kind')
     request_path = args.request.resolve(strict=True)
     # The allocator that admitted this process names its job in its own variable: the
@@ -1425,9 +1427,10 @@ def main() -> int:
                 raise ValueError('local CPU preparation cannot run as a profiler child')
             authority = _prepare_local_tensor_work(authority, args.local_kind)
             job = (admit_local_job(args.local_kind)
-                   if args.local_device is None and args.local_queue_seconds == 0 and args.local_lock_scope == "user" else
+                   if args.local_device is None and args.local_queue_seconds == 0 and args.local_lock_scope == "user" and args.local_runtime_device is None and args.local_expected_pci is None else
                    admit_local_job(args.local_kind, device=args.local_device, queue_seconds=args.local_queue_seconds,
-                                   lock_scope=args.local_lock_scope))
+                                   lock_scope=args.local_lock_scope, runtime_device=args.local_runtime_device,
+                                   expected_pci=args.local_expected_pci))
             result = _base_result(job)
         if os.environ.get("GPUQ_BACKEND"):
             from open_cake_ir.evaluation.gpuq import observe_allocation

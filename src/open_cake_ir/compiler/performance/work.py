@@ -58,7 +58,7 @@ MULTIPLY_ADD_FLOPS = 2
 published FLOP count for a matmul uses. Naming it is cheaper than explaining a 2."""
 
 _TRANSCENDENTAL = frozenset(
-    {ElementwiseOp.RSQRT, ElementwiseOp.EXP, ElementwiseOp.LOG2, ElementwiseOp.TANH}
+    {ElementwiseOp.RSQRT, ElementwiseOp.EXP, ElementwiseOp.LOG2, ElementwiseOp.TANH, ElementwiseOp.SIN, ElementwiseOp.COS}
 )
 """Primitives with no defensible operation count.
 

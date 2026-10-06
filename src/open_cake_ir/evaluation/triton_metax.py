@@ -76,5 +76,8 @@ def observe_local_metax(target_id: str, *, runtime_library: str) -> MetaxDeviceA
     if native_arch != target.target_id:
         raise ValueError(f"MACA native target {native_arch!r} differs from {target.target_id!r}")
     pci = f"{properties.pci_domain_id:04x}:{properties.pci_bus_id:02x}:{properties.pci_device_id:02x}"
+    expected_pci = os.environ.get('OPEN_CAKE_LOCAL_EXPECTED_PCI')
+    if expected_pci is not None and pci != expected_pci:
+        raise ValueError(f'MACA physical PCI differs from its device lease: expected {expected_pci}, observed {pci}')
     return MetaxDeviceAdmission(job_id, target_id, native_arch, properties.name,
                                 properties.warp_size, pci, runtime_library)
