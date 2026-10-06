@@ -19,7 +19,11 @@
   },
   "observation": "The initial glm-5.3/high response wrote the three synthetic candidates and returned the exact successful StructuredOutput. One system/ui_invalidate ui.render event preceded init. The parser and fault-usage reader assume init is first, refusing the turn and failing to account for its complete modelUsage. No resumed turn or GPU evaluation occurred.",
   "proposed_change": "In v4 only, admit exactly the observed single pre-init UI invalidation with matching session and valid UUID. Keep raw ordering, record auxiliary activity, and use the same initial-event boundary in parsing and usage. Unknown prefixes, changed sessions, candidate writes, model and terminal mismatches remain refusals.",
-  "implemented_in": null,
-  "verified_by": null,
+  "implemented_in": "ee6ec781",
+  "verified_by": {
+    "cpu": "Fixed ee6ec781: 59 Claude provider contracts and 146 subtests pass; malformed/unknown prefixes, session changes, missing init and changed terminals refuse.",
+    "retained_stream_replay": "/private/tmp/metal-glm-ui-preamble-replay-20261006.json: original initial stream and three candidate bodies reprocessed unchanged; 10341 reported provider tokens recovered and one UI auxiliary event retained.",
+    "scope": "No network or GPU in verification. Fresh initial/resume and full CI remain required; historical failed qualification remains failed."
+  },
   "promotion_disposition": "Shared Lab protocol repair; retained-stream replay and CPU counterexamples precede a fresh two-turn qualification. Historical fault remains a fault; no optimization claim."
 }
