@@ -273,6 +273,42 @@ class ClaudeProviderContracts(unittest.TestCase):
         args.update(kwargs)
         return normalize_claude_turn(self.raw() if raw is None else raw, **args)
 
+    def ui_preamble(self):
+        return dict(type='system', subtype='ui_invalidate', event='ui.render',
+                    uuid=OTHER_SESSION, session_id=SESSION)
+
+    def test_v4_ui_preamble_retains_raw_events_candidate_and_usage(self):
+        raw = self.raw([self.ui_preamble(), *self.events()])
+        ordinary = self.normalize()
+        observed = self.normalize(raw)
+        self.assertEqual(observed.raw_events, raw)
+        self.assertEqual(observed.candidates, ordinary.candidates)
+        self.assertEqual(observed.provider_tokens, ordinary.provider_tokens)
+        self.assertEqual(observed.tool_activity[0].item_type, 'ui_invalidate')
+        usage = reported_claude_usage(raw, expected_model='exact-requested-model')
+        self.assertIsNotNone(usage)
+        self.assertEqual(usage.provider_tokens, ordinary.provider_tokens)
+        with self.assertRaises(ValueError):
+            self.normalize(raw, event_contract=CLAUDE_LEGACY_EVENT_CONTRACT)
+
+    def test_ui_preamble_does_not_hide_unknown_events_or_session_changes(self):
+        for key, value in [('event','tool.call'),('uuid','bad'),('session_id',OTHER_SESSION),
+                           ('payload','untrusted'),('subtype','unknown')]:
+            with self.subTest(key=key):
+                prefix = self.ui_preamble(); prefix[key] = value
+                raw = self.raw([prefix,*self.events()])
+                with self.assertRaises(ValueError):
+                    self.normalize(raw)
+                self.assertIsNone(reported_claude_usage(raw, expected_model='exact-requested-model'))
+        for events in ([self.ui_preamble(),self.ui_preamble(),*self.events()],
+                       [self.ui_preamble(),*self.events()[1:]]):
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(events))
+        events = [self.ui_preamble(),*self.events()]
+        events[-1]['structured_output']['turn'] = 9
+        with self.assertRaisesRegex(ValueError,'structured terminal'):
+            self.normalize(self.raw(events))
+
     def test_response_alias_is_explicit_and_preserves_raw_identity_and_usage(self):
         alias = "vendor/exact-requested-model"
         events = self.events(); events[1]["message"]["model"] = alias

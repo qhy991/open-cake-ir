@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-06",
+  "id": "F-2026-10-06-005",
+  "kind": "bug",
+  "decision": "proposed",
+  "title": "Claude 2.1.289 UI preamble hides a completed GLM qualification turn and its usage",
+  "executor_revision": "open-cake-ir@28e36de4",
+  "compiler_revision_id": "open-cake-ir@28e36de4",
+  "backend": "metal",
+  "target": "apple_gpu_family9",
+  "evidence": {
+    "root": "/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-xcode16-20261006/glm-mean30-20261006/qualification",
+    "locators": [
+      "contract.json",
+      "anchor.json",
+      "evidence/runs/metal-glm53-high-initial-resume-20261006/events/000000000001.json"
+    ]
+  },
+  "observation": "The initial glm-5.3/high response wrote the three synthetic candidates and returned the exact successful StructuredOutput. One system/ui_invalidate ui.render event preceded init. The parser and fault-usage reader assume init is first, refusing the turn and failing to account for its complete modelUsage. No resumed turn or GPU evaluation occurred.",
+  "proposed_change": "In v4 only, admit exactly the observed single pre-init UI invalidation with matching session and valid UUID. Keep raw ordering, record auxiliary activity, and use the same initial-event boundary in parsing and usage. Unknown prefixes, changed sessions, candidate writes, model and terminal mismatches remain refusals.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "Shared Lab protocol repair; retained-stream replay and CPU counterexamples precede a fresh two-turn qualification. Historical fault remains a fault; no optimization claim."
+}
