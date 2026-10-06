@@ -59,7 +59,7 @@
 \renewcommand{\footrulewidth}{0pt}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/677eb444fec593294c470dcc5793262ae769fce2/#1}{#2}}
-\newcommand{\researchrepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/main/#1}{#2}}
+\newcommand{\researchrepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/bdcb8e628413a63bb22da9a01187404fe3f36992/#1}{#2}}
 \newcommand{\weaverepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/93d052021cc3b4b0d8a5580837f7d87bbbd2fc02/#1}{#2}}
 \newcommand{\scope}[1]{\textcolor{accent}{\textbf{#1}}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
@@ -81,6 +81,7 @@
 \makeatother
 
 \begin{document}
+\hypersetup{pageanchor=false}
 \begin{titlepage}
 \thispagestyle{empty}
 \noindent\begin{tcolorbox}[colback=ink,colframe=ink,boxrule=0pt,arc=0pt,left=5mm,right=5mm,top=3mm,bottom=3mm]
@@ -120,13 +121,14 @@
 \vfill
 \begin{notebox}
 \noindent\textbf{报告边界}\quad 主体章节所读源码固定为
-\code{677eb444fec593294c470dcc5793262ae769fce2}。第\ref{sec:weave-case}节是
+\code{677eb444}。第\ref{sec:weave-case}节是
 2026 年 9 月 28 日的 MoE 案例增补，其实验代码固定于尚未合入主线的
 \code{2c638aad}；该次增补只纳入案例记录，不将后续代码追认为主体快照。
 2026 年 10 月 6 日更新研究定位与第\ref{sec:shared-theme}节共同实验约定。
 历史实现和实验数字仍绑定原来源；新增研究设计不改变它们的验收范围。
 \end{notebox}
 \end{titlepage}
+\hypersetup{pageanchor=true}
 
 \section*{摘要}
 \begin{notebox}
@@ -283,6 +285,7 @@ DSL 与直接低层 & 明确常量、grid、线程数及 ABI 的可变范围；�
 \end{tabularx}
 \end{table}
 
+\FloatBarrier
 共同能力子集用于隔离因素，完整合理能力用于评估覆盖与强实现差距。给定优化源码与只给
 数学规格具有不同参考信息。模型、权限、反馈、测量和主要预算在研究前固定；不显著的
 差异不自动证明等效。原生接口或表达形式也不决定理论上更高的性能，研究重点是有限预算内
@@ -1320,12 +1323,11 @@ AMD 的计时器调查，也分别处于不同的证据阶段\cite{status,archit
 计入分析。$E/P$ 四组的实机对照尚待开展。
 
 \subsection{下一步的可检验目标}
-接下来的实验先补齐各目标的完整输出验证、计时区间、设备状态重置和测量分辨能力，
-再把单内核结果接入多阶段 Program 与目标框架。对反复出现的表达或分析缺口，记录
-Finding 和反例，在后继提交中补上 Verifier 规则、IR 能力或带前提的编译器变换，
-并观察它能否解决后续任务。迁移实验则固定来源机制、目标开发集和 $E/P$ 四组的材料
-与权限，按各目标自己的本机基线报告确认率、搜索成本和条件性能。这样，代码能力的
-增长与经验迁移的收益便可以分别检验。
+后续实验按第\ref{sec:shared-theme}节统一问题和证据口径。先确保目标基线、完整输出、
+计时和 profiler 可用，再依次检验同动作集合的非 LLM 对照、原生 DSL 加等效工具的表示
+对照，以及来源经验与可执行化的增量。缺少合格低层路线时明确报告覆盖，不借其他目标
+的资格启动实验。反复出现的缺口通过 Finding、审查和后继提交处理；未参与机制开发的
+任务检验复用，完整 Program 和应用收益在强种子上单独验收。
 
 \clearpage
 \appendix
@@ -1422,7 +1424,7 @@ Assessment 与 lowering；设备结果则须在原任务的目标、工具链、
 \section*{阅读与引用说明}
 本文是项目维护者撰写的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
 所读源码提交；引用性能时还需追溯案例自己的执行源码、精确目标、Workload、baseline、
-oracle、计时区间与质量门。历史实现章节的仓库链接固定到 \code{677eb444}；研究主题增补引用其单独的文档提交。MoE 增补
+oracle、计时区间与质量门。历史实现章节的仓库链接固定到 \code{677eb444}；研究主题增补引用文档提交 \code{bdcb8e62}。MoE 增补
 的主线案例记录固定到 \code{93d05202}，实验代码另固定到未合入主线的 \code{2c638aad}，原始收据身份
 仍由该专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
