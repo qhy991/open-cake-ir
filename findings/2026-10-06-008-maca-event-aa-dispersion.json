@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-06",
+  "id": "F-2026-10-06-008",
+  "kind": "protocol",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@bef92422fee5de00aa1dd907a012e064072b5411",
+  "executor_revision": "xcore1002@bef92422fee5de00aa1dd907a012e064072b5411",
+  "title": "Ten-sample device-event means fail identical-artifact controls on short C550 tasks",
+  "decision": "deferred",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/mean10-events-development-20261006/",
+    "plan": "device-qualification/plan.json",
+    "observations": [
+      "device-qualification/rmsnorm/result.json",
+      "device-qualification/rmsnorm/confirmatory/receipt.json",
+      "device-qualification/silu/result.json",
+      "device-qualification/gelu_tanh/result.json",
+      "device-qualification/gelu_tanh/confirmatory/receipt.json"
+    ],
+    "bounded_positive_controls": [
+      "device-qualification/gemm/result.json",
+      "device-qualification/gemm_silu/result.json",
+      "device-qualification/pairwise_sqdist/result.json",
+      "device-qualification/attention_decode/result.json"
+    ],
+    "artifact_role": "timing_samples; resolved through each retained receipt artifact map"
+  },
+  "observation": "The successor uses unprofiled MACA device events and ten formal samples per arm. Both arms contain the same sealed baseline. Correctness and raw-event validation pass, but the declared A/A null check at materiality 1.05 fails on RMSNorm, SiLU and GELU-tanh. RMSNorm candidate/baseline means are 34.048/22.7072 microseconds; one candidate sample is 86.784 microseconds. GELU-tanh means are 28.4416/37.0176 microseconds, including an 81.664-microsecond baseline sample. Opposite faster-arm directions occur. These are not optimization gains. The independent GEMM, GEMM+SiLU, pairwise-distance and Attention Decode controls pass their own A/A and separate attribution checks; they do not qualify failed tasks or establish global timer reliability.",
+  "proposed_change": "Investigate the Evaluation submission path in a separate successor. Current events enclose Python launch validation, pointer packing and exposed submission gaps. This is a plausible source of short-interval variability, not an established causal explanation. Compare bounded controls with validated launch preparation outside the interval or a native submission loop while preserving fresh outputs, declared same-stream cache reset, ten complete formal samples and independent correctness. Declare any changed interval before new Runs. Do not discard outliers, repeat controls until they pass, increase the acceptance threshold after seeing results, or reinterpret these failures as Compiler defects.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "No measurement-reliability promotion and no Compiler promotion. The event path has task-scoped acceptance only. Failed controls remain excluded from this source's optimization launch list and stay in the requested-task denominator. Historical MCPTI outcomes retain their original interpretation."
+}

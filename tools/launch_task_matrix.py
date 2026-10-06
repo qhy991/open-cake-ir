@@ -76,6 +76,8 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
     depth = _depth(task, args.depth)
     if depth is not None:
         command.extend(("--depth", str(depth)))
+    if getattr(args, 'metax_timing', None) is not None:
+        command.extend(('--metax-timing', args.metax_timing))
     if args.provider_executable is not None:
         command.extend(("--provider-executable", str(args.provider_executable)))
     for alias in getattr(args, "response_model_alias", ()):
@@ -142,6 +144,7 @@ def main(argv=None) -> int:
     parser.add_argument('--local-expected-pci')
     parser.add_argument('--local-queue-seconds', type=float, default=0)
     parser.add_argument("--provider-executable", type=Path)
+    parser.add_argument("--metax-timing", choices=("mean10-events", "legacy"))
     parser.add_argument("--provider-revision")
     parser.add_argument(
         "--incumbent-registry",

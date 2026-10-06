@@ -13,8 +13,8 @@ def validate_run_controls(document):
     from open_cake_ir.evaluation.platforms import PLATFORMS
     paired_protocol(evaluation)
     searches_allowed = ({'correctness_only'} if no_timed_assay else
-                        {f'correctness_then_paired_{row.measurement_source}' for row in PLATFORMS.values()
-                         if row.measurement_source is not None})
+                        {f'correctness_then_paired_{source}' for row in PLATFORMS.values()
+                         for source in row.measurement_sources})
     search = evaluation.get('search_evaluation')
     if search not in searches_allowed or evaluation.get('confirmatory_evaluation') != f'fresh_fixed_candidate_{search}':
         raise ValueError('Run evaluation requires correctness and fresh fixed-candidate confirmation')

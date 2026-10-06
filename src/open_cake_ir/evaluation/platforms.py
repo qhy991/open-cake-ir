@@ -62,6 +62,27 @@ class ExecutionPlatform:
     # Runtime selection API names, not hardware facts. The local broker owns these
     # masks after admission. An empty tuple means no ordinal-selection API.
     local_visibility_environment: tuple[str, ...] = ()
+    # Optional successor assays keep the platform default and historical source intact.
+    # Each override is (paired kind, measurement source, protocol timing).
+    measurement_overrides: tuple[tuple[str, str, str], ...] = ()
+
+    def measurement_source_for(self, kind: str) -> str | None:
+        if kind not in self.paired_kinds:
+            raise ValueError(f"{kind!r} is not declared by {self.code_object.value}")
+        return next((source for name, source, _ in self.measurement_overrides
+                     if name == kind), self.measurement_source)
+
+    @property
+    def measurement_sources(self) -> frozenset[str]:
+        return frozenset(source for source in
+            (self.measurement_source, *(row[1] for row in self.measurement_overrides))
+            if source is not None)
+
+    @property
+    def protocol_timings(self) -> frozenset[str]:
+        return frozenset(timing for timing in
+            (self.protocol_timing, *(row[2] for row in self.measurement_overrides))
+            if timing is not None)
 
 
 _ROWS = (
@@ -132,7 +153,8 @@ _ROWS = (
         }),
         launch_abi="workload_tensors_v1",
         measurement_source="mcpti_dispatch",
-        paired_kinds=frozenset({"fixed_baseline_paired_mcpti_dispatch_v1"}),
+        paired_kinds=frozenset({"fixed_baseline_paired_mcpti_dispatch_v1", "fixed_baseline_paired_maca_event_v1"}),
+        measurement_overrides=(("fixed_baseline_paired_maca_event_v1", "maca_event", "paired_maca_event"),),
         protocol_timing="paired_mcpti",
         route_calls_per_cohort=11 + 25,
         exclusive_job_prefix=None,

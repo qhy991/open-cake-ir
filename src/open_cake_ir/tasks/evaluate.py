@@ -1036,10 +1036,17 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
     if collect_timing:
         if authority.baseline is None:
             raise ValueError('MACA timing requires the declared paired baseline')
-        _evaluate_paired_tile(authority, result,
-            lambda role, manifest: McptiDispatchBenchmark(manifest,
-                activity_library=host['activity_library'],
-                l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
+        from open_cake_ir.evaluation.paired import PAIRED_MACA_EVENT_KIND
+        if authority.request['evaluation_protocol']['paired_timing']['kind'] == PAIRED_MACA_EVENT_KIND:
+            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark
+            _evaluate_paired_tile(authority, result,
+                lambda role, manifest: MacaEventBenchmark(manifest,
+                    l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
+        else:
+            _evaluate_paired_tile(authority, result,
+                lambda role, manifest: McptiDispatchBenchmark(manifest,
+                    activity_library=host['activity_library'],
+                    l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
         return
     _evaluate_tile_candidate(authority, result, None, admission, False, route_calls_per_cohort=None)
 
