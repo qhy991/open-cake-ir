@@ -10,13 +10,14 @@ The Chinese agenda is the canonical policy; this page is its English companion. 
 
 Under matched task semantics, reference access and declared budgets, which decisions benefit from free agent exploration, which should become conditional executable transformations, and does this division reduce later search while retaining competitive implementations?
 
-Three hypotheses guide the work:
+Four hypotheses guide the work:
 
-- **Representation and tools:** compare Cake with native DSL authoring using equivalent semantic tools, shared information and common evaluation. Report confirmed performance, cost, coverage and the gap to strong implementations.
-- **Source experience and executable reuse:** distinguish generic knowledge from source-derived conditions; use E/P treatments to separate additional materials and transformation access. Report negative transfer and discovery/adaptation cost.
-- **System evolution:** compare old/new analyses on a fixed candidate collection, then run fresh searches on successor code. Separate coverage, modeled-domain errors and downstream search effects.
+- **H1 Representation and diagnostics:** compare Cake with native DSL authoring under matched information, semantic tools and evaluation. Cost savings must retain quality and coverage; persistent native advantages narrow the useful domain of structured authoring.
+- **H2 Source experience and executable reuse:** compare generic and source-derived materials, then separate materials from execution access through E/P. Target-answer leakage invalidates the comparison.
+- **H3 Route selection (proposed):** compare a development-frozen policy with the best fixed route selected on development tasks and equal allocation, under one total budget. Post-hoc per-task selection is only a descriptive upper bound.
+- **H4 System evolution:** replay fixed candidates on old/new versions, then run fresh searches on held-out tasks. Repairing only the original failing cases does not establish downstream search gains.
 
-These are hypotheses. Platform bring-up, a local speedup and a working pass are scoped evidence, not substitutes for controlled comparisons.
+These are hypotheses. Nonsignificance alone establishes neither equivalence nor falsification. Begin with bounded H1/H2 pilots; use their signal and qualified capabilities to scope H3/H4.
 
 ## Reusable knowledge and guarantees
 
@@ -44,6 +45,20 @@ IR is the default development interface. A concrete expressibility or lowering h
 Promote choices to Lab recipes, reusable rewrites to Compiler passes, realization gaps to lowering, missing modeled legality to the Verifier, and genuine expressibility gaps to primitives together with types, effects and analyses. Review and verification precede a successor Run. No promotion is a valid disposition.
 
 Do not switch routes or inject new knowledge within frozen Runs. A new Run does not erase prior reference access. Native results and re-expressed results require separate acceptance. An opaque low-level node does not inherit IR guarantees. Record manual discovery, implementation and review separately from autonomous methods, including their costs.
+
+## Route selection across frozen Runs (H3, proposed)
+
+Lab may study allocation across separately frozen Runs. Each Run retains its author environment, source and route. Freeze the policy, triggers and aggregate budget on development tasks; the default multi-route optimization task still receives three hours in total. Child Runs share this allowance, including handoff, failed compilation and confirmation costs. Retain inherited reference access. This proposal adds no automatic fallback, new Study kind or execution engine.
+
+Workload Contract owns semantics and the oracle; Study owns treatments and estimands; RunSpecification owns execution inputs, permissions and budgets; Target/Executor own target and execution facts. A conceptual task tuple does not replace these authorities. Qualify each native author route on its exact target.
+
+## Quality endpoints and lifetime cost
+
+Freeze the starting baseline separately from a strong reference. Baseline speedup measures improvement; a predeclared quality endpoint such as `L_confirm ≤ (1 + δ) × L_ref`, after common acceptance gates, measures competitiveness. Declare the reference, δ and primary endpoint before execution. A suggested 5% tolerance is not a universal rule. Existing E/P endpoints retain their original definition.
+
+First-hit costs require scheduled independent confirmation checkpoints; preserve right-censoring for unmet endpoints. Timing samples estimate measurement noise, repeated Runs estimate author variation, and cross-task inference clusters by task. Small pilots report per-task results; choose formal scale from independent pilot variability and the effect of interest.
+
+Report both marginal reuse value and cumulative value after discovery, extraction, implementation, target adaptation and maintenance. Keep human time, GPU time, tokens and money separate unless conversion assumptions are stated. Include low-headroom, unsupported and negative-transfer cases alongside promising structural tasks. Distinguish semantic violations, unmodeled behavior, expressibility/lowering/toolchain gaps, numerical failures, invalid timing and valid no-gain results. Refusal audits use qualified, bounded diagnostic environments; stronger optional proof coverage is reported separately from common acceptance.
 
 ## Hardware branches share the question
 
