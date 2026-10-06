@@ -58,7 +58,7 @@ Compiler 由各硬件的独立 Bench 检验。共同流程见[开发与评测标
 | FP8 流式与有限输入分桶配方 | Cake K1 流式在固定 NT64 primary 上确认 **5.80×**；后续分桶／合并另有独立基线 | [流式与分桶证据](docs/metax-c550.md#显式-k1-流式-fp8-lowering)；是软件组合路线，不是原生 FP8 dot，分段加速比不连乘 |
 | 数值原语与完整计算 | FMA、舍入等有有界数值证据；GQA、MLA、FP8 MoE 有完整原始 case 正确性记录 | [数值与矩阵](docs/metax-c550.md#编译与执行) · [完整计算](docs/metax-c550.md#完整-gqamla-和-fp8-moe-的正确性)；正确性与 profiler 时间不等于端到端加速 |
 | 四卡并行资格 | 固定 N4 求差平方案例的 12 次串行 A/A、12 次并行 A/A、4 次 profile 通过 | 源码 `0c041d6d`，物理 GPU1–4；仅限这一案例和声明的本机锁范围，不代表整套任务面板通过 |
-| 短 kernel 与采集边界 | Softmax 等部分案例未通过原计时质量门；一个大形状 Run 因零宽 L2 重置时间戳停止 | [当前采集 Finding](findings/2026-10-06-002-mcpti-default-reset-zero-interval.json)；保留失败，不改 CV 门槛，不把无效测量记成加速 |
+| 短 kernel 与采集边界 | Softmax 等部分案例未通过原计时质量门；一个大形状 Run 因零宽 L2 重置时间戳停止 | [当前采集 Finding](findings/2026-10-06-006-mcpti-default-reset-zero-interval.json)；保留失败，不改 CV 门槛，不把无效测量记成加速 |
 
 <details>
 <summary>展开 80 次试点：四组结果、统计口径和原始证据</summary>

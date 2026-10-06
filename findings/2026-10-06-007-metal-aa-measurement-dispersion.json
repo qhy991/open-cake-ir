@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-10-06-002",
+  "id": "F-2026-10-06-007",
   "kind": "protocol",
   "date": "2026-10-06",
   "title": "M4 RMSNorm identical-artifact A/A fails the existing relative-IQR measurement gate",
@@ -19,7 +19,8 @@
       "g3-rmsnorm-work_control/result.json",
       "g3-rmsnorm-profile/result.json"
     ],
-    "historical_label": "First recorded as F-2026-10-06-001 at 3d430a13 on the Metal task branch; main sequence001 belongs to streamed-MMA applicability at f0372ecd. Original evidence and observation remain unchanged."
+    "historical_label": "First recorded as F-2026-10-06-001 at 3d430a13 on the Metal task branch; main sequence001 belongs to streamed-MMA applicability at f0372ecd. Original evidence and observation remain unchanged.",
+    "integration_identity": "Assigned F-2026-10-06-007 during main integration because three platform records used F-2026-10-06-002. Original record remains at 66f11f0fe333d2eb59514ece2a66cf5264811d63:findings/2026-10-06-002-metal-aa-measurement-dispersion.json. Observation, decision, measured source, device receipts and old Run outcomes are unchanged."
   },
   "observation": "At R128 C1024, the same sealed RMSNorm archive in both roles passed every output check across 580 command buffers and 35860 dispatches. All 20 timed cohorts fail maximum_relative_iqr=0.05: inclusive IQR/median ranges from 0.187041 to 0.813925. The pooled baseline/candidate ratio is 0.977943, but measurement_quality_failed is the controlling outcome. CV is descriptive here, not the operative dispersion gate. Separate predeclared 16 versus 256 dispatch work control is sensitive (command-buffer median ratio 15.2337), and compute-stage timestamp profiling is available in raw units. Neither qualifies A/A stability. The cooperative lease excludes participating same-user jobs, not unrelated system GPU work. The cause of dispersion remains unproven.",
   "proposed_change": "Route to Evaluation/measurement investigation, not Compiler IR. Preserve the existing samples, quality rule and failed classification. In a separately declared successor diagnostic, distinguish command-buffer timing from stage timing and host/device pacing while retaining the same sealed artifact, inputs and oracle. Record instrumentation coverage and its perturbation; do not trim samples, relax the threshold or repeat the acceptance until it passes. A reviewed Executor/protocol change needs software verification and fresh A/A qualification before performance search. This single failure does not establish a new general verifier rule.",

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-06",
-  "id": "F-2026-10-06-002",
+  "id": "F-2026-10-06-006",
   "kind": "protocol",
   "backend": "triton",
   "target": "xcore1002",
@@ -24,7 +24,8 @@
       "pair_index": 8,
       "arm": "baseline",
       "position": 1
-    }
+    },
+    "integration_identity": "Assigned F-2026-10-06-006 during main integration because three platform records used F-2026-10-06-002. Original record remains at 514c751f0406c3520f684b5d05a827f1de960865:findings/2026-10-06-002-mcpti-default-reset-zero-interval.json. Observation, decision, measured source, device receipts and old Run outcomes are unchanged."
   },
   "observation": "The ninth search Turn stops with evaluator_failed and broker_fault before a final Evaluation receipt. The retained paired-activity artifact identifies baseline pair 8, position 1. Each arm retains 50 kernel records, including 25 target dispatches, with zero dropped records and zero pending buffers. Baseline kernel record 28 is the streamed FP32 fill used for L2 reset: start_ns equals end_ns, while completed_ns is later. Target-kernel identity and resources are consistent in the retained cohort. The strict positive-interval gate correctly rejects the entire cohort; this is a measurement-record limitation, not evidence of a numerically incorrect candidate or an IR expressibility gap. The original Run remains missing with no confirmation. This observation uses the completed-record flush policy and SDK default clock; it is distinct from the earlier custom-clock diagnostic.",
   "proposed_change": "Preserve the strict interval and reset checks. Expose the affected operation and failed field in a reviewed successor diagnostic, and investigate default-clock mapping with bounded controls. A later positive A/A qualifies only its own scoped control, not the rejected cohort or global timer reliability. Do not discard the reset, accept a zero duration, replace the original Run or promote rejected timing.",

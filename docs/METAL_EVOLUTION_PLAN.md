@@ -747,7 +747,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G0 环境 | Xcode16/SDK15 后继 CPU 54/1、M4 host capture、六 starter archive/reload 已通过；host 已随 #344 合入 metal | main 到 metal 的平台同步；archive 构建全路径、G3 与最终 author 配置各自准入 | `metal-xcode16-20261006/`；旧环境失败保留 |
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 六 starter 原生/oracle 通过见下；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六任务均有结构替代；六 starter 与 D2/D6 两结构替代数值通过 | 其余替代策略的设备验证；尚不证明有用搜索空间或加速 | `search-space-and-corpus.json`、`remaining-search-space.json`、`metal-xcode16-20261006/` |
-| G3 测量 | 早期 A/A 20/20 组失败；同步遥测 7/20 失败；后继 C/W/W/C 80/80 通过且四次 close_null，全部正确 | 跨批次差异未解释，慢化对照完整质量资格仍缺；保留 3 次预热，不启动性能搜索 | `g3-rmsnorm-*`、`g3-aa-telemetry-de8087cf/`、`g3-warmup-crossover-de8087cf/`；F-2026-10-06-002 |
+| G3 测量 | 早期 A/A 20/20 组失败；同步遥测 7/20 失败；后继 C/W/W/C 80/80 通过且四次 close_null，全部正确 | 跨批次差异未解释，慢化对照完整质量资格仍缺；保留 3 次预热，不启动性能搜索 | `g3-rmsnorm-*`、`g3-aa-telemetry-de8087cf/`、`g3-warmup-crossover-de8087cf/`；F-2026-10-06-007 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；scaffold 要求重读笔记并绑定源码权限；单候选配置的 native 两轮输入已验收 | 真实 Ralph 的 Cake/MSL/AIR 假设更新、负结果与经验复用行为 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
 | G4 作者资格 | 固定 28e36de4 的三候选 initial/resume 已获收据；两轮指定技能正文、归档及 custody 通过 | 仍待 G3 与真实 Ralph 的 Cake/低层分析、经验复用；协议资格不等于优化能力 | `native-skill-cli-max3-28e36de4/qualification-summary.json`；旧单候选与失败保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | 此行是早期 collector 范围；后继正式单候选资格见上一行；真实技能运用仍待 Ralph 观察 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
@@ -810,7 +810,7 @@ GPU 阶段使用现有 local broker 的短生命周期 lease；CPU oracle 在取
 该锁是同用户合作式互斥，不排除系统或其他应用 GPU 活动。当时正式 launcher 的构建/检查
 阶段尚未接入统一 lease 边界；后继 #348/#352 的实现与资格范围见上，不用后来的实现改写这些探针。
 
-本次首先产生 Evaluation Finding **F-2026-10-06-002**。根因未证实，不把一次测量失败
+本次首先产生 Evaluation Finding **F-2026-10-06-007**。根因未证实，不把一次测量失败
 改写成 Compiler 缺口。受限 FP32 starter 基础已有设备证据；可比较的优化闭环仍缺
 G3 完整测量资格，以及真实 Ralph 的低层诊断与经验复用行为；整合源码的三候选作者配置已通过。
 单候选原生技能两轮资格和正式 attribution 阶段交接已有后继通过记录，其有限范围见前文。

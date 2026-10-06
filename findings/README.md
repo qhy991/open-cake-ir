@@ -43,9 +43,16 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
+assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
+to F-2026-10-06-007. Their original F-2026-10-06-002 records remain at the platform
+commits named in each record's `evidence.integration_identity`; raw observations,
+decisions and Run outcomes are unchanged. IDs in historical evidence resolve with
+their original source commit, never through today's id alone.
+
 The Metal A/A record first published as F-2026-10-06-001 at 3d430a13 is assigned sequence002 here before integration. Main sequence001 belongs to the streamed-MMA applicability record at f0372ecd; original Metal evidence remains at its cited paths.
 
-- F-2026-10-06-002 — M4 identical-artifact RMSNorm A/A is numerically correct but all 20 cohorts fail the original relative-IQR gate; separate work-volume and timestamp controls pass. Measurement qualification remains closed; no Compiler or performance promotion.
+- F-2026-10-06-007 — M4 identical-artifact RMSNorm A/A is numerically correct but all 20 cohorts fail the original relative-IQR gate; separate work-volume and timestamp controls pass. Measurement qualification remains closed; no Compiler or performance promotion.
 - F-2026-10-06-005 — Claude 2.1.289 emits a UI invalidation before init; bounded v4 parser and usage repair prepared for retained GLM qualification replay.
 - [F-2026-10-06-002](2026-10-06-002-ocml-trig-capacity.json) — explicit OCML FP32 trig capacity; bounded component equality, no full fused RoPE performance claim.
 - [F-2026-10-06-003](2026-10-06-003-integer-max-scan-capacity.json) — INT32 inclusive maximum scan for segment starts; whole sort/scatter remains separate.
@@ -68,7 +75,7 @@ This integration assigns the DCU cast/BF16 record first published as F-2026-10-0
 - F-2026-10-05-003 — confirmed SiLU column partition motivates an explicit guarded pointwise rewrite; public ABI, tail effects and refusal ownership are software verified. Original candidate performance does not qualify the successor pass.
 - F-2026-10-05-004 — exact retained maxnreg,16-group, pipelined-unroll and warp-specialization requests remain deferred MACA route qualifications; fixed single-stage Softmax unroll is separately lowerable under the existing main repair. No new hardware qualification.
 - F-2026-10-05-005 — RMSNorm event57's two-stage Program lowers, but common MACA optimization-Run timing and attribution cover one dispatch. Defer the Lab/Executor measurement gap; standalone Program attribution does not qualify the Run.
-- F-2026-10-06-002 — SDK-default MCPTI records retain a zero-width L2 reset interval in a C550 search; strict rejection is correct, the Run remains missing, and no timer change is promoted.
+- F-2026-10-06-006 — SDK-default MCPTI records retain a zero-width L2 reset interval in a C550 search; strict rejection is correct, the Run remains missing, and no timer change is promoted.
 
 - F-2026-10-04-005 — fixed single-stage MACA partial unroll qualified at two C550 shapes; factor2 gains1.1111x/1.0603x, full factor4 regresses. Separate native pipelined variants are correct but slower, with no promotion; original multi-stage refusals remain unchanged.
 
