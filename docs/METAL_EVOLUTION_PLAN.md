@@ -1,5 +1,19 @@
 # Metal：先验证可重复的 Kernel–Compiler 演进闭环
 
+## 最新预算决定：token 仅记录（2026-10-06）
+
+用户明确要求后续实验不设 token 预算。启动时省略 `--token-budget`，绑定
+`budget.limit=null`、`checkpoints=[]`；记录输入、输出、缓存与累计 token，
+不因 token 数量停止搜索或排除最终确认候选。保留原有总时间、作者时间、轮次、
+编译和评测次数上限，不再追加单轮 token 上限。框架已支持，无需 Compiler 修改。
+后续受控实验固定时间、设备/评测预算，并把 token 当作成本指标报告。
+
+两项旧先导已结束：RMSNorm 完成两轮及确认，5.708 μs 对基线 4.517 μs；
+GEMM+SiLU 第一轮记账 1,151,220 tokens，超过原 400,000 上限，无最终确认。
+旧 Run 的协议与结果不改写。新的仅计量启动配置保存在仓库外
+`glm-mean30-20261006/pilot-commands-token-accounting-only.json`，尚未启动。
+下面保留原预算与准入过程，已过时的等待状态不再代表当前进度。
+
 ## 当前决定：GLM + 30 样本均值（2026-10-06 后继）
 
 用户已明确指定后续实验采用 `https://cloud.infini-ai.com/maas` 的 `glm-5.3`，
