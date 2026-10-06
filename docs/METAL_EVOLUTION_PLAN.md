@@ -3,6 +3,15 @@
 状态：工程资格验证中；尚未满足正式实验执行门。用户选择先验证可重复闭环，再扩展
 FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
 
+最新进展（2026-10-06）：整合源码 `28e36de4` 的三个 Python 版本各 **2848 passed、
+35 skipped**，Corpus 和两项离线编译 CI 通过；三候选 Codex 原生两轮资格已通过。
+另一个固定源码 `de8087cf` 的 C/W/W/C 预热诊断全部正确，80/80 cohort 通过原 IQR 门，
+四次均为 `close_null`。3 次预热的两个对照也通过，因此没有证据支持增加预热；
+原失败保留、根因未明、G3 整体仍未关闭。真实 Ralph 优化尚未启动。
+
+当前阻点已收敛为：测量跨批次可靠性与慢化对照的完整资格、D2/D6 真实两轮优化与
+经验行为、最终预算冻结。继续用原测量协议，不把成功诊断当作修复，也不反复运行验收直到通过。
+
 2026-10-06 后继验收已恢复：用户选择现有 Xcode 16 / SDK 15，仅通过子进程
 `DEVELOPER_DIR` / `SDKROOT` / 编译器路径绑定，不修改全局 xcode-select。
 固定 `b3375d63` 的独立环境完成 54 项 CPU 合同、1 项跳过；archive 与 observer helper
@@ -63,15 +72,25 @@ initial 与同线程 resume 都保留指定 `cake-metal-optimization` 正文，n
 custody 检查没有放宽，旧插件失败目录没有修改。
 
 这份收据只覆盖 **每轮最多 1 个候选** 的已记录配置。计划中每轮 3 候选的 C0 输入不能
-借用它；G3 通过且最终搜索配置确定后，须取得匹配该配置的资格。native coverage 仍是
+借用它；最终搜索配置须取得匹配资格；独立无 GPU 的三候选后继现已通过，见下。native coverage 仍是
 `retained_native_skill_input_not_wire_capture_or_model_use`，不是模型实际运用技能的证明。
 未调用 GPU，未完成 D2/D6 的真实 Ralph 优化、经验提炼或 Compiler 迁移。
 可读视图为该目录的 `qualification-summary.json`，原始事实仍由封存 run 与 receipt/anchor 负责。
 
+**三候选后继已通过。** 整合 CI `37403813337` 的实际 checkout 为 `28e36de4`；
+Python 3.10/3.11/3.12 各 2848 passed、35 skipped，离线编译 CI `37403813353` 两项通过。
+在该干净提交执行一次固定 Codex 0.159.2 / `gpt-6.1-sol / xhigh` initial/resume，
+`python_candidate_bundle_v1`、每轮最多 3 候选、完整技能包及私有 HOME/CODEX_HOME 不变。
+65.08 秒结束，返回 0；`native-skill-cli-max3-28e36de4/receipt.json` 为 qualified，
+终态 adhered/qualified，公共资格工具在写 anchor 前确认 archive 和 custody 均通过。
+两轮均保留 `cake-metal-optimization` 正文，native records 分别 37/68；三个成员的新增、
+更新与同线程连续性通过。它们是未执行的占位 Cake 函数，不是 Metal kernel 搜索结果。
+可读摘要为同目录 `qualification-summary.json`；旧单候选收据仍只覆盖旧配置。
+
 
 已准备完整技能材料 `author-material-3d430a13/author-skills.tar`，包含主技能与 AIR
 参考，现有 NativeSkillPackage reader 通过。独立 quick validator 因缺 PyYAML 未运行，
-没有修环境重跑。新包尚未安装或交付真实 Run，不沿用旧材料的资格。
+没有修环境重跑。该包现已交付上述私有资格环境；未安装到全局，也尚未交付真实优化 Run。
 后续明确绑定 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`
 （已观察 0.159.2）；PATH 上 Homebrew Codex 为 0.149.0，不是先前发现探针的 executable。
 
@@ -446,6 +465,14 @@ verifier；真实表达缺口进 IR/lowering；测量缺口进 Evaluation；反�
 显式 `searches_per_turn=3`、24 次 search 和 24 次 attribution、1 次最终 confirmation；墙钟 60 分钟，其中搜索 50、
 确认预留 10，主动生成 30 分钟。此为待资格验证的有限预算，不是已提交 RunSpecification。
 确认预算包含实际 paired cohort 成本；若先导显示不够，在正式冻结前重新规划，不能运行中加额。
+
+**预算草案需要重新校准。** 无 GPU 的单候选两轮资格累计 153,420 tokens，三候选后继
+累计 158,400（首轮 70,076，resume 增量 88,324）。`provider_token_delta` 将 Codex 的
+线程累计计数差分一次；缓存输入与 reasoning 是子集，不重复相加。这两份协议资格都已
+超过 150k 草案，不能默认它足以支持八轮真实搜索，也不能按候选数线性外推费用。
+先冻结有独立上限的 D2/D6 两轮先导，记录每轮增量及真实墙钟，再确定发现批次预算。
+下面 JSON 保留为旧 CPU 参数映射示例，**不是下一次可直接执行的正式预算**；
+不在正在运行或已封存的 Run 中加额。
 这只是上限，不承诺跑满八轮：CLI 默认每轮搜索两个，不能沿用；控制器按一整轮配额决定
 是否继续，3 个搜索配合旧的 16 次额度会在五个满额轮次后停止，并剩下 1 次无法凑满下一轮。
 原生编译按实际 source-to-artifact 入口计数，失败/内部变体也计入，24 次不等于保证 24 个
@@ -549,7 +576,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    两项与全部库运行入口随 #342 合入 main，CLI 开放与真实隔离资格的后继为 #347/#350。旧收据及 fixture scope 不得获得新能力。直接入口、零轮和首轮故障路径须验证不会借
    缺输入或早退放行候选；采集前失败保留原诊断与已消耗费用，不冒充已验证投递。
    反例必须在实际准入入口拒绝，通过之后再开放策略。
-   共享入口已开放并通过上述单候选配置的真实两轮资格；平台同步、最终搜索配置资格和设备门仍各自必需。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
+   共享入口已开放，单候选及整合源码的三候选配置均通过真实两轮资格；平台合入与设备门仍各自必需。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
 3. **C0 发现批次。** 六任务 × 三重复，固定基线；封存后选一个最频繁、最可复现的缺口。
@@ -576,12 +603,12 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G0 环境 | Xcode16/SDK15 后继 CPU 54/1、M4 host capture、六 starter archive/reload 已通过；host 已随 #344 合入 metal | main 到 metal 的平台同步；archive 构建全路径、G3 与最终 author 配置各自准入 | `metal-xcode16-20261006/`；旧环境失败保留 |
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 六 starter 原生/oracle 通过见下；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六任务均有结构替代；六 starter 与 D2/D6 两结构替代数值通过 | 其余替代策略的设备验证；尚不证明有用搜索空间或加速 | `search-space-and-corpus.json`、`remaining-search-space.json`、`metal-xcode16-20261006/` |
-| G3 测量 | RMSNorm 同产物 A/A 数值正确但 20/20 cohort 的 relative IQR 超过 0.05；独立工作量与 timestamp 控制通过 | 测量稳定性未获资格；不启动性能搜索或声称收益 | `metal-xcode16-20261006/g3-rmsnorm-*`；F-2026-10-06-002 |
+| G3 测量 | 早期 A/A 20/20 组失败；同步遥测 7/20 失败；后继 C/W/W/C 80/80 通过且四次 close_null，全部正确 | 跨批次差异未解释，慢化对照完整质量资格仍缺；保留 3 次预热，不启动性能搜索 | `g3-rmsnorm-*`、`g3-aa-telemetry-de8087cf/`、`g3-warmup-crossover-de8087cf/`；F-2026-10-06-002 |
 | G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；scaffold 要求重读笔记并绑定源码权限；单候选配置的 native 两轮输入已验收 | 真实 Ralph 的 Cake/MSL/AIR 假设更新、负结果与经验复用行为 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 作者资格 | #350 已合 main；固定 68544621 的真实 initial/resume 已获收据，两轮保留指定技能正文；限每轮 1 候选 | 平台同步与最终搜索配置的匹配资格；真实 Ralph 中的 Cake/低层分析和经验复用 | `native-skill-cli-isolated-68544621/qualification-summary.json`；前继插件失败保留 |
+| G4 作者资格 | 固定 28e36de4 的三候选 initial/resume 已获收据；两轮指定技能正文、归档及 custody 通过 | 仍待 G3 与真实 Ralph 的 Cake/低层分析、经验复用；协议资格不等于优化能力 | `native-skill-cli-max3-28e36de4/qualification-summary.json`；旧单候选与失败保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | 此行是早期 collector 范围；后继正式单候选资格见上一行；真实技能运用仍待 Ralph 观察 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
-| 平台软件集成 | #344/#348 已合 metal@10d9e437；#348 三版本 CPU CI 各 2827/35；#350 已合 main@2958e0c1 | #352 已合 metal@dab69646；main 到 metal 整合 CI 待完成；软件通过不授予设备资格 | 各 PR 的完整 CI 与上述固定提交；原生结果另列 |
+| 平台软件集成 | #352 已合 metal@dab69646；#353 整合实际 checkout 28e36de4 的三版本 CPU CI 各 2848/35，离线编译通过 | 文档后继另按 PR 当前 CI 验收；旧设备结果不扩展到新提交 | CI 37403813337 / 37403813353；原生结果另列 |
 
 ### 2026-10-06：真实 M4 资格实验
 
@@ -641,7 +668,7 @@ GPU 阶段使用现有 local broker 的短生命周期 lease；CPU oracle 在取
 
 本次首先产生 Evaluation Finding **F-2026-10-06-002**。根因未证实，不把一次测量失败
 改写成 Compiler 缺口。受限 FP32 starter 基础已有设备证据；可比较的优化闭环仍缺
-G3 稳定计时、平台整合后最终三候选作者配置，以及真实 Ralph 的低层诊断与经验复用行为。
+G3 完整测量资格，以及真实 Ralph 的低层诊断与经验复用行为；整合源码的三候选作者配置已通过。
 单候选原生技能两轮资格和正式 attribution 阶段交接已有后继通过记录，其有限范围见前文。
 Codex `gpt-6.1-sol / xhigh` 的 Ralph 搜索尚未启动，不能从这些探针推断 agent 学习效果。
 
@@ -656,7 +683,7 @@ A/A 的 500 个 timed command interval 的 min/median/max 为 0.26946/3.56765/8.
 
 当前区分三种假设：提交间隔影响设备状态；系统/其他进程的 GPU 干扰；计时观测本身异常。
 先前 compute-stage 与 command interval 同变，已经不支持“仅整体 command 窗口不稳”的说法。
-下一步先增加与原 A/A 同步的 GPU 状态观测，不直接增大预热、扫 batch 或放宽 IQR 门。
+首先增加与原 A/A 同步的 GPU 状态观测；该诊断已完成，随后单变量预热对照见下。没有扫 batch 或放宽 IQR 门。
 
 现有 Xcode 的 `xctrace list templates` 返回 137 且无输出；独立签名检查报告
 `CSSMERR_TP_NOT_TRUSTED`，这两项观测未证实因果关系。该路径停止，没有重新签名、
@@ -691,9 +718,37 @@ command interval，未采集逐进程 GPU 占用；保留时钟对齐和遥测�
 2834 passed、35 skipped，其余门通过；已合入 `metal@dab69646`。原生验收仍引用实际
 执行的 `de8087cf`，不将后来的提交标签回填为旧实验源码。
 
-共享整合任务 `task/metal-sync-main-20261006@086031b1` 已将 `main@2958e0c1` 合入
-#352 的后继任务，暂无冲突。它同时包含 #347/#350 的技能入口与隔离策略，以及 main 已有
-#349 的 trig/max-scan 更新；需要整合后的完整 CI，不能把前两者的旧收据扩展到新源码。
+共享整合任务 [PR #353](https://github.com/qhy991/open-cake-ir/pull/353) 已将
+`main@2958e0c1` 与 `metal@dab69646` 的历史整合到 `c77065f9`；CI 实际 checkout
+`28e36de4` 已通过上述完整验证和三候选资格。它包含 #347/#350 的技能入口与隔离策略，
+以及 main 已有 #349 的 trig/max-scan；本次同步未另加 Compiler 语义。
+后续文档提交不能回填为这些实测的执行源码。
+
+### 单变量预热诊断：没有增加预热的证据
+
+同步遥测后，预先声明 C/W/W/C 四次对照，固定 `de8087cf`、原封存 RMSNorm、公共
+CommandBrokerSubmitter、五种输入和全部容差。C 保留每 cohort 3 次预热，W 为 30 次；
+25 个计时样本、64 dispatch/sample、10 对 AB/BA 与 relative IQR ≤0.05 都不变。
+两组均不启用遥测。CPU 检查从实际 ABI 得到每 launch 快照 1,052,672 bytes；
+W cohort 为 57,896,960 bytes，低于既有 64 MiB 上限。每次只执行一次，没有重试或删样本。
+
+| 次序 | 预热 | command buffer / dispatch | IQR 通过 | A/A 比值 | 公共判定 |
+| --- | --- | --- | --- | --- | --- |
+| C1 | 3 | 580 / 35,860 | 20/20 | 0.999603 | close_null |
+| W1 | 30 | 1,120 / 70,420 | 20/20 | 1.000754 | close_null |
+| W2 | 30 | 1,120 / 70,420 | 20/20 | 1.000318 | close_null |
+| C2 | 3 | 580 / 35,860 | 20/20 | 0.999683 | close_null |
+
+合计 3,400 个 command buffer、212,560 dispatch 全部正确，2,000 timed samples 全保留。
+GPU 命令跨度依次约 1.237、1.982、2.165、1.035 秒；worker 墙钟约 45.63、87.28、
+85.97、44.96 秒，主要 CPU 比较在设备进程退出后完成。结束后未观察到 observer 或锁持有人。
+外部证据为 `g3-warmup-crossover-de8087cf/{contract,result,analysis}.json` 和四个子目录。
+
+**处置：No promotion，保留 3 次预热。** W 没有被这四次观察否定，但两个 C 也通过，
+因此不能称增加预热修复了问题。IQR 通过仍允许长尾，所有异常值继续保留。原失败与本次
+成功的跨批次差异未获因果解释；这不是独立慢化对照资格，也不关闭 G3 或原 Finding。
+后续先从现有样本检查时间区段、长尾和提交间隙；新设备实验必须有能区分机制的干预与
+固定停止规则，不能继续同条件抽样直到得到希望的通过率。
 
 ## 8. 走向更完整的 Metal 工具
 
