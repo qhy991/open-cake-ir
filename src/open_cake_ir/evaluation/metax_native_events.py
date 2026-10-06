@@ -72,8 +72,13 @@ def capture(loaded, argument_sets, reset, *, warmups, samples):
         reset.data_ptr(), reset.numel(), elapsed, C.byref(calls), C.byref(phase))
     kernel.launch_calls += calls.value
     if status:
-        raise RuntimeError(f'MACA native event cohort phase {phase.value} failed with '
-                           f'status {status}; completed target calls {calls.value}')
+        error = RuntimeError(f'MACA native event cohort phase {phase.value} failed with '
+                             f'status {status}; completed target calls {calls.value}')
+        error.native_observations = {'status': status, 'phase': phase.value,
+            'completed_target_calls': calls.value,
+            'elapsed_slots_ms': [float(value) for value in elapsed],
+            'coverage': 'partial_native_capture_not_a_valid_timing_receipt'}
+        raise error
     if calls.value != len(argument_sets):
         raise ValueError('MACA native event target-call count differs')
     return [float(value) for value in elapsed]

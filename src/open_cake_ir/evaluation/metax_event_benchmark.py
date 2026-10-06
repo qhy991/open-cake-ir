@@ -99,7 +99,16 @@ class MacaNativeEventBenchmark(MacaEventBenchmark):
             raise ValueError('Native MACA event manifest, stream or reset target differs')
         if self._reset is None:
             self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device='cuda:0')
-        values = capture(loaded, arguments, self._reset, warmups=dry_run_iters, samples=repeat_iters)
+        try:
+            values = capture(loaded, arguments, self._reset, warmups=dry_run_iters, samples=repeat_iters)
+        except Exception as error:
+            self.last_activity = {'kind': 'failed_maca_native_event_capture_v1',
+                'timer': NATIVE_TIMER, 'interval': NATIVE_INTERVAL,
+                'cache_policy': NATIVE_RESET, 'target': self.manifest.target,
+                'kernel_name': self.manifest.kernel_name,
+                'observations': getattr(error, 'native_observations', None),
+                'error': str(error)}
+            raise
         self.last_activity = {
             'kind': 'maca_native_event_samples_v1', 'timer': NATIVE_TIMER,
             'cache_policy': NATIVE_RESET, 'interval': NATIVE_INTERVAL,
