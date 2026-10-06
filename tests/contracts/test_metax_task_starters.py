@@ -1,4 +1,4 @@
-"""Whole original GEMM task with bounded output ownership, including tail columns."""
+"""Whole admitted GEMM tasks with bounded ownership at small and original widths."""
 from pathlib import Path
 import unittest
 
@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class MetaXTaskStarters(unittest.TestCase):
     def test_full_abi_and_reduction_with_one_write_per_original_output(self):
         compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
-        for columns in (16, 35):
+        for columns in (16, 1024):
             w = WorkloadContract(workload_document('gemm_bias', rows=2, depth=8,
                                                   columns=columns, backend='triton-metax'))
             original = starter_source(w)
