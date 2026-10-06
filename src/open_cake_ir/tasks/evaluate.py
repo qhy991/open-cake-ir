@@ -357,9 +357,11 @@ def capture_tile_cohort(loaded, strict_cupti, *, samples_per_cohort, route_calls
                 raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
             loaded.launch(arguments[used])
             used += 1
-        native = getattr(strict_cupti, 'capture_loaded_cohort', None)
+        # Admit a declared adapter method, not a dynamic callable attribute.
+        # Generic callables (including Mock) can synthesize any attribute name.
+        native = getattr(type(strict_cupti), 'capture_loaded_cohort', None)
         if native is not None:
-            samples = [float(value) for value in native(loaded, arguments,
+            samples = [float(value) for value in native(strict_cupti, loaded, arguments,
                 dry_run_iters=11, repeat_iters=samples_per_cohort)]
             used = len(arguments)  # Native submission independently checks this count.
         else:
