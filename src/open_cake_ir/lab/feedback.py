@@ -1,6 +1,8 @@
 """Candidate-bound author feedback, derived from retained filter and receipt facts."""
 from __future__ import annotations
 
+from open_cake_ir.evaluation.timing import timing_statistic
+
 from collections.abc import Mapping
 from types import SimpleNamespace
 
@@ -12,13 +14,14 @@ from .generated_source import candidate_source_feedback
 
 def baseline_comparison_feedback(specification, timing):
     """The fixed black-box opponent; never its implementation or mutable incumbent."""
-    medians = timing.get('pooled_medians_ms')
+    medians = timing.get(f'pooled_{timing_statistic(timing)}s_ms')
     fixed = specification.document['execution'].get('fixed_baseline')
     selection = fixed.get('selection') if isinstance(fixed, Mapping) else None
     return {
         'source': selection.get('source') if isinstance(selection, Mapping) else 'campaign_fixed_baseline',
         'baseline_latency_ms': medians.get('baseline') if isinstance(medians, Mapping) else None,
         'candidate_speedup': timing.get('speedup'),
+        **({'statistic': 'mean'} if timing_statistic(timing) == 'mean' else {}),
         'measurement_quality_passed': timing.get('measurement_quality_passed'),
     }
 
