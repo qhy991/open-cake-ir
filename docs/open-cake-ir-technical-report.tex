@@ -34,7 +34,7 @@
 \definecolor{verifiedgreen}{HTML}{15803D}
 \definecolor{failure}{HTML}{B91C1C}
 \definecolor{caution}{HTML}{B45309}
-\hypersetup{colorlinks=true,linkcolor=ink,urlcolor=accent,citecolor=accent,pdftitle={open-cake-ir: A Technical Report on Agent-Driven GPU Kernel and Compiler Co-Evolution},pdfauthor={Haiyan Qin}}
+\hypersetup{colorlinks=true,linkcolor=ink,urlcolor=accent,citecolor=accent,pdftitle={open-cake-ir: A Technical Report on Cross-Hardware Optimization Reuse and Compiler Co-Evolution},pdfauthor={Haiyan Qin}}
 \setlength{\parindent}{2em}
 \setlength{\parskip}{0.38em}
 \linespread{1.12}
@@ -51,14 +51,15 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\scriptsize\sffamily\bfseries\color{accent} OPEN-CAKE-IR \quad / \quad TECHNICAL REPORT}
-\fancyhead[R]{\scriptsize\sffamily\color{muted} 2026.09}
-\fancyfoot[L]{\scriptsize\sffamily\color{muted} 主体快照：677eb444}
+\fancyhead[R]{\scriptsize\sffamily\color{muted} 2026.10}
+\fancyfoot[L]{\scriptsize\sffamily\color{muted} 历史实现：677eb444；研究主题：2026-10-06}
 \fancyfoot[R]{\small\sffamily\bfseries\color{ink}\thepage}
 \renewcommand{\headrulewidth}{0.45pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{hair}\leaders\hrule height \headrulewidth\hfill}}
 \renewcommand{\footrulewidth}{0pt}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/677eb444fec593294c470dcc5793262ae769fce2/#1}{#2}}
+\newcommand{\researchrepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/main/#1}{#2}}
 \newcommand{\weaverepo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/93d052021cc3b4b0d8a5580837f7d87bbbd2fc02/#1}{#2}}
 \newcommand{\scope}[1]{\textcolor{accent}{\textbf{#1}}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
@@ -83,14 +84,14 @@
 \begin{titlepage}
 \thispagestyle{empty}
 \noindent\begin{tcolorbox}[colback=ink,colframe=ink,boxrule=0pt,arc=0pt,left=5mm,right=5mm,top=3mm,bottom=3mm]
-{\color{white}\sffamily\bfseries\small OPEN-CAKE-IR}\hfill{\color{white}\sffamily\small RESEARCH TECHNICAL REPORT \quad 2026 / 09}
+{\color{white}\sffamily\bfseries\small OPEN-CAKE-IR}\hfill{\color{white}\sffamily\small RESEARCH TECHNICAL REPORT \quad 2026 / 10}
 \end{tcolorbox}
 \vspace*{18mm}
 {\noindent\sffamily\bfseries\color{accent}\large 研究报告 \quad / \quad 技术体系与实验证据\par}
 \vspace{8mm}
-{\noindent\sffamily\bfseries\color{ink}\fontsize{25}{36}\selectfont 面向 GPU 内核优化的\\智能体与编译器协同演进\par}
+{\noindent\sffamily\bfseries\color{ink}\fontsize{25}{36}\selectfont 跨硬件优化机制复用\\与编译器协同演进\par}
 \vspace{7mm}
-{\noindent\color{muted}\large Agent--Compiler Co-Evolution for GPU Kernel Optimization\par}
+{\noindent\color{muted}\large Cross-Hardware Optimization Reuse and Compiler Co-Evolution\par}
 \vspace{13mm}
 {\color{accent}\noindent\rule{\textwidth}{1.1pt}\par}
 \vspace{6mm}
@@ -98,10 +99,10 @@
 {\sffamily\bfseries\color{ink}秦海岩 \quad Haiyan Qin\par}
 {\small\color{muted}北京航空航天大学\par}
 \end{minipage}\hfill\begin{minipage}[t]{0.46\textwidth}
-\raggedleft{\sffamily\bfseries\color{ink}2026 年 9 月 23 日\par}
+\raggedleft{\sffamily\bfseries\color{ink}2026 年 10 月 6 日\par}
 {\small\color{muted}MoE 案例增补：9 月 28 日\par}
 {\small\color{muted}协同演进动机补充：10 月 2 日\par}
-{\small\color{muted}主体快照 \quad / \quad 源码 677eb444\par}
+{\small\color{muted}历史实现快照 \quad / \quad 源码 677eb444\par}
 \end{minipage}
 \vspace{21mm}
 \begin{center}
@@ -121,43 +122,42 @@
 \noindent\textbf{报告边界}\quad 主体章节所读源码固定为
 \code{677eb444fec593294c470dcc5793262ae769fce2}。第\ref{sec:weave-case}节是
 2026 年 9 月 28 日的 MoE 案例增补，其实验代码固定于尚未合入主线的
-\code{2c638aad}；主线本次只纳入案例记录，不将后续代码追认为主体快照。
-设备实验各自绑定精确目标、Workload、oracle 和计时协议。
+\code{2c638aad}；该次增补只纳入案例记录，不将后续代码追认为主体快照。
+2026 年 10 月 6 日更新研究定位与第\ref{sec:shared-theme}节共同实验约定。
+历史实现和实验数字仍绑定原来源；新增研究设计不改变它们的验收范围。
 \end{notebox}
 \end{titlepage}
 
 \section*{摘要}
 \begin{notebox}
-同一个算子可以有许多 GPU 实现：它们遵循相同的数学公式，却采用不同的分块、线程分工、
-存储和同步方式。智能体生成内核后，仅凭编译错误或一个延迟值，往往难以判断下一步该修改
-候选程序，还是该补足编译器的表达与检查能力。open-cake-ir 用带类型的执行计划记录这些
-硬件选择，在生成代码前给出可定位的诊断；任务语义、正确性检查、设备计时和运行证据则由
-各自的模块负责。一次优化运行使用固定的编译器，任务反复暴露出的编译器缺口在后继版本中
-修复，再回到新任务验证。
+高性能实现需要目标特化；一次优化中形成的数据流改写、适用条件与反例，则可能帮助后续
+任务减少重复搜索。open-cake-ir 以 Compiler 为核心，用带类型的 Schedule 和 Program
+记录执行选择，将经过审查的发现整理为显式变换、目标诊断或编译能力。Agent 在目标侧
+重新选择分块、工作分配和资源配置；独立评测确认设备正确性与性能。原生工程探索也可
+提供新发现，相关能力在后继提交与新任务中重新验证。
 
-当前源码声明五家厂商的八个精确目标，179 项语料检查符合预期。NVIDIA、Apple、Hygon
-和 MetaX 已有范围各异的设备结果；AMD 的设备计时仍在校准。同形状的 TinyGEMM2 对照
-通过了严格数值检查，也显示本地实现与 CAKE 导出产物之间仍有明显性能差距。已有证据说明
-系统能够承载这些任务和局部优化；经验材料能否帮助智能体在另一种硬件上更快找到好实现，
-还需要预先分组的实机实验。后续增补的 B300 MoE 案例展示了事件流水、空间分工、
-有界偷取和 FFN 分块如何在同一 CUDA lowering 中联动；它通过了有界设备正确性检查，
-但尚未取得对开源基线的合格加速结论。
+本报告分别讨论表示与诊断、额外材料与变换权限、lowering 自由度和系统演进的作用。
+原生 DSL 加等效工具、同动作集合的非 LLM 搜索及来源知识对照，是后续研究的不同入口。
+实现基础和局部收益不能直接替代跨目标搜索成本的因果证据。
+
+历史实现章节保留源码 \code{677eb444} 的八个目标、179 项语料预期及各自设备案例；
+TinyGEMM2 的性能差距与 MoE 的有界正确性也维持原结论。2026 年 10 月的研究更新统一
+各硬件分支的问题、对照和成本口径，已有 Run 保持原有源码、预算和接受规则。
 \end{notebox}
 
-\noindent\textbf{关键词：}GPU 内核；中间表示；静态验证；智能体；实验可复查性；跨硬件优化
+\noindent\textbf{关键词：}GPU 内核；条件化改写；目标适配；智能体；编译器；经验复用
 
 \vspace{1.2em}
 \noindent{\sffamily\bfseries\color{accent} ABSTRACT}\par\vspace{0.35em}
 {\small\raggedright\hyphenpenalty=10000\exhyphenpenalty=10000\noindent
-open-cake-ir independently implements a CAKE-inspired system in which agents author typed,
-hardware-explicit schedules, receive localized compiler feedback, and validate candidates against
-external oracles and target-specific measurements.\par\smallskip\noindent A corpus-gated compiler successor is introduced
-between frozen optimization runs. The implementation declares eight exact targets across five vendors;
-device correctness and measurement coverage remain uneven. A same-shape TinyGEMM2 comparison passes
-strict numerical checks while exposing a substantial performance gap. Cross-hardware knowledge-transfer
-effects remain unmeasured. A later B300 MoE case validates bounded event pipelining, spatial scheduling,
-and stealing, without a qualified speedup over its open baseline. The main software snapshot is commit
-\code{677eb444}; the MoE case pins its own successor and assay boundary.\par}
+open-cake-ir studies conditional optimization reuse across hardware, with the Compiler as its core.
+Agents author explicit execution plans; reviewed discoveries from structured or qualified native
+exploration may become transformations, diagnostics or lowering capabilities. Target decisions are
+reselected and independently evaluated. Representation effects, executable-tool effects, lowering
+freedom and system-successor effects require distinct controls. The October research update defines
+a common agenda for all hardware branches. Historical implementation chapters retain source
+\code{677eb444}, its 179 corpus expectations and the original scope of each device result.
+Controlled transfer benefits remain a research question rather than a consequence of the architecture.\par}
 
 \vspace{1.6em}
 \section*{阅读约定}
@@ -189,8 +189,8 @@ and stealing, without a qualified speedup over its open baseline. The main softw
 缺口时，维护者改进编译器，并在后续任务中检验这项改动。贯穿全文的问题是：
 \begin{notebox}
 \noindent\textbf{核心问题}\quad
-怎样在固定任务和可追溯的实验条件下，让智能体的 GPU 执行选择可以被检查、失败可以
-被定位，并将反复出现的问题转化为后续可用的编译能力？
+怎样把优化发现变成带条件的可执行机制，让 Agent 在目标硬件上重新实例化，并在
+相同语义、参考权限和声明预算下减少搜索成本、保持性能竞争力？
 \end{notebox}
 CAKE 论文提出了编译器与智能体协同改进内核的研究路线\cite{cake}。open-cake-ir 沿着
 这一问题独立实现了程序表示、编译检查和实验流程，并把不同硬件上的观察保留在各自的
@@ -232,16 +232,104 @@ Cake IR，另一组直接编写 CUDA/PTX；目标的低层实现都不向作者�
 本文讨论本仓库时，会另列其独立运行的证据。CAKE 论文覆盖的目标是 NVIDIA Ampere 至
 Blackwell，非 NVIDIA 平台的实现和测量需要另建证据\cite{cake,papercontract}。
 
-\subsection{本工作的定位与当前贡献}
-open-cake-ir 将 CAKE 提出的研究问题落到一套可独立检查的开源实现上。编译器单独接受
-完整程序及其内核计划，按精确目标给出诊断与生成源码；实验系统负责固定任务、作者材料
-和预算，评测与证据模块保留设备结果及运行过程。这种分工让一次内核优化的结果有出处，
-也让编译器的后继改动能够回到触发它的任务接受验证。
+\subsection{本工作的定位与证据范围}
+Compiler 拥有完整 Program、叶子 Schedule、合法性检查、确定性改写与 lowering；Lab
+负责材料、作者与研究处理。工作围绕可复用机制及目标适配组织，具体问题与分支分工见
+第\ref{sec:shared-theme}节。原 CAKE 的 IR、诊断和协同演进设计是明确承继的基础。
 
-仓库目前支持五家厂商的八个精确目标，并在若干目标上保留了正确性、计时或完整程序的
-有界案例。本文的贡献是把这些程序表示、检查机制和实验证据放在同一条可读的路径上，
-说明各目标已经走到哪一步，以及与 CAKE 公开产物重叠的任务还差在哪里。跨硬件经验
-是否能额外降低智能体的搜索成本，是这一基础之上的下一项实验问题。
+历史实现章节提供程序表示、检查流程和有界设备案例。研究增量则需要单独检验：带条件
+改写是否减少关联修改错误，来源信息是否帮助目标重选，以及这些收益能否覆盖发现、
+工具实现与维护成本。新增设计不将工程 Run 重标为受控消融，也不把接受更多候选等同于
+更强的正确性保证。
+
+\section{共同研究主题与跨平台实验}\label{sec:shared-theme}
+
+\subsection{从优化发现到条件化机制}
+本项目以 Compiler 为核心，研究优化发现怎样成为后续任务可用的机制。一次发现同时包含
+可复用的数据流改写和依赖目标的决策：例如分块可以限制活动数据与资源压力，但 tile、执行组
+和流水线需要结合目标重新选择。机制保留前后程序、语义条件、目标实现条件、可调决策、
+反例和版本范围；收益假设仍由实机确认。\researchrepo{docs/RESEARCH_AGENDA.md}{共同研究约定}
+统一各硬件分支的问题与对照，具体实验仍由 Workload、Run 和 Study 的现有职责承接。
+
+研究区分三项假设：表示与工具是否改善有限预算搜索；来源经验和可执行化是否各有增量；
+经审查的系统后继是否帮助未参与修复的任务。多目标接入、单次本机加速与一个可调用 pass
+分别提供局部证据，不能直接替代这些受控比较。
+
+\subsection{相关路线与增量贡献}
+CAKE 和 TIRx Harness 已研究 Agent 编写接口、编译分析与优化反馈\cite{cake,tirxharness}；
+Exo 2 与 MLIR Transform 提供可组合、可扩展的调度或编译变换\cite{exo2,mlirtransform}。
+AutoTVM 与 MetaSchedule 研究调优、知识迁移和可扩展搜索空间\cite{autotvm,metaschedule}。
+AKG kernel Agent 分离优化 sketch 与具体 DSL 生成\cite{akgagent}；KernelBlaster 与 AccelOpt
+把经验形成和后续利用作为研究对象\cite{kernelblaster,accelopt}。本项目将这些能力明确作为基础
+和对照，贡献需要落到具体机制、目标适配方法及可重复的效果上。
+
+AI lowering 增加了一条重要比较路线：从既有 Triton 程序和固定执行合同生成 PTX，
+让模型承担更多底层实现决策\cite{ailowering}。该论文的原 Volta 限定候选与数值验收候选有
+不同的最佳结果，提示验证覆盖可能限制搜索；最佳候选表不构成相应程序集合的理论性能上界。
+原 Volta 的模型内保证与后续扩展的保证需要分别解释\cite{volta,ailowering}。符号检查、
+有限设备测试、计时质量和实际加速也各有自己的验收范围。
+
+\begin{table}[htbp]
+\centering\small
+\caption{三个作者接口的比较边界。路线只有通过精确目标的工具链、加载与评测准入后才进入实机对照。}
+\begin{tabularx}{\textwidth}{@{}p{28mm}Y Y@{}}
+\toprule
+\rowcolor{mist}比较 & 固定与变化 & 解释范围 \\
+\midrule
+Cake 与原生 DSL & 同源材料、语义等效工具和同一下游工具链；公共 oracle 与预算一致 & 表示和诊断组合的增量；共用内部引擎时注明作者接口效应 \\
+DSL 与直接低层 & 明确常量、grid、线程数及 ABI 的可变范围；低层路线单独取得资格 & lowering 和指令选择自由度，不能全部归因于 IR \\
+非 LLM 与 Agent & 同动作集合、参数域和设备评测预算 & 选择策略的增量；自由编写代码另作系统评估 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+共同能力子集用于隔离因素，完整合理能力用于评估覆盖与强实现差距。给定优化源码与只给
+数学规格具有不同参考信息。模型、权限、反馈、测量和主要预算在研究前固定；不显著的
+差异不自动证明等效。原生接口或表达形式也不决定理论上更高的性能，研究重点是有限预算内
+实际找到并独立确认的结果。
+
+\subsection{独立原生发现与后继晋升}
+IR 保持默认开发接口。具体假设暴露表达或 lowering 缺口时，Lab 可以在已经准入的路线
+启动独立原生工程 Run，保留同一 Workload、精确 Target、oracle 和测量要求，并声明预算、
+继承材料和参考访问。冻结 Run 内不切换路线，也不向原研究回填原生成绩。
+
+发现按责任层处理：何时使用和如何选参进入 Lab；可复用改写进入 Compiler pass；兑现
+缺口进入 lowering；可建模的非法行为进入 Verifier；真实表达缺口才共同扩展 primitive、
+类型、效应和分析。审查与验证完成后，后继提交接受新任务检验。\code{No promotion}
+是有效结论。新 Schedule 或 pass 必须重新验证，不能继承来源低层实现的正确性或速度。
+人工提炼、自动提炼与使用工具是不同过程，分别记录发现、实现、审查和维护成本。
+
+% Conceptual workflow only; no experimental result or automatic promotion claim.
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[>=Latex,font=\sffamily\small,align=center,
+ box/.style={draw=hair,fill=mist,rounded corners=2pt,minimum width=32mm,minimum height=13mm}]
+\node[box] (a) {结构化或原生探索\\固定任务与权限};
+\node[box,right=5mm of a] (b) {机制与边界分析\\定位责任层};
+\node[box,right=5mm of b] (c) {审查与后继实现\\允许不晋升};
+\node[box,right=5mm of c] (d) {冻结目标测试\\复用效果与成本};
+\draw[->,accent] (a)--(b);\draw[->,accent] (b)--(c);\draw[->,accent] (c)--(d);
+\end{tikzpicture}
+\caption{发现、晋升与目标复用的研究流程。各阶段有独立证据，图中没有实测收益。}
+\end{figure}
+
+\subsection{各硬件分支回答同一主问题}
+各分支选择自身已能可靠评测的任务，贡献不同技术差异的证据。NVIDIA 优先提供结构性发现、
+强原生对照和显式存储/同步案例；MetaX 检验联动分块、产物资源与测量边界；Hygon 检验
+目标侧重选、数值行为及寄存器和 scratch；AMD 验证各精确目标的执行宽度、资源与工具链差异；
+Metal 检验 threadgroup 分工、存储及表达/评测覆盖。任何平台都可成为来源或目标，
+main 维护共享语义和研究口径，不替平台宣布设备资格。
+
+新实验在已有计划和 Run/Study 输入中说明假设、机制与任务、对照、参考权限、预算、
+测量合同和停止/确认规则。新优化 Run 默认显式绑定三小时总预算，确认资源包含其中；
+专项准入探针另设有界预算。研究若使用不同预算，在执行前对各组一致声明；既有 Run
+不追改。这是实验设计约定，不增加一种 Study 或执行器。
+
+发现、目标适配与测试分开。参与过机制或参数选择的任务属于开发证据。未见形状、未见
+算子族和新目标分别报告；重复 Run 和计时样本不充当新增任务。按卡位和时间分块，保留
+失败与未达到终点的结果。墙钟、token、CPU 准备、编译、排队和设备用量分别记账。
+强种子通过验收后，再检验完整 Program、模型或服务的收益。
+
 
 \section{设计原则与实现边界}
 
@@ -1134,7 +1222,8 @@ tile、执行组和流水线深度，则要在目标卡上重新选择。可确�
 分开。图\ref{fig:ep-study}以 $E$ 控制额外机制材料，以 $P$ 控制显式 pass 的调用权，
 形成四种条件。四组共享任务、编译器、目标设备、正确性和计时规则；工具权限由运行环境
 实际隔离。$P1$ 组仍需知道调用的最小接口，所以 $E$ 测量的是接口之外的说明和案例。
-目前软件协议已接入，四组在共同目标与预算下的实机迁移实验尚未进行\cite{study}。
+所引主体快照提供软件协议；本文不由其直接报告四组处理效果\cite{study}。
+后继实验须按第\ref{sec:shared-theme}节的共同主题及各自冻结的 Study 解释。
 
 % Figure contract: the E/P 2x2 cells are treatment assignments, not results.
 % All four share Compiler, Workload, oracle, target and measurement gate.
@@ -1207,7 +1296,7 @@ Triton 能向 AMD、Hygon 生成代码，却不保证源参数的资源分配或
 \section{限制、可复查性与结论}
 
 Open-Cake-IR 已经把候选生成、静态检查、目标代码生成和设备反馈接成一条可追踪的路径。
-在当前源码上，179 项语料符合预期；在若干固定 Workload 上，也已有设备正确性与局部性能
+在主体快照源码上，179 项语料符合预期；在若干固定 Workload 上，也已有设备正确性与局部性能
 结果。这些结果回答了“系统能否表达、检查并运行具体候选”。要回答“这一机制能否稳定带来
 跨任务、跨平台收益”，还需要更完整的目标侧测量和预注册对照实验。
 
@@ -1327,13 +1416,13 @@ B200 Workload，三对延迟（Open-Cake/CUDA，ms）为 1.191845/3.898164、
 provider、GPU Campaign 或计时。阅读者可从固定源码检出运行离线入口，看到 IR 构造、
 Assessment 与 lowering；设备结果则须在原任务的目标、工具链、参考访问和监管环境下
 重放。报告源文件位于 \code{docs/open-cake-ir-technical-report.tex}，在装有 XeLaTeX、
-中文字体和本仓库已有图像的环境中可直接编译。历史示意图保留其原始来源；其文字表达
-的能力范围按正文当前源码重新核对，不用旧图中的版本值替代当前状态。
+中文字体的环境中可直接编译；图与参考文献均保存在单个 TeX 源文件中。历史示意图保留其原始来源；其文字表达
+的能力范围按各章节明确的源码范围解释，不用旧图中的版本值替代当前状态。
 
 \section*{阅读与引用说明}
 本文是项目维护者撰写的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
 所读源码提交；引用性能时还需追溯案例自己的执行源码、精确目标、Workload、baseline、
-oracle、计时区间与质量门。主体章节的仓库链接固定到 \code{677eb444}；MoE 增补
+oracle、计时区间与质量门。历史实现章节的仓库链接固定到 \code{677eb444}；研究主题增补引用其单独的文档提交。MoE 增补
 的主线案例记录固定到 \code{93d05202}，实验代码另固定到未合入主线的 \code{2c638aad}，原始收据身份
 仍由该专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
@@ -1348,6 +1437,16 @@ arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
 \url{https://docs.nvidia.com/cuda/archive/12.1.0/cuda-toolkit-release-notes/}.
 \bibitem{cuda122} NVIDIA. \emph{CUDA Toolkit 12.2 Release Notes}.
 \url{https://docs.nvidia.com/cuda/archive/12.2.0/cuda-toolkit-release-notes/index.html}.
+\bibitem{tirxharness} MLC-AI. \emph{TIRx Harness}. \url{https://github.com/mlc-ai/TIRx-harness}.
+\bibitem{exo2} Y. Ikarashi et al. \emph{Exo 2: Growing a Scheduling Language}. \url{https://arxiv.org/abs/2411.07211v4}.
+\bibitem{mlirtransform} LLVM. \emph{Transform Dialect}. \url{https://mlir.llvm.org/docs/Dialects/Transform/}.
+\bibitem{autotvm} T. Chen et al. \emph{Learning to Optimize Tensor Programs}. \url{https://arxiv.org/abs/1805.08166}.
+\bibitem{metaschedule} J. Shao et al. \emph{Tensor Program Optimization with Probabilistic Programs}. \url{https://arxiv.org/abs/2205.13603}.
+\bibitem{akgagent} J. Du et al. \emph{AKG kernel Agent}. \url{https://arxiv.org/abs/2512.23424v1}.
+\bibitem{kernelblaster} K. S. Dong et al. \emph{KernelBlaster}. \url{https://arxiv.org/abs/2602.14293}.
+\bibitem{accelopt} G. Zhang et al. \emph{AccelOpt}. \url{https://arxiv.org/abs/2511.15915}.
+\bibitem{ailowering} F. Costa et al. \emph{AI as a Compiler: Compiling Triton kernels without the Triton compiler}. \url{https://arxiv.org/html/2609.36800v1}.
+\bibitem{volta} B. Driscoll et al. \emph{Equivalence Checking of ML GPU Kernels}. \url{https://arxiv.org/abs/2511.12638v3}.
 \bibitem{architecture} H. Qin. \repo{docs/ARCHITECTURE.md}{系统架构与平台能力}. open-cake-ir@677eb444, 2026.
 \bibitem{irguide} H. Qin. \repo{docs/IR_GUIDE.md}{IR 指南}. open-cake-ir@677eb444, 2026.
 \bibitem{targets} H. Qin. \repo{compiler/revision.json}{Compiler 清单}与
