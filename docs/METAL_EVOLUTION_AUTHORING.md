@@ -1,7 +1,15 @@
 # Metal 演进实验：TASK.md / AGENTS.md 与 Run 后提炼
 
-状态：完整技能包软件准备与平台规划已由 PR #327 合入 `metal@25f1faf2`；原生技能资格及演进 treatment 尚未启用到实验。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
+状态：完整技能包软件准备与平台规划已由 PR #327 合入 `metal@25f1faf2`；正式演进 treatment 尚未启用；后继原生技能资格见下。配套 [总计划](METAL_EVOLUTION_PLAN.md)。
 2026-10-06：六任务 FP32 starter 的真实 M4 数值检查已通过；RMSNorm A/A 未通过原测量质量门，正式性能搜索仍未启动，详见总计划的真实资格记录。
+同日，共享 #350 已合 main，实际 CI 合并源码 `68544621` 的 Codex 0.159.2 /
+`gpt-6.1-sol / xhigh` 完成无 GPU initial/resume 资格。两轮都保留指定
+`cake-metal-optimization` 正文，收据与 anchor 已封存于
+`metal-xcode16-20261006/native-skill-cli-isolated-68544621/`。该收据限定每轮最多
+1 候选；不得用于计划中的每轮 3 候选输入。此结果证明该固定配置的协议和原生输入交付，
+不证明作者已经用 Cake/MSL/AIR 做 kernel 优化或学会复用经验。正式 Ralph treatment 仍待
+平台同步、G3 与最终作者配置准入；正式 attribution 入口的原生阶段交接已在 `de8087cf` 通过，范围见总计划。
+
 
 实际 TASK.md / AGENTS.md 继续由 `lab/task_package.py` 从冻结 Run 权威生成。
 禁止直接修改已经交付的文件，也不手写第二份参数权威。

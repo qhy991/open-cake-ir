@@ -1,6 +1,6 @@
 # Metal：先验证可重复的 Kernel–Compiler 演进闭环
 
-状态：设计草案；尚未满足正式实验执行门。用户选择先验证可重复闭环，再扩展
+状态：工程资格验证中；尚未满足正式实验执行门。用户选择先验证可重复闭环，再扩展
 FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `metal@a2e62b08`。
 
 2026-10-06 后继验收已恢复：用户选择现有 Xcode 16 / SDK 15，仅通过子进程
@@ -17,7 +17,7 @@ FP16/BF16、矩阵指令和真实推理子图。早期离线探针基点为 `met
 CI `37389739785` 三个 Python 版本各 **2816 passed、35 skipped**，完整 Corpus
 181/181；定向后继回归 56 项、238 个子测试通过。完整测试此前暴露的 Executor/arm
 夹具缺字段、非隔离 Codex 路径的局部 import 和旧 mock 参数均已修正，旧失败保留。
-共享修复已同步到本 Metal 任务分支，平台 PR #344 的整合 CI 另行验收。
+共享修复已同步；平台 PR #344 的完整 CPU 与适用 Triton CI 随后通过，已合入 `metal@7dac842e`。
 
 prepare、provider 构造、Run/Campaign、factory 与回放按真实环境类别验证 anchor 的
 实际归档和两轮包内正文；缺失、旧版、fixture 收据、材料/配置错配与零轮早退均有覆盖。
@@ -41,6 +41,33 @@ CI `37396396477` 在 Python 3.10/3.11/3.12 各 **2824 passed、35 skipped**，Co
 确认远程插件目录默认启用，但关闭开关是否足以维持本实验的材料边界尚待后继验证。
 当前 Metal 分支尚未吸收共享 CLI PR；其自身主机与真实结果 PR #344 已合入 `metal@7dac842e`。
 作者资格不证明 kernel 优化或经验迁移；性能 Run 仍必须通过测量与设备 phase 门。
+
+共享后继 [PR #350](https://github.com/qhy991/open-cake-ir/pull/350) 为隔离的 tool-rich
+作者显式关闭 `apps`、`plugins` 和 `remote_plugin`，保持 native task skills 与既有文件、
+材料、收据检查。固定 CLI 的 feature list 确认三个开关关闭、`shell_tool` 和 `skill_search`
+仍开启；这不是实际启动资格。`14029261` 的 Python 3.11 完整 CI 为 2827 passed、
+35 skipped、1 failed：新增两轮测试误用了另一夹具的技能包，既有脚本/二进制材料检查
+以 exit 42 拒绝。`c881a98b` 改为资格夹具要求的完整材料，检查不变；后继结果如下。
+此前本机 custody 目录写入被沙箱拒绝的验收已停止，没有修改权限重跑。
+后继 CI `37399911345` 在 Python 3.10/3.11/3.12 各 **2835 passed、35 skipped**，
+其余软件门通过。日志实际检出的是 PR 合并提交 `68544621`（`c881a98b` 与 `main@92c83806`
+的整合结果）；真实资格固定到该已测试提交，不把 CI API 的 PR head 字段误当作 checkout。
+PR #350 随后合入 `main@2958e0c1`，平台尚待同步。
+
+在新目录 `native-skill-cli-isolated-68544621/` 完成一次真实两轮无 GPU 资格：固定
+Codex 0.159.2、`gpt-6.1-sol / xhigh`，每轮上限 600 秒，进程返回 0，stderr 为空。
+`receipt.json` 为 **qualified=true / live_two_turn_tool_rich_provider**，声明
+`native_skill_qualification_v1`；终态为 `adhered / qualified`，anchor 即时审计通过。
+initial 与同线程 resume 都保留指定 `cake-metal-optimization` 正文，native record 数分别
+37、68；候选新增、更新、变化、线程连续性和 usage 均已观察。文件、配置、材料、归档及
+custody 检查没有放宽，旧插件失败目录没有修改。
+
+这份收据只覆盖 **每轮最多 1 个候选** 的已记录配置。计划中每轮 3 候选的 C0 输入不能
+借用它；G3 通过且最终搜索配置确定后，须取得匹配该配置的资格。native coverage 仍是
+`retained_native_skill_input_not_wire_capture_or_model_use`，不是模型实际运用技能的证明。
+未调用 GPU，未完成 D2/D6 的真实 Ralph 优化、经验提炼或 Compiler 迁移。
+可读视图为该目录的 `qualification-summary.json`，原始事实仍由封存 run 与 receipt/anchor 负责。
+
 
 已准备完整技能材料 `author-material-3d430a13/author-skills.tar`，包含主技能与 AIR
 参考，现有 NativeSkillPackage reader 通过。独立 quick validator 因缺 PyYAML 未运行，
@@ -166,9 +193,51 @@ oracle/input；若调整这个边界，须在 Executor/source 后继中实现并
 随后 `cf481581` 修正内层新建进程组导致外层取消遗漏 helper 的问题：子进程保留外层
 监督组，并 exec 原生 helper；CPU 超时会终止并回收同一设备进程。新增外层取消回归后，
 独立固定源码的 CPU 验收 **24 项、26 个子测试通过**。原生编译失败未重跑。
-[PR #348](https://github.com/qhy991/open-cake-ir/pull/348) 的完整 CI 与固定 Xcode 的原生资格
-仍待完成。该修复还未改变正式 Evaluation 的 oracle 准备及后处理阶段，不能据此宣布整个
-phase 门已通过。
+[PR #348](https://github.com/qhy991/open-cake-ir/pull/348) 的固定 `9c34f28f` 完整 CI
+`37398153575` 在三个 Python 版本各 **2827 passed、35 skipped**，其余软件门通过，
+已合入 `metal@10d9e437`；固定 Xcode 的原生资格仍未完成。此提交只覆盖 archive/inspection。
+
+正式 Evaluation 的后继 `task/metal-evaluation-phases@33abec50` 已实现三阶段：
+`launch_task` 使用 `tasks.evaluate --local-kind metal`；原 task 生成全部五种输入和 oracle，
+不可变 `PreparedTensorCase` 留在 CPU 父进程；打包后，既有 broker 在独立子进程准入并
+exec observer；整段预检、配对 cohort、后检或独立 profile 保持同一次设备租约；原生进程
+结束并回收后，父进程读取快照、独立比较输出及生成公共 receipt。host admission 的零 dispatch
+检查仍通过同一既有 broker 的短子进程完成。已有外部租约保持原 owner，不提前释放。
+
+该后继不修改 observer Swift、配对次序、warmup、dispatch 数、容差或五种输入覆盖；
+attribution 仍检查全部五种输入。进程准入记录仅保留真实 job 与 admitted 状态，忙碌拒绝仍
+进入既有 `LocalBrokerBusy` 处理；超时和原生失败保留输出。实际 CPU executable double
+证明输入/oracle 在租约前、全计划在一个持锁子进程、独立比较和报告在回收后；忙碌、失败、
+profile 和 oracle 失败路径也有覆盖。固定 `33abec50` 的专项验收 **30 项、18 个子测试通过**，
+未定义名称检查通过。
+完整 submitter 交接的后继测试 `41d3337c` 随后复现两项失败：子进程捕获了 broker 接受行，
+外层 `CommandBrokerSubmitter` 收不到实际 job 观测；原生失败的文件也没有进入临时目录清理前的
+失败证据通道。`e1239a88` 转发与进程准入相符的**实际 broker 行**（不根据 job 名制造接受），
+并沿现有 failed-worker v2 通道交付非空原生 stdout/stderr 和 allocation 记录。
+固定后继验收 **32 项、18 个子测试通过**，包含实际 submitter 的成功 receipt 和临时目录
+清理后的失败诊断交接；未定义名称检查通过。仍不是实际 GPU 或模型证据。
+[PR #352](https://github.com/qhy991/open-cake-ir/pull/352) 的完整 CI `37400585384`
+在三个 Python 版本各 **2834 passed、35 skipped**，其余软件门通过。日志实际 checkout
+为合并提交 `de8087cf`；以下原生验收固定到该提交。
+
+同一 Xcode16/SDK15 子进程环境中，正式 `CommandBrokerSubmitter` →
+`tasks.evaluate --local-kind metal` 已完成一次 RMSNorm attribution 验收：复用 G1 封存
+archive，五种输入预检加一次独立 profile，**6 次 dispatch 正确，0 mismatches**，最大绝对
+误差 `9.5367431640625e-07`。正式 host admission、archive 严格重载、实际 broker 接受行和
+公共 receipt 交接均成功；correctness、launch receipt 与 profile 原始字节保留于
+`metal-xcode16-20261006/formal-phase-native-de8087cf-receipt-retention/`。返回后只读观察未见
+broker 锁持有人或该 observer 进程。该路径的 CPU 阶段顺序由固定源码合同测试验证，原生
+验收补充真实主机、设备和交接证据；不能把原生运行本身说成阶段计时测量。
+
+前一调用 `formal-phase-native-de8087cf/` 同样返回正确数值，但临时记录脚本未单独保存
+receipt 内的 bytes，在 JSON 序列化时失败，原始 profiler 未完整落盘，因此不计作完整资格。
+原失败、部分输出与原脚本保留。修复仅涉及外部记录脚本；CPU 回归验证嵌套原始字节分别
+落盘、元数据 JSON 完整后，才使用上述新目录执行一次后继验收，没有重写旧目录或修改环境。
+
+**正式 attribution 路径的阶段与原生交接验收通过；G3 配对计时稳定性仍未通过。**
+本次没有 timed samples；profile 只覆盖 compute-stage timestamps，未采集 occupancy、带宽
+或指令计数，也未排除系统的其他 GPU 活动。不能据此宣布 archive 构建路径的全部原生资格、
+配对性能搜索、Ralph 学习或加速成立。
 
 本次同步的 `LOCAL_DEVICE_LEASES.md` 所述按设备编号并行和分配前 CPU 准备不适用于当前
 Metal 路径；Metal 不支持 `--local-lock-scope device`。其中编译不占用 lease 的说明也
@@ -206,10 +275,11 @@ observer/snapshot 成本和封存 archive 的严格重载结果；编译源码�
 规则命中，并在公共 lower 入口拒绝；不是依赖无关规则碰巧拦截。这些尚未被采纳为 Corpus
 案例，也没有原生/GPU 数值证据；未修改 Corpus expectations。
 本机会话环境失败与后续离线验证分别保留在 checkout 外，不用后来结果覆盖早期失败。
-后续只读盘点发现 `/Applications/Xcode.app` 的 Xcode 16.0 / macOS 15.0 SDK 可作为独立
-后继候选；当前选中的仍是 CLT。文件存在不证明它能在当前系统编译或通过设备验收，尚未
-切换、编译或重跑旧门。后继环境选择待确定，原 host 声明与失败记录保持原样。元数据范围见
-`successor-environment-inventory-20261005/report.json`；它不是资格报告。
+2026-10-05 的只读盘点曾将 `/Applications/Xcode.app` 的 Xcode 16.0 / macOS 15.0 SDK
+列为未验证的后继候选，见 `successor-environment-inventory-20261005/report.json`。
+随后用户已批准仅对子进程绑定该工具链，2026-10-06 的原生编译、host capture 与数值结果
+见本页首部和真实 M4 记录。系统选择仍为 CLT；旧盘点及环境失败保持原判定，不用后来的
+通过结果改写旧记录。
 仓库指定的远程 GPU lease 规则已读取，但尚未定位本机 active gpu-infra checkout / kernelctl。
 管理器的 GPU Infra 节点路径与单任务入口的 Metal local-broker 路径是不同执行绑定；不能仅凭
 缺少 kernelctl 断言所有 Metal 路径不可用，也不能因此宣称已有可用租约或设备资格。
@@ -457,8 +527,8 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 
 1. **任务与环境基线。** 处理环境问题需单独环境维护工作；保留本次失败，不修改原始记录。
    在一致的后继环境上完成 G0/G1 和固定基线。代码编写前检查冻结与 source owner。
-   当前离线任务与结构表达已完成；下一步优先解决主机声明/工具链的一致性，以及 G2 原生语义，
-   不先扩大 dtype 或增加 primitive。用户已选择临时子进程回环直连，CPU 技能探针的
+   六 starter 和 D2/D6 的两种替代策略已有原生数值结果；当前优先完成正式 Evaluation
+   阶段分离的原生验收和 G3 稳定测量，其余 G2 策略保留未验证状态。不先扩大 dtype 或增加 primitive。用户已选择临时子进程回环直连，CPU 技能探针的
    initial/resume 投递已观察；用户随后批准了仅作用于子进程的现有 Xcode 配套工具链；新环境观察见下，不因网络通过而获得设备资格。
 2. **共享反馈修复与两轮经验验收。** PR #319 已将 `main@354a670f` 的默认 bundle、
    候选归因、peer 结果、Run 内历史和任务资料隔离经 CPU 集成验证合入 Metal；本机 custody
@@ -476,10 +546,10 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
    PR #340 已随 #342 通过显式收据能力和 anchor 实际归档的 custody/语义软件检查；其首轮夹具
    将仓库内 schema 误作绝对外部引用，已在后继提交修正引用，原失败记录保留。
    PR #341 补齐每 cell `native_skill_names` → 节点 → launch → qualifier 的传递；
-   两项与全部库运行入口已随 #342 合入 main；命令行开放仍待后继。旧收据及 fixture scope 不得获得新能力。直接入口、零轮和首轮故障路径须验证不会借
+   两项与全部库运行入口随 #342 合入 main，CLI 开放与真实隔离资格的后继为 #347/#350。旧收据及 fixture scope 不得获得新能力。直接入口、零轮和首轮故障路径须验证不会借
    缺输入或早退放行候选；采集前失败保留原诊断与已消耗费用，不冒充已验证投递。
    反例必须在实际准入入口拒绝，通过之后再开放策略。
-   当前真实入口仍明确拒绝新策略。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
+   共享入口已开放并通过上述单候选配置的真实两轮资格；平台同步、最终搜索配置资格和设备门仍各自必需。不能用旧 auth-only 绑定代替本次要求。验证作者引用真实区域并根据可见反馈
    改变或撤回假设；同场检验 Run 后摘要能还原一次失败和一次选择。先冻结新 authoring
    treatment，再在 C0/C1 对照中保持一致。
 3. **C0 发现批次。** 六任务 × 三重复，固定基线；封存后选一个最频繁、最可复现的缺口。
@@ -496,21 +566,22 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 
 ### 当前准入台账
 
-以下是计划的进度索引，原始观察保留在 checkout 外：
-`/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-evolution-20261005-a2e62b08/`。
+以下是当前进度索引。早期离线观察保留在 checkout 外的
+`/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-evolution-20261005-a2e62b08/`；
+2026-10-06 原生与真实作者资格位于同级 `metal-xcode16-20261006/`。
 不把离线探针命名为已封存 Run，也不据其提出性能 Claim。
 
 | 项目 | 已观察 | 剩余条件 | 原始记录 |
 | --- | --- | --- | --- |
-| G0 环境 | 用户选择的 Xcode16/SDK15 后继 CPU 54/1；M4 零 dispatch 与 host capture 通过；旧失败保留 | 后继 host 提交与原生 archive、设备测量、provider 各自准入 | `metal-xcode16-20261006/`；旧 `readiness.md`、`followup-readiness.md` |
+| G0 环境 | Xcode16/SDK15 后继 CPU 54/1、M4 host capture、六 starter archive/reload 已通过；host 已随 #344 合入 metal | #352 合入与平台同步；archive 构建全路径、G3 与最终 author 配置各自准入 | `metal-xcode16-20261006/`；旧环境失败保留 |
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 六 starter 原生/oracle 通过见下；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
-| G2 表达 | 六个发现任务均有结构替代程序 | 六 starter 与两结构替代数值通过；其余代表策略仍待设备验证 | `search-space-and-corpus.json`、`remaining-search-space.json` |
+| G2 表达 | 六任务均有结构替代；六 starter 与 D2/D6 两结构替代数值通过 | 其余替代策略的设备验证；尚不证明有用搜索空间或加速 | `search-space-and-corpus.json`、`remaining-search-space.json`、`metal-xcode16-20261006/` |
 | G3 测量 | RMSNorm 同产物 A/A 数值正确但 20/20 cohort 的 relative IQR 超过 0.05；独立工作量与 timestamp 控制通过 | 测量稳定性未获资格；不启动性能搜索或声称收益 | `metal-xcode16-20261006/g3-rmsnorm-*`；F-2026-10-06-002 |
-| G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；8cc264f0 完整 scaffold 含重读笔记要求并已绑定源码权限 | 真实两轮作者行为；native skill 实际输入观测与资格 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
-| G4 技能软件准备 | PR #335/#337 完成轮次与拒绝回放；PR #339 从保留材料重建资格两轮输入及当前正文 | PR #342 已合 main；CLI 开放与真实作者资格未完成 | `native-skill-qualification-b6ba8dc6/report.json`；旧失败记录保留 |
-| G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | admin/插件哨兵、脚本/依赖、真实模型使用与正式 provider 资格未完成 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
+| G4 经验接入 | 历史/材料、PR #320 源码投递和 PR #321 预算已集成；scaffold 要求重读笔记并绑定源码权限；单候选配置的 native 两轮输入已验收 | 真实 Ralph 的 Cake/MSL/AIR 假设更新、负结果与经验复用行为 | `generated-source-feedback-03d9cac5/report.json`、`authoring-treatment-8cc264f0/composition-report.json`、`codex-skill-interface-01592/report.json` |
+| G4 作者资格 | #350 已合 main；固定 68544621 的真实 initial/resume 已获收据，两轮保留指定技能正文；限每轮 1 候选 | 平台同步与最终搜索配置的匹配资格；真实 Ralph 中的 Cake/低层分析和经验复用 | `native-skill-cli-isolated-68544621/qualification-summary.json`；前继插件失败保留 |
+| G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | 此行是早期 collector 范围；后继正式单候选资格见上一行；真实技能运用仍待 Ralph 观察 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
-| 平台软件集成 | PR #338 合入 metal@f404dbf5，三版本 CPU CI 各 2790/35；本任务吸收 PR #339 | 本次同步的 CI 与合并状态另存外部报告；软件检查不授予主机、设备或作者资格 | `metal-skill-fault-7fa4ac02/report.json`；后继记录另列 |
+| 平台软件集成 | #344/#348 已合 metal@10d9e437；#348 三版本 CPU CI 各 2827/35；#350 已合 main@2958e0c1 | #352 评测阶段修复和 main 到 metal 同步；软件通过不授予设备资格 | 各 PR 的完整 CI 与上述固定提交；原生结果另列 |
 
 ### 2026-10-06：真实 M4 资格实验
 
@@ -566,7 +637,7 @@ instrumented 观察和前后各 5 个原有输入检查，共 42 次 dispatch �
 
 GPU 阶段使用现有 local broker 的短生命周期 lease；CPU oracle 在取得 lease 前准备。
 该锁是同用户合作式互斥，不排除系统或其他应用 GPU 活动。正式 launcher 的所有原生
-构建/检查阶段仍需完成统一 lease 边界接线，不能把探针的显式包装视为生产路径已修复。
+当时构建/检查阶段尚未接入统一 lease 边界；后继 #348/#352 的实现与资格范围见上，不用后来的实现改写这些探针。
 
 本次首先产生 Evaluation Finding **F-2026-10-06-002**。根因未证实，不把一次测量失败
 改写成 Compiler 缺口。受限 FP32 starter 基础已有设备证据；可比较的优化闭环仍缺

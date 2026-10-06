@@ -365,7 +365,7 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             raise ValueError(
                 "the local_broker allocation requires the local job kind the target's "
                 "execution platform declares")
-        if route == "triton":
+        if route in {"triton", "metal"}:
             # Task-owned CPU inputs/oracles precede the broker's device phase.
             command = module_command(python, "open_cake_ir.tasks.evaluate", "--local-kind", local_kind)
         else:

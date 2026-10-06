@@ -253,8 +253,10 @@ class MetalEvaluationContracts(unittest.TestCase):
         inputs = {'primary': {'inputs': {'x': [1.0, 2.0]}, 'expected': {'out': [1.0, 2.0]}}}
         plan = [{'index': 0, 'role': 'candidate', 'phase': 'preflight', 'input_case_id': 'primary', 'timed': False,
                  'profile': False, 'dispatches': 1}]
-        def process(command, **kwargs):
-            request = json.loads(Path(command[1]).read_text()); directory = Path(request['output_directory'])
+        def process(executable, request_path, **kwargs):
+            command = [str(executable), str(request_path)]
+            kwargs['allocation_output'].write_text(json.dumps({'job_id': JOB, 'admitted': True}))
+            request = json.loads(request_path.read_text()); directory = Path(request['output_directory'])
             (directory / 'x.bin').write_bytes(struct.pack('<2f', 1.0, 2.0))
             (directory / 'out.bin').write_bytes(struct.pack('<2f', 1.0, 2.0))
             row = {'index': 0, 'role': 'candidate', 'phase': 'preflight', 'input_case_id': 'primary',
@@ -266,7 +268,7 @@ class MetalEvaluationContracts(unittest.TestCase):
                 'snapshot_persistence': {'condition': 'owned_snapshots_written_at_cohort_end',
                     'pending_payload_limit_bytes': 64 * 1024 * 1024, 'peak_pending_payload_bytes': 0, 'failed_writes': []}}
             return CompletedProcess(command, 0, canonical(report), b'')
-        with patch.object(metal_runtime.subprocess, 'run', side_effect=process):
+        with patch.object(metal_runtime, 'run_metal_process', side_effect=process):
             result = metal_runtime.observe(workload=self.workload, candidates={'candidate': self.candidate},
                 manifests={'candidate': self.manifest}, input_cases=inputs, launch_plan=plan,
                 observer_executable=executable, expected_host=HOST, directory=self.root / 'observation')

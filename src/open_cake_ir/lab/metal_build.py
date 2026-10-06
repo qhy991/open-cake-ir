@@ -128,7 +128,7 @@ class MetalArchiveHost:
         directory.mkdir(parents=False, exist_ok=False)
         path = directory / "request.json"
         path.write_bytes(_json(request))
-        from .metal_device_process import run_metal_process
+        from open_cake_ir.evaluation.metal_device_process import run_metal_process
         try:
             completed = run_metal_process(self.executable, path, target=request['target'],
                                           timeout_seconds=self.timeout_seconds)
