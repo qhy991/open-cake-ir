@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-06",
+  "id": "F-2026-10-06-001",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Explicit width pass excludes already-lowerable streamed MMA output tiles",
+  "executor_revision": "external-bw1100-bench@77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "compiler_revision_id": "open-cake-ir@9187a3b0fc3c06b48b7699800455a480e9b068dd",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-compiler-night-vision-attn-width-20261005-r1",
+    "locators": [
+      "campaign/generated/l2-018-pv-w4-t4096b64/rewrite.json",
+      "campaign/generated/l2-018-pv-t4096b64/schedule.json",
+      "campaign/generated/l2-018-pv-w1-t4096b64/receipt.json",
+      "campaign/instruction-exploration/FINDINGS.md",
+      "campaign/post-confirmation/correctness.json"
+    ]
+  },
+  "observation": "The retained eligible PV Schedule has one fixed d-axis loop with load, MMA, BF16 rounding and output store. The explicit width API refuses loop_domain while manual execution-group edits lower and pass the original Task gate. This is pass applicability, not a missing IR operation, ISA defect or proof that width1 is universally faster.",
+  "proposed_change": "Admit existing ordinary streamed output stores and FP32-to-FP16/BF16 casts only when every narrow-result consumer is a store in that same fixed MMA loop. Keep state, explicit storage/synchronization/residency, dynamic stops, multiple loops and warp specialization outside. Reuse the backend owner of affine store coverage and all initial/final assessments.",
+  "implemented_in": "70399675ec4e00ba0dbc199b94279a1bb96db64f",
+  "verified_by": {
+    "cpu": "At70399675: full2804 contracts pass,26 skip,9890 subtests; core Corpus181 and97 source snapshots pass. At714ac901:11 focused tests and17 subtests include BF16/FP16 rounding, direct FP32 store, tails, preserved AST/ABI and independent refusal ownership. Independent read-only review approved714ac901.",
+    "device_components": "/data3/testuser01/experiments/bw1100-compiler-streamed-width-qualification-20261006/bench/campaign/results/component.json at DCU overlayc968e07a: four exact finite-input distributions, runtime lengths0/1/17/31/32/49/63/64, d72 tail and invalid-output sentinels pass after device release.",
+    "source_replay": "Same qualification root campaign/results/api-replay.json:32 selected artifacts replay,16 streamed PV rewrites give the same complete source as the retained width choices. No automatic parameter choice or speed gain is inferred.",
+    "scope": "Component and software qualification only at this curation point; full original Task replay is separately running under the unchanged baseline and benchmark gate."
+  },
+  "promotion_disposition": "Propose the bounded Compiler API capability after review/CI. Retain full-task and performance evidence in the external qualification root; no new instruction, universal width preference, fresh-agent benefit or default math change is claimed."
+}
