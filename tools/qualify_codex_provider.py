@@ -22,14 +22,13 @@ from open_cake_ir.lab.author_home import (
     ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, provision_codex_home, provision_user_home,
 )
 from open_cake_ir.lab.native_skills import NativeSkillPackage
-from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1
+from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1, expected_codex_disabled_features
 from open_cake_ir.lab.bindings import external_file
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
     PYTHON_CANDIDATE_BUNDLE_V1,
-    expected_codex_disabled_features,
     resolve_codex_code_mode_host,
     CodexInvocationBuilder,
     CodexProviderAdapter,
