@@ -776,6 +776,13 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.
         with self.assertRaises(FileExistsError): launch_task._new_workspace(self.workspace)
 
+    def test_metal_cli_default_freezes_mean30_policy(self):
+        self._wiring(preflight_only=True)
+        document = json.loads((self.workspace/'run.json').read_text())
+        assay = paired_protocol(document['evaluation_protocol'])
+        self.assertEqual((assay.statistic, assay.samples_per_cohort, len(assay.pair_order)), ('mean',15,2))
+        self.assertIsNone(assay.maximum_relative_iqr)
+
     def test_launcher_freezes_the_exact_task_incumbent_as_the_next_baseline(self):
         self._wiring(incumbent="present")
         selection = json.loads((self.workspace / "baseline-selection.json").read_text())
