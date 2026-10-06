@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .provider_documents import (CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
-                                 PYTHON_CANDIDATE_BUNDLE_V1, CODEX_DISABLED_FEATURES)
+                                 PYTHON_CANDIDATE_BUNDLE_V1, expected_codex_disabled_features)
 from .author_home import CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1
 from ._documents import _canonical_json_bytes
 from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema, response_model_aliases
@@ -98,7 +98,8 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
     defaults = provider.get("event_contract") == "tool_rich_candidate_v1"
     expected_event = "tool_rich_candidate_v1" if defaults else "closed_file_change_v1"
     if (provider.get("service_tier") != "default" or provider.get("sandbox") != "workspace-write"
-            or provider.get("disabled_features") != ([] if defaults else list(CODEX_DISABLED_FEATURES))
+            or provider.get("disabled_features") != list(expected_codex_disabled_features(
+                expected_event, provider.get('author_home_policy')))
             or provider.get("event_contract", "closed_file_change_v1") != expected_event
             or (not defaults and provider.get("web_search") != "disabled")):
         raise ValueError("Study Contract provider configuration differs")
