@@ -128,7 +128,14 @@ class MetalArchiveHost:
         directory.mkdir(parents=False, exist_ok=False)
         path = directory / "request.json"
         path.write_bytes(_json(request))
-        completed = subprocess.run([str(self.executable), str(path)], capture_output=True, timeout=self.timeout_seconds)
+        from .metal_device_process import run_metal_process
+        try:
+            completed = run_metal_process(self.executable, path, target=request['target'],
+                                          timeout_seconds=self.timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            (directory / "stdout.json").write_bytes(error.stdout or b"")
+            (directory / "stderr.log").write_bytes(error.stderr or b"")
+            raise RunProtocolFault("harness_fault", f"Metal archive helper did not finish; see {directory}") from error
         (directory / "stdout.json").write_bytes(completed.stdout)
         (directory / "stderr.log").write_bytes(completed.stderr)
         if completed.returncode:
