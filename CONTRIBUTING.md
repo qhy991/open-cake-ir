@@ -48,6 +48,15 @@ The selected validator is bound when a work root is created and cannot be replac
 when continuing it. Contract tests use an explicit protocol fixture; passing them
 does not qualify a real parent kernel or establish custody.
 
+## Compiler development and Bench results
+
+Use [the independent Bench protocol](docs/BENCHMARK_PROTOCOL.md): repository tasks
+develop capabilities; fixed hardware Bench contracts evaluate a frozen Compiler.
+Preserve minimal reproductions and diagnosis ownership, then publish version-bound
+performance/coverage records through the platform branch and main. CPU or source
+checks do not establish hardware results. New engineering Runs record tokens without
+using a token budget.
+
 ## Propose a change
 
 Read [AGENTS.md](AGENTS.md) and the nearest applicable design decision before editing.

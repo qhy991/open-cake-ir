@@ -23,6 +23,18 @@ parallel execution owner is introduced. Platform bring-up, local optimization, s
 experience effects and system-successor effects remain distinct. Preserve frozen Runs,
 reference access, historical results and each target's own qualification boundaries.
 
+## Compiler development and independent Bench evaluation
+
+Follow [Benchmark protocol](docs/BENCHMARK_PROTOCOL.md). Develop Cake capabilities with
+repository tasks and Findings, then evaluate a frozen Compiler using each hardware's
+independent Bench. Do not mutate Compiler, oracle or measurement during a frozen search.
+Each task retains minimal reproducers, own emitted-source evidence, negative results and
+diagnosis ownership; a Compiler defect is not a mandatory finding. Version progress and
+Cake-versus-native authoring are different comparisons. Platform README progress links
+retain Bench/Compiler commits, coverage, matching references and measurement scope.
+For new engineering Runs token use is accounting only, with no total/per-turn token
+cap or token-based acceptance; preserve time/tool/device bounds and historical policies.
+
 ## GPU resource discipline
 
 Before preparing, launching or releasing GPU Evaluation work, read and apply the

@@ -27,6 +27,23 @@ Schedule / Program 编写执行计划；独立原生探索也可提供发现，�
 
 [中文阅读入口](docs/zh-CN/README.md) · [Wiki 阅读索引](docs/wiki/README.md) · [项目当前状态](reports/current/STATUS.md)
 
+## 独立 Bench 与 Compiler 演进
+
+Cake 的开发任务用于发现并修复 IR、Verifier、改写和 lowering 的不足；发布后的固定
+Compiler 由各硬件的独立 Bench 检验。共同流程见[开发与评测标准](docs/BENCHMARK_PROTOCOL.md)。
+
+| 分支 / 硬件 | 独立 Bench | 当前进步记录 |
+|---|---|---|
+| metax / C550 | [c550-bench](https://github.com/qhy991/c550-bench) | [单题正确性已有证据；Bench 性能尚未测](docs/results/metax/BENCHMARK_PROGRESS.md) |
+| metal / Apple M4 | [metal-bench](https://github.com/qhy991/metal-bench) | [软件验证通过；GPU 资格与性能待测](docs/results/metal/BENCHMARK_PROGRESS.md) |
+| dcu / gfx938 | [bw1100-bench](https://github.com/qhy991/bw1100-bench) | [正确性入口与开发 replay 已有证据；版本进步对照待测](docs/results/dcu/BENCHMARK_PROGRESS.md) |
+
+每轮进步绑定 Compiler 与 Bench 两个版本，在同任务、参考和测量口径下展示前后时间、
+正确性覆盖和失败。token 只记账。历史开发结果按原始协议保留，新的 Bench 成绩另行追加。
+
+<details>
+<summary>MetaX 历史开发实验与工程搜索（独立 Bench 成绩另见上表）</summary>
+
 ## MetaX C550：关键实验与当前结论
 
 本分支维护 C550 的执行与验证。下面是**精选证据导览**，不合并不同基线、形状或计时协议的分数。
@@ -97,6 +114,8 @@ E 是额外机制材料，P 是变换调用权。每组 20 Run；固定 K64 基�
 近期工程 Run：`c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/`。
 新实验沿用[共同研究主题](docs/RESEARCH_AGENDA.md)与[数据采集／处理协议](docs/OPTIMIZATION_TRANSFER_ABLATION.md)。
 每项默认 3 小时，包含最终确认；工程重复不回填为 H1/H2 科学对照。
+
+</details>
 
 ## 快速导航
 
