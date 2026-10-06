@@ -6,6 +6,8 @@ Freeze the problem and judging rules first, let AI revise candidates, then retai
 
 [Guide index](README.md) · [Results](results.md)
 
+Plan new experiments against the [shared research agenda](../RESEARCH_AGENDA.md), including the question, comparison and declared budget. This page describes the execution workflow.
+
 ## Choose an entry by purpose
 
 Workload owns mathematics and the oracle; Compiler owns complete Programs, leaf Schedules
