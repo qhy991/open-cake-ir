@@ -24,12 +24,23 @@ prepare、provider 构造、Run/Campaign、factory 与回放按真实环境类�
 成功两轮 CPU 夹具经过真实 invocation builder、子进程 adapter、输入采集、反馈和
 完整回放，验证历史进入第二轮请求；它不是实际模型的学习证据。
 共享 CLI 后继 [PR #347](https://github.com/qhy991/open-cake-ir/pull/347)
-在固定提交 `f8621d06` 允许显式选择技能包的请求进入既有资格路径；材料、配置、归档、
-custody 和真实两轮输入检查仍保留。专项验收 **58 项、95 个子测试通过**，全量 CI 待完成。
-用户已明确授权该限定变更，以及软件检查通过后一次无 GPU 的真实
-Codex `gpt-6.1-sol / xhigh` initial/resume 资格；当前 Metal 分支尚未吸收该 PR。
-该资格只验证作者接入与技能输入，不证明 kernel 优化或经验迁移；性能 Run 仍必须通过
-测量与设备 phase 门。
+已合入 `main@89b6603a`。固定提交 `f8621d06` 的专项验收为 **58 项、95 个子测试通过**；
+CI `37396396477` 在 Python 3.10/3.11/3.12 各 **2824 passed、35 skipped**，Corpus 与
+其余软件门均通过。限定入口变更保留材料、配置、归档、custody 和真实两轮输入检查。
+
+随后执行一次用户授权的真实 Codex `gpt-6.1-sol / xhigh` 无 GPU 资格，记录在
+`native-skill-cli-f8621d06/`。第一轮完成规定的候选写入，保留的 native input catalog
+包含四个 CLI system skills 与 `cake-metal-optimization`，本轮加载正文为指定 Metal 技能。
+这是原生输入记录，不是 wire capture 或模型实际使用证明。CLI 运行后，隔离 author home
+出现 Pages、Sites、Work Pets 等完整远程插件包；既有 `verify_codex_home` 在 resume 前
+拒绝，失败终态与 anchor 已保留，**没有资格 receipt，未执行第二轮**。
+没有删除插件、放宽检查或重跑旧资格。此现象不能归因于 KerSor，也不证明首轮加载了这些
+插件技能；首轮观测 catalog 未包含它们。后继要在新作者环境中显式控制自动插件来源，
+保持文件检查及材料准入，再验证真实 initial/resume。CLI 0.159.2 的只读 feature list
+显示 `plugins`、`remote_plugin`、`apps` 启用；[官方配置说明](https://learn.chatgpt.com/docs/config-file/config-reference)
+确认远程插件目录默认启用，但关闭开关是否足以维持本实验的材料边界尚待后继验证。
+当前 Metal 分支尚未吸收共享 CLI PR；其自身主机与真实结果 PR #344 已合入 `metal@7dac842e`。
+作者资格不证明 kernel 优化或经验迁移；性能 Run 仍必须通过测量与设备 phase 门。
 
 已准备完整技能材料 `author-material-3d430a13/author-skills.tar`，包含主技能与 AIR
 参考，现有 NativeSkillPackage reader 通过。独立 quick validator 因缺 PyYAML 未运行，
@@ -152,8 +163,12 @@ oracle/input；若调整这个边界，须在 Executor/source 后继中实现并
 五项真实 CPU 子进程测试覆盖正常退出、争用、继承、超时/失败和非法身份，均通过。
 整批结果为 29 passed、46 subtests passed、1 failed；误包含的 Darwin 原生 archive 测试
 使用默认 CLT/SDK 27，编译失败。该次验收停止，未修环境重跑；不能作为后继设备资格。
-完整 CI 与固定 Xcode 的原生资格仍待完成。该修复还未改变正式 Evaluation 的 oracle
-准备及后处理阶段，不能据此宣布整个 phase 门已通过。
+随后 `cf481581` 修正内层新建进程组导致外层取消遗漏 helper 的问题：子进程保留外层
+监督组，并 exec 原生 helper；CPU 超时会终止并回收同一设备进程。新增外层取消回归后，
+独立固定源码的 CPU 验收 **24 项、26 个子测试通过**。原生编译失败未重跑。
+[PR #348](https://github.com/qhy991/open-cake-ir/pull/348) 的完整 CI 与固定 Xcode 的原生资格
+仍待完成。该修复还未改变正式 Evaluation 的 oracle 准备及后处理阶段，不能据此宣布整个
+phase 门已通过。
 
 本次同步的 `LOCAL_DEVICE_LEASES.md` 所述按设备编号并行和分配前 CPU 准备不适用于当前
 Metal 路径；Metal 不支持 `--local-lock-scope device`。其中编译不占用 lease 的说明也
