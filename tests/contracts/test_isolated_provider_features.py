@@ -108,7 +108,7 @@ class IsolatedProviderFeatures(unittest.TestCase):
             store = EvidenceStore.open(evidence_root)
             self.assertEqual(store.replay_authority('qualified-fixture')['disabled_features'], list(RESTRICTIONS))
             turns = verify_qualification_evidence(qualification=receipt, anchor=json.loads(anchor_path.read_bytes()),
-                                                 requested_names=('cake',))
+                                                 requested_names=['cake'])
             self.assertEqual(len(turns['open_cake']), 2)
             event = next(event for event in store.replay_events('qualified-fixture')
                          if event['kind'] == 'provider_qualification_observed')
