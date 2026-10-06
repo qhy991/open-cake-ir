@@ -22,6 +22,25 @@ GLM 使用 Claude Code v4 的工程单臂路径、high effort，完整 Cake/AIR 
 的 Cake 假设、读取自己的 MSL/AIR、依据反馈修正候选并记录 Compiler 建议。随后以
 新模型/新计时作为统一基线再研究演进；它们与旧 Codex/中位数结果不能归因比较。
 
+最新验收：通用均值支持 #361 与 Claude v4 UI 前导修复 #362 的 Python
+3.10/3.11/3.12 全量 CI 均通过，已合入 `main@0061770e`。后继启动器
+`claude-glm53-external-home` 的真实 initial/resume 资格通过，receipt 为
+`qualified=true / live_two_turn_tool_rich_provider`，文件生命周期及 usage 检查通过，
+stderr 为空；记录在外部目录 `glm-mean30-20261006/qualification-external-home/`。
+此前一次 UI 前导拒绝和一次启动器 HOME 位于资格容器内的 authority 拒绝均保留。
+HOME 后继位于 `provider-homes/<task workspace relative path>`，不进入作者容器，
+不修改宿主 HOME、全局 Claude 配置或历史环境。
+
+既有 G1 RMSNorm（R128/C1024）和 GEMM+SiLU（R128/N32/K256）已作为固定二进制基线
+发布到新的 `glm-mean30-20261006/baselines/`，由既有 bundle loader 验证新交接。
+两轮 pilot 的上限为每轮 3 候选、6 次编译、6 次 search/attribution、400k provider
+tokens、10800 秒总 wall（包含最终确认）；这些是上限，不是耗尽目标。
+当前仍待本平台整合 CI，尚无 GLM GPU 优化结果。
+
+本地一次整合测试在索引冲突尚未提交时被误启动，报告 69 passed 与一个 clean-commit
+前置条件失败；该次不计入验收，不在修复现场后重跑。最终平台提交由独立 CI checkout
+验收。新协议不恢复原 IQR 门或交错 observer 替换要求。
+
 ## 此前研究定位与执行记录（保留原时点）
 
 以下状态记录描述各自时点；涉及旧模型、原 IQR 门、交错观察器审批的“下一步”已被
