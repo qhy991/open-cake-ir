@@ -51,6 +51,9 @@ class TimingStatisticTest(unittest.TestCase):
             pair_order=[list(p) for p in self.protocol.pair_order])
         admitted = paired_protocol(policy)
         summary = paired_summary({'evaluation_protocol':policy, 'measurements':measurements(admitted)})
+        from open_cake_ir.evaluation.core import EvaluationReceipt
+        self.assertEqual(summary['dispersion_gate'], 'diagnostic_only')
+        self.assertEqual(EvaluationReceipt.measurement_quality.fget(SimpleNamespace(timing=summary)), 'valid_samples')
         self.assertEqual(summary['pooled_mean_ms'], 3.)
         self.assertEqual(summary['pooled_median_ms'], 1.)
         self.assertEqual(timing_latency_ms(summary), 3.)

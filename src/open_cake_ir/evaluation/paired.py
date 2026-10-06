@@ -221,7 +221,10 @@ def paired_summary(raw):
                                          dispatches_per_sample=protocol.dispatches_per_sample)
     observation = derive_paired_timing(measurements, protocol)
     return {'kind': kind,
-        **({'statistic': 'mean', 'pooled_mean_ms': observation.pooled_means_ms['candidate'],
+        **({'statistic': 'mean',
+            'dispersion_gate': ('relative_iqr' if protocol.maximum_relative_iqr is not None
+                                else 'cv' if protocol.maximum_cv is not None else 'diagnostic_only'),
+            'pooled_mean_ms': observation.pooled_means_ms['candidate'],
             'pooled_means_ms': dict(observation.pooled_means_ms)} if protocol.statistic == 'mean' else {}),
         'measurement_quality_passed': observation.measurement_quality_passed,
         'pooled_median_ms': observation.pooled_medians_ms['candidate'],
