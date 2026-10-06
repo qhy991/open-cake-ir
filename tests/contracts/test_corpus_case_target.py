@@ -93,7 +93,7 @@ class CorpusCaseTarget(unittest.TestCase):
         # The C550 indexed-gather successor adds one exact ABI-bound positive case.
         # The fixed compensated FP8 SIMT route adds one independently device-checked case.
         # Seven retained DCU admissions/refusals and one output-prefix GEMM extend the180-case shared corpus.
-        self.assertEqual(report.case_count, 193)
+        self.assertEqual(report.case_count, 196)
 
 
 if __name__ == "__main__":

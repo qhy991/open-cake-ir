@@ -587,7 +587,7 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         # oracle at 64x64x64, the tanh across its saturating tails.
         self.assertEqual(
             sorted(target.instruction_contracts),
-            ["ocml.tanh.f32", "triton.atomic_add.i32.relaxed.gpu", "triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
+            ["ocml.cos.f32", "ocml.sin.f32", "ocml.tanh.f32", "triton.atomic_add.i32.relaxed.gpu", "triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
              "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"])
 
     def test_gfx938_admits_no_other_vendors_spelling_of_the_same_function(self) -> None:

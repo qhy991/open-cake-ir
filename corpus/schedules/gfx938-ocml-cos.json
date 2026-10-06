@@ -1,0 +1,161 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "x",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "values"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "y",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "store_y"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "fp32",
+      "mode": "input",
+      "name": "x",
+      "shape": [
+        2,
+        8
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "output",
+      "name": "y",
+      "shape": [
+        2,
+        8
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "values",
+      "shape": [
+        8
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "result",
+      "shape": [
+        8
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "gfx938_ocml_cos"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "values",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "x"
+      ],
+      "role": "compute",
+      "writes": [
+        "values"
+      ]
+    },
+    {
+      "depends_on": [
+        "values"
+      ],
+      "id": "result",
+      "kind": "elementwise",
+      "parameters": {
+        "instruction": {
+          "contract": "ocml.cos.f32"
+        },
+        "op": "cos"
+      },
+      "reads": [
+        "values"
+      ],
+      "role": "compute",
+      "writes": [
+        "result"
+      ]
+    },
+    {
+      "depends_on": [
+        "result"
+      ],
+      "id": "store_y",
+      "kind": "store",
+      "parameters": {
+        "coalesced": false
+      },
+      "reads": [
+        "result"
+      ],
+      "role": "compute",
+      "writes": [
+        "y"
+      ]
+    }
+  ],
+  "outputs": [
+    "y"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 0,
+        "name": "row",
+        "tile": 1
+      }
+    ]
+  },
+  "roles": [
+    {
+      "execution_groups": [
+        0
+      ],
+      "name": "compute"
+    }
+  ],
+  "schedule_id": "gfx938-ocml-cos",
+  "schema_version": 2,
+  "target": "gfx938",
+  "tile_loops": []
+}
