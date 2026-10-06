@@ -119,7 +119,7 @@ layout algebra 的原则。Schedule 记录具体数据访问、线程分工、�
 ## 2. 第一组任务：六个发现任务，另留迁移与边界检查
 
 先使用现有 Workload factory、oracle 和五类输入，不复制语义，也不按搜索结果放宽容差。
-下面是**已通过离线构造、assess 和 MSL 生成的形状草案**，不是已原生编译或 GPU 验证的清单。
+下面十二项均已通过离线构造、assess 和 MSL 生成；其中六个发现任务的 starter 已通过原生数值资格，详见本页真实 M4 记录。其余形状与留出项不据此获得设备资格。
 六个发现项、三个形状验证项和三个留出项合计十二项通过；未使用留出项做优化。冻结前任一形状不可用，就公开
 记录原因并修改草案；冻结后失败保留在预分配中，不删除难题来提高成功率。
 
@@ -573,7 +573,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 
 | 项目 | 已观察 | 剩余条件 | 原始记录 |
 | --- | --- | --- | --- |
-| G0 环境 | Xcode16/SDK15 后继 CPU 54/1、M4 host capture、六 starter archive/reload 已通过；host 已随 #344 合入 metal | #352 合入与平台同步；archive 构建全路径、G3 与最终 author 配置各自准入 | `metal-xcode16-20261006/`；旧环境失败保留 |
+| G0 环境 | Xcode16/SDK15 后继 CPU 54/1、M4 host capture、六 starter archive/reload 已通过；host 已随 #344 合入 metal | main 到 metal 的平台同步；archive 构建全路径、G3 与最终 author 配置各自准入 | `metal-xcode16-20261006/`；旧环境失败保留 |
 | G1 静态 | 旧基点 Corpus 178/178；当前 d3967a0d Corpus 181/181、任务 12/12；旧 M4 2 正例/10 拒绝保留原作用域 | 六 starter 原生/oracle 通过见下；M4 Corpus 的独立审查采纳；旧反例不自动视为新资格 | `task-admission.json`、`m4-boundaries-and-source-notes.json`、`metal-main-sync.json` |
 | G2 表达 | 六任务均有结构替代；六 starter 与 D2/D6 两结构替代数值通过 | 其余替代策略的设备验证；尚不证明有用搜索空间或加速 | `search-space-and-corpus.json`、`remaining-search-space.json`、`metal-xcode16-20261006/` |
 | G3 测量 | RMSNorm 同产物 A/A 数值正确但 20/20 cohort 的 relative IQR 超过 0.05；独立工作量与 timestamp 控制通过 | 测量稳定性未获资格；不启动性能搜索或声称收益 | `metal-xcode16-20261006/g3-rmsnorm-*`；F-2026-10-06-002 |
@@ -581,7 +581,7 @@ Evaluation，提前计入独立预算；若仅把两个对 Bref 的比值相除�
 | G4 作者资格 | #350 已合 main；固定 68544621 的真实 initial/resume 已获收据，两轮保留指定技能正文；限每轮 1 候选 | 平台同步与最终搜索配置的匹配资格；真实 Ralph 中的 Cake/低层分析和经验复用 | `native-skill-cli-isolated-68544621/qualification-summary.json`；前继插件失败保留 |
 | G4 原生技能观察 | 完整 tar 到私有 HOME、原生两轮及新采集器路径共 4 次调用通过；另 8 次旧请求比对；system 已安装 5 项、实际目录 4 项 | 此行是早期 collector 范围；后继正式单候选资格见上一行；真实技能运用仍待 Ralph 观察 | `native-skill-collector-2d3a86b0/report.json`；前继失败保留 |
 | G5 冻结与发现批次 | 未启动；管理预算投影已通过软件检查 | 前置门通过、正式 Run 预算与权限冻结 | `experiment-budget-7a74fa2c/report.json`；无 Run / Study |
-| 平台软件集成 | #344/#348 已合 metal@10d9e437；#348 三版本 CPU CI 各 2827/35；#350 已合 main@2958e0c1 | #352 评测阶段修复和 main 到 metal 同步；软件通过不授予设备资格 | 各 PR 的完整 CI 与上述固定提交；原生结果另列 |
+| 平台软件集成 | #344/#348 已合 metal@10d9e437；#348 三版本 CPU CI 各 2827/35；#350 已合 main@2958e0c1 | #352 已合 metal@dab69646；main 到 metal 整合 CI 待完成；软件通过不授予设备资格 | 各 PR 的完整 CI 与上述固定提交；原生结果另列 |
 
 ### 2026-10-06：真实 M4 资格实验
 
@@ -636,13 +636,64 @@ instrumented 观察和前后各 5 个原有输入检查，共 42 次 dispatch �
 单次 instrumented dispatch 与原 64-dispatch A/A 不同，原失败判定保持不变。
 
 GPU 阶段使用现有 local broker 的短生命周期 lease；CPU oracle 在取得 lease 前准备。
-该锁是同用户合作式互斥，不排除系统或其他应用 GPU 活动。正式 launcher 的所有原生
-当时构建/检查阶段尚未接入统一 lease 边界；后继 #348/#352 的实现与资格范围见上，不用后来的实现改写这些探针。
+该锁是同用户合作式互斥，不排除系统或其他应用 GPU 活动。当时正式 launcher 的构建/检查
+阶段尚未接入统一 lease 边界；后继 #348/#352 的实现与资格范围见上，不用后来的实现改写这些探针。
 
 本次首先产生 Evaluation Finding **F-2026-10-06-002**。根因未证实，不把一次测量失败
 改写成 Compiler 缺口。受限 FP32 starter 基础已有设备证据；可比较的优化闭环仍缺
-G3 稳定计时、原生技能真实两轮作者资格，以及正式运行的 phase-boundary 验收。
+G3 稳定计时、平台整合后最终三候选作者配置，以及真实 Ralph 的低层诊断与经验复用行为。
+单候选原生技能两轮资格和正式 attribution 阶段交接已有后继通过记录，其有限范围见前文。
 Codex `gpt-6.1-sol / xhigh` 的 Ralph 搜索尚未启动，不能从这些探针推断 agent 学习效果。
+
+### 测量诊断后继：先区分原因，再改变 assay
+
+`temporal-dispersion-review.json` 是对已有样本的只读事后分析，没有删样本或改判定。
+A/A 的 500 个 timed command interval 的 min/median/max 为 0.26946/3.56765/8.33138 ms；
+前置 GPU-end → GPU-start 间隔的中位数为 0.84317 ms，与随后 interval 的 Pearson 相关
+约 0.17734。20 个 cohort 的耗时—序号相关有 11 正、9 负，范围 -0.51992 到 0.54395，
+不支持“仅开头未预热”的单一解释。工作量控制的 256-dispatch cohort median 曾依次处在
+约 14.84/11.60 ms、1.07 ms、2.08 ms 的区段；这些是时间结构描述，不能据此归因于频率或调度。
+
+当前区分三种假设：提交间隔影响设备状态；系统/其他进程的 GPU 干扰；计时观测本身异常。
+先前 compute-stage 与 command interval 同变，已经不支持“仅整体 command 窗口不稳”的说法。
+下一步先增加与原 A/A 同步的 GPU 状态观测，不直接增大预热、扫 batch 或放宽 IQR 门。
+
+现有 Xcode 的 `xctrace list templates` 返回 137 且无输出；独立签名检查报告
+`CSSMERR_TP_NOT_TRUSTED`，这两项观测未证实因果关系。该路径停止，没有重新签名、
+变更系统信任或修好环境重跑。`sudo -n powermetrics` 因需要密码拒绝后，用户在终端
+执行了一次明确授权的 1 秒只读采样，文件为 `/private/tmp/metal-gpu-telemetry-access-20261006.plist`。
+GPU 状态与 `thermal_pressure` 字段可读，该秒为 Nominal；它没有覆盖旧实验，不解释旧波动。
+
+`/private/tmp/run-metal-aa-telemetry-20261006.command` 的 CPU 准备检查通过后，用户已在
+本机终端执行一次。入口只让 powermetrics 请求管理员认证；收到两份有效样本后，以普通用户
+从已通过完整 CI 的 `de8087cf` 运行正式 submitter。保留原封存 RMSNorm、五种输入、10 对
+AB/BA、每 cohort 3+25 次、每 sample 64 dispatch 和原质量门；共 580 个 command buffer、
+35,860 dispatch。30 个 1 秒遥测样本与所有返回原始结果写入新的
+`g3-aa-telemetry-de8087cf/`，一次执行，无自动重试。
+
+实际全部 **580 个 command buffer、35,860 dispatch 正确**，500 个 timed sample 完整保留；
+13/20 cohort 满足原 relative IQR，**7/20 仍失败**，公共收据仍为 `measurement_quality_failed`。
+command interval 的 min/median/max 为 0.26925/0.52408/2.60275 ms；这与旧批次不同，
+但时间、外部 GPU 状态及 Executor 阶段边界未构成单变量对照，不归因于本次修复或遥测。
+
+worker 总时长约 42.94 秒，580 个 GPU command 的首尾跨度仅 1.207 秒；返回后未观察到
+该 observer 或 broker 锁持有人。30 份原始 plist 全部存在且热压力均为 Nominal。
+采集器仅给 NUL 终止的前 29 份记录了到达时间，最后 EOF 终止的一份虽已保存但无到达时间；
+派生分析读取全部 30 份，未补造缺失时戳。粗略到达窗口仅有两份与 GPU 命令区间相交，
+这种对齐假设时钟原点相符且包含未知传送延迟，不能给每个 cohort 分配确定的 GPU 频率。
+可读分析为该目录 `analysis.json`。Nominal 也不排除动态频率或其他 GPU 工作。
+
+该诊断即使通过原 IQR 门，也不能代替无遥测的 G3 确认。1 秒 GPU 状态不能逐条归因于
+command interval，未采集逐进程 GPU 占用；保留时钟对齐和遥测扰动限制。诊断若支持一个
+机制，再准备单变量的 Executor/测量后继及原 A/A 确认；若不支持，就保留未知，不制造 Compiler 缺口。
+
+#352 最终文档后继的完整 CI `37402401334`（实际 checkout `2aee943a`）在三版本各
+2834 passed、35 skipped，其余门通过；已合入 `metal@dab69646`。原生验收仍引用实际
+执行的 `de8087cf`，不将后来的提交标签回填为旧实验源码。
+
+共享整合任务 `task/metal-sync-main-20261006@086031b1` 已将 `main@2958e0c1` 合入
+#352 的后继任务，暂无冲突。它同时包含 #347/#350 的技能入口与隔离策略，以及 main 已有
+#349 的 trig/max-scan 更新；需要整合后的完整 CI，不能把前两者的旧收据扩展到新源码。
 
 ## 8. 走向更完整的 Metal 工具
 
