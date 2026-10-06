@@ -10,6 +10,8 @@ See the [B300 guide](B300.md) for the three Python operator starting points.
 
 A Workload defines the problem, a Schedule describes workers and data, the Compiler checks and translates it, Evaluation checks outputs and measurements, and Evidence preserves observations. A Study fixes a research question and fair comparison before execution.
 
+Research focus: **conditional optimization mechanisms reused across hardware**, with target decisions reselected and measured. Read the [shared agenda](RESEARCH_AGENDA.md) for comparison axes and platform contributions. The Compiler remains the core; empirical transfer gains require controlled evidence.
+
 ## Quick lookup
 
 | Purpose | Direct links |
