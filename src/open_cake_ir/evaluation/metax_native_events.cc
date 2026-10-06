@@ -1,6 +1,7 @@
 // The captured MACA runtime owns each API address. No callbacks or profiler run here.
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <atomic>
 #include <chrono>
 #include <memory>
