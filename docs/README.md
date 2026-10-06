@@ -1,6 +1,6 @@
 # open-cake-ir 技术报告 / Technical Report
 
-**报告正文 / Report:** [阅读 PDF](open-cake-ir-technical-report.pdf) ·
+**报告正文 / Report:** [已导出 PDF（proposal 增补前）](open-cake-ir-technical-report.pdf) ·
 [TeX 源码 / TeX source](open-cake-ir-technical-report.tex)
 
 **推荐中文引文题名：open-cake-ir：跨硬件优化机制复用与编译器协同演进技术报告**
@@ -9,13 +9,18 @@
 
 作者 / Author：秦海岩（Haiyan Qin） · 2026
 
+当前 TeX 已纳入 2026-10-06 proposal 的四项假设、路线分配与成本核算。仓库 PDF 保留
+`2bc0be30` 时的导出版本，尚不包含这次增补；最新正文以 TeX 和编辑器预览为准。
+
 PDF 是由仓库中的 TeX 编译得到的技术报告，封面注明所读源码快照；引用具体实验仍需追溯
 该实验自己的执行版本和测量记录。本页连接报告正文、引用信息和持续维护的中英文专题文档。
 2026-09-28 增补的 [B300 MoE 案例](WEAVE_CASE_STUDY.md)单独说明实验源码、证据和未合入主线的边界。
 专题页面提供架构、接口、方法与最新结果的详细入口，不充当另一份报告正文；历史材料保留
 原日期与结论。
 
-The TeX-compiled PDF is the technical report and states its source snapshot on the cover.
+The current TeX includes the October 6 proposal refinements. The stored PDF is the export from
+`2bc0be30`, before those refinements; use the source/editor preview for the latest text.
+The TeX-compiled PDF states its source snapshot on the cover.
 This page links the report, citation guidance, and living Chinese and English companion docs.
 Those guides track implementation and evidence by topic; historical records retain their own
 source and measurement boundaries.
