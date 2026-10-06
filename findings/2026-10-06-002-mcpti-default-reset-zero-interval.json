@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-06",
+  "id": "F-2026-10-06-002",
+  "kind": "protocol",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@0c041d6dbecf7529384de9410a7c64d82c00a9d3",
+  "executor_revision": "xcore1002@0c041d6dbecf7529384de9410a7c64d82c00a9d3",
+  "title": "A completed-record MCPTI cohort retains a zero-width cache-reset interval under the SDK default clock",
+  "decision": "deferred",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/validated-distance-repeats-source-qualified/rep-1/",
+    "run_id": "c550-distance-r256-k1024-n64-20261006-r1",
+    "event_sequences": [
+      142,
+      143,
+      145
+    ],
+    "locator": "run-evidence/runs/c550-distance-r256-k1024-n64-20261006-r1/events/000000000142.json",
+    "artifact_role": "attempt_1_failure_paired_activity",
+    "job_id": "maca-ee5c8e883f9a",
+    "position": {
+      "pair_index": 8,
+      "arm": "baseline",
+      "position": 1
+    }
+  },
+  "observation": "The ninth search Turn stops with evaluator_failed and broker_fault before a final Evaluation receipt. The retained paired-activity artifact identifies baseline pair 8, position 1. Each arm retains 50 kernel records, including 25 target dispatches, with zero dropped records and zero pending buffers. Baseline kernel record 28 is the streamed FP32 fill used for L2 reset: start_ns equals end_ns, while completed_ns is later. Target-kernel identity and resources are consistent in the retained cohort. The strict positive-interval gate correctly rejects the entire cohort; this is a measurement-record limitation, not evidence of a numerically incorrect candidate or an IR expressibility gap. The original Run remains missing with no confirmation. This observation uses the completed-record flush policy and SDK default clock; it is distinct from the earlier custom-clock diagnostic.",
+  "proposed_change": "Preserve the strict interval and reset checks. Expose the affected operation and failed field in a reviewed successor diagnostic, and investigate default-clock mapping with bounded controls. A later positive A/A qualifies only its own scoped control, not the rejected cohort or global timer reliability. Do not discard the reset, accept a zero duration, replace the original Run or promote rejected timing.",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "No promotion. Raw failure custody is intact; original performance remains unavailable. Subsequent independent engineering work requires unchanged gates and separately retained controls."
+}
