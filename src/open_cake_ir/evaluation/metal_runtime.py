@@ -14,6 +14,7 @@ import subprocess
 
 from .core import compare_tile_outputs
 from .metal_manifest import MetalTensorLaunchManifest
+from .metal_device_process import read_metal_admission, run_metal_process
 from .metal_observations import command_buffer_ms, validate_host
 
 OBSERVER_SOURCE = Path(__file__).with_name("metal") / "observer.swift"
@@ -63,7 +64,8 @@ def _snapshot(directory, name, elements):
 
 
 def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, launch_plan: list,
-            observer_executable: Path, expected_host: dict, directory: Path, timeout_seconds: int = 300) -> dict:
+            observer_executable: Path, expected_host: dict, directory: Path, timeout_seconds: int = 300,
+            queue_seconds: float = 0) -> dict:
     """Observe fresh output buffers and independently check every returned launch.
 
     ``input_cases`` maps Workload case IDs to trusted ``inputs`` and ``expected``
@@ -138,46 +140,74 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
                "launches": launch_plan, "output_directory": str(directory)}
     request_path = directory / "request.json"
     request_path.write_text(json.dumps(request, sort_keys=True))
-    completed = subprocess.run([str(executable), str(request_path)], capture_output=True, timeout=timeout_seconds)
-    (directory / "observer.stdout.json").write_bytes(completed.stdout)
-    (directory / "observer.stderr.log").write_bytes(completed.stderr)
-    report = json.loads(completed.stdout)
-    if (completed.returncode or report.get("status") != "completed" or report.get("host") != expected_host
-            or report.get("source_library_rebuilt") is not False
-            or report.get("archive_miss_policy") != "failOnBinaryArchiveMiss"
-            or report.get("module_loads") != len(candidates) or not isinstance(report.get("launches"), list)):
-        raise ValueError(f"Metal observer failed or changed its admission: {report.get('error')}")
-    checked, preflight_passed = [], True
-    for record in report["launches"]:
-        index = record.get("index")
-        if type(index) is not int or not 0 <= index < len(launch_plan):
-            raise ValueError("Metal observed launch index differs")
-        planned = launch_plan[index]
-        if any(record.get(key) != planned[key] for key in ("role", "phase", "input_case_id")):
-            raise ValueError("Metal observed launch differs from the declared plan")
-        if ("profile" in record) is not planned["profile"]:
-            raise ValueError("Metal observer instrumentation differs from declared assay")
-        command_buffer_ms(record["command_buffer"])
-        if (record["command_buffer"]["launch_index"] != index
-                or record["command_buffer"]["timed"] is not planned["timed"]
-                or record["command_buffer"].get("dispatches") != planned["dispatches"]):
-            raise ValueError("Metal timestamp observation belongs to another launch")
-        case = input_cases[planned["input_case_id"]]
-        paths = record.get("buffer_paths")
-        if not isinstance(paths, dict) or set(paths) != {row[0] for row in primary.tensor_abi}:
-            raise ValueError("Metal raw buffer snapshot coverage differs")
-        observed, after = {}, {}
-        for name, shape, _, mode in primary.tensor_abi:
-            values = _snapshot(directory, paths[name], math.prod(shape))
-            (after if mode == "input" else observed)[name] = values
-        passed, metrics = compare_tile_outputs(workload, case["inputs"], case["expected"], observed, after)
-        if record.get("preflight_guard_passed") is not passed:
-            raise ValueError("Metal native preflight guard differs from the independent CPU oracle")
-        if planned["phase"] == "preflight":
-            preflight_passed &= passed
-        checked.append({**planned, "passed": passed, "metrics": metrics, "command_buffer": record["command_buffer"],
-                        **({"profile_raw": record["profile"]} if "profile" in record else {})})
-    expected_indices = [row["index"] for row in launch_plan if preflight_passed or row["phase"] == "preflight"]
-    if [row["index"] for row in checked] != expected_indices:
-        raise ValueError("Metal observed plan is missing, reordered or duplicated")
-    return {"host": expected_host, "module_loads": len(candidates), "launches": checked}
+    try:
+        try:
+            completed = run_metal_process(executable, request_path, target=expected_host['target'],
+                timeout_seconds=timeout_seconds, queue_seconds=queue_seconds,
+                allocation_output=directory / 'allocation.json', forward_admission=True)
+        except subprocess.TimeoutExpired as error:
+            (directory / 'observer.stdout.json').write_bytes(error.stdout or b'')
+            (directory / 'observer.stderr.log').write_bytes(error.stderr or b'')
+            raise
+        (directory / "observer.stdout.json").write_bytes(completed.stdout)
+        (directory / "observer.stderr.log").write_bytes(completed.stderr)
+        allocation = read_metal_admission(directory / 'allocation.json')
+        if not allocation['admitted']:
+            from .local_broker import LocalBrokerBusy
+            raise LocalBrokerBusy('metal', allocation['job_id'])
+        report = json.loads(completed.stdout)
+        if (completed.returncode or report.get("status") != "completed" or report.get("host") != expected_host
+                or report.get("source_library_rebuilt") is not False
+                or report.get("archive_miss_policy") != "failOnBinaryArchiveMiss"
+                or report.get("module_loads") != len(candidates) or not isinstance(report.get("launches"), list)):
+            raise ValueError(f"Metal observer failed or changed its admission: {report.get('error')}")
+        checked, preflight_passed = [], True
+        for record in report["launches"]:
+            index = record.get("index")
+            if type(index) is not int or not 0 <= index < len(launch_plan):
+                raise ValueError("Metal observed launch index differs")
+            planned = launch_plan[index]
+            if any(record.get(key) != planned[key] for key in ("role", "phase", "input_case_id")):
+                raise ValueError("Metal observed launch differs from the declared plan")
+            if ("profile" in record) is not planned["profile"]:
+                raise ValueError("Metal observer instrumentation differs from declared assay")
+            command_buffer_ms(record["command_buffer"])
+            if (record["command_buffer"]["launch_index"] != index
+                    or record["command_buffer"]["timed"] is not planned["timed"]
+                    or record["command_buffer"].get("dispatches") != planned["dispatches"]):
+                raise ValueError("Metal timestamp observation belongs to another launch")
+            case = input_cases[planned["input_case_id"]]
+            paths = record.get("buffer_paths")
+            if not isinstance(paths, dict) or set(paths) != {row[0] for row in primary.tensor_abi}:
+                raise ValueError("Metal raw buffer snapshot coverage differs")
+            observed, after = {}, {}
+            for name, shape, _, mode in primary.tensor_abi:
+                values = _snapshot(directory, paths[name], math.prod(shape))
+                (after if mode == "input" else observed)[name] = values
+            passed, metrics = compare_tile_outputs(workload, case["inputs"], case["expected"], observed, after)
+            if record.get("preflight_guard_passed") is not passed:
+                raise ValueError("Metal native preflight guard differs from the independent CPU oracle")
+            if planned["phase"] == "preflight":
+                preflight_passed &= passed
+            checked.append({**planned, "passed": passed, "metrics": metrics, "command_buffer": record["command_buffer"],
+                            **({"profile_raw": record["profile"]} if "profile" in record else {})})
+        expected_indices = [row["index"] for row in launch_plan if preflight_passed or row["phase"] == "preflight"]
+        if [row["index"] for row in checked] != expected_indices:
+            raise ValueError("Metal observed plan is missing, reordered or duplicated")
+        return {"host": expected_host, "module_loads": len(candidates), "launches": checked}
+    except Exception as error:
+        # The common submitter deletes its temporary workspace after handoff.
+        # Carry nonempty native diagnostics through the existing failed-worker
+        # artifact protocol before that boundary, never as an acceptance receipt.
+        payloads = {}
+        for role, filename in (('metal_observer_stdout', 'observer.stdout.json'),
+                               ('metal_observer_stderr', 'observer.stderr.log'),
+                               ('metal_allocation', 'allocation.json')):
+            path = directory / filename
+            if path.is_file() and not path.is_symlink():
+                payload = path.read_bytes()
+                if payload:
+                    payloads[role] = payload
+        if payloads:
+            error.artifact_payloads = payloads
+        raise

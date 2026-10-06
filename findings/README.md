@@ -43,6 +43,9 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+The Metal A/A record first published as F-2026-10-06-001 at 3d430a13 is assigned sequence002 here before integration. Main sequence001 belongs to the streamed-MMA applicability record at f0372ecd; original Metal evidence remains at its cited paths.
+
+- F-2026-10-06-002 — M4 identical-artifact RMSNorm A/A is numerically correct but all 20 cohorts fail the original relative-IQR gate; separate work-volume and timestamp controls pass. Measurement qualification remains closed; no Compiler or performance promotion.
 - F-2026-10-06-005 — Claude 2.1.289 emits a UI invalidation before init; bounded v4 parser and usage repair prepared for retained GLM qualification replay.
 - [F-2026-10-06-002](2026-10-06-002-ocml-trig-capacity.json) — explicit OCML FP32 trig capacity; bounded component equality, no full fused RoPE performance claim.
 - [F-2026-10-06-003](2026-10-06-003-integer-max-scan-capacity.json) — INT32 inclusive maximum scan for segment starts; whole sort/scatter remains separate.

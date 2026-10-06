@@ -11,6 +11,7 @@ from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_b
 
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
@@ -143,6 +144,7 @@ class _Authority:
     # none is refused at admission rather than admitted under a default.
     allocation_mode: str | None = None
     prepared_cases: Mapping[str, PreparedTensorCase] | None = None
+    local_queue_seconds: float = 0
 
 
 def _prepared_case(authority, case_id):
@@ -176,12 +178,13 @@ def _prepare_local_tensor_work(authority, kind):
         raise ValueError('CPU preparation cannot start inside an existing allocation')
     if (authority.allocation_mode != 'local_serialized'
             or platform_for(authority.candidate.target).local_job_prefix != kind
-            or not isinstance(authority.manifest, (TensorLaunchManifest, ProgramLaunchManifest))):
+            or not isinstance(authority.manifest, (TensorLaunchManifest, MetalTensorLaunchManifest, ProgramLaunchManifest))):
         raise ValueError('local CPU preparation requires its declared tensor allocation route')
     _admit_program_assay(authority, collect_timing=authority.timed_assay_available
                          and authority.request['purpose'] != 'attribution')
     policy = authority.request['evaluation_protocol']
     cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
+             and not isinstance(authority.manifest, MetalTensorLaunchManifest)
              else validation_case_ids(policy) if 'validation_case_ids' in policy
              else (authority.case_id,))
     # No device APIs, module loading or allocation occurs in this phase. The
@@ -800,18 +803,22 @@ def _evaluate_metal_candidate(authority, result):
     if os.environ.get('GPUQ_JOB_ID'):
         from open_cake_ir.evaluation.gpuq import observe_allocation
         job_id = observe_allocation(authority.candidate.target)['job_id']
+    elif authority.prepared_cases is not None and authority.allocation_mode == 'local_serialized':
+        if job_id or os.environ.get('METAL_BROKER_LOCK_FD'):
+            raise ValueError('prepared Metal CPU worker must not own a device allocation')
     elif (re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', job_id) is None
             or job_id == f'{row.local_job_prefix}-000000000000'):
         raise ValueError('Metal worker requires a real broker job allocation')
     from open_cake_ir.evaluation.local_broker import observe_local_metal_job
-    if not os.environ.get('GPUQ_JOB_ID') and observe_local_metal_job() != job_id:
+    if job_id and not os.environ.get('GPUQ_JOB_ID') and observe_local_metal_job() != job_id:
         raise ValueError('Metal broker lock identity differs')
     admission = authority.executor.admit_host()
     if not isinstance(admission, Mapping) or admission.get('kind') != row.host_kind:
         raise ValueError('Metal worker requires an admitted Metal Executor')
-    result['job_id'] = job_id
-    result['mode'] = job_mode(job_id)
-    result['admitted'] = True
+    if job_id:
+        result['job_id'] = job_id
+        result['mode'] = job_mode(job_id)
+        result['admitted'] = True
     profile = authority.request['purpose'] == 'attribution'
     candidates = {'candidate': authority.candidate}
     manifests = {'candidate': authority.manifest}
@@ -823,8 +830,10 @@ def _evaluate_metal_candidate(authority, result):
     from open_cake_ir.tasks.workloads import materialize_case as task_materialize, reference_outputs as task_reference
     input_cases = {}
     for case_id in cases:
-        inputs = task_materialize(authority.workload, case_id)
-        input_cases[case_id] = {'inputs': inputs, 'expected': task_reference(authority.workload, case_id, inputs)}
+        prepared = _prepared_case(authority, case_id)
+        inputs = task_materialize(authority.workload, case_id) if prepared is None else prepared.inputs
+        expected = task_reference(authority.workload, case_id, inputs) if prepared is None else prepared.expected
+        input_cases[case_id] = {'inputs': inputs, 'expected': expected}
     plan = []
     def append(role, phase, case_id, *, timed=False, instrumented=False, pair_index=None, position=None,
                dispatches=1):
@@ -849,9 +858,28 @@ def _evaluate_metal_candidate(authority, result):
         for role in candidates:
             for case_id in cases:
                 append(role, 'postflight', case_id)
-    observation = observe(workload=authority.workload, candidates=candidates, manifests=manifests,
-        input_cases=input_cases, launch_plan=plan, observer_executable=Path(admission['observer_executable']),
-        expected_host=dict(admission['host']), directory=authority.request_root / 'metal-observation')
+    directory = authority.request_root / 'metal-observation'
+    if directory.exists() or directory.is_symlink():
+        raise ValueError('Metal observation requires a fresh output directory')
+    try:
+        observation = observe(workload=authority.workload, candidates=candidates, manifests=manifests,
+            input_cases=input_cases, launch_plan=plan, observer_executable=Path(admission['observer_executable']),
+            expected_host=dict(admission['host']), directory=directory,
+            queue_seconds=authority.local_queue_seconds)
+    finally:
+        # This process does not release a lease. The native child has ended before
+        # observe returns or raises; existing external allocations keep their owner.
+        allocation = directory / 'allocation.json'
+        if allocation.exists():
+            from open_cake_ir.evaluation.metal_device_process import read_metal_admission
+            process_admission = read_metal_admission(allocation)
+            observed_job = process_admission['job_id']
+            if job_id and observed_job != job_id:
+                raise ValueError('Metal observation allocation differs from its worker')
+            job_id = observed_job
+            result.update(job_id=job_id, mode=job_mode(job_id), admitted=process_admission['admitted'])
+    if not job_id:
+        raise ValueError('Metal observation lacks its native process admission')
     launches = observation['launches']
     counters = result['counters']
     counters.update(module_loads=len(candidates), preflight_calls=sum(row['phase'] == 'preflight' for row in launches),
@@ -1426,12 +1454,19 @@ def main() -> int:
             if args.profile_child or args.profile_admission is not None:
                 raise ValueError('local CPU preparation cannot run as a profiler child')
             authority = _prepare_local_tensor_work(authority, args.local_kind)
-            job = (admit_local_job(args.local_kind)
-                   if args.local_device is None and args.local_queue_seconds == 0 and args.local_lock_scope == "user" and args.local_runtime_device is None and args.local_expected_pci is None else
-                   admit_local_job(args.local_kind, device=args.local_device, queue_seconds=args.local_queue_seconds,
-                                   lock_scope=args.local_lock_scope, runtime_device=args.local_runtime_device,
-                                   expected_pci=args.local_expected_pci))
-            result = _base_result(job)
+            if isinstance(authority.manifest, MetalTensorLaunchManifest):
+                if (args.local_device is not None or args.local_lock_scope != 'user'
+                        or args.local_runtime_device is not None or args.local_expected_pci is not None
+                        or not math.isfinite(args.local_queue_seconds) or args.local_queue_seconds < 0):
+                    raise ValueError('Metal local worker requires its single-device user allocation')
+                authority = replace(authority, local_queue_seconds=args.local_queue_seconds)
+            else:
+                job = (admit_local_job(args.local_kind)
+                       if args.local_device is None and args.local_queue_seconds == 0 and args.local_lock_scope == "user" and args.local_runtime_device is None and args.local_expected_pci is None else
+                       admit_local_job(args.local_kind, device=args.local_device, queue_seconds=args.local_queue_seconds,
+                                       lock_scope=args.local_lock_scope, runtime_device=args.local_runtime_device,
+                                       expected_pci=args.local_expected_pci))
+                result = _base_result(job)
         if os.environ.get("GPUQ_BACKEND"):
             from open_cake_ir.evaluation.gpuq import observe_allocation
             _BROKER_ALLOCATION = observe_allocation(authority.candidate.target)
@@ -1512,6 +1547,7 @@ def main() -> int:
     except LocalBrokerBusy as error:
         result = _base_result(error.job_id)
         result.update(error=str(error), failure_class='admission')
+        _retain_failure_artifacts(result, error, request_path.parent)
     except Exception as error:
         result["error"] = "evaluator_failed"
         result["failure_class"] = type(error).__name__

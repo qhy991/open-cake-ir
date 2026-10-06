@@ -32,7 +32,7 @@
 ### `apple_gpu_family9`
 
 - 主机类型： `metal`
-- 解释器： `/opt/homebrew/opt/python@3.14/bin/python3.14`（3.14.3）
+- 解释器： `/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-xcode16-20261006/venv/bin/python`（3.14.3）
 - 采集文件： [`runtime/hosts/apple_gpu_family9.json`](../../runtime/hosts/apple_gpu_family9.json)
 
 ### `gfx1151`
