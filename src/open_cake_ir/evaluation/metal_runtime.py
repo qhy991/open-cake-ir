@@ -14,6 +14,7 @@ import subprocess
 
 from .core import compare_tile_outputs
 from .metal_manifest import MetalTensorLaunchManifest
+from .metal_device_process import run_metal_process
 from .metal_observations import command_buffer_ms, validate_host
 
 OBSERVER_SOURCE = Path(__file__).with_name("metal") / "observer.swift"
@@ -63,7 +64,8 @@ def _snapshot(directory, name, elements):
 
 
 def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, launch_plan: list,
-            observer_executable: Path, expected_host: dict, directory: Path, timeout_seconds: int = 300) -> dict:
+            observer_executable: Path, expected_host: dict, directory: Path, timeout_seconds: int = 300,
+            queue_seconds: float = 0) -> dict:
     """Observe fresh output buffers and independently check every returned launch.
 
     ``input_cases`` maps Workload case IDs to trusted ``inputs`` and ``expected``
@@ -138,7 +140,14 @@ def observe(*, workload, candidates: dict, manifests: dict, input_cases: dict, l
                "launches": launch_plan, "output_directory": str(directory)}
     request_path = directory / "request.json"
     request_path.write_text(json.dumps(request, sort_keys=True))
-    completed = subprocess.run([str(executable), str(request_path)], capture_output=True, timeout=timeout_seconds)
+    try:
+        completed = run_metal_process(executable, request_path, target=expected_host['target'],
+            timeout_seconds=timeout_seconds, queue_seconds=queue_seconds,
+            allocation_output=directory / 'allocation.json')
+    except subprocess.TimeoutExpired as error:
+        (directory / 'observer.stdout.json').write_bytes(error.stdout or b'')
+        (directory / 'observer.stderr.log').write_bytes(error.stderr or b'')
+        raise
     (directory / "observer.stdout.json").write_bytes(completed.stdout)
     (directory / "observer.stderr.log").write_bytes(completed.stderr)
     report = json.loads(completed.stdout)
