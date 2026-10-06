@@ -325,21 +325,8 @@ def _validate_workspace(
 
 
 def _invocation_document(invocation: ProviderInvocation) -> dict[str, object]:
-    document = {
-        "argv": list(invocation.argv),
-        "cwd": str(invocation.cwd),
-        "sandbox": invocation.sandbox,
-        "provider_revision": invocation.provider_revision,
-        "removed_environment": list(invocation.removed_environment),
-        "thread_id": invocation.thread_id,
-    }
-    if invocation.codex_home is not None:
-        document['codex_home'] = str(invocation.codex_home)
-    if invocation.user_home is not None:
-        document['user_home'] = str(invocation.user_home)
-    if invocation.native_skill_package is not None:
-        document['native_skill_package'] = invocation.native_skill_package.reference
-    return document
+    from open_cake_ir.lab.provider_documents import invocation_document
+    return invocation_document(invocation)
 
 
 def _put_json(evidence: EvidenceStore, value: object) -> EvidenceObject:
@@ -416,6 +403,8 @@ def main() -> int:
         help="exact provider reasoning effort to qualify as a treatment factor",
     )
     parser.add_argument("--service-tier", default="default")
+    parser.add_argument('--native-skill-name', action='append', default=[],
+                        help='Exact native skill name to select in both qualification turns; repeat for multiple skills')
     parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1))
     parser.add_argument('--author-skill-package', type=Path,
                         help='controlled native skill package; only fixture qualification is currently supported')
@@ -460,6 +449,11 @@ def main() -> int:
         parser.error('Claude isolation requires the Claude harness')
     native_skill_package = (NativeSkillPackage.read(ROOT, args.author_skill_package)
         if args.author_skill_package is not None else None)
+    from open_cake_ir.lab.native_skill_qualification import selection_instruction
+    if native_skill_package is not None:
+        skill_instruction = selection_instruction(args.native_skill_name)
+    elif args.native_skill_name:
+        parser.error('--native-skill-name requires --author-skill-package')
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
     workspace = _new_path(args.workspace)
@@ -613,7 +607,8 @@ def main() -> int:
             tool_instruction, python_source, submission_contract,
         )
         if native_skill_package is not None:
-            package = replace(package, native_skill_package=native_skill_package)
+            package = replace(package, native_skill_package=native_skill_package,
+                              task_markdown=package.task_markdown + "\n" + skill_instruction)
         materialize_task_package(arm_workspace, package)
         task_packages[arm] = package
     task_bundle = {
@@ -661,6 +656,12 @@ def main() -> int:
         authority['author_home_policy'] = args.author_home_policy
     if native_skill_package is not None:
         authority['native_skill_package'] = native_skill_package.reference
+        authority['native_skill_context'] = {
+            'kind': 'native_skill_qualification_v1', 'executable': str(executable),
+            'output_schema': str(output_schema), 'selected_names': args.native_skill_name,
+            'arms': {arm: {'cwd': str(workspaces[arm]), 'user_home': str(user_homes[arm]),
+                           'codex_home': str(codex_homes[arm])} for arm in qualification_arms},
+        }
     if event_contract == "closed_file_change_v1":
         authority["web_search"] = "disabled"
     authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
@@ -734,7 +735,9 @@ def main() -> int:
             ledger.append('provider_qualification_turn_observed', {
                 'arm':arm, 'phase':'initial', 'provider_tokens':initial.provider_tokens,
                 'objects':[evidence.put(initial.raw_events,media_type='application/x-ndjson').reference('initial_provider_events'),
-                           evidence.put(initial.raw_submission,media_type='text/plain').reference('initial_submission')]})
+                           evidence.put(initial.raw_submission,media_type='text/plain').reference('initial_submission'),
+                           *([evidence.put(initial.native_skill_input, media_type='application/json').reference(
+                               'initial_native_skill_input')] if initial.native_skill_input is not None else [])]})
             initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
@@ -781,7 +784,9 @@ def main() -> int:
             ledger.append('provider_qualification_turn_observed', {
                 'arm':arm, 'phase':'resumed', 'provider_tokens':resumed.provider_tokens,
                 'objects':[evidence.put(resumed.raw_events,media_type='application/x-ndjson').reference('resumed_provider_events'),
-                           evidence.put(resumed.raw_submission,media_type='text/plain').reference('resumed_submission')]})
+                           evidence.put(resumed.raw_submission,media_type='text/plain').reference('resumed_submission'),
+                           *([evidence.put(resumed.native_skill_input, media_type='application/json').reference(
+                               'resumed_native_skill_input')] if resumed.native_skill_input is not None else [])]})
             resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
@@ -881,6 +886,8 @@ def main() -> int:
         if native_skill_package is not None:
             objects.append(evidence.put(native_skill_package.raw_bytes,
                                         media_type='application/x-tar').reference('native_skill_package'))
+            objects.append(_put_json(evidence, observations[qualification_arms[0]]['builder'].remembered_system_skills)
+                           .reference('system_skills_snapshot'))
         arm_payloads: dict[str, object] = {}
         for arm, observation in observations.items():
             initial = observation["initial"]
@@ -888,6 +895,14 @@ def main() -> int:
             initial_invocation = observation["initial_invocation"]
             resumed_invocation = observation["resumed_invocation"]
             prefix = f"{arm}_"
+            for phase, observed_turn in (("initial", initial), ("resumed", resumed)):
+                if native_skill_package is not None:
+                    if observed_turn.native_skill_input is None:
+                        raise ValueError('qualification Turn lacks native skill input')
+                    objects.append(evidence.put(observed_turn.native_skill_input,
+                        media_type="application/json").reference(f"{prefix}{phase}_native_skill_input"))
+                elif observed_turn.native_skill_input is not None:
+                    raise ValueError('qualification has undeclared native skill input')
             objects.extend(
                 [
                     evidence.put(
@@ -969,6 +984,10 @@ def main() -> int:
             "objects": objects,
             "reference_bundle_sha256": reference_bundle_sha256,
         }
+        if native_skill_package is not None:
+            from open_cake_ir.lab.native_skill_qualification import reconstruct_qualification_inputs
+            reconstruct_qualification_inputs(evidence=evidence, run_id=args.run_id,
+                authority=authority, payload=observed_payload, receipt=receipt)
         ledger.append(
             "provider_qualification_observed",
             observed_payload,

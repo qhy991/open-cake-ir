@@ -113,6 +113,44 @@ def resolve_codex_code_mode_host(
     raise ValueError("Codex Code Mode host is missing beside the native CLI")
 
 
+def codex_argv(*, executable, model, reasoning_effort, service_tier, output_schema,
+               disabled_features, event_contract, thread_id, prompt=None) -> tuple[str, ...]:
+    """Pure command spelling shared by invocation construction and offline replay."""
+    common = (
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--json",
+        "--strict-config",
+        "--skip-git-repo-check",
+        "--model",
+        model,
+        "--config",
+        f'model_reasoning_effort="{reasoning_effort}"',
+        "--config",
+        f'service_tier="{service_tier}"',
+        "--config",
+        'approval_policy="never"',
+        "--config",
+        'sandbox_mode="workspace-write"',
+        "--output-schema",
+        str(output_schema),
+        "--enable",
+        "code_mode_host",
+    ) + (("--config", 'web_search="disabled"')
+         if event_contract == "closed_file_change_v1" else ()) + tuple(
+        value
+        for feature in disabled_features
+        for value in ("--disable", feature)
+    )
+    prefix = (
+        (str(executable), "exec")
+        if thread_id is None
+        else (str(executable), "exec", "resume")
+    )
+    suffix = (() if thread_id is None else (thread_id,)) + (() if prompt is None else (prompt,))
+    return prefix + common + suffix
+
+
 class CodexInvocationBuilder:
     """Build Codex initial and resume invocations from one shared contract."""
 
@@ -276,40 +314,12 @@ class CodexInvocationBuilder:
             else:
                 verify_codex_home(self._codex_home,
                     expected_system_skills=self._system_skills_snapshot)
-        common = (
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--json",
-            "--strict-config",
-            "--skip-git-repo-check",
-            "--model",
-            self._model,
-            "--config",
-            f'model_reasoning_effort="{self._reasoning_effort}"',
-            "--config",
-            f'service_tier="{self._service_tier}"',
-            "--config",
-            'approval_policy="never"',
-            "--config",
-            'sandbox_mode="workspace-write"',
-            "--output-schema",
-            str(self._output_schema),
-            "--enable",
-            "code_mode_host",
-        ) + (("--config", 'web_search="disabled"')
-             if self._event_contract == "closed_file_change_v1" else ()) + tuple(
-            value
-            for feature in self._disabled_features
-            for value in ("--disable", feature)
-        )
-        prefix = (
-            (str(self._executable), "exec")
-            if thread_id is None
-            else (str(self._executable), "exec", "resume")
-        )
-        suffix = (prompt,) if thread_id is None else (thread_id, prompt)
+        argv = codex_argv(executable=self._executable, model=self._model,
+            reasoning_effort=self._reasoning_effort, service_tier=self._service_tier,
+            output_schema=self._output_schema, disabled_features=self._disabled_features,
+            event_contract=self._event_contract, thread_id=thread_id, prompt=prompt)
         return ProviderInvocation(
-            argv=prefix + common + suffix,
+            argv=argv,
             cwd=self._workspace,
             sandbox="workspace-write",
             provider_revision=self._provider_revision,
@@ -335,6 +345,22 @@ class CodexInvocationBuilder:
         if self._system_skills_snapshot is not None and observed != self._system_skills_snapshot:
             raise ValueError('isolated Codex system skills changed between Turns')
         self._system_skills_snapshot = observed
+
+    @property
+    def remembered_system_skills(self) -> tuple[tuple[str, int, str], ...]:
+        """Reuse the existing verified snapshot instead of reopening the installed tree."""
+        if self._system_skills_snapshot is None:
+            raise ValueError('Codex system skills have not been observed')
+        return self._system_skills_snapshot
+
+    @property
+    def system_skill_entrypoints(self) -> tuple[str, ...]:
+        """Entry paths from the already verified installed tree, without rereading it."""
+        if self._system_skills_snapshot is None or self._codex_home is None:
+            raise ValueError('Codex system skills have not been observed')
+        return tuple(str(self._codex_home/'skills/.system'/name)
+                     for name, _, _ in self._system_skills_snapshot
+                     if len(name.split('/')) == 2 and name.endswith('/SKILL.md'))
 
     @property
     def system_skills_sha256(self) -> str | None:

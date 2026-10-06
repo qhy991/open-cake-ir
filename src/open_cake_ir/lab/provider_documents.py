@@ -181,6 +181,23 @@ class ProviderInvocation:
     native_skill_package: "NativeSkillPackage | None" = None
 
 
+def invocation_document(invocation: ProviderInvocation, *, include_prompt: bool = True) -> dict:
+    """One invocation projection; Run skill binding explicitly omits the final prompt."""
+    document = {
+        'argv' if include_prompt else 'argv_without_prompt': list(
+            invocation.argv if include_prompt else invocation.argv[:-1]),
+        'cwd': str(invocation.cwd), 'sandbox': invocation.sandbox,
+        'provider_revision': invocation.provider_revision,
+        'removed_environment': list(invocation.removed_environment),
+        'thread_id': invocation.thread_id,
+    }
+    if invocation.codex_home is not None: document['codex_home'] = str(invocation.codex_home)
+    if invocation.user_home is not None: document['user_home'] = str(invocation.user_home)
+    if invocation.native_skill_package is not None:
+        document['native_skill_package'] = invocation.native_skill_package.reference
+    return document
+
+
 @dataclass(frozen=True)
 class ProviderTurn:
     """Strict projection of one provider JSONL Turn and its sealed candidate."""
@@ -209,6 +226,12 @@ class ProviderTurn:
     tool_activity: tuple["ProviderAuxiliaryActivity", ...] = ()
     reference_bundle: bytes | None = None
     """Exact rendered reference bytes embedded in this Turn, when one exists."""
+
+    native_skill_input: bytes | None = None
+    """Bounded same-invocation native skill frames; not a qualification receipt."""
+
+    native_skill_binding: bytes | None = None
+    """Executor-owned Run/turn/invocation binding, never authored by the provider."""
 
 
 @dataclass(frozen=True)

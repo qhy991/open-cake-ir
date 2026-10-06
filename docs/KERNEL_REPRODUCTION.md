@@ -240,6 +240,60 @@ CLI 资源查找。采用 `isolated_auth_only_v1` 的新 Codex Run 另建私有
 
 ## 按任务准备完整原生技能包
 
+`CodexProviderAdapter` 对受控技能包策略另采集同次 exec 的有界原生技能输入记录。
+当前格式限定 CLI `0.159.2`：核对 session/thread、workspace、模型与 effort，以及恰好
+一个完整的新 turn；resume 要求既有日志前缀未改写。有效 catalog 必须完整列出本包入口，
+其余条目只能来自 CLI system 入口；未投递的已安装 system 技能单列记录，不能推断已加载。
+本轮显式加载的包内正文必须与冻结原包一致。原生 frontmatter 仍由 CLI
+解析；不会因目录名推断原生技能名称。
+
+结果保留在 `ProviderTurn.native_skill_input`，fixture qualifier 将其写入既有 Evidence
+中的每 arm/initial/resumed `native_skill_input` role。v2 同时保留用于重建的最小原生
+session、轮次、context、world-state 与技能输入字段，以及原始行位置；不复制完整 prompt、
+凭据、工具输出或 reasoning 日志。历史正文保留为来源事实，但不算本轮加载；未加载正文
+如实保留空列表。system 文件树身份仍由既有 author-home owner 检查，不新增逐文件身份目录。
+
+`native_skill_observation.replay_observation` 从保留事实重建投影，调用方显式提供线程、
+workspace、模型/effort、轮次、冻结包正文与已安装 system 入口。既有 qualifier 在保存后
+重新读取 Evidence，依次重建每 arm 的 initial/resume；不依赖原生日志或私有 HOME 仍存在。
+缺失、重复、串轮、投影与来源不一致或包正文漂移均拒绝。旧 v1 观察没有这些来源事实，
+不能冒充 v2；历史证据仍在原提交回放。
+
+离线回放只验证保留的技能语义与其前缀连续性。未保留的日志行用空位置表示，不能证明
+完整原始日志字节未改写；后者仍是采集时的检查。该接口要求调用方按顺序验证前轮，并从
+自身的冻结调用和材料取得预期值；从观察本身复制预期值不是资格验证。
+
+Run 的软件归档路径在 `provider_turn_completed` 前验证原生输入和执行器调用绑定，保存
+`provider_native_skill_input` 与 `provider_native_skill_binding` 两个 role。绑定由
+`QualifiedRunProvider.turn` 在材料、workspace 生命周期与 system 树检查后产生，包含
+Run/arm/整数轮次、实际调用参数（不含 prompt）、workspace、两个私有 home、冻结配置
+及既有 system 快照。TaskPackage 来自执行入口的冻结材料 owner，不能从 agent 输出取得。
+回放核对两种 role 恰好各一份，重建技能语义；resume 要求前轮已经通过验证，并保持同一
+线程、执行器路径、workspace、home 和材料。未声明技能策略的 Run 拒绝这些额外证据。
+
+system 快照复用 author-home 已验证的目录数据；首次归档/回放交接以既有资格身份核对，
+后续轮比较此前验证的快照，不重开原安装目录。调用路径是执行器分配的事实，配置拥有
+内容身份；这份日志不证明对抗性写入者确实执行了程序，Evidence custody 仍是独立门槛。
+CPU 合同直接覆盖归档和回放；正式资格收据、anchor、admission 及零轮/故障入口的共同
+验收仍未接通，所有正式入口继续拒绝该策略。不能以这些 fixture 检查放行。
+
+若返回的 Turn 在原生输入归档检查中被拒绝，`NativeSkillRunInputFault` 沿现有
+`run_fault` 保存有界的被拒绝输入、调用绑定和缺失/保留状态，不写轮次完成事件。
+故障回放使用已验证前轮、冻结 TaskPackage 和 stdout 的原生线程/用量，再运行同一输入
+检查；必须重现保留的拒绝原因。缺失状态区别于应有证据丢失，重复角色、换线程/轮次、
+改写原因或替换为有效输入均拒绝。费用仍由现有原生累计计数转换，失败不抹去已用 token。
+
+超界或非 bytes 输入只记为未保留，回放报告无法验证，不能合成替代字节来制造通过。
+这个范围从适配器返回 Turn 开始：进程超时、采集器尚未产出输入和部分原生日志的故障
+仍只有原来的 stdout/stderr 证据，未获得技能语义回放或正式资格。历史 custody 另行检查。
+
+这是 retained native input 的版本限定观察，**不是生产资格**。与实际请求的一致性须以
+同版本原生 fixture 验证，不能把生成的摘要视为 wire capture。当前不支持 compaction、
+rollback、目录中缺席的包内 explicit-only/disabled 技能，也未观察脚本或引用资源的读取、
+模型使用或文件读取隔离。未知版本、缺记录、来源漂移或错误绑定会拒绝候选接收。
+正式 qualifier/admission/replay 仍拒绝此策略；启用前须一起接入保留证据的独立校验与收据。
+
+
 `isolated_skill_package_v1` 为 Codex 的 known-kernel 作者准备私有 `HOME` 与完整技能材料。
 当前只开放材料准备和可执行替身的 CPU qualification；原生技能发现、实际请求投递及
 initial/resume 等价仍未获资格。真实 qualification、正式 Run/Campaign 和正式回放均拒绝
@@ -328,3 +382,19 @@ samples. HIP Program profiling and ordinary HIP/MACA optimization Run measuremen
 refused. No command here establishes a measured speedup.
 The build command uses the shared `build_program_candidate` source/ABI handoff; it does
 not construct an optimization environment whose measurement loop it cannot satisfy.
+
+
+Native-skill qualification now reconstructs its retained initial/resume inputs before
+sealing success. `--author-skill-package` requires explicit `--native-skill-name` values
+(repeat the flag for multiple native names); TASK names them in both turns. Directory
+names are not treated as native names, and a catalog or a body from an earlier turn is
+not current body delivery. The declared arm set remains authoritative, including a
+single Cake arm.
+
+`lab/native_skill_qualification.py` reuses Run invocation/native validation against the
+frozen qualification paths and policy, retained task projection, actual provider thread,
+complete package and existing system-tree snapshot. Replay reads no original HOME,
+installation or task files. This is a semantic evidence check: receipt versions 1/2
+gain no new admission capability, fixture scope stays fixture-only, and live native-skill
+qualification/Run gates remain closed pending receipt/anchor/admission integration.
+Historical Evidence custody is a separate prerequisite; reconstruction cannot supply it.
