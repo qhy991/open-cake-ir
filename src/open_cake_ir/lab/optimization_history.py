@@ -50,7 +50,7 @@ def evaluated_observation(turn, receipt, attribution=None, *, diagnostics=None):
            'latency_ms': _receipt_latency_ms(receipt) if qualified else None}
     timing = receipt.timing
     row['baseline_comparison'] = ({key: _plain_json(timing[key])
-        for key in ('classification', 'speedup', 'pooled_medians_ms') if key in timing}
+        for key in ('classification', 'speedup', 'statistic', 'pooled_means_ms', 'pooled_medians_ms') if key in timing}
         if qualified and timing is not None else None)
     row['profile'] = profile_observation(attribution)
     row['diagnostics'] = diagnostic_observation(diagnostics if diagnostics is not None else

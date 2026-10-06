@@ -374,6 +374,26 @@ def response_model_aliases(model: str, aliases=()) -> tuple[str, ...]:
     return tuple(aliases)
 
 
+def _initial_event_index(events, event_contract):
+    """CLI 2.1.289 emits one inert UI invalidation before init (F-2026-10-06-005).
+
+    Keep the raw stream intact. Only this observed shape is admitted, in v4;
+    no author message, tool call, unknown metadata or session switch can precede init.
+    """
+    if (event_contract != CLAUDE_EVENT_CONTRACT or not events
+            or events[0].get('type') != 'system' or events[0].get('subtype') != 'ui_invalidate'):
+        return 0
+    first = events[0]
+    if (set(first) != {'type', 'subtype', 'event', 'uuid', 'session_id'}
+            or first.get('event') != 'ui.render'
+            or not isinstance(first.get('uuid'), str) or _THREAD_ID.fullmatch(first['uuid']) is None
+            or len(events) < 2 or events[1].get('type') != 'system'
+            or events[1].get('subtype') != 'init'
+            or first.get('session_id') != events[1].get('session_id')):
+        raise ValueError('Claude UI preamble differs')
+    return 1
+
+
 def reported_claude_usage(raw_events: bytes, *, expected_model: str,
                           expected_thread_id: str | None = None,
                           event_contract: str = CLAUDE_EVENT_CONTRACT,
@@ -389,7 +409,8 @@ def reported_claude_usage(raw_events: bytes, *, expected_model: str,
         events = [_json(line) for line in raw_events.splitlines()]
         if len(events) < 2 or any(not isinstance(event, Mapping) for event in events):
             return None
-        initial, terminal = events[0], events[-1]
+        initial_index = _initial_event_index(events, event_contract)
+        initial, terminal = events[initial_index], events[-1]
         thread_id = initial.get("session_id")
         if (initial.get("type") != "system" or initial.get("subtype") != "init"
                 or initial.get("model") != expected_model or not isinstance(expected_model, str) or not expected_model
@@ -400,7 +421,7 @@ def reported_claude_usage(raw_events: bytes, *, expected_model: str,
                 or not terminal["subtype"] or type(terminal.get("is_error")) is not bool):
             return None
         admitted_models = {expected_model, *response_model_aliases(expected_model, response_aliases)}
-        for event in events[1:-1]:
+        for event in events[initial_index + 1:-1]:
             if event.get("type") == "result" or (event.get("type") == "system" and event.get("subtype") == "init"):
                 return None
             if event.get("type") == "assistant" and event.get("parent_tool_use_id") is None:
@@ -449,7 +470,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     if (not _terminal(expected) or len(events) < 4 or
             any(not isinstance(event, Mapping) for event in events)):
         raise ValueError("Claude Turn boundary differs")
-    initial, terminal = events[0], events[-1]
+    initial_index = _initial_event_index(events, event_contract)
+    initial, terminal = events[initial_index], events[-1]
     if (initial.get("type") != "system" or initial.get("subtype") != "init" or
             terminal.get("type") != "result" or terminal.get("subtype") != "success" or
             terminal.get("is_error") is not False or terminal.get("permission_denials", []) != []
@@ -474,7 +496,9 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     active_tools: dict[str, dict] = {}
     writes: list[tuple[str, str]] = []
     models: list[str] = []
-    activity: list[ProviderAuxiliaryActivity] = []
+    activity: list[ProviderAuxiliaryActivity] = [
+        ProviderAuxiliaryActivity(event['uuid'], 'ui_invalidate', 'observed')
+        for event in events[:initial_index]]
     terminal_tool_failed = False
     terminal_tool_completed = False
     compaction_phase = None
@@ -483,7 +507,7 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     errors: dict[str, int] = {}
     if isinstance(initial.get("model"), str) and initial["model"]:
         models.append(initial["model"])
-    for event in events[1:-1]:
+    for event in events[initial_index + 1:-1]:
         if _is_context_mutation(event) and event_contract == CLAUDE_EVENT_CONTRACT:
             phase = _compaction_phase(event)
             if ((phase == "started" and compaction_phase not in (None, "started"))

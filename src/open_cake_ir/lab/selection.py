@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.evaluation.timing import timing_latency_ms
+
 import json
 import math
 from typing import Mapping, cast
@@ -142,7 +144,7 @@ def _receipt_qualifies(receipt: EvaluationReceipt) -> bool:
 def _receipt_latency_ms(receipt: EvaluationReceipt | None) -> float | None:
     if receipt is None or receipt.timing is None:
         return None
-    value = receipt.timing.get("pooled_median_ms")
+    value = timing_latency_ms(receipt.timing)
     if (
         not isinstance(value, (int, float))
         or isinstance(value, bool)

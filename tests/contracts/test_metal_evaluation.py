@@ -132,6 +132,35 @@ class MetalEvaluationContracts(unittest.TestCase):
         self.assertEqual(result['counters']['kernel_calls'], 32)
         self.assertEqual(result['counters']['timing_samples'], 8)
 
+    def test_mean30_worker_keeps_all_samples_and_receipt_uses_mean(self):
+        self.policy['paired_timing'].update(kind='fixed_baseline_paired_metal_v2',
+            statistic='mean', samples_per_cohort=15, route_calls_per_cohort=18,
+            dispatches_per_sample=64, maximum_cv=None, maximum_relative_iqr=None,
+            required_pair_wins=0, materiality_ratio=1.05)
+        candidate_times = iter(([.001] * 14 + [.031]) * 2)
+        def skewed(**kwargs):
+            observation = fake_observe(**kwargs)
+            for row in observation['launches']:
+                if row['timed']:
+                    ms = next(candidate_times) if row['role'] == 'candidate' else .002
+                    command = row['command_buffer']
+                    command['gpu_end_seconds'] = command['gpu_start_seconds'] + ms * 64 / 1000
+            return observation
+        result = self.run_worker(observer=skewed)
+        receipt = self.receipt(result)
+        validate_paired_broker(receipt, JOB, result['counters'])
+        self.assertEqual(result['counters']['timing_samples'], 60)
+        self.assertEqual(result['counters']['kernel_calls'], 92)
+        self.assertEqual(dict(receipt.timing['pooled_sample_counts']), {'candidate':30,'baseline':30})
+        self.assertEqual(receipt.measurement_quality, 'valid_samples')
+        self.assertAlmostEqual(receipt.timing['pooled_mean_ms'], .003)
+        self.assertAlmostEqual(receipt.timing['pooled_median_ms'], .001)
+        self.assertEqual(receipt.timing['classification'], 'second_arm_faster')
+        changed = dict(result['receipt']['timing']); changed['pooled_mean_ms'] = .001
+        result['receipt']['timing'] = changed
+        with self.assertRaisesRegex(ValueError, 'summary differs'):
+            self.receipt(result)
+
     def test_raw_timestamp_and_validation_coverage_mutations_are_rejected(self):
         result = self.run_worker()
         base = {role: (self.root / name).read_bytes() for role, name in result['receipt']['artifacts'].items()}

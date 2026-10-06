@@ -5,6 +5,8 @@ Hardware rates belong to Target; qualification and promotion remain owned by Lab
 """
 from __future__ import annotations
 
+from open_cake_ir.evaluation.timing import timing_statistic, timing_latency_ms
+
 import json
 import math
 from collections.abc import Mapping
@@ -152,11 +154,13 @@ def _performance(project_root,evidence_root,lock,eligible):
             if (receipt.get("correctness_passed") is not True or not isinstance(timing, Mapping)
                     or timing.get("measurement_quality_passed") is not True):
                 continue
-            medians = timing.get("pooled_medians_ms", {"candidate": timing.get("pooled_median_ms")})
+            medians = timing.get(f"pooled_{timing_statistic(timing)}s_ms", {"candidate": timing_latency_ms(timing)})
             for role in ("candidate", "baseline"):
                 if role not in medians:
                     continue
                 row = score_measurement(work, target, medians[role], cache_protocol=cache)
+                if timing_statistic(timing) == "mean":
+                    row["statistic"] = "mean"
                 row.update(run_id=audit.run_id, turn=payload.get("source_turn", payload.get("turn")), role=role,
                            candidate_id=payload["candidate_sha256"] if role == "candidate" else baseline.get("candidate_sha256"),
                            confirmation_event=event.get("sequence"),

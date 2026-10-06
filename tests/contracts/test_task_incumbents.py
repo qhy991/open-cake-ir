@@ -167,6 +167,10 @@ class TaskIncumbentTests(unittest.TestCase):
             "tied_pairs": 0,
             "pooled_sample_counts": {"candidate": 1, "baseline": 1},
         }
+        if self.protocol["paired_timing"].get("statistic") == "mean":
+            timing.update(statistic="mean", pooled_mean_ms=1.0,
+                pooled_means_ms={"candidate":1.0,"baseline":speedup},
+                pooled_median_ms=9.0, pooled_medians_ms={"candidate":9.0,"baseline":.5})
         receipt_payload = canonical_json_bytes(
             {
                 "candidate_sha256": candidate.candidate_sha256,
@@ -219,6 +223,19 @@ class TaskIncumbentTests(unittest.TestCase):
             return promote_task_incumbent(project_root=ROOT,registry_root=self.registry,
                 run_path=path,evidence_root=evidence_root,
                 lab=SimpleNamespace(audit_run=lambda run:(EvidenceStore.open(run.evidence_root).audit_run(run.specification.run_id),replay)))
+
+    def test_mean_confirmation_promotes_and_replays_without_median_fields_in_comparison(self):
+        self.protocol['paired_timing'].update(statistic='mean', maximum_cv=None,
+            maximum_relative_iqr=None, required_pair_wins=0)
+        baseline, _ = self.candidate('0')
+        fixture = self.campaign('mean', 'a', candidate_identity(baseline), independent=True)
+        promoted = self.promote_run(fixture)
+        self.assertEqual(promoted['comparison']['statistic'], 'mean')
+        self.assertEqual(promoted['comparison']['candidate_mean_ms'], 1.)
+        self.assertNotIn('candidate_median_ms', promoted['comparison'])
+        key = TaskIncumbentKey.from_run(fixture[0])
+        retained = TaskIncumbentRegistry.open(self.registry).current(key)
+        self.assertEqual(retained['comparison'], promoted['comparison'])
 
     def test_independent_run_and_old_campaign_share_one_incumbent_chain(self):
         baseline,_ = self.candidate('0')
