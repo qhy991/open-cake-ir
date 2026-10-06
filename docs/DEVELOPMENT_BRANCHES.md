@@ -12,6 +12,18 @@ responsibility, not separate copies of the Compiler or a hardware qualification.
 `main` 汇总已合入的版本。数据入口、生成命令与检查范围见
 [硬件结果维护流程](RESULTS_MAINTENANCE.md)；不在多个分支分别手写总览成绩。
 
+## 共同主题与文档同步
+
+所有硬件分支围绕[共同研究主题](RESEARCH_AGENDA.md)规划后续实验：可复用机制、目标特化、
+有限预算搜索与可验证的系统后继。硬件分支负责不同技术差异与自己的验收；共享 Compiler
+和研究口径由 main 维护。新实验按共同约定声明问题、对照和预算，历史 Run 不随定位更新而改写。
+
+共同研究文档先通过 `task/core-*` 进入 main。仅同步已经验收的**纯文档提交**时，可在各平台的
+独立文档任务 worktree 中使用 `cherry-pick -x` 保留来源，再通过平台 PR 集成；正文以 main
+的同一来源版本为准，不另立平台研究主题。保留平台自己的生成结果区与历史证据。
+这项例外只用于文档/引用/PDF 的同步，不适用于 Compiler、Executor、工具、测试、目标或
+运行配置。涉及这些内容的 main/platform 同步仍按下文保留祖先的 merge 流程执行。
+
 ## 六条长期分支
 
 | 分支 | 职责 | 任务分支示例 | 任务 PR 的目标 |
