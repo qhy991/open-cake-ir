@@ -13,6 +13,16 @@ and active checkouts. Merged task branches are removed from GitHub; archive tags
 work outside the maintained branches. A platform branch is a maintenance boundary,
 not a fork of the shared Compiler.
 
+## Shared research theme
+
+Follow [Shared research agenda](docs/RESEARCH_AGENDA.md) when planning new experiments
+on `main`, `nvidia`, `metal`, `amd`, `dcu`, or `metax`. It owns the common question,
+comparison axes, platform contributions and new-Run budget convention. Each plan names
+its hypothesis and evidence scope through existing Run/Study inputs; no new schema or
+parallel execution owner is introduced. Platform bring-up, local optimization, source
+experience effects and system-successor effects remain distinct. Preserve frozen Runs,
+reference access, historical results and each target's own qualification boundaries.
+
 ## GPU resource discipline
 
 Before preparing, launching or releasing GPU Evaluation work, read and apply the

@@ -2,12 +2,28 @@
 
 **Agent 驱动的 GPU Kernel 搜索与 Compiler 演进。**
 
-Agent 用 Python 编写 Schedule（单个 Kernel 的执行计划），用 Program 组合完整的多阶段计算；
-Compiler 检查并生成目标源码，独立评测核对正确性和性能，实验反馈再推动候选与编译器改进。
-支持从任务定义开始探索，也支持参考已有优秀实现进行 Cake 改写。
+<p align="center"><strong>面向跨硬件优化经验复用的 Agent–Compiler 框架。</strong><br />
+An agent–compiler framework for reusable optimization mechanisms across hardware.</p>
 
-A research system for agent-driven GPU kernel search and compiler evolution.
-[English reading guide](docs/en/README.md) · [中文阅读入口](docs/zh-CN/README.md)
+<p align="center">
+  <a href="docs/open-cake-ir-technical-report.pdf">技术报告 PDF</a> ·
+  <a href="docs/open-cake-ir-technical-report.tex">TeX 源码</a> ·
+  <a href="docs/GETTING_STARTED.md">快速开始</a> ·
+  <a href="docs/RESULTS.md">实验结果</a> ·
+  <a href="docs/en/README.md">English</a>
+</p>
+
+open-cake-ir 以 Compiler 为核心，研究如何把优化发现整理成带条件的可执行机制，
+在目标硬件上重新选择分块、工作分配和资源配置，并确认正确性与性能。Agent 通过
+Schedule / Program 编写执行计划；独立原生探索也可提供发现，经过审查与重新验证后
+沉淀为变换、诊断或编译能力。项目独立探索 [CAKE](https://arxiv.org/abs/2608.12629v1)
+的研究思路，属于研究预览。
+
+**共同研究问题：这种经验复用能否减少后续任务的搜索成本，同时保持对强原生实现的性能竞争力？**
+实现、局部设备结果与研究处理效果分别报告。各硬件分支遵循
+[共同研究主题与实验约定](docs/RESEARCH_AGENDA.md)。
+
+[中文阅读入口](docs/zh-CN/README.md) · [Wiki 阅读索引](docs/wiki/README.md) · [项目当前状态](reports/current/STATUS.md)
 
 ## 快速导航
 
@@ -35,7 +51,7 @@ Compiler 可以独立使用，Research Lab 负责组织优化或受控研究。
 | Evaluation | 独立检查正确性、配对计时及性能归因 | [评测职责](docs/contexts/evaluation/CONTEXT.md) · [验收规则](docs/ACCEPTANCE_GATES.md) |
 | Evidence | 保存原始产物、回放记录与支持结论的依据 | [证据职责](docs/contexts/evidence/CONTEXT.md) · [结果阅读](docs/wiki/results.md) |
 
-研究主线是[跨硬件的可执行优化知识迁移](docs/OPTIMIZATION_TRANSFER.md)：把发现的机制提炼为带前提的显式变换，
+机制设计见[跨硬件的可执行优化知识迁移](docs/OPTIMIZATION_TRANSFER.md)：把发现的机制提炼为带前提的显式变换，
 在目标平台重新选择参数并验证。已有有限 pass 和研究流程作为基础，迁移收益仍按[受控消融](docs/OPTIMIZATION_TRANSFER_ABLATION.md)验证。
 
 ## 快速开始

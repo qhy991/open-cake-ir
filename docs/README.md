@@ -2,7 +2,9 @@
 
 **中文题名：open-cake-ir：Agent 驱动的 GPU Kernel 与编译器协同演进技术报告**
 
-**English title: open-cake-ir: A Technical Report on Agent-Driven GPU Kernel and Compiler Co-Evolution**
+**推荐中文引文题名：open-cake-ir：跨硬件优化机制复用与编译器协同演进技术报告**
+
+**Recommended English citation title: open-cake-ir: A Technical Report on Cross-Hardware Optimization Reuse and Compiler Co-Evolution**
 
 作者 / Author：秦海岩（Haiyan Qin） · 2026
 
@@ -21,28 +23,22 @@ retains its original dates and conclusions.
 
 ## 研究定位与当前证据 / Research position and evidence
 
-本报告研究 Agent 如何通过显式 GPU 程序表示和外部反馈，同时推进 Kernel 优化与编译能力演进。
-核心设计包括：在固定 Compiler 下搜索并确认候选；将诊断归属到候选、分析或表达能力，
-通过独立提交与后继实验验证系统变化；将可复用机制表示为带适用条件的显式变换，
-并用独立的材料与工具权限研究其跨硬件复用。报告把国产卡工作分成三条相互关联但分别验收的线：
-目标平台接入、在目标架构上的直接优化，以及 NVIDIA 机制材料是否额外降低目标搜索成本。
-前两者已有软件实现和有明确范围的设备案例；[Hygon 的两形状分块实验](OPTIMIZATION_TRANSFER.md)支持
-经目标重新选参的机制实例。迁移协议已有实现，自动机制提炼和 NVIDIA 材料或 pass 权限
-对 Agent 搜索的增量效果仍待受控实验验证。
+本报告以 Compiler 为核心，研究优化发现怎样被整理为带条件的可执行机制，在目标硬件上
+重新实例化，并降低后续任务的搜索与适配成本。研究分别检验表示与诊断、材料与变换权限、
+原生生成自由度及系统后继的作用。Compiler 拥有表示、检查、改写和 lowering；独立原生
+探索由 Lab 组织，发现经审查后按责任层晋升，并在后继实现与任务上重新验证。
 
-报告正文新增[平台能力与代表案例](ARCHITECTURE.md#9-平台能力与代表案例)，分别说明
-编译、正确性、测量及完整优化闭环。MetaX 的设备结果由 [C550 专题](metax-c550.md)维护；
-其单 kernel 优化证据不代表完整 Program 的自动优化或跨硬件迁移已经验收。
+2026-10-06 的研究定位更新以[共同研究主题与硬件实验约定](RESEARCH_AGENDA.md)为入口，
+包含近邻路线、强原生与非 LLM 对照、贡献边界、各硬件分支方向及新 Run 的三小时预算约定。
+新增设计不改写主体快照或历史成绩。已有局部设备案例和工程 Run 可提供机制与失败证据；
+跨目标经验及可执行工具的增量收益，仍由与该主张匹配的受控研究判定。
 
-The report studies agent-driven kernel optimization and compiler evolution through explicit GPU
-programs and external feedback. It connects frozen-compiler search, diagnosis-driven implementation
-changes validated in successor runs, and reusable guarded transformations with independently
-controlled explanation and tool access. Software paths and bounded device cases exist; automated
-mechanism extraction and the incremental Agent benefit of cross-hardware materials or pass access
-remain unverified. A [two-shape Hygon example](en/OPTIMIZATION_TRANSFER.md) separately establishes
-bounded target-retuned K-tiling gains.
-See the [platform/evidence overview](en/ARCHITECTURE.md#platform-capabilities-and-representative-evidence)
-and the [C550 evidence chapter](metax-c550.md) for the distinct qualification boundaries.
+The report centers the Compiler as the foundation for conditional, executable optimization reuse
+across hardware. It separates representation/diagnostic effects, material/tool effects, lowering
+freedom and successor-system effects. Qualified native exploration supplies evidence for reviewed
+promotion; both the re-expressed implementation and its reuse require fresh validation.
+The [shared agenda](en/RESEARCH_AGENDA.md) defines the common question, hardware contributions and
+new-Run budget convention. Historical implementations and results retain their original boundaries.
 
 ## 从哪里开始 / Choose a reading path
 
@@ -66,6 +62,7 @@ and the [C550 evidence chapter](metax-c550.md) for the distinct qualification bo
 | 实验结果 / Experimental results | [硬件汇总](RESULTS.md) · [FlashInfer 综述](results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550](metax-c550.md) | [English evidence overview](en/ARCHITECTURE.md#platform-capabilities-and-representative-evidence) · [NVIDIA summary](results/nvidia/FLASHINFER_STATUS.md#english-reading-summary) | 固定 Workload、starter 身份、配对结果、失败记录和 profiler 证据 |
 | 实现与维护 / Implementation | [当前状态](../reports/current/STATUS.md) · [分支流程](DEVELOPMENT_BRANCHES.md) | [Context map](../CONTEXT-MAP.md) | 源码与执行绑定、平台维护、模块负责位置 |
 | 相关工程 / Related engineering | [Croqtile 对照](CROQTILE_COMPARISON.md) | [Croqtile comparison](en/CROQTILE_COMPARISON.md) | 固定源码审查、重叠能力、差异与公平比较条件 |
+| 共同研究主题 / Shared agenda | [研究问题与硬件分工](RESEARCH_AGENDA.md) | [Shared agenda](en/RESEARCH_AGENDA.md) | 全部分支的比较轴、贡献边界与实验约定 |
 | 研究路线 / Roadmap | [后续目标](ROADMAP.md) | [Roadmap (Chinese)](ROADMAP.md) | 迁移、优化复用与端到端验证的研究目标 |
 
 ## 详细材料 / Detailed references
@@ -83,15 +80,14 @@ The report entry organizes chapters; the catalog owns detailed reading links and
 推荐引用下面的技术报告。机器可读引用元数据由仓库根目录的
 [`CITATION.cff`](../CITATION.cff) 维护，其中 `preferred-citation` 指向本报告，根级条目描述软件。
 
-秦海岩. *open-cake-ir：Agent 驱动的 GPU Kernel 与编译器协同演进技术报告*. 2026.
+秦海岩. *open-cake-ir：跨硬件优化机制复用与编译器协同演进技术报告*. 2026.
 
-Qin, Haiyan. *open-cake-ir: A Technical Report on Agent-Driven GPU Kernel and Compiler
-Co-Evolution*. 2026. open-cake-ir project.
+Qin, Haiyan. *open-cake-ir: A Technical Report on Cross-Hardware Optimization Reuse and Compiler Co-Evolution*. 2026. open-cake-ir project.
 
 ```bibtex
 @techreport{qin2026opencake,
   author      = {Qin, Haiyan},
-  title       = {{open-cake-ir}: A Technical Report on Agent-Driven GPU Kernel and Compiler Co-Evolution},
+  title       = {{open-cake-ir}: A Technical Report on Cross-Hardware Optimization Reuse and Compiler Co-Evolution},
   institution = {open-cake-ir project},
   year        = {2026},
   type        = {Technical report},
