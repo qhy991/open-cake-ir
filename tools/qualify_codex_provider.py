@@ -408,7 +408,7 @@ def main() -> int:
                         help='Exact native skill name to select in both qualification turns; repeat for multiple skills')
     parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1))
     parser.add_argument('--author-skill-package', type=Path,
-                        help='controlled native skill package; only fixture qualification is currently supported')
+                        help='controlled native skill package; requires explicit names and retained two-turn input qualification')
     parser.add_argument('--auth-source', type=Path,
                         help='private external Codex credential for an isolated author home')
     parser.add_argument('--claude-event-contract', choices=('claude_stream_candidate_v3','claude_stream_candidate_v4'), default=CLAUDE_EVENT_CONTRACT)
@@ -436,8 +436,6 @@ def main() -> int:
         args.author_home_policy = ISOLATED_SKILL_PACKAGE_V1
     if (args.author_home_policy == ISOLATED_SKILL_PACKAGE_V1) != (args.author_skill_package is not None):
         parser.error('isolated_skill_package_v1 requires --author-skill-package and no other author-home policy accepts it')
-    if args.author_home_policy == ISOLATED_SKILL_PACKAGE_V1 and not args.fixture_only:
-        parser.error('native skill discovery and delivery on initial/resume are not verified; refusing live provider qualification')
     if ((args.author_home_policy is None) != (args.auth_source is None)
         or args.author_home_policy is not None and args.harness != 'codex'):
         parser.error('isolated Codex author home requires its credential source and Codex harness')
@@ -448,13 +446,16 @@ def main() -> int:
 
     if args.claude_isolation_policy and args.harness != 'claude-code':
         parser.error('Claude isolation requires the Claude harness')
-    native_skill_package = (NativeSkillPackage.read(ROOT, args.author_skill_package)
-        if args.author_skill_package is not None else None)
     from open_cake_ir.lab.native_skill_qualification import selection_instruction
-    if native_skill_package is not None:
-        skill_instruction = selection_instruction(args.native_skill_name)
+    if args.author_skill_package is not None:
+        try:
+            skill_instruction = selection_instruction(args.native_skill_name)
+        except ValueError as error:
+            parser.error(str(error))
     elif args.native_skill_name:
         parser.error('--native-skill-name requires --author-skill-package')
+    native_skill_package = (NativeSkillPackage.read(ROOT, args.author_skill_package)
+        if args.author_skill_package is not None else None)
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
     workspace = _new_path(args.workspace)
