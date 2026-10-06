@@ -1,5 +1,7 @@
 # MetaX Compiler 与 Agent 的迭代实验
 
+> 2026-10-06 后继设计：[十次正式执行取均值](MEAN10_TIMING.md)已获用户同意，尚待设备验收。下文旧 C0 面板的 5% CV 要求仍描述其原冻结规则；新设计不改判旧结果，也不证明 MCPTI 采集故障已经修复。
+
 **目标：把 Cake 建成面向 MetaX 的 kernel 编写、分析与优化工具。** Agent 使用可检查的
 Python/IR 接口表达计算与硬件选择，通过实测修正候选，再把可复现的限制提交给 Compiler
 维护者。共享 Compiler 继续保持厂商中立，MetaX 的事实、指令和生成限制分别由 Target、

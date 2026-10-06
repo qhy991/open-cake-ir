@@ -54,6 +54,8 @@ Workload Contract owns semantics and the oracle; Study owns treatments and estim
 
 ## Quality endpoints and lifetime cost
 
+The owner-approved [ten-sample mean design](../MEAN10_TIMING.md) specifies ten timed samples per implementation, arithmetic-mean selection and diagnostic-only dispersion for successor development Runs. Raw capture validity remains mandatory. Activation requires successor qualification; frozen results retain their original policy.
+
 Freeze the starting baseline separately from a strong reference. Baseline speedup measures improvement; a predeclared quality endpoint such as `L_confirm ≤ (1 + δ) × L_ref`, after common acceptance gates, measures competitiveness. Declare the reference, δ and primary endpoint before execution. A suggested 5% tolerance is not a universal rule. Existing E/P endpoints retain their original definition.
 
 First-hit costs require scheduled independent confirmation checkpoints; preserve right-censoring for unmet endpoints. Timing samples estimate measurement noise, repeated Runs estimate author variation, and cross-task inference clusters by task. Small pilots report per-task results; choose formal scale from independent pilot variability and the effect of interest.
