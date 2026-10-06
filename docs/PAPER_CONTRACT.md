@@ -6,6 +6,10 @@ snapshot and is not the current release view. Current released authorities are g
 in [`../reports/current/STATUS.md`](../reports/current/STATUS.md); a later paper version or
 alignment review gets a successor document rather than rewriting this source revision.
 
+## This repository's research agenda
+
+The original CAKE contribution and this repository's proposed increment are distinct. The [shared research agenda](RESEARCH_AGENDA.md) owns the latter: conditional executable mechanisms, target adaptation, matched native/tool controls and independently evaluated successor capabilities. This document continues to own attribution of the original paper and its evidence.
+
 ## Source freeze
 
 Canonical source: [CAKE: Compiler-Agent Co-Design for Frontier Kernel Evolution,
