@@ -43,6 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-07-003](2026-10-07-003-hsaco-resource-feedback.json) — connect HSACO allocation inspection to existing portable feedback, preserve code-object identity, and keep fixed LDS, dynamic launch allocation and unknown stack distinct.
 - [F-2026-10-07-004](2026-10-07-004-store-loop-stage-selection.json) — explicit named output-loop depth selection reuses existing range options and preserves the arithmetic/access graph; no default stage-depth policy.
 
 - [F-2026-10-07-001](2026-10-07-001-ordinary-output-program-ownership.json) — shared direct ordinary-output ownership, reproduced from DCU partial reductions; singleton, persistent and indirect boundaries remain distinct.

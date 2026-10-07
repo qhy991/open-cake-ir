@@ -403,41 +403,48 @@ def profile_envelope(
         if lowering.schedule_id != schedule.schedule_id or lowering.target != target.target_id:
             raise ValueError("profile lowering context differs from Schedule or Target")
         lowered_source = lowering.source
-    # Compiled-resource feedback is what ptxas reports about a cubin, so it is keyed on
-    # the code object the Target produces rather than on who built the part.
-    if target.code_object is not CodeObject.CUBIN:
-        if compiled_resources is not None:
-            raise ValueError(
-                "CUDA compiled-resource feedback does not describe a "
-                f"{target.code_object.value} kernel"
-            )
-        structures = {index: top_k_merge_structure(schedule, operation)
-                      for index, operation in enumerate(schedule.operations)
-                      if operation.kind is OperationKind.TOP_K}
-        # Bounds use only this Target's declarations. A missing timing calibration
-        # does not erase declared thread/shared capacities, and these upper bounds
-        # are neither achieved occupancy nor a latency prediction.
-        residency = residency_upper_bound(schedule, target)
-        pressure = logical_register_pressure_per_thread(schedule, target, top_k_structures=structures)
-        return ProfileEnvelope(
-            schedule.schedule_id, target.target_id, _work_document(work_bound(schedule)),
-            _residency_document(residency, pressure), _lowering_document(schedule, lowered_source, _top_k_features(schedule, structures),
-                                     _runtime_indexed_buffers(schedule)), (),
-            ("This Target declares no calibrated performance model for latency or achieved occupancy. Residency bounds "
-             "use this Target's declarations only; undeclared capacities and implicit "
-             "backend allocations are not examined. NVIDIA NCU metrics and CUDA "
-             "compiled-resource feedback do not apply.",),
-            None,
-        )
     if compiled_resources is not None:
         if lowering is None:
             raise ValueError("compiled resource feedback requires its complete Lowering context")
+        if compiled_resources.code_object != target.code_object.value:
+            raise ValueError("compiled resource code object differs from Target")
         requirements = lowering.toolchain_requirements
         options = requirements.get("compile_options", {})
         compiled_resources.require_context(
             source=lowering.source, target=target.target_id,
             entry_point=str(requirements.get("kernel_entry_point", "")),
             threads_per_cta=int(options.get("num_warps", 0)) * target.warp_size,
+        )
+    # Non-CUBIN targets retain their own resource facts without NCU metrics.
+    if target.code_object is not CodeObject.CUBIN:
+        structures = {index: top_k_merge_structure(schedule, operation)
+                      for index, operation in enumerate(schedule.operations)
+                      if operation.kind is OperationKind.TOP_K}
+        # Bounds use only this Target's declarations. A missing timing calibration
+        # does not erase declared thread/shared capacities, and these upper bounds
+        # are neither achieved occupancy nor a latency prediction.
+        residency = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
+        pressure = logical_register_pressure_per_thread(schedule, target, top_k_structures=structures)
+        abstention = (
+            "This Target declares no calibrated performance model for latency or achieved occupancy. Residency bounds "
+            "use this Target's declarations only; undeclared capacities and implicit "
+            "backend allocations are not examined. NVIDIA NCU metrics and CUDA "
+            "compiled-resource feedback do not apply."
+        )
+        if compiled_resources is not None:
+            abstention = (
+                "This Target declares no calibrated performance model for latency or achieved occupancy. "
+                "Residency bounds use this Target's declared thread/shared capacities and the bound allocation. "
+                "Compiled private storage is not dynamic spill traffic; AMDGPU stack bytes are not "
+                "separately observed. Register-bank and wave allocation are unmodeled; VGPR counts "
+                "do not provide a register-based CTA bound. NVIDIA NCU metrics do not apply."
+            )
+        return ProfileEnvelope(
+            schedule.schedule_id, target.target_id, _work_document(work_bound(schedule)),
+            _residency_document(residency, pressure, compiled_resources), _lowering_document(schedule, lowered_source, _top_k_features(schedule, structures),
+                                     _runtime_indexed_buffers(schedule)), (),
+            (abstention,),
+            compiled_resources,
         )
     work = work_bound(schedule)
     residency = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
