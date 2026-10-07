@@ -2664,6 +2664,32 @@
         "schedule_sha256": "934541596c885f0a37ea0bd65cbd8986bbc0418e18da726f87c779a171b1fb8f",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "gfx938-register-transpose-tail",
+      "schedule": "corpus/schedules/gfx938-register-transpose-tail.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "031694bbf17fb8f026d54aeb63a10e509abec8ecb4ba65b1aed0ad7594ab0823",
+        "lowering_source_sha256": "f6ac6ad8a369ecae6aa74e9122f27ba1d3d51b4c81dba4f56d55212adf5ab83e"
+      }
+    },
+    {
+      "case_id": "gfx938-kn-transpose-mma-tail",
+      "schedule": "corpus/schedules/gfx938-kn-transpose-mma-tail.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "91e5c61c554c070f5d37aa7606a969dbb4fa3b7221e72a8ae5a123ce78a3e937",
+        "lowering_source_sha256": "3ab4d8a0c013a3bcc3217c879f1e71354f86e916201fc2565dc508b67f33d5a7"
+      }
     }
   ]
 }

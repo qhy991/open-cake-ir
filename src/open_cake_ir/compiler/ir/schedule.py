@@ -247,6 +247,15 @@ class Schedule:
             if producer.kind is OperationKind.MMA and len(producer.reads) == 2 and axis < 2:
                 # out[M,N] contracts a[M,K] with b[N,K].
                 return walk(producer.reads[axis], 0, seen)
+            if producer.kind is OperationKind.TRANSPOSE:
+                from .value_ops import result_type
+                try:
+                    dtype, shape = result_type(self, producer)
+                except ValueError:
+                    return None
+                if buffer.space is not MemorySpace.REGISTER or buffer.dtype is not dtype or buffer.shape != shape:
+                    return None
+                return walk(producer.reads[0], 1 - axis, seen)
             if producer.kind is OperationKind.CAST and len(producer.reads) == 1:
                 return walk(producer.reads[0], axis, seen)
             if producer.kind is not OperationKind.ELEMENTWISE:
@@ -309,11 +318,10 @@ class Schedule:
         not index at all -- loaded once outside it -- answers None.
         """
 
-        # A cast changes representation, not coordinates. Trace only a unique,
-        # shape-preserving chain; malformed graphs must terminate without proof.
-        # Verifier carry admission and backend accumulator placement both consume
-        # this query, so neither may independently guess through a cast.
+        # Follow unique typed representation/axis changes. Carry admission and
+        # accumulator emission consume the same mapped axis, never separate guesses.
         seen: set[str] = set()
+        transposed = False
         while True:
             if operand in seen:
                 return None
@@ -322,15 +330,28 @@ class Schedule:
             if len(producers) != 1:
                 return None
             producer = producers[0]
-            if producer.kind is not OperationKind.CAST:
+            if producer.kind not in {OperationKind.CAST, OperationKind.TRANSPOSE}:
                 break
             if len(producer.reads) != 1 or producer.writes != (operand,):
                 return None
             source = self.buffer(producer.reads[0])
             result = self.buffer(operand)
-            if source is None or result is None or source.shape != result.shape:
+            if source is None or result is None:
+                return None
+            if producer.kind is OperationKind.TRANSPOSE:
+                from .value_ops import result_type
+                try:
+                    dtype, shape = result_type(self, producer)
+                except ValueError:
+                    return None
+                if result.space is not MemorySpace.REGISTER or result.dtype is not dtype or result.shape != shape:
+                    return None
+                transposed = not transposed
+            elif source.shape != result.shape:
                 return None
             operand = source.name
+        if transposed and producer.kind is not OperationKind.LOAD:
+            return None
         access = next(
             (m for m in self.access_maps if m.operation == producer.op_id), None
         )
@@ -352,7 +373,7 @@ class Schedule:
                 component.source is AccessIndexKind.LOOP_TILE
                 and component.name == loop.iterator
             ):
-                return axis
+                return 1 - axis if transposed and axis in (0, 1) else axis
             axis += 1
         return None
 

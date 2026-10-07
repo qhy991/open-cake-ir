@@ -118,6 +118,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
     OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
+    OperationKind.TRANSPOSE: "_emit_transpose",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
@@ -137,6 +138,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.COMPARE: "_emit_compare",
     OperationKind.SELECT: "_emit_select",
     OperationKind.BROADCAST_IN_DIM: "_emit_broadcast_in_dim",
+    OperationKind.TRANSPOSE: "_emit_transpose",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
@@ -716,7 +718,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     "TRITON_NESTED_MMA_OPERAND",
                     f"operations[{index}].reads",
                     "the bounded two-loop MMA backend requires two directly loaded operands; "
-                    "casted operands remain outside this nested emission slice",
+                    "cast or transposed operands remain outside this nested emission slice",
                 )
                 add(
                     not any(schedule.mma_accumulates_over(operation, loop) for loop in chain[:-1]),
@@ -1801,6 +1803,11 @@ class _TritonEmitter:
             ),
             declares=(operation.writes[0],),
         )
+
+    def _emit_transpose(self, operation, pad: str) -> None:
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{operation.writes[0]} = tl.trans({operation.reads[0]})",
+                  declares=(operation.writes[0],))
 
     def _emit_broadcast_in_dim(self, operation, pad: str) -> None:
         result = self.schedule.buffer(operation.writes[0])

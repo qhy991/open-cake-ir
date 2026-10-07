@@ -241,6 +241,7 @@ _PARAMETERS = {
     ]},
     OperationKind.COMPARE: _object({"op": {"enum": ["lt", "le", "eq", "ne", "gt", "ge"]}},
                                   {"scalar": {"type": "number"}}),
+    OperationKind.TRANSPOSE: _object({}),
     OperationKind.BROADCAST_IN_DIM: _object({
         "dimensions": {"type": "array", "minItems": 1, "items": _NONNEGATIVE}
     }),
