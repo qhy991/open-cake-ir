@@ -3,7 +3,7 @@
   "date": "2026-10-07",
   "id": "F-2026-10-07-004",
   "kind": "capacity",
-  "decision": "proposed",
+  "decision": "accepted",
   "title": "Repeated store-loop depth exploration has no bounded Program action",
   "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
   "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
@@ -21,5 +21,11 @@
   },
   "observation": "Authors repeatedly modify num_stages by hand on separate sum and apply/store regions. Retained kernel diagnostics are3.743us for the initial loop,3.735us when only reduction-region depth changes, and2.919us when the output-region depth changes. Existing range options already express this; no new pipeline primitive or general speedup follows.",
   "proposed_change": "Expose explicit named store-region depth selection through the existing Compiler/Program transformation catalog. Preserve the complete Schedule except result identity and the selected existing num_stages. Bound the qualified domain to fixed nonnested gfx938 pure store loops without carry, state, synchronization, residency or persistent mapping. Return a refusal instead of choosing or clamping a depth.",
-  "promotion_disposition": "Proposed reusable candidate action, not an automatic profitable-depth rule. Device replay and same-contract correctness are pending; existing observations are diagnostic and do not establish superiority to the starter or equal-budget search gains."
+  "promotion_disposition": "Promote the bounded reviewed capability after integration checks; preserve original failures and frozen runs. Performance, new shape coverage and equal-budget search benefit remain unproven.",
+  "implemented_in": "166f82a141416cec49cfc596d43b5bfc6ab7115a",
+  "verified_by": {
+    "report": "docs/results/dcu/resource-loop-qualification-20261007.md",
+    "scope": "Four emissions x five original cases pass20/20 on gfx938 with unchanged inputs; no timing or search-gain claim.",
+    "software": "Independent source review found no blocking issues after recorded corrections. Full contracts and offline compile results are owned by shared PR374/375 and this hardware integration PR."
+  }
 }

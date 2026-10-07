@@ -3,7 +3,7 @@
   "date": "2026-10-07",
   "id": "F-2026-10-07-003",
   "kind": "capacity",
-  "decision": "proposed",
+  "decision": "accepted",
   "title": "HSACO allocation inspection cannot reach the portable profile consumer",
   "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
   "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
@@ -24,5 +24,11 @@
   },
   "observation": "The existing AMDGCN inspector reads physical VGPR/private/LDS counts, but portable report replay assumes kernel.cubin, the collection CLI requires cuobjdump, and non-CUBIN profiles reject compiled observations. The actual DTK replay has fixed LDS0 and launch dynamic LDS8192 for a large tile; these are distinct and must both remain visible. The initial duplicate-static-LDS hypothesis was rejected by that replay. Separate AMDGPU stack storage is not observed. Actual 192-VGPR/1024-thread HCU output also makes the CUDA per-SM register formula return zero CTAs. HSACO register-bank/wave allocation is not modeled; retain allocation observations but abstain from that bound.",
   "proposed_change": "Connect existing HSACO inspection to code-object-bound portable reports and the existing profile/author-feedback CLI. Preserve CUDA v1 report replay, use generic binary identity for HSACO, retain fixed and launch-dynamic LDS separately, and report unobserved stack as null. Keep NCU metrics, dynamic spill traffic and calibrated latency claims absent. Keep HSACO register counts diagnostic-only until a target-owned physical allocation model exists.",
-  "promotion_disposition": "In development. Require retained-source offline compile/replay on the actual DTK toolchain, affected contracts, full Corpus and independent review. No performance or achieved-occupancy claim."
+  "promotion_disposition": "Promote the bounded reviewed capability after integration checks; preserve original failures and frozen runs. Performance, new shape coverage and equal-budget search benefit remain unproven.",
+  "implemented_in": "982755aa113eb7fcae0afe919432bb68d13bc526",
+  "verified_by": {
+    "report": "docs/results/dcu/resource-loop-qualification-20261007.md",
+    "scope": "Actual DTK CPU-only compilation/replay; no GPU execution or achieved-occupancy/latency claim.",
+    "software": "Independent source review found no blocking issues after recorded corrections. Full contracts and offline compile results are owned by shared PR374/375 and this hardware integration PR."
+  }
 }
