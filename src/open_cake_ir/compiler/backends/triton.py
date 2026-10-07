@@ -195,7 +195,7 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 # and the Compiler refuses a Target whose code object is neither before preflight.
 PYTHON_NAMESPACE = PythonNamespace(
     reserved_names=frozenset({"tl", "torch", "triton"}),
-    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_", "_cake_launch_", "_cake_pointer_"),
+    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_", "_cake_launch_"),
 )
 
 

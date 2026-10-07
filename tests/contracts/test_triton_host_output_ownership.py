@@ -184,6 +184,13 @@ class HostOutputOwnership(unittest.TestCase):
         from open_cake_ir.compiler.backends.triton import preflight
         d=json.loads((ROOT/'corpus/schedules/gemm-bias-b1-smoke.json').read_text())
         d['target']='gfx938'
+        d.pop('residency', None)
         d['buffers'].append(dict(name='_cake_pointer_range_arg',shape=[1],dtype='fp32',space='global',mode='input'))
         codes={f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/gfx938.json'))}
-        self.assertIn('BACKEND_IDENTIFIER_UNSAFE',codes)
+        self.assertIn('BACKEND_IDENTIFIER_COLLISION',codes)
+        # The existing emitted-scope analysis owns the actual collision. Do not
+        # reserve a new prefix on routes where this helper is not emitted.
+        d['target']='sm_100a'
+        codes={f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/sm_100a.json'))}
+        self.assertNotIn('BACKEND_IDENTIFIER_COLLISION',codes)
+        self.assertNotIn('BACKEND_IDENTIFIER_UNSAFE',codes)

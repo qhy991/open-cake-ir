@@ -3,7 +3,7 @@
   "date": "2026-10-07",
   "id": "F-2026-10-07-007",
   "kind": "behavior",
-  "decision": "proposed",
+  "decision": "accepted",
   "title": "Frozen contiguous HCU arguments repeat physical-span discovery on every JIT launch",
   "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
   "compiler_revision_id": "open-cake-ir@0e62a1fdf119d4f5cb428dc18c8174f684a137e6",
@@ -24,5 +24,22 @@
   },
   "observation": "The actual HCU JIT repeatedly computes sum((shape-1)*stride)+1 for each Torch argument, although the emitted caller already checks frozen contiguous shape and dtype. It consumes ptr_range() before that path. A separately declared host-only engineering derivative preserves kernel AST and ABI guards, qualifies 30 original candidate-case checks plus 10 caller scenarios and 14 prelaunch refusals. Two steady-state paired admissions observe about 1.09x full-call throughput relative to the direct new-transpose caller; all implementations have duplicate A/A blocks. This is not a Compiler-generated result, independent Bench result, or equal-budget search. Mixed-caller measurements have retained order bias and are not pooled.",
   "proposed_change": "On the separately qualified gfx938 host route, construct ephemeral pointer arguments after existing ABI guards. Derive logical contiguous byte span from the declared shape and dtype, not allocation multiplicity or backing-storage size. Keep base tensor alive, read current data_ptr on each request, and leave alignment specialization, device, stream and launch with Triton. No address cache, relaxed guards, new IR primitive or GPU arithmetic change. Other targets keep native arguments.",
-  "promotion_disposition": "In development. Require independent Compiler review, unchanged Corpus decisions, explicit generated-source snapshot adoption, and generated-source device replay including offset views, mutable storage and caller-owned outputs. Engineering-pilot timings do not qualify this successor."
+  "promotion_disposition": "Promote the qualified gfx938 host argument mechanism, not a new instruction or a default Schedule search choice. Generated-source original-task checks pass30/30; caller scenarios10/10, prelaunch refusals14/14, and dtype/multi-output/state components18/18. Two independent steady-state same-Schedule comparisons observe1.092-1.100x full-call improvement; duplicate A/A maxima0.76-1.70%. GEMM remains slower than Torch; GEMM+SiLU is near parity, not a demonstrated community-baseline win. Actual target-kernel trace rows and all seven gateway terminal releases are verified; physical-span recomputation falls from1200 to0 per300 calls. Mixed-caller order-biased measurements, engineering prototypes, original frozen runs, and same-budget search evidence remain separate. Final integration remains subject to exact-commit CI.",
+  "implemented_in": "3aa81aaf",
+  "verified_by": {
+    "kind": "bounded_same_schedule_generated_source_qualification",
+    "compiler": "7926c2795c72050ece5d782b8c74e33373ec07d4",
+    "component_compiler": "fef90175e7e55abdf145473f85cfdd32840cb152",
+    "evidence_root": "/data3/testuser01/experiments/bw1100-transpose-comparison-20261007/run/probe/generated-range",
+    "locators": [
+      "qualification/summary.json",
+      "guards/summary.json",
+      "components/summary.json",
+      "steady1/summary.json",
+      "steady2/summary.json",
+      "trace/manifest.json",
+      "host-profile/manifest.json"
+    ],
+    "software": "199 unchanged Corpus decisions; 111 adopted source snapshots; full contracts at fef90175:2930 passed,26 skipped; independent host and actual DTK protocol review"
+  }
 }
