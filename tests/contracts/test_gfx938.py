@@ -587,7 +587,7 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         # oracle at 64x64x64, the tanh across its saturating tails.
         self.assertEqual(
             sorted(target.instruction_contracts),
-            ["ocml.cos.f32", "ocml.sin.f32", "ocml.tanh.f32", "triton.atomic_add.i32.relaxed.gpu", "triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
+            ["ocml.cos.f32", "ocml.fma.f32", "ocml.sin.f32", "ocml.tanh.f32", "triton.atomic_add.i32.relaxed.gpu", "triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
              "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"])
 
     def test_gfx938_admits_no_other_vendors_spelling_of_the_same_function(self) -> None:
@@ -640,15 +640,14 @@ class Gfx938DeclaredContracts(unittest.TestCase):
     def test_a_triton_target_admits_no_contract_its_route_cannot_emit(self) -> None:
         """Otherwise the Target admits by name what the only backend then refuses.
 
-        "What the route can emit" spans three sets in one module, one per kind of
-        contract, because a contract does not declare its own kind. This compares against
-        the union; it read only the contraction set until gfx938 admitted a tanh, and
-        then failed -- correctly, on a contract the route could in fact emit.
+        Compare the existing lowering sets and the explicit OCML FMA branch. Actual
+        FMA source projection and emission are exercised by test_ocml_fma; a registry
+        entry alone is not evidence that this backend can emit the operation.
         """
         from open_cake_ir.compiler.backends.triton import (
             _ATOMIC_RMW_CONTRACT, _TRITON_MMA_CONTRACTS, _TRITON_TANH_CONTRACTS, _TRITON_TRIG_CONTRACTS)
         emittable = set(_TRITON_MMA_CONTRACTS) | set(_TRITON_TANH_CONTRACTS) | set(_TRITON_TRIG_CONTRACTS) | {
-            _ATOMIC_RMW_CONTRACT}
+            _ATOMIC_RMW_CONTRACT, "ocml.fma.f32"}
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
         self.assertEqual(sorted(set(target.instruction_contracts) - emittable), [])
 
