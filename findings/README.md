@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-07-006](2026-10-07-006-claude-restricted-path-recovery.json) — restricted Claude file tools block a mistaken outside path, but v4 refuses the author's recovered submission. Opt-in v5 requires complete denial witnesses and successful final writes; original failures stay unchanged, and live qualification remains required before new Metal Runs.
+
 The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
 assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
 to F-2026-10-06-007. Their original F-2026-10-06-002 records remain at the platform
