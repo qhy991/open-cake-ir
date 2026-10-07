@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-07-004](2026-10-07-004-store-loop-stage-selection.json) — explicit named output-loop depth selection reuses existing range options and preserves the arithmetic/access graph; no default stage-depth policy.
+
 - [F-2026-10-07-001](2026-10-07-001-ordinary-output-program-ownership.json) — shared direct ordinary-output ownership, reproduced from DCU partial reductions; singleton, persistent and indirect boundaries remain distinct.
 - [F-2026-10-07-002](2026-10-07-002-pure-pointwise-width-applicability.json) — existing width rewrite coverage for typed selections and fixed independent pointwise loops; no default-width or search-performance claim.
 
