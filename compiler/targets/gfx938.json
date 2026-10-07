@@ -125,6 +125,11 @@
       "kind": "device_observation",
       "source": "BW1100 successor Compiler component qualification, DTK image3ad0ae7, Triton3.6.0/Torch2.11.0",
       "locator": "/data3/testuser01/experiments/bw1100-compiler-trig-scan-qualification-20261006/bench/campaign/results/component-summary.json and component-isa.json, 2026-10-06, HCU2: explicit ocml.sin.f32/ocml.cos.f32 each match external Torch FP32 and BF16 outputs on8,388,620 finite arguments; no hardware v_sin_f32/v_cos_f32 emitted. Resident INT32 max scan forward/reverse each match CPU maximum-accumulate on17,408 signed integers; this is component capacity, not full RoPE/sort performance."
+    },
+    {
+      "kind": "device_observation",
+      "source": "Cake register transpose on gfx938, DTK Triton3.6.0,2026-10-07",
+      "locator": "/data3/testuser01/experiments/bw1100-register-transpose-qualification-20261007/run/results/qualification-r1/summary.json at0e62a1fd:16 bit-exact copies across FP32/FP16/BF16/INT32 and four shapes including masked tails; ten original FP32 GEMM/GEMM+SiLU cases pass unchanged oracle. Separate tail-regression matches665 exact outputs atM35/N19/K65. Both Task JIT artifacts contain v_mmac_16x16x8_f32. Scope:register-value permutation and flat K-loop source path; not new ISA, nested MMA or performance qualification."
     }
   ]
 }
