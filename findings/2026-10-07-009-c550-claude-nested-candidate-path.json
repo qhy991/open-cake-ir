@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "id": "F-2026-10-07-009",
+  "kind": "bug",
+  "decision": "proposed",
+  "title": "C550 author successfully creates a duplicate Run directory before correcting its candidate path",
+  "compiler_revision_id": "open-cake-ir@fa3224062160bf37f40e73dc8e23ed5028d67382",
+  "executor_revision": "xcore1002@fa3224062160bf37f40e73dc8e23ed5028d67382",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/gated-event-task-readiness-20261006/runs/rmsnorm/run-evidence",
+    "locators": ["runs/c550-gated-development-20261006-rmsnorm/events/000000000219.json", "runs/c550-gated-development-20261006-rmsnorm/events/000000000221.json"]
+  },
+  "observation": "Turn16 has three completed successful tool calls and no pending tool: Write to actor/Run-id/candidate-set.py, Write to actor/candidate-set.py, then Edit to actor/candidate-set.py. The exact terminal declares candidate_written. Two distinct successful paths correctly fail v4's one-file lifecycle. This is not a context-compaction fault or a recovered denied write. The four-task batch is sealed; fifty tasks never started.",
+  "proposed_change": "Reuse opt-in v5 denial recovery from F-2026-10-07-006. Its invocation explicitly selects restricted file tools and names the absolute candidate file on initial and resumed turns. Its parser rejects a successful nested candidate path immediately. Preserve v3/v4 argv, prompts, interpretation and original failed evidence. A new wrapper/configuration needs fresh live qualification before successor experiments.",
+  "promotion_disposition": "Lab provider transport only. No Compiler change, performance promotion, retry or original outcome reclassification. Native file-tool confinement and live successor qualification remain separate acceptance requirements."
+}

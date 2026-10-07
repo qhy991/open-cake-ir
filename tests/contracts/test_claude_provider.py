@@ -29,6 +29,38 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    def test_v5_initial_and_resume_bind_restricted_tools_and_exact_candidate_path(self):
+        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                               submission_contract=claude.PYTHON_CANDIDATE_BUNDLE_V1)
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertEqual(invocation.argv.count('--restricted'), 1)
+            self.assertIn(str(self.workspace / 'candidate-set.py'), invocation.argv[-1])
+            self.assertIn('Do not append the Run id', invocation.argv[-1])
+            self.assertEqual(invocation.cwd, self.workspace)
+        legacy = self.builder().build('task projection', thread_id=None)
+        self.assertNotIn('--restricted', legacy.argv)
+        self.assertEqual(legacy.argv[-1], 'task projection')
+
+    def test_v5_successful_nested_candidate_write_is_not_a_recovered_denial(self):
+        events = self.events()
+        events[0]['cwd'] = str(self.workspace)
+        events[1]['message']['content'][0]['input']['file_path'] = str(
+            self.workspace / 'duplicated-run-id' / self.candidate.name)
+        with self.assertRaisesRegex(ValueError, 'candidate envelope'):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v5_adapter_refuses_missing_restriction_before_provider_call(self):
+        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        invocation = builder.build('task projection', thread_id=None)
+        invocation = replace(invocation, argv=tuple(x for x in invocation.argv if x != '--restricted'))
+        with patch('open_cake_ir.lab.claude.run_supervised') as process:
+            with self.assertRaisesRegex(ValueError, 'requires restricted file tools'):
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change='add', expected_terminal_message=TERMINAL,
+                    event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+            process.assert_not_called()
+
     def recovered_restricted_events(self):
         events = self.events()
         events[0]['cwd'] = str(self.workspace)

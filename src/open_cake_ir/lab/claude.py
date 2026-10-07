@@ -609,7 +609,10 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                     # anywhere in the spelling is still refused outright rather than
                     # normalized away, so no write can climb out of the envelope.
                     if (not resolved.is_absolute() or ".." in resolved.parts
-                            or resolved.name != candidate_filename):
+                            or resolved.name != candidate_filename
+                            or (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
+                                and working_directory is not None
+                                and resolved.parent != Path(working_directory))):
                         raise ValueError("Claude write is outside the candidate envelope")
                     if event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
                         pending_writes[identity] = (str(resolved), name)
@@ -903,6 +906,18 @@ class ClaudeInvocationBuilder:
                      *window,
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
                      "--tools", tools, "--allowedTools", tools)
+        if self._event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
+            # Opt-in successor only: frozen v3/v4 argv and prompts stay unchanged.
+            # The CLI owns file-tool confinement; qualification must witness it.
+            filename = ('candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1
+                        else 'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
+                        else 'candidate-set.json')
+            arguments += ('--restricted',)
+            prompt = ('Candidate file: ' + str(self.workspace / filename) + '\n'
+                      'The working directory is already the task workspace. '
+                      'Write or edit only this exact file. Do not append the Run id to '
+                      'the directory or create a subdirectory. If a file tool refuses '
+                      'a path, correct the path inside this same invocation.\n\n' + prompt)
         if thread_id is not None:
             arguments += ("--resume", thread_id)
         # The existing process owner takes argv and DEVNULL stdin. Its transport
@@ -947,6 +962,10 @@ class ClaudeProviderAdapter:
         except (IndexError, ValueError) as error:
             raise ValueError("Claude invocation exact model differs") from error
         arguments = list(invocation.argv)
+        if (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
+                and ('--' not in arguments
+                     or arguments[:arguments.index('--')].count('--restricted') != 1)):
+            raise ValueError('Claude v5 requires restricted file tools')
         if event_contract in _MODERN_CONTRACTS:
             # The Study/qualification owns the stable schema template; this invocation
             # binds only the arm and turn already fixed by the trusted Run request.

@@ -39,3 +39,13 @@ treatment records the exact restricted wrapper and its independent file-tool
 probe. In that probe Read/Write/Grep/Glob and symlink Read were directly refused;
 the outside Edit was blocked by its read-before-write precondition, so that refusal
 does not independently establish an Edit path gate.
+
+F-2026-10-07-009 retains a different C550 failure: a duplicated Run subdirectory
+received a successful Write before the author corrected the path. That is not a
+recovered denial and remains refused. The opt-in v5 builder now passes
+`--restricted` and supplies the exact absolute candidate path on initial and
+resumed invocations. The adapter refuses a v5 invocation without that flag before
+calling the provider. A successful candidate path beneath a nested directory is
+refused at the envelope check. Legacy v3/v4 invocation text stays unchanged.
+These software checks do not establish native file-tool containment; a successor
+requires a fresh live probe and qualification with its exact executable.
