@@ -89,7 +89,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                           "mma": ["maca.simt.fp8e4m3_compensated_fp32", "triton.dot.bf16_fp32",
                                   "triton.dot.fp16_fp32", "triton.dot.fp32_ieee"]},
             "gfx938": {"atomic": ["triton.atomic_add.i32.relaxed.gpu"],
-                       "elementwise": ["ocml.cos.f32", "ocml.sin.f32", "ocml.tanh.f32"],
+                       "elementwise": ["ocml.cos.f32", "ocml.fma.f32", "ocml.sin.f32", "ocml.tanh.f32"],
                        "mma": ["triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
                                "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"]},
             "sm_100a": {"atomic": ["triton.atomic_add.i32.relaxed.gpu"],
@@ -114,7 +114,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
 
     def test_the_registry_is_closed_and_every_record_says_what_it_is(self) -> None:
         """Every record carries exactly the fields its analyses read."""
-        self.assertEqual(len(CONTRACTS), 25)
+        self.assertEqual(len(CONTRACTS), 26)
         for name, record in CONTRACTS.items():
             with self.subTest(contract=name):
                 self.assertEqual(record.name, name)

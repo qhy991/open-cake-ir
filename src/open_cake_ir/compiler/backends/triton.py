@@ -1279,6 +1279,8 @@ class _TritonEmitter:
             operation.kind is OperationKind.ELEMENTWISE
             and operation.parameters.instruction is not None
             and (operation.parameters.op in {ElementwiseOp.SIN, ElementwiseOp.COS}
+                 or operation.parameters.op is ElementwiseOp.FMA
+                 and operation.parameters.instruction.contract == "ocml.fma.f32"
                  or operation.parameters.op is ElementwiseOp.TANH
                  and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
                  or self.target.code_object is CodeObject.MCFATBIN
@@ -1725,12 +1727,16 @@ class _TritonEmitter:
         if parameters.op is ElementwiseOp.FMA:
             instruction = parameters.instruction
             contract = instruction.contract if instruction is not None else None
+            _require(contract in self.target.instruction_contracts,
+                     f"instruction {contract!r} is not admitted by {self.target.target_id!r}")
             if contract == "ptx.fma.rn.f32" and self.target.code_object is CodeObject.CUBIN:
                 expression = self._ELEMENTWISE_TEXT[ElementwiseOp.FMA].format(
                     a=operands[0], b=operands[1], c=operands[2]
                 )
             elif contract == "maca.fma.f32" and self.target.code_object is CodeObject.MCFATBIN:
                 expression = f"tl.fma({operands[0]}, {operands[1]}, {operands[2]})"
+            elif contract == "ocml.fma.f32" and self.target.code_object is CodeObject.HSACO:
+                expression = f"libdevice.fma({operands[0]}, {operands[1]}, {operands[2]})"
             else:
                 from .metax import DIRECTED_FMA_FUNCTIONS
                 function = DIRECTED_FMA_FUNCTIONS.get(contract)
