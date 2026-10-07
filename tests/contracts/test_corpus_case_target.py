@@ -95,7 +95,8 @@ class CorpusCaseTarget(unittest.TestCase):
         # Seven retained DCU admissions/refusals and one output-prefix GEMM extend the180-case shared corpus.
         # One reduced DCU ordinary-output collision adds the shared ownership regression.
         # Two transpose cases pin tail copies and transposed K-loop MMA provenance.
-        self.assertEqual(report.case_count, 199)
+        # Two OCML FMA cases pin direct ternary emission and nested producer rounding.
+        self.assertEqual(report.case_count, 201)
 
 
 if __name__ == "__main__":
