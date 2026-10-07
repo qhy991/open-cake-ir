@@ -46,6 +46,11 @@ from ..ir.instruction_contracts import COMPENSATED_FP8_MMA, ContractKind, contra
 from ..target import CodeObject, Target
 from ..diagnostics import Finding
 
+# Host-ABI qualification, not a hardware limit or a generic Triton capability.
+# The gfx938 DTK consumes ptr_range() during tensor specialization. Other routes
+# keep their original arguments until their own qualification justifies a change.
+_FROZEN_POINTER_RANGE_EVIDENCE = frozenset({"gfx938"})
+
 _TL_DTYPE = {
     DType.BF16: "tl.bfloat16",
     DType.FP16: "tl.float16",
@@ -190,7 +195,7 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 # and the Compiler refuses a Target whose code object is neither before preflight.
 PYTHON_NAMESPACE = PythonNamespace(
     reserved_names=frozenset({"tl", "torch", "triton"}),
-    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_", "_cake_launch_"),
+    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_", "_cake_launch_", "_cake_pointer_"),
 )
 
 
@@ -1209,6 +1214,7 @@ class _TritonEmitter:
         entry = self.entry_point
         kernel = f"_{entry}_kernel"
         self._emit_header()
+        self._emit_pointer_range_argument()
         self._emit_kernel(kernel)
         # grid is a static Schedule fact. Retain the lightweight JIT launch
         # callable once, without retaining any caller tensor or its pointer.
@@ -2517,6 +2523,32 @@ class _TritonEmitter:
             self.line(f"{pad}    mask={mask},")
         self.line(f"{pad})")
 
+    def _emit_pointer_range_argument(self) -> None:
+        """Reuse the checked contiguous ABI without retaining a caller's address.
+
+        This supplies a byte extent to DTK's existing tensor-argument protocol;
+        Triton still owns dtype/alignment specialization, device, stream and launch.
+        Each invocation creates fresh arguments after the ordinary ABI guards.
+        A data_ptr query always reaches the current tensor, including after set_.
+        """
+        if self.target.target_id not in _FROZEN_POINTER_RANGE_EVIDENCE:
+            return
+        for line in (
+            "class _cake_pointer_range_arg:",
+            '    __slots__ = ("base", "dtype", "nbytes")',
+            "    def __init__(self, base, dtype, nbytes):",
+            "        self.base = base",
+            "        self.dtype = dtype",
+            "        self.nbytes = nbytes",
+            "    def data_ptr(self):",
+            "        return self.base.data_ptr()",
+            "    def ptr_range(self):",
+            "        return self.nbytes",
+            "",
+            "",
+        ):
+            self.line(line)
+
     def _emit_launch_options(self, constants: dict[str, int]) -> None:
         """Emit every Schedule-owned launch option for either host ABI."""
 
@@ -2649,6 +2681,12 @@ class _TritonEmitter:
                 slot = "out" if len(outputs) == 1 else f"out[{positions[buffer.name]}]"
             else:
                 slot = buffer.name
+            if self.target.target_id in _FROZEN_POINTER_RANGE_EVIDENCE:
+                # Global tensors are checked against shape, dtype and contiguous
+                # storage above. Their logical span excludes any backing-storage
+                # prefix and does not include staged allocation multiplicity.
+                extent = buffer.elements * buffer.dtype.itemsize
+                slot = f"_cake_pointer_range_arg({slot}, {TORCH_DTYPES[buffer.dtype]}, {extent})"
             self.line(f"        {slot},")
 
     def _emit_host_with_state(

@@ -47,9 +47,15 @@ class Tensor:
 
 
 class HostOutputOwnership(unittest.TestCase):
-    def entry(self, multi=False, state=False):
+    def entry(self, multi=False, state=False, target_id=None):
         name = 'atomic-reservation-b8-smoke' if state else 'gemm-bias-b1-smoke'
+        if target_id == 'gfx1151':
+            name = 'gfx1151-rmsnorm-b8-smoke'
         d = json.loads((ROOT/'corpus/schedules'/(name+'.json')).read_text())
+        if target_id is not None:
+            d['target'] = target_id
+            if target_id.startswith('gfx'):
+                d.pop('residency', None)
         if multi:
             output = next(b for b in d['buffers'] if b['name'] == d['outputs'][0])
             other = deepcopy(output);other['name']='second_output';d['buffers'].append(other)
@@ -70,6 +76,13 @@ class HostOutputOwnership(unittest.TestCase):
                 selections.append(grid)
                 def run(*args,**options):
                     assert len(selections)==1, 'static grid should be bound once at module initialization'
+                    globals_ = [b for b in typed.buffers if b.space.value == 'global']
+                    if target_id == 'gfx938':
+                        assert [t.ptr_range() for t in args] == [b.elements*b.dtype.itemsize for b in globals_]
+                        assert all(t.dtype == namespace['torch'].__dict__[spelling[b.dtype.value]]
+                                   for t,b in zip(args, globals_))
+                    else:
+                        assert all(isinstance(t, Tensor) for t in args)
                     launches.append([t.data_ptr() for t in args])
                 return run
         namespace={'torch':SimpleNamespace(empty=empty,**{n:n for n in ['float32','float16','bfloat16','int32','float8_e4m3fn']})}
@@ -77,7 +90,8 @@ class HostOutputOwnership(unittest.TestCase):
             if isinstance(n,ast.FunctionDef) and n is not entry:namespace[n.name]=Kernel()
         binding = next(n for n in tree.body if isinstance(n,ast.Assign)
                        and any(isinstance(t,ast.Name) and t.id.startswith('_cake_launch_') for t in n.targets))
-        exec(compile(ast.Module(body=[binding,entry],type_ignores=[]),'<generated host>','exec'),namespace)
+        helpers=[n for n in tree.body if isinstance(n,ast.ClassDef)]
+        exec(compile(ast.Module(body=[*helpers,binding,entry],type_ignores=[]),'<generated host>','exec'),namespace)
         inputs=[b for b in d['buffers'] if b['space']=='global' and b['mode'] in ['input','state']]
         outputs=[next(b for b in d['buffers'] if b['name']==n) for n in d['outputs']]
         spelling={'fp32':'float32','bf16':'bfloat16','fp16':'float16','int32':'int32'}
@@ -121,3 +135,36 @@ class HostOutputOwnership(unittest.TestCase):
         args[0]._shape=(1,)
         with self.assertRaises(ValueError):fn(*args)
         self.assertEqual(launches,[])
+
+    def test_hcu_extent_arguments_preserve_current_pointers_single_multi_and_state(self):
+        for multi,state in [(False,False),(True,False),(False,True)]:
+            with self.subTest(multi=multi,state=state):
+                fn,args,outputs,allocated,launches,spelling=self.entry(multi,state,'gfx938')
+                fn(*args)
+                args[0].pointer=999
+                values=[Tensor(tuple(b['shape']),spelling[b['dtype']],pointer=80+i) for i,b in enumerate(outputs)]
+                fn(*args,out=values if multi else values[0])
+                self.assertEqual(launches[-1][0],999)
+                self.assertTrue(all(t.reads==[] for t in allocated))
+                for field,bad in [('_shape',(1,)),('_dtype','wrong'),('_device','cuda:1'),('contiguous',False)]:
+                    for t in [args[0],values[-1]]:
+                        old=getattr(t,field);setattr(t,field,bad)
+                        with self.assertRaises((ValueError,TypeError)):
+                            fn(*args,out=values if multi else values[0])
+                        setattr(t,field,old)
+                self.assertEqual(len(launches),2)
+
+    def test_unqualified_routes_keep_native_tensor_arguments(self):
+        for target in ['sm_100a','sm_103a','gfx1151']:
+            with self.subTest(target=target):
+                fn,args,_,_,launches,_=self.entry(target_id=target)
+                fn(*args)
+                self.assertEqual(len(launches),1)
+
+    def test_pointer_argument_symbol_cannot_shadow_author_names(self):
+        from open_cake_ir.compiler.backends.triton import preflight
+        d=json.loads((ROOT/'corpus/schedules/gemm-bias-b1-smoke.json').read_text())
+        d['target']='gfx938'
+        d['buffers'].append(dict(name='_cake_pointer_range_arg',shape=[1],dtype='fp32',space='global',mode='input'))
+        codes={f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/gfx938.json'))}
+        self.assertIn('BACKEND_IDENTIFIER_UNSAFE',codes)
