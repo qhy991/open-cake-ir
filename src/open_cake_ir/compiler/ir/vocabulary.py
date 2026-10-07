@@ -73,6 +73,7 @@ class OperationKind(str, Enum):
     COMPARE = "compare"
     SELECT = "select"
     BROADCAST_IN_DIM = "broadcast_in_dim"
+    TRANSPOSE = "transpose"
     CAST = "cast"
     ELEMENTWISE = "elementwise"
     SCAN = "scan"
