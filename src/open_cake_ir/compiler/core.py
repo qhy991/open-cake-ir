@@ -231,6 +231,14 @@ class Compiler:
         return tile_pointwise_outputs(self, schedule, output_tile=output_tile,
                                       schedule_id=schedule_id, entry_point=entry_point)
 
+    def specialize_triton_store_loop(self, schedule: Mapping[str, object], *,
+                                     loop_name: str, num_stages: int,
+                                     schedule_id: str, entry_point: str) -> SpecializationResult:
+        """Choose the pipeline depth of one independent store-bearing region."""
+        from .passes import specialize_triton_store_loop
+        return specialize_triton_store_loop(self, schedule, loop_name=loop_name,
+            num_stages=num_stages, schedule_id=schedule_id, entry_point=entry_point)
+
     def specialize_triton_warps(self, schedule: Mapping[str, object], *, num_warps: int,
                                 schedule_id: str, entry_point: str) -> SpecializationResult:
         """Explicit launch-width candidate; never invoked by assess or lower."""

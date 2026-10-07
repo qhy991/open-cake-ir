@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "id": "F-2026-10-07-004",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Repeated store-loop depth exploration has no bounded Program action",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/rmsnorm",
+    "locators": [
+      "campaign/evaluations/colloop256-g1/schedule.json",
+      "campaign/profile/kineto-colloop/timing.json",
+      "campaign/profile/kineto-colloop256-ns4a/timing.json",
+      "campaign/profile/kineto-colloop256-ns4b/timing.json",
+      "campaign/HANDOFF.md"
+    ]
+  },
+  "observation": "Authors repeatedly modify num_stages by hand on separate sum and apply/store regions. Retained kernel diagnostics are3.743us for the initial loop,3.735us when only reduction-region depth changes, and2.919us when the output-region depth changes. Existing range options already express this; no new pipeline primitive or general speedup follows.",
+  "proposed_change": "Expose explicit named store-region depth selection through the existing Compiler/Program transformation catalog. Preserve the complete Schedule except result identity and the selected existing num_stages. Bound the qualified domain to fixed nonnested gfx938 pure store loops without carry, state, synchronization, residency or persistent mapping. Return a refusal instead of choosing or clamping a depth.",
+  "promotion_disposition": "Proposed reusable candidate action, not an automatic profitable-depth rule. Device replay and same-contract correctness are pending; existing observations are diagnostic and do not establish superiority to the starter or equal-budget search gains."
+}
