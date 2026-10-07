@@ -72,6 +72,14 @@ class StoreLoopSpecializationTests(unittest.TestCase):
         self.assertEqual(self.apply(self.document(),loop_name='absent').reason,'loop_selection')
         self.assertEqual(self.apply(self.document(),loop_name='sum_region').reason,'loop_domain')
 
+    def test_store_region_with_its_own_resident_reduction_is_outside_domain(self):
+        text=source().replace('lm.store(out[row,c2], v2 * inv, id="store_out")',
+            'local=lm.reduce(v2, op="sum", axis=0, scope="cta", id="local_sum")\n'
+            '            lm.store(out[row,c2], v2 * local, id="store_out")')
+        doc=frontend.parse(text).document
+        self.assertTrue(self.compiler.assess(doc).lowering_eligible)
+        self.assertEqual(self.apply(doc).reason,'loop_domain')
+
     def test_depth_is_bounded_by_real_trip_count_and_never_silently_clamped(self):
         for value in (True,0,-1,1.5,5):
             with self.subTest(value=value):
