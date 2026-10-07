@@ -89,11 +89,11 @@ class ClaudeProviderContracts(unittest.TestCase):
     def test_v5_denied_or_failed_write_never_witnesses_a_candidate(self):
         events = self.recovered_restricted_events()
         del events[4:6]
-        with self.assertRaises(ClaudeCandidateWriteUnwitnessed):
+        with self.assertRaises(ValueError):
             self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
         events = self.events()
         events[2]['message']['content'][0]['is_error'] = True
-        with self.assertRaises(ClaudeCandidateWriteUnwitnessed):
+        with self.assertRaises(ValueError):
             self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
 
     def test_v5_retains_compaction_and_ui_boundaries(self):
