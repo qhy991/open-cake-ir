@@ -153,7 +153,9 @@ inspector without `--cuobjdump`, and `--compiled-report` replays the retained re
 `Compiler.profile` and the existing `project_feedback.py compiler` consumer without GPU
 imports. Output contains allocation facts and target-declared residency upper bounds;
 it contains no NCU estimates, measured occupancy, dynamic spill traffic or calibrated
-latency. The bounds do not account for scalar-register capacity or allocation granularity.
+latency. HSACO VGPR counts remain observations only: register-bank and wave-allocation semantics
+are not modeled, so they do not create a register-based CTA bound. Thread and shared-memory
+bounds continue to use their own declared capacities.
 
 
 ### What the target admits

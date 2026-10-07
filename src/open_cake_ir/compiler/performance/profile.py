@@ -433,8 +433,8 @@ def profile_envelope(
              "use this Target's declarations only; undeclared capacities and implicit "
              "backend allocations without a bound compiled observation are not examined. "
              "Compiled private storage is not dynamic spill traffic; AMDGPU stack bytes "
-             "are not separately observed. Vector-register bounds exclude scalar-register "
-             "capacity and allocation granularity. NVIDIA NCU metrics do not apply.",),
+             "are not separately observed. Register-bank and wave allocation are unmodeled; "
+             "VGPR counts do not provide a register-based CTA bound. NVIDIA NCU metrics do not apply.",),
             compiled_resources,
         )
     work = work_bound(schedule)

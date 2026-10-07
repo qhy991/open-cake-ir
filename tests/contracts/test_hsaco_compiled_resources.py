@@ -61,6 +61,7 @@ class HsacoCompiledResourceTests(unittest.TestCase):
         report = self.compiler.profile(self.assessment, compiled_resources=resource).as_dict()
         self.assertEqual(report['compiled_resources'], resource.as_dict())
         self.assertEqual(report['ncu_metrics'], [])
+        self.assertNotIn('registers', [x['resource'] for x in report['residency']['bounds']])
         shared = next(r for r in report['residency']['bounds'] if r['resource']=='shared_memory')
         self.assertEqual(shared['per_cta'], 1024)
         self.assertTrue(any('not dynamic spill traffic' in x for x in report['abstentions']))
