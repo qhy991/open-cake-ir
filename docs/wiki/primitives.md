@@ -198,3 +198,18 @@ can be native scalar reductions or scalar loads. This explicit operation serves
 outer products and widened validity predicates; it does not silently propagate
 a load mask through later arithmetic. Target admission and backend support remain
 separate from the typed vocabulary.
+
+## transpose
+
+**交换一个二维寄存器值的行列轴。** 输入 `[M,N]` 得到 `[N,M]`，结果满足
+`result[j,i] = input[i,j]`。FP32、FP16、BF16、INT32 的类型与位值保持不变。
+Python 写法是 `lm.transpose(value)`；它不会修改全局内存的 stride，也不会转换精度。
+
+它让加载的 B[K,N] 值能显式转换为现有 MMA 合同要求的 B[N,K]。类型检查、循环累加轴
+与 argmin 候选域会跟随轴交换；地址与边界 mask 仍由各次 load/store 自己声明。
+当前声明范围为 gfx938 Triton。嵌套 MMA 对直接加载操作数的原有限制仍然保留。
+转置可能需要实际 lane 交换，零浮点运算不代表零成本。
+
+规则与边界见 [二维寄存器转置](../REGISTER_TRANSPOSE.md)，例子见
+[带尾块的转置](../../corpus/schedules/gfx938-register-transpose-tail.json) 和
+[转置 K 分块矩阵乘](../../corpus/schedules/gfx938-kn-transpose-mma-tail.json)。

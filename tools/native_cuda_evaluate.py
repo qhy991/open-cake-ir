@@ -399,7 +399,7 @@ def compile_all(root, nvcc, cuobjdump):
             # narrow handoff identity below; neither file substitutes for the other.
             record["compiled_resources"] = CompiledResources(
                 source_sha256=row["source_sha256"],
-                cubin_sha256=sha256((directory / "kernel.cubin").read_bytes()).hexdigest(),
+                binary_sha256=sha256((directory / "kernel.cubin").read_bytes()).hexdigest(),
                 target=row["target"], entry_point=row["metadata"]["kernel_entry_point"],
                 threads_per_cta=row["metadata"]["threads_per_cta"],
                 dynamic_shared_bytes=row["metadata"]["dynamic_shared_bytes"],

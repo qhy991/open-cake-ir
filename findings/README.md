@@ -45,6 +45,14 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - [F-2026-10-07-006](2026-10-07-006-claude-restricted-path-recovery.json) — restricted Claude file tools block a mistaken outside path, but v4 refuses the author's recovered submission. Opt-in v5 requires complete denial witnesses and successful final writes; original failures stay unchanged, and live qualification remains required before new Metal Runs.
 
+- [F-2026-10-07-005](2026-10-07-005-register-transpose-capacity.json) — explicit rank-two register permutation with shared typing and axis provenance; device qualification and performance remain separate.
+
+- [F-2026-10-07-003](2026-10-07-003-hsaco-resource-feedback.json) — connect HSACO allocation inspection to existing portable feedback, preserve code-object identity, and keep fixed LDS, dynamic launch allocation and unknown stack distinct.
+- [F-2026-10-07-004](2026-10-07-004-store-loop-stage-selection.json) — explicit named output-loop depth selection reuses existing range options and preserves the arithmetic/access graph; no default stage-depth policy.
+
+- [F-2026-10-07-001](2026-10-07-001-ordinary-output-program-ownership.json) — shared direct ordinary-output ownership, reproduced from DCU partial reductions; singleton, persistent and indirect boundaries remain distinct.
+- [F-2026-10-07-002](2026-10-07-002-pure-pointwise-width-applicability.json) — existing width rewrite coverage for typed selections and fixed independent pointwise loops; no default-width or search-performance claim.
+
 The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
 assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
 to F-2026-10-06-007. Their original F-2026-10-06-002 records remain at the platform

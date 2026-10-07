@@ -24,7 +24,8 @@
     "reduce",
     "scan",
     "select",
-    "store"
+    "store",
+    "transpose"
   ],
   "warp_size": 64,
   "resource_limits": {
