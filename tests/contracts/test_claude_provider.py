@@ -104,6 +104,36 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual([a.status for a in turn.tool_activity if a.item_type == 'context_compaction'],
                          ['started', 'started', 'completed', 'boundary'])
 
+    def test_v5_common_replay_requires_the_retained_denial_projection(self):
+        from hashlib import sha256
+        from types import SimpleNamespace
+        from open_cake_ir.lab.replay.provider import _replay_provider_turns
+        from open_cake_ir.lab.task_package import TaskPackage
+        contract = claude.CLAUDE_RESTRICTED_EVENT_CONTRACT
+        events = self.recovered_restricted_events()
+        raw = self.raw(events)
+        turn = self.normalize(raw, event_contract=contract)
+        package = TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')
+        state = {'kind': 'ralph_state_v1', 'iteration': 1, 'cumulative_provider_tokens': 0,
+                 'terminal_reason': None}
+        objects = {'provider_events': raw, 'provider_reference_bundle': package.evidence_bundle(state),
+                   'provider_submission_envelope': self.submission, 'candidate_submission_0000': turn.candidates[0]}
+        payload = {'turn': 1, 'thread_id': SESSION, 'turn_provider_tokens': turn.provider_tokens,
+                   'cumulative_provider_tokens': turn.provider_tokens, 'normalization': turn.normalization,
+                   'candidate_count': 1,
+                   'objects': [{'role': role, 'sha256': sha256(value).hexdigest()} for role, value in objects.items()],
+                   'auxiliary_activity': [dict(item.document) for item in turn.tool_activity]}
+        arguments = dict(arm='open_cake', audit=SimpleNamespace(run_id='open_cake-1'),
+            evidence=SimpleNamespace(read_object=lambda ref: objects[ref['role']]),
+            expected_task_package=package, maximum_candidates_per_turn=1,
+            provider_events=[{'payload': payload}], event_contract=contract,
+            provider_authority={'event_contract': contract, 'model': 'exact-requested-model'})
+        self.assertEqual(_replay_provider_turns(**arguments)[0], {1: turn.provider_tokens})
+        payload['auxiliary_activity'] = [item for item in payload['auxiliary_activity']
+                                         if item['item_type'] != 'permission_denial']
+        with self.assertRaisesRegex(ReplayRefusal, 'provider_turn_completed'):
+            _replay_provider_turns(**arguments)
+
     def test_v4_qualification_cannot_admit_v5_runtime(self):
         from hashlib import sha256
         from open_cake_ir.serialization import canonical_json_bytes
