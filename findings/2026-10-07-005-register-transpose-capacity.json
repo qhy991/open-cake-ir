@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "id": "F-2026-10-07-005",
+  "kind": "capacity",
+  "decision": "accepted",
+  "title": "Explicit register transpose for KN-loaded contraction operands",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/gemm_silu",
+    "locators": [
+      "campaign/probes/mma_probe.py",
+      "campaign/probes/mma_probe_orientation.py",
+      "JOURNAL/EVOLUTION.md"
+    ],
+    "related": "attention_decode has a second operand-orientation use; its numerical failure remains unlocalized and is not diagnosed as a Compiler defect."
+  },
+  "observation": "The MMA contract stages A[M,K] and B[N,K], while the original contraction Task stores B[K,N]. broadcast_in_dim preserves axis order and cannot permute the loaded value. A square wrong-orientation candidate is an author formula error, not a Verifier defect.",
+  "proposed_change": "Add explicit rank-two register transpose with reversed result shape and unchanged numeric dtype, frontend inference, strict value typing, unchanged memory effects, contraction/argmin axis provenance, zero arithmetic-work counting and Triton value emission. Keep nested-MMA direct-load admission and all precision contracts unchanged.",
+  "promotion_disposition": "Promote reviewed bounded capacity after software/platform gates. Preserve the wrong-orientation author failure, CPU fixture failure, original workloads and frozen runs. Performance qualification remains separate.",
+  "implemented_in": "0e62a1fdf119d4f5cb428dc18c8174f684a137e6",
+  "verified_by": {
+    "report": "docs/results/dcu/register-transpose-qualification-20261007.md",
+    "device": "16 bit-exact copies and10 original GEMM/GEMM+SiLU case checks pass26/26; separate M35/N19/K65 FP32 tail component matches665 outputs exactly. Original d0d0acab Task oracle and tolerance remain.",
+    "source": "Actual JIT artifacts linked by TTIR source location contain v_mmac_16x16x8_f32 for both Tasks. New primitive documentation is the only change after device-qualified0e62a1fd.",
+    "release": "HCU5 jobs bw-37233ef178b2 and bw-436b28759d8b exit0 with after_vram0%, no KFD visibility and no running container.",
+    "software": "Independent source review;199 Corpus cases and111 source snapshots. PR377/platform PR own full CI status.",
+    "scope": "Rank-two numeric register permutation, flat K-loop contraction and named component cases; no nested-MMA widening, speedup or authoring-gain claim."
+  }
+}
