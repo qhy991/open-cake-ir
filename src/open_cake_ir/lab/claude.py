@@ -822,6 +822,9 @@ class ClaudeInvocationBuilder:
         # say "never execute this fixture", and a constructor that ran `--help` on it
         # would be executing exactly that.
         options = frozenset(cli_options)
+        if (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
+                and '--restricted' not in options):
+            raise ValueError('Claude v5 requires a qualified executable with --restricted support')
         missing = [name for name in CLAUDE_REQUIRED_OPTIONS if name not in options]
         if missing:
             raise ValueError(
@@ -907,12 +910,14 @@ class ClaudeInvocationBuilder:
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
                      "--tools", tools, "--allowedTools", tools)
         if self._event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
+            arguments += ('--restricted',)
+        if (self._event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
+                or self._isolation_policy is not None):
             # Opt-in successor only: frozen v3/v4 argv and prompts stay unchanged.
             # The CLI owns file-tool confinement; qualification must witness it.
             filename = ('candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1
                         else 'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
                         else 'candidate-set.json')
-            arguments += ('--restricted',)
             prompt = ('Candidate file: ' + str(self.workspace / filename) + '\n'
                       'The working directory is already the task workspace. '
                       'Write or edit only this exact file. Do not append the Run id to '

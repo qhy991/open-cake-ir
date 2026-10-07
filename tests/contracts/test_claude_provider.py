@@ -31,6 +31,7 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 class ClaudeProviderContracts(unittest.TestCase):
     def test_v5_initial_and_resume_bind_restricted_tools_and_exact_candidate_path(self):
         builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                               cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'},
                                submission_contract=claude.PYTHON_CANDIDATE_BUNDLE_V1)
         for thread in (None, SESSION):
             invocation = builder.build('task projection', thread_id=thread)
@@ -51,7 +52,8 @@ class ClaudeProviderContracts(unittest.TestCase):
             self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
 
     def test_v5_adapter_refuses_missing_restriction_before_provider_call(self):
-        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                               cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'})
         invocation = builder.build('task projection', thread_id=None)
         invocation = replace(invocation, argv=tuple(x for x in invocation.argv if x != '--restricted'))
         with patch('open_cake_ir.lab.claude.run_supervised') as process:
@@ -60,6 +62,20 @@ class ClaudeProviderContracts(unittest.TestCase):
                     expected_change='add', expected_terminal_message=TERMINAL,
                     event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
             process.assert_not_called()
+
+    def test_v5_missing_native_restricted_option_refuses_at_construction(self):
+        with self.assertRaisesRegex(ValueError, 'qualified executable with --restricted support'):
+            self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v4_isolated_successor_names_exact_path_without_unsupported_cli_option(self):
+        from open_cake_ir.lab.claude_isolation import CLAUDE_WORKSPACE_V1
+        builder = self.builder(isolation_policy=CLAUDE_WORKSPACE_V1,
+                               submission_contract=claude.PYTHON_CANDIDATE_BUNDLE_V1)
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertNotIn('--restricted', invocation.argv)
+            self.assertIn(str(self.workspace / 'candidate-set.py'), invocation.argv[-1])
+        self.assertEqual(builder.configuration['isolation_policy'], CLAUDE_WORKSPACE_V1)
 
     def recovered_restricted_events(self):
         events = self.events()
