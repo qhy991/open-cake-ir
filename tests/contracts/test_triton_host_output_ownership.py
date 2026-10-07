@@ -13,6 +13,25 @@ from open_cake_ir.compiler.target import Target
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def native_pointer_source(source):
+    """Compare cross-target code modulo the separately checked HCU ABI adapter.
+
+    Keep the entire host guard/launch/output body, not just the GPU kernel. Only
+    the one qualified wrapper declaration and its argument construction differ.
+    """
+    class NativeArguments(ast.NodeTransformer):
+        def visit_ClassDef(self, node):
+            return None if node.name == '_cake_pointer_range_arg' else self.generic_visit(node)
+
+        def visit_Call(self, node):
+            if isinstance(node.func, ast.Name) and node.func.id == '_cake_pointer_range_arg':
+                assert len(node.args) == 3 and not node.keywords
+                return self.visit(node.args[0])
+            return self.generic_visit(node)
+
+    return ast.dump(NativeArguments().visit(ast.parse(source)))
+
+
 class Tensor:
     def __init__(self, shape, dtype, device='cuda:0', contiguous=True, pointer=1):
         self._shape, self._dtype, self._device = shape, dtype, device
