@@ -43,6 +43,9 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-07-001](2026-10-07-001-ordinary-output-program-ownership.json) — shared direct ordinary-output ownership, reproduced from DCU partial reductions; singleton, persistent and indirect boundaries remain distinct.
+- [F-2026-10-07-002](2026-10-07-002-pure-pointwise-width-applicability.json) — existing width rewrite coverage for typed selections and fixed independent pointwise loops; no default-width or search-performance claim.
+
 The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
 assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
 to F-2026-10-06-007. Their original F-2026-10-06-002 records remain at the platform
