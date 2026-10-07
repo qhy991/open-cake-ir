@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "id": "F-2026-10-07-008",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "DCU authors cannot name the existing native FP32 fused multiply-add semantics",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "refused_candidates": [
+      "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/silu/campaign/evaluations/probe-fma-gate",
+      "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/swiglu/campaign/evaluations/c6-fma-probe",
+      "/data3/testuser01/experiments/bw1100-cake-task-development-followup-20261006/softplus_gradient/campaign/evaluations/c12-fma",
+      "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/prelu/campaign/evaluations/c5-fmaprobe"
+    ],
+    "native_qualification": "/data3/testuser01/experiments/bw1100-fma-contract-probe-20261007/run",
+    "native_locators": [
+      "protocol.json",
+      "results/manifest.json",
+      "results/summary.json",
+      "results/native-admission-terminal.json"
+    ]
+  },
+  "observation": "Four retained Tasks request foreign PTX FMA and are correctly refused. The existing typed ternary FP32 FMA has no HCU-admitted instruction contract. The installed DTK maps libdevice.fma to __ocml_fma_f32. Native tl.fma, OCML and direct v_fma_f32 probes each match12288 oracle words across ordinary/nested rounding, signed zero, subnormal, overflow, cancellation and nonfinite inputs; NaN payload/sign are unspecified but results must be quiet. The unfused negative control differs on1921 words. Actual instructions include v_fma_f32 and v_fmac_f32_e32; kernel descriptors retain round-mode0 and denorm-mode3. This is native component evidence, not a Cake or Task performance result.",
+  "proposed_change": "Admit ocml.fma.f32 on gfx938 through the existing three-input same-shape FP32 register primitive; emit the existing OCML function and allow only its direct ternary HSACO source call. Keep producer operations, effects, arity/dtype/shape checks and two-FLOP accounting. No automatic mul/add contraction, new layout model, arbitrary asm, or foreign-target admission.",
+  "promotion_disposition": "In development. Require independent review, full Corpus and contracts, then clean Compiler-generated component and retained-Task oracle replays. Do not copy native results into a frozen Run or claim a speedup."
+}

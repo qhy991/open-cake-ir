@@ -39,6 +39,7 @@
   },
   "instruction_contracts": [
     "ocml.cos.f32",
+    "ocml.fma.f32",
     "ocml.sin.f32",
     "ocml.tanh.f32",
     "triton.atomic_add.i32.relaxed.gpu",

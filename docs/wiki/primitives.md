@@ -71,7 +71,8 @@
 | `fma` | 融合乘加 | `2×3+4 → 10` |
 
 浮点数能存的精度有限。FMA 对 `a×b+c` 只做一次最终舍入；先乘再加可能舍入两次，最后几位会不同。
-本项目的 FMA 明确要求三个同形状 FP32 寄存器输入和 `ptx.fma.rn.f32`，不允许用标量或广播字段省掉输入。
+本项目的 FMA 明确要求三个同形状 FP32 寄存器输入，以及目标声明的指令契约，不允许用标量或广播字段省掉输入。
+gfx938 使用 `ocml.fma.f32`；NVIDIA 使用 `ptx.fma.rn.f32`。契约不能跨目标借用。
 `tanh` 也要声明目标指令合同，不会自动把精确要求换成近似指令。
 
 例子：[FMA](../../corpus/schedules/fma-b8-smoke.json)、[嵌套 FMA](../../corpus/schedules/fma-chain-b8-smoke.json)、[ReLU](../../corpus/schedules/relu-b8-smoke.json)。
