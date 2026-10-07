@@ -195,7 +195,8 @@ class ClaudeProviderContracts(unittest.TestCase):
             qualified=True, scope='live_two_turn_tool_rich_provider')
         with self.assertRaisesRegex(ValueError, 'configuration differs from provider qualification'):
             ClaudeRunProvider(qualification=receipt,
-                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)},
+                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                    cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'})},
                 task_packages={'open_cake-1': TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')})
 
     def test_raw_python_file_has_the_same_sealed_projection_as_codex(self):
