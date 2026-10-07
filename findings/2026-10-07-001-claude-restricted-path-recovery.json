@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "id": "F-2026-10-07-001",
+  "kind": "bug",
+  "decision": "proposed",
+  "title": "Restricted Claude file tool prevents a mistaken path but v4 refuses the recovered submission",
+  "compiler_revision_id": "open-cake-ir@d0d0acab",
+  "executor_revision": "apple_gpu_family9@d0d0acab",
+  "backend": "metal",
+  "target": "apple_gpu_family9",
+  "evidence": {
+    "root": "/Users/haiyan-mini/.local/share/open-cake-ir/planning/metal-xcode16-20261006/glm-mean30-20261006",
+    "locators": [
+      "runs/gemm_silu-d0d0acab-cycle-01/report.json",
+      "restricted-successor-20261007/probe/observed-tools.json",
+      "restricted-successor-20261007/qualification-verified-inputs/evidence/runs/metal-glm53-high-restricted-20261007/events"
+    ]
+  },
+  "observation": "Original GEMM+SiLU Turn 16 wrote to gemm-silu instead of gemm_silu and failed the exact path gate. The fresh restricted wrapper blocks a mistaken outside write in resume qualification; the author subsequently writes the correct candidate and returns a successful exact terminal. The native result retains the denied attempt, and v4 refuses permission_denials before considering the recovery. The controlled probe directly blocks outside Read/Write/Grep/Glob and symlink Read; Edit is blocked by read-before-write, not independently by a witnessed path gate.",
+  "proposed_change": "Opt-in v5 requires matching native invocation, restricted denial notice and errored completion for every denied attempt; only successful writes witness candidate production. Preserve v3/v4 and all original artifacts, exact final path, no-follow custody and replay checks. Qualify the new wrapper and v5 together before device experiments.",
+  "promotion_disposition": "Lab transport successor, not a Compiler optimization or a change to scientific read isolation. Original failures remain failures. Software validation, retained-stream interpretation and fresh live two-turn qualification are required before launch."
+}

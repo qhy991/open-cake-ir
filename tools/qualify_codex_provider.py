@@ -410,7 +410,8 @@ def main() -> int:
                         help='controlled native skill package; requires explicit names and retained two-turn input qualification')
     parser.add_argument('--auth-source', type=Path,
                         help='private external Codex credential for an isolated author home')
-    parser.add_argument('--claude-event-contract', choices=('claude_stream_candidate_v3','claude_stream_candidate_v4'), default=CLAUDE_EVENT_CONTRACT)
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    parser.add_argument('--claude-event-contract', choices=CLAUDE_EVENT_CONTRACTS, default=CLAUDE_EVENT_CONTRACT)
     parser.add_argument('--claude-isolation-policy', choices=('linux_claude_workspace_v1',))
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
