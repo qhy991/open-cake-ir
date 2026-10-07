@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-07-009](2026-10-07-009-c550-claude-nested-candidate-path.json) — C550 RMSNorm Turn16 writes two successful candidate paths; retain the original refusal. Explicit OS-isolated successors name the exact file each turn; v5 requires native restriction support. C5502.1.226 rejects that flag, so fresh v4 successor qualification remains the launch gate.
+
 Append-only records between campaign evidence and Compiler/Executor changes. One file
 per finding, named `YYYY-MM-DD-NNN-slug.json`. The evidence ledger already records what
 happened; a finding is the curated "so what" that a Revision decision can cite.
