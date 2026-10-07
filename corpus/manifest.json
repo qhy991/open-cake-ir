@@ -2690,6 +2690,32 @@
         "schedule_sha256": "91e5c61c554c070f5d37aa7606a969dbb4fa3b7221e72a8ae5a123ce78a3e937",
         "lowering_source_sha256": "90db7e02481e846d15147d9c75ca993ffe9bfa925eaa33c50f09fd02383dce56"
       }
+    },
+    {
+      "case_id": "gfx938-ocml-fma",
+      "schedule": "corpus/schedules/gfx938-ocml-fma.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "a00956fc0ccb1756595704440b6d513937189c4f580eb20f8e716b929950e398",
+        "lowering_source_sha256": "60af343ed2e38b235ce89afda915a2fbf2495154a16dc305a3495f9b6fe569d9"
+      }
+    },
+    {
+      "case_id": "gfx938-ocml-fma-nested",
+      "schedule": "corpus/schedules/gfx938-ocml-fma-nested.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "e7d1ce08d35d5680b61324c55bfa1d760dd13b0a5dd8e5eb7a240d825ed32d25",
+        "lowering_source_sha256": "a3e16263c157b6dcbfd06346b5ddd8d725b16f9bad34c5bd534d7a5aa0baf627"
+      }
     }
   ]
 }

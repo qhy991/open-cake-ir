@@ -57,7 +57,7 @@ _TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range", "float"}
 
 def _libdevice_function_allowed(name, requirements) -> bool:
     from .backends.metax import DIRECTED_FMA_FUNCTIONS
-    return (name == "tanh" or name in {"sin", "cos"} and requirements.get("code_object") == CodeObject.HSACO.value
+    return (name == "tanh" or name in {"sin", "cos", "fma"} and requirements.get("code_object") == CodeObject.HSACO.value
             or requirements.get("code_object") == CodeObject.MCFATBIN.value
             and name in DIRECTED_FMA_FUNCTIONS.values())
 
@@ -153,7 +153,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     """Admit one kernel-only module without importing or evaluating any source.
 
     Module imports and @triton.jit have one spelling. The optional libdevice import
-    admits tanh, unary OCML sin/cos on HSACO, and direct ternary MACA directed
+    admits tanh, unary OCML sin/cos and ternary FMA on HSACO, and direct ternary MACA directed
     FMA calls on mcfatbin only. A max scan may carry its one exact pure JIT
     combine helper; no general callback or user helper is admitted.
     Constant infinity identities and the exact FP32 FMA instruction
@@ -255,7 +255,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 if (not isinstance(attribute, ast.Attribute) or attribute.value is not node
                     or not isinstance(call, ast.Call) or call.func is not attribute
                     or not _approved_libdevice_call(call, requirements)):
-                    raise ValueError(f"native Triton libdevice requires a direct tanh call, unary HSACO sin/cos call or an admitted MACA directed FMA call at line {node.lineno}")
+                    raise ValueError(f"native Triton libdevice requires a direct tanh call, unary HSACO sin/cos call, ternary HSACO FMA call or an admitted MACA directed FMA call at line {node.lineno}")
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES
