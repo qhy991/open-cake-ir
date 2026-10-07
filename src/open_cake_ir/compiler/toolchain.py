@@ -553,7 +553,7 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         )
 
 
-def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
+def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int | None]:
     """Read one unambiguous kernel's allocation from the .amdgpu_metadata note.
 
     The AMDGPU backend writes this note into the assembly it already produced, so there
@@ -569,8 +569,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
       it is not folded into that number.
     - `.private_segment_fixed_size` is one per-lane scratch allocation covering what CUDA
       reports separately as LOCAL and STACK. This ISA does not separate them, so the whole
-      figure is reported as local bytes and the stack figure is zero because it is not an
-      observable quantity here -- not because no stack frame exists.
+      figure is reported as local bytes and separate stack bytes remain unknown.
     """
     # A kernel's first metadata key carries a YAML list dash, so every field pattern
     # here tolerates one. Relying on the keys staying in an order that keeps `-` off
@@ -579,7 +578,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
     names = re.findall(r"^[ \t]*(?:-[ \t]+)?\.name:\s*(\S+)\s*$", assembly, flags=re.MULTILINE)
     if names.count(entry_point) != 1 or len(names) != 1:
         raise ValueError("AMDGCN metadata does not name exactly one requested kernel")
-    result: dict[str, int] = {}
+    result: dict[str, int | None] = {}
     for label, name in (
         (".vgpr_count", "registers_per_thread"),
         (".group_segment_fixed_size", "static_shared_bytes"),
@@ -591,7 +590,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
         if len(values) != 1:
             raise ValueError(f"AMDGCN metadata has missing or ambiguous {label}")
         result[name] = int(values[0])
-    result["stack_bytes"] = 0
+    result["stack_bytes"] = None
     return result
 
 
@@ -605,17 +604,22 @@ def inspect_amdgcn_resources(compilation: TritonCompilation) -> CompiledResource
     route = route_for_code_object(compilation.code_object)
     if route.text_role != "amdgcn":
         raise ValueError(f"target {compilation.target!r} does not produce AMDGCN assembly")
+    allocation = _parse_amdgcn_resources(
+        compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point)
+    if allocation["static_shared_bytes"] != compilation.dynamic_shared_bytes:
+        raise ValueError("AMDGPU metadata and Triton static LDS allocation disagree")
     return CompiledResources(
         source_sha256=sha256(compilation.source).hexdigest(),
-        cubin_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
+        binary_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
         target=compilation.target, entry_point=compilation.entry_point,
         threads_per_cta=compilation.threads_per_cta,
-        dynamic_shared_bytes=compilation.dynamic_shared_bytes,
+        # Triton metadata.shared and AMDGPU group_segment_fixed_size both name
+        # static LDS. They are not additive static and dynamic allocations.
+        dynamic_shared_bytes=0,
+        code_object="hsaco",
         compiler_version=compilation.compiler_version,
         inspector_version=f"amdgpu-metadata via triton {compilation.compiler_version}",
-        **_parse_amdgcn_resources(
-            compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point
-        ),
+        **allocation,
     )
 
 
@@ -662,7 +666,7 @@ def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Pa
         )
     return CompiledResources(
         source_sha256=sha256(compilation.source).hexdigest(),
-        cubin_sha256=sha256(compilation.artifacts["cubin"]).hexdigest(),
+        binary_sha256=sha256(compilation.artifacts["cubin"]).hexdigest(),
         target=compilation.target, entry_point=compilation.entry_point,
         threads_per_cta=compilation.threads_per_cta,
         dynamic_shared_bytes=compilation.dynamic_shared_bytes,

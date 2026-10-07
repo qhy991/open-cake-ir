@@ -374,7 +374,7 @@ class AmdgcnResourceParseTest(unittest.TestCase):
                 "registers_per_thread": 134,
                 "static_shared_bytes": 0,
                 "local_bytes": 0,
-                "stack_bytes": 0,
+                "stack_bytes": None,
             },
         )
 
