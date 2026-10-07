@@ -215,7 +215,7 @@ class CompileAndHostBoundary(unittest.TestCase):
                 "stdout": "Function " + self.row["metadata"]["kernel_entry_point"] + ":\n REG:32 STACK:0 SHARED:0 LOCAL:0\n"},
             "inspector_version": {"argv": ["/unit-test/cuobjdump", "--version"], "returncode": 0, "stdout": "unit-test-version"},
             "compiled_resources": e.CompiledResources(source_sha256=lower.source_sha256,
-                cubin_sha256=sha256(shared).hexdigest(), target=lower.target,
+                binary_sha256=sha256(shared).hexdigest(), target=lower.target,
                 entry_point=self.row["metadata"]["kernel_entry_point"],
                 threads_per_cta=self.row["metadata"]["threads_per_cta"],
                 dynamic_shared_bytes=self.row["metadata"]["dynamic_shared_bytes"],
