@@ -425,16 +425,25 @@ def profile_envelope(
         # are neither achieved occupancy nor a latency prediction.
         residency = residency_upper_bound(schedule, target, compiled_resources=compiled_resources)
         pressure = logical_register_pressure_per_thread(schedule, target, top_k_structures=structures)
+        abstention = (
+            "This Target declares no calibrated performance model for latency or achieved occupancy. Residency bounds "
+            "use this Target's declarations only; undeclared capacities and implicit "
+            "backend allocations are not examined. NVIDIA NCU metrics and CUDA "
+            "compiled-resource feedback do not apply."
+        )
+        if compiled_resources is not None:
+            abstention = (
+                "This Target declares no calibrated performance model for latency or achieved occupancy. "
+                "Residency bounds use this Target's declared thread/shared capacities and the bound allocation. "
+                "Compiled private storage is not dynamic spill traffic; AMDGPU stack bytes are not "
+                "separately observed. Register-bank and wave allocation are unmodeled; VGPR counts "
+                "do not provide a register-based CTA bound. NVIDIA NCU metrics do not apply."
+            )
         return ProfileEnvelope(
             schedule.schedule_id, target.target_id, _work_document(work_bound(schedule)),
             _residency_document(residency, pressure, compiled_resources), _lowering_document(schedule, lowered_source, _top_k_features(schedule, structures),
                                      _runtime_indexed_buffers(schedule)), (),
-            ("This Target declares no calibrated performance model for latency or achieved occupancy. Residency bounds "
-             "use this Target's declarations only; undeclared capacities and implicit "
-             "backend allocations without a bound compiled observation are not examined. "
-             "Compiled private storage is not dynamic spill traffic; AMDGPU stack bytes "
-             "are not separately observed. Register-bank and wave allocation are unmodeled; "
-             "VGPR counts do not provide a register-based CTA bound. NVIDIA NCU metrics do not apply.",),
+            (abstention,),
             compiled_resources,
         )
     work = work_bound(schedule)
