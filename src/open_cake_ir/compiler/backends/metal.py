@@ -280,20 +280,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                       f"access has value shape {list(shape)}, but private buffer "
                       f"{private_name!r} has shape {list(private_buffer.shape)}; Metal "
                       "loads/stores do not reshape, broadcast or truncate values")
-            if operation.kind is OperationKind.STORE and schedule.program_map is not None:
-                owned = {component.name for component in access.indices
-                         if component.source is AccessIndexKind.PROGRAM}
-                unowned = [axis.name for axis in schedule.program_map.axes
-                           if (owner := schedule.buffer(axis.buffer)) is not None
-                           and axis.dimension < len(owner.shape)
-                           and axis.tile_count(owner.shape[axis.dimension]) > 1
-                           and axis.name not in owned]
-                # With direct scalar program coordinates, differing programs must
-                # differ in a destination coordinate. Common verification proves the
-                # coordinates are in bounds and the output has only one writer.
-                check(not unowned, "METAL_STORE_OWNERSHIP", f"access_maps[{access_index}].indices",
-                      f"store does not own varying program axes {unowned}; different "
-                      "threadgroups could write the same non-atomic output addresses")
+
     if not findings:
         findings.append(Finding(
             "METAL_SIMD_EXECUTION", "lowering",

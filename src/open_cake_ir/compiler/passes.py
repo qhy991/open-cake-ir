@@ -110,10 +110,13 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
                or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
                or b.stages != 1 or b.swizzle or b.scale_of for b in s.buffers)):
         return refused('execution_commitments', 'Require one zero-based role without explicit storage, synchronization or residency commitments.')
+    pointwise = {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
+                 OperationKind.COMPARE, OperationKind.SELECT, OperationKind.STORE}
+    # Assessment owns compare/select register-storage, shape and dtype checks.
     if s.tile_loops:
         by_id = {op.op_id: op for op in s.operations}
         if len(s.tile_loops) != 1:
-            return refused('loop_domain', 'Require one fixed sequential MMA or CTA-reduction loop.')
+            return refused('loop_domain', 'Require one fixed pointwise, MMA or CTA-reduction loop.')
         loop = s.tile_loops[0]
         body = [by_id[name] for name in loop.body]
         # Initial backend assessment already owns output-store affine coverage
@@ -134,19 +137,36 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
 
         mma_body = any(op.kind is OperationKind.MMA for op in body)
         reduction_body = any(op.kind is OperationKind.REDUCE for op in body)
+        # No reduction/MMA/scan carry, no reads from written global storage, and
+        # no register updates: each iteration computes fresh pointwise values.
+        # Common verification already proves register producers/lifetimes, and
+        # backend assessment above proves each store's affine loop ownership.
+        pointwise_body = (bool(stores)
+            and all(op.kind in pointwise for op in s.operations)
+            and all(
+                s.buffer(op.reads[0]).mode is BufferMode.INPUT
+                if op.kind is OperationKind.LOAD else
+                s.buffer(op.writes[0]).mode is BufferMode.OUTPUT
+                if op.kind is OperationKind.STORE else
+                not set(op.reads).intersection(op.writes)
+                and all(s.buffer(name).space is MemorySpace.REGISTER
+                        for name in op.reads + op.writes)
+                for op in body))
         allowed = {OperationKind.LOAD, OperationKind.CAST, OperationKind.STORE}
         if mma_body:
             allowed.add(OperationKind.MMA)
         elif reduction_body:
             allowed.update({OperationKind.REDUCE, OperationKind.ELEMENTWISE})
+        elif pointwise_body:
+            allowed = pointwise
         if (loop.stop is not None or loop.range_options.warp_specialize
-                or not (mma_body or reduction_body)
+                or not (mma_body or reduction_body or pointwise_body)
                 or any(op.kind not in allowed for op in body)
                 or any(op.kind is OperationKind.CAST and not width_cast(op) for op in body)):
-            return refused('loop_domain', 'Require a fixed MMA or CTA-reduction loop with ordinary loads/casts/stores; rounded output stores must have no intermediate consumers.')
-    if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
-                          OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
-        return refused('operation_domain', 'Only pure tensor arithmetic, MMA, CTA reductions and ordinary loads/stores are admitted.')
+            return refused('loop_domain', 'Require a fixed independent pointwise, MMA or CTA-reduction loop with ordinary loads/casts/stores; rounded output stores must have no intermediate consumers.')
+    if any(op.kind not in pointwise | {OperationKind.MMA, OperationKind.REDUCE}
+           for op in s.operations):
+        return refused('operation_domain', 'Only pure tensor arithmetic/comparisons/selections, MMA, CTA reductions and ordinary loads/stores are admitted.')
     if num_warps == len(s.roles[0].execution_groups):
         return refused('unchanged', 'The requested width is already declared.')
     copied['schedule_id'] = schedule_id

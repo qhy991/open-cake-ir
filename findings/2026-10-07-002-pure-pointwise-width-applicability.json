@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "decision": "accepted",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
+  "backend": "triton",
+  "target": "gfx938",
+  "id": "F-2026-10-07-002",
+  "kind": "capacity",
+  "title": "Width rewrite omits lowerable pure selections and fixed pointwise loops",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/prelu",
+    "locators": [
+      "campaign/evaluations/c3-select/candidate.py",
+      "campaign/evaluations/c3-select/outcome.json",
+      "campaign/evaluations/c6-loopcols-pipe/candidate.py",
+      "campaign/evaluations/c6-loopcols-pipe/outcome.json"
+    ]
+  },
+  "observation": "Both retained PReLU sources pass the original five cases and lower on gfx938; specialize_triton_warps refuses operation_domain for compare/select and loop_domain for the independent pointwise loop. The backend can already generate these structures.",
+  "proposed_change": "Extend the existing explicit width rewrite to typed pure compare/select and one fixed independent pointwise loop, preserving graph, accesses, ABI, casts and existing target/store-ownership gates. Do not create a default width policy, new instruction or accuracy relaxation.",
+  "promotion_disposition": "Promote the reviewed bounded safety gate and explicit width action. Frozen runs remain pinned; broader shape support and performance/search claims require separate evidence.",
+  "implemented_in": "4ef5d547f893a2e2ef531fcede703e0e8413b6b9",
+  "verified_by": {
+    "cpu": "Independent reviews found no blocking issue. The 197-case Corpus Gate,109 retained lowering snapshots and63 focused contracts/45 subtests passed. PR372 owns full cross-version CI status.",
+    "device": "/data3/testuser01/experiments/bw1100-ownership-width-qualification-20261007/run/campaign/successor-qualification/summary.json:25/25 original Task cases accepted using d0d0acab inputs/oracle/comparator, unchanged inputs, fresh nonaliasing outputs. PReLU width1/2 have zero max absolute error; moments control max error1.1920928955078125e-7.",
+    "negative": "The original128x1024 moments twodim source is refused at operations[5] and operations[7] before device submission. The old width action refusals are replayed before successor application.",
+    "release": "Job bw-e7baa9f3f06f exit0; terminal receipt reports after_vram0%, no KFD visibility and no running container.",
+    "scope": "Bounded safety/action-applicability qualification. No default width, timing improvement, equal-budget search advantage or community-baseline claim.",
+    "report": "docs/results/dcu/ownership-width-qualification-20261007.md"
+  }
+}

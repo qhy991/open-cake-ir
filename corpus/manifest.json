@@ -1127,10 +1127,10 @@
       "case_id": "metal-store-program-ownership",
       "schedule": "corpus/schedules/metal-store-program-ownership.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "METAL_STORE_OWNERSHIP"
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"
         ],
         "schedule_sha256": "7db5339f2edf96348e174827ec7a0848368cc31a866a257667fd5f1360b155ce",
         "lowering_source_sha256": null
@@ -1850,11 +1850,10 @@
       "case_id": "native-argmin-domain-drift",
       "schedule": "corpus/schedules/native-argmin-domain-drift.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "NATIVE_ARGMIN_DOMAIN",
-          "NATIVE_STORE_PROGRAM_OWNERSHIP"
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"
         ],
         "schedule_sha256": "a02c64b5895da23fa0983bebfb5d90f876d0fe40fcd0c77d4e9877320db7722e",
         "lowering_source_sha256": null
@@ -1864,10 +1863,10 @@
       "case_id": "triton-argmin-domain-drift",
       "schedule": "corpus/schedules/triton-argmin-domain-drift.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "TRITON_ARGMIN_DOMAIN"
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"
         ],
         "schedule_sha256": "03c31781f15c6803158fb083a573598e9fccc3ec9da6e8d3bcae98712d4f3f60",
         "lowering_source_sha256": null
@@ -2650,6 +2649,20 @@
         ],
         "schedule_sha256": "8e95a41a43a6970b155a74ec55584b8f00ba099b33c8dc4ab314ecf0c6f90196",
         "lowering_source_sha256": "048dbdf896ad85979beafbe305d4ac039e874258d9c265f4ec4127fcaa47c7d9"
+      }
+    },
+    {
+      "case_id": "gfx938-output-program-axis-collision",
+      "schedule": "corpus/schedules/gfx938-output-program-axis-collision.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "934541596c885f0a37ea0bd65cbd8986bbc0418e18da726f87c779a171b1fb8f",
+        "lowering_source_sha256": null
       }
     }
   ]

@@ -340,7 +340,7 @@ class NativeCudaContracts(unittest.TestCase):
             writes=['tile_copy'],depends_on=['add_bias'],parameters={'coalesced':False}))
         d['access_maps'].append(dict(operation='store_tile',buffer='tile_copy',boundary='mask_tiled_axes',
             indices=[dict(source='dimension',dimension=i) for i in range(2)]))
-        self.refuses_backend_only(d,'NATIVE_STORE_PROGRAM_OWNERSHIP')
+        self.refuses(d,'OUTPUT_STORE_PROGRAM_AXIS_COLLISION')
         self.assertNotIn('NATIVE_STORE_ROLE_OWNERSHIP',
                          [f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/sm_100a.json'))])
         # Omitted coordinates are legal when their axes cannot vary.
@@ -492,7 +492,12 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertEqual(min(valid, key=lambda i: (values[i], i)), 0)
 
     def test_argmin_refuses_multiple_candidate_ctas_and_conflicting_column_bounds(self):
-        self.refuses(resident_candidates_document(65), 'NATIVE_ARGMIN_DOMAIN')
+        split = resident_candidates_document(65)
+        self.refuses(split, 'OUTPUT_STORE_PROGRAM_AXIS_COLLISION')
+        # Shared output safety now fails first; the native argmin domain still
+        # rejects the split candidate dimension at its own direct boundary.
+        self.assertIn('NATIVE_ARGMIN_DOMAIN', [f.code for f in preflight(
+            Schedule.from_dict(split), Target.load(ROOT/'compiler/targets/sm_100a.json'))])
         d = resident_candidates_document()
         norm = next(op for op in d['operations'] if op['kind'] == 'load'
                     and len(next(b for b in d['buffers'] if b['name'] == op['reads'][0])['shape']) == 2
