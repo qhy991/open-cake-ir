@@ -606,16 +606,14 @@ def inspect_amdgcn_resources(compilation: TritonCompilation) -> CompiledResource
         raise ValueError(f"target {compilation.target!r} does not produce AMDGCN assembly")
     allocation = _parse_amdgcn_resources(
         compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point)
-    if allocation["static_shared_bytes"] != compilation.dynamic_shared_bytes:
-        raise ValueError("AMDGPU metadata and Triton static LDS allocation disagree")
     return CompiledResources(
         source_sha256=sha256(compilation.source).hexdigest(),
         binary_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
         target=compilation.target, entry_point=compilation.entry_point,
         threads_per_cta=compilation.threads_per_cta,
-        # Triton metadata.shared and AMDGPU group_segment_fixed_size both name
-        # static LDS. They are not additive static and dynamic allocations.
-        dynamic_shared_bytes=0,
+        # AMDGPU's fixed group segment and the launch's dynamic shared request
+        # are distinct. The DTK HCU route uses dynamic LDS with fixed size zero.
+        dynamic_shared_bytes=compilation.dynamic_shared_bytes,
         code_object="hsaco",
         compiler_version=compilation.compiler_version,
         inspector_version=f"amdgpu-metadata via triton {compilation.compiler_version}",

@@ -32,10 +32,10 @@ class HsacoCompiledResourceTests(unittest.TestCase):
             cls.lowered.toolchain_requirements['compile_options']['num_warps'] * 64,
             512, 'fixture', 'hsaco')
 
-    def test_static_lds_is_not_counted_twice_and_unknown_stack_stays_unknown(self):
+    def test_static_and_launch_lds_remain_distinct_and_stack_stays_unknown(self):
         resource = inspect_amdgcn_resources(self.compilation)
-        self.assertEqual(resource.shared_bytes, 512)
-        self.assertEqual(resource.dynamic_shared_bytes, 0)
+        self.assertEqual(resource.shared_bytes, 1024)
+        self.assertEqual(resource.dynamic_shared_bytes, 512)
         self.assertEqual(resource.local_bytes, 132)
         self.assertIsNone(resource.stack_bytes)
         self.assertEqual(resource.registers_per_thread, 48)
@@ -46,13 +46,15 @@ class HsacoCompiledResourceTests(unittest.TestCase):
             _ = resource.cubin_sha256
         self.assertEqual(CompiledResources.from_dict(resource.as_dict()), resource)
 
-    def test_conflicting_metadata_cannot_be_reported_as_exact_allocation(self):
-        with self.assertRaisesRegex(ValueError, 'LDS allocation disagree'):
-            inspect_amdgcn_resources(replace(self.compilation, dynamic_shared_bytes=1024))
-        resource = inspect_amdgcn_resources(self.compilation)
-        for changes in ({'stack_bytes':0}, {'dynamic_shared_bytes':512}):
-            with self.subTest(changes=changes), self.assertRaises(ValueError):
-                replace(resource, **changes)
+    def test_zero_static_lds_retains_the_actual_dynamic_launch_request(self):
+        compilation = replace(self.compilation, artifacts={**self.compilation.artifacts,
+            'amdgcn':self.asm.replace(b'.group_segment_fixed_size: 512', b'.group_segment_fixed_size: 0')},
+            dynamic_shared_bytes=8192)
+        resource = inspect_amdgcn_resources(compilation)
+        self.assertEqual(resource.static_shared_bytes, 0)
+        self.assertEqual(resource.shared_bytes, 8192)
+        with self.assertRaises(ValueError):
+            replace(resource, stack_bytes=0)
 
     def test_native_facts_do_not_create_ncu_metrics_or_latency_claims(self):
         resource = inspect_amdgcn_resources(self.compilation)
@@ -60,11 +62,25 @@ class HsacoCompiledResourceTests(unittest.TestCase):
         self.assertEqual(report['compiled_resources'], resource.as_dict())
         self.assertEqual(report['ncu_metrics'], [])
         shared = next(r for r in report['residency']['bounds'] if r['resource']=='shared_memory')
-        self.assertEqual(shared['per_cta'], 512)
+        self.assertEqual(shared['per_cta'], 1024)
         self.assertTrue(any('not dynamic spill traffic' in x for x in report['abstentions']))
         for changes in ({'source_sha256':'0'*64}, {'entry_point':'other'}, {'threads_per_cta':1024}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.compiler.profile(self.assessment, compiled_resources=replace(resource, **changes))
+
+    def test_exported_cuda_constructor_keeps_its_legacy_keyword(self):
+        args = dict(source_sha256=self.lowered.source_sha256,
+                    target='sm_100a',entry_point='kernel',threads_per_cta=128,
+                    registers_per_thread=32,static_shared_bytes=0,dynamic_shared_bytes=0,
+                    local_bytes=0,stack_bytes=0,compiler_version='fixture',inspector_version='fixture')
+        identity=sha256(self.binary).hexdigest()
+        old=CompiledResources(cubin_sha256=identity,**args)
+        new=CompiledResources(binary_sha256=identity,**args)
+        self.assertEqual(old,new)
+        self.assertEqual(old.as_dict()['schema_version'],1)
+        self.assertEqual(CompiledResources.from_dict(old.as_dict()),old)
+        with self.assertRaises(ValueError):
+            CompiledResources(cubin_sha256=identity,binary_sha256=identity,**args)
 
     def test_cubin_record_cannot_describe_an_hsaco_target(self):
         resource = inspect_amdgcn_resources(self.compilation)

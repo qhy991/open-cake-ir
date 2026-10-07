@@ -15,7 +15,7 @@ import re
 from typing import Mapping
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class CompiledResources:
     source_sha256: str
     binary_sha256: str
@@ -30,6 +30,24 @@ class CompiledResources:
     compiler_version: str
     inspector_version: str
     code_object: str = "cubin"
+
+    def __init__(self, source_sha256: str, binary_sha256: str | None = None,
+                 target: str | None = None, entry_point: str | None = None,
+                 threads_per_cta: int | None = None, registers_per_thread: int | None = None,
+                 static_shared_bytes: int | None = None, dynamic_shared_bytes: int | None = None,
+                 local_bytes: int | None = None, stack_bytes: int | None = None,
+                 compiler_version: str | None = None, inspector_version: str | None = None,
+                 code_object: str = "cubin", *, cubin_sha256: str | None = None) -> None:
+        # Preserve the exported v1 Python constructor at its input boundary.
+        # There is still one stored binary identity; two supplied names are ambiguous.
+        if cubin_sha256 is not None:
+            if binary_sha256 is not None or code_object != "cubin":
+                raise ValueError("CUBIN identity cannot alias another binary or code object")
+            binary_sha256 = cubin_sha256
+        values = locals()
+        for name in self.__dataclass_fields__:
+            object.__setattr__(self, name, values[name])
+        self.__post_init__()
 
     def __post_init__(self) -> None:
         for identity in (self.source_sha256, self.binary_sha256):
@@ -47,8 +65,8 @@ class CompiledResources:
         if self.code_object not in {"cubin", "hsaco"}:
             raise ValueError("compiled resource code object is not supported")
         if self.code_object == "hsaco":
-            if self.stack_bytes is not None or self.dynamic_shared_bytes != 0:
-                raise ValueError("HSACO reports combined private storage and static LDS, not separate stack/dynamic shared bytes")
+            if self.stack_bytes is not None:
+                raise ValueError("HSACO reports combined private storage, not separate stack bytes")
         elif type(self.stack_bytes) is not int or self.stack_bytes < 0:
             raise ValueError("compiled resource stack_bytes must be a nonnegative integer")
         if not self.threads_per_cta or not self.registers_per_thread:
