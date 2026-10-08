@@ -136,6 +136,11 @@
       "kind": "device_observation",
       "source": "Cake register transpose on gfx938, DTK Triton3.6.0,2026-10-07",
       "locator": "/data3/testuser01/experiments/bw1100-register-transpose-qualification-20261007/run/results/qualification-r1/summary.json at0e62a1fd:16 bit-exact copies across FP32/FP16/BF16/INT32 and four shapes including masked tails; ten original FP32 GEMM/GEMM+SiLU cases pass unchanged oracle. Separate tail-regression matches665 exact outputs atM35/N19/K65. Both Task JIT artifacts contain v_mmac_16x16x8_f32. Scope:register-value permutation and flat K-loop source path; not new ISA, nested MMA or performance qualification."
+    },
+    {
+      "kind": "device_observation",
+      "source": "Bounded Cake multi-region FP32 attention replay on gfx938, DTK, 2026-10-08",
+      "locator": "/data3/testuser01/experiments/bw1100-compiler-multi-region-replay-20261008/run-bdcdf319/HANDOFF.json at bdcdf319: retained flash16 now lowers; original five attention_decode cases at Q1024x256,K/V64x256 and caller guards pass without oracle/tolerance changes. All33 controlled observations pass; two50-row target profiles and four clean release receipts retained. New candidate is6.30\u20136.67% slower than old incumbent, which remains selected. Scope:bounded ordinary-map multi-region capability; not persistent-map device qualification, new ISA, independent Bench or performance promotion."
     }
   ]
 }
