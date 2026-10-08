@@ -50,14 +50,13 @@ def cake_index_expand_b8_smoke(block_indices, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != block_indices.device for t in (block_indices,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_index_expand_b8_smoke_device = block_indices.device
     if out is None:
-        out = torch.empty((8, 32), dtype=torch.int32, device=block_indices.device)
+        out = torch.empty((8, 32), dtype=torch.int32, device=_cake_launch_cake_index_expand_b8_smoke_device)
     else:
         if tuple(out.shape) != (8, 32) or out.dtype != torch.int32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != block_indices.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_index_expand_b8_smoke_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_index_expand_b8_smoke(
         block_indices,

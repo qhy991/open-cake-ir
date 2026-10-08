@@ -111,14 +111,15 @@ def cake_qsa_score_topk_t32768(index_q, normalized_keys, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != index_q.device for t in (index_q, normalized_keys,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_qsa_score_topk_t32768_device = index_q.device
+    if normalized_keys.device != _cake_launch_cake_qsa_score_topk_t32768_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((32768, 512), dtype=torch.int32, device=index_q.device)
+        out = torch.empty((32768, 512), dtype=torch.int32, device=_cake_launch_cake_qsa_score_topk_t32768_device)
     else:
         if tuple(out.shape) != (32768, 512) or out.dtype != torch.int32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != index_q.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_qsa_score_topk_t32768_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_qsa_score_topk_t32768(
         index_q,

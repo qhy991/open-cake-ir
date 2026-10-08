@@ -121,14 +121,15 @@ def cake_qsa_selected_attention_t32768(q, k, v, token_indices, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != q.device for t in (q, k, v, token_indices,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_qsa_selected_attention_t32768_device = q.device
+    if k.device != _cake_launch_cake_qsa_selected_attention_t32768_device or v.device != _cake_launch_cake_qsa_selected_attention_t32768_device or token_indices.device != _cake_launch_cake_qsa_selected_attention_t32768_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((32768, 32, 128), dtype=torch.bfloat16, device=q.device)
+        out = torch.empty((32768, 32, 128), dtype=torch.bfloat16, device=_cake_launch_cake_qsa_selected_attention_t32768_device)
     else:
         if tuple(out.shape) != (32768, 32, 128) or out.dtype != torch.bfloat16:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != q.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_qsa_selected_attention_t32768_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_qsa_selected_attention_t32768(
         q,

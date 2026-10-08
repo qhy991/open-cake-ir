@@ -120,12 +120,13 @@ def cake_rope_b8_fused(x, cos, sin, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != x.device for t in (x, cos, sin,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_rope_b8_fused_device = x.device
+    if cos.device != _cake_launch_cake_rope_b8_fused_device or sin.device != _cake_launch_cake_rope_b8_fused_device:
+        raise ValueError('every input must share one device')
     if out is None:
         out = (
-            torch.empty((8, 512, 64), dtype=torch.float32, device=x.device),
-            torch.empty((8, 512, 64), dtype=torch.float32, device=x.device),
+            torch.empty((8, 512, 64), dtype=torch.float32, device=_cake_launch_cake_rope_b8_fused_device),
+            torch.empty((8, 512, 64), dtype=torch.float32, device=_cake_launch_cake_rope_b8_fused_device),
         )
     else:
         out = tuple(out)
@@ -137,7 +138,7 @@ def cake_rope_b8_fused(x, cos, sin, out=None):
         ):
             if tuple(tensor.shape) != shape or tensor.dtype != dtype:
                 raise ValueError("out differs from the frozen output contract")
-            if tensor.device != x.device or not tensor.is_contiguous():
+            if tensor.device != _cake_launch_cake_rope_b8_fused_device or not tensor.is_contiguous():
                 raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_rope_b8_fused(
         x,

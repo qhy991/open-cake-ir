@@ -88,14 +88,15 @@ def qualify_validity_broadcast_3(a, b, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != a.device for t in (a, b,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_qualify_validity_broadcast_3_device = a.device
+    if b.device != _cake_launch_qualify_validity_broadcast_3_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((1, 8), dtype=torch.float32, device=a.device)
+        out = torch.empty((1, 8), dtype=torch.float32, device=_cake_launch_qualify_validity_broadcast_3_device)
     else:
         if tuple(out.shape) != (1, 8) or out.dtype != torch.float32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != a.device or not out.is_contiguous():
+        if out.device != _cake_launch_qualify_validity_broadcast_3_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_qualify_validity_broadcast_3(
         _cake_pointer_range_arg(a, torch.float32, 96),

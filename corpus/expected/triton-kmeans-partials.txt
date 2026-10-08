@@ -108,14 +108,15 @@ def cake_flash_kmeans_assign(tokens, centroids, centroid_sq, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != tokens.device for t in (tokens, centroids, centroid_sq,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_flash_kmeans_assign_device = tokens.device
+    if centroids.device != _cake_launch_cake_flash_kmeans_assign_device or centroid_sq.device != _cake_launch_cake_flash_kmeans_assign_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((32, 512), dtype=torch.int32, device=tokens.device)
+        out = torch.empty((32, 512), dtype=torch.int32, device=_cake_launch_cake_flash_kmeans_assign_device)
     else:
         if tuple(out.shape) != (32, 512) or out.dtype != torch.int32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != tokens.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_flash_kmeans_assign_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_flash_kmeans_assign(
         tokens,

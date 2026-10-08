@@ -47,14 +47,13 @@ def xcore1002_fp8_decode_fp32(x, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != x.device for t in (x,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_xcore1002_fp8_decode_fp32_device = x.device
     if out is None:
-        out = torch.empty((1, 256), dtype=torch.float32, device=x.device)
+        out = torch.empty((1, 256), dtype=torch.float32, device=_cake_launch_xcore1002_fp8_decode_fp32_device)
     else:
         if tuple(out.shape) != (1, 256) or out.dtype != torch.float32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != x.device or not out.is_contiguous():
+        if out.device != _cake_launch_xcore1002_fp8_decode_fp32_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_xcore1002_fp8_decode_fp32(
         x,
