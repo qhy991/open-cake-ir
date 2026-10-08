@@ -53,6 +53,19 @@ class ClaudeProviderContracts(unittest.TestCase):
             self.normalize(self.raw(events), event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
         with self.assertRaises(ValueError):self.normalize(raw)
 
+    def test_exact_file_working_directory_denial_requires_exact_native_reason(self):
+        events = self.exact_file_events()
+        events[2].update(decision_reason_type='workingDir',
+                         decision_reason='Path is outside allowed working directories')
+        turn = self.normalize(self.raw(events),event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        self.assertEqual(turn.candidates,self.normalize().candidates)
+        for key,value in [('decision_reason_type','userApproved'),
+                          ('decision_reason','permissions bypassed'),('unknown','extra')]:
+            changed=copy.deepcopy(events);changed[2][key]=value
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(changed),event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        with self.assertRaises(ValueError):self.normalize(self.raw(events))
+
     def test_exact_file_initial_resume_permissions_and_bypass_refusal(self):
         builder = self.builder(event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT,
                                isolation_policy='linux_claude_workspace_v1')
