@@ -110,6 +110,9 @@ class IsolatedCompiler:
         """The worker's explicit rejection, unless a toolchain owns a narrower signature."""
         return result.returncode == 2
 
+    def _candidate_diagnostic(self, diagnostic: str, result, requirements) -> str:
+        return diagnostic
+
     # -- the scaffold ------------------------------------------------------------------
 
     def _argv(self, root: Path, requirements: Mapping[str, object]) -> list[str]:
@@ -155,5 +158,6 @@ class IsolatedCompiler:
                     raise RunProtocolFault("harness_fault",
                                            f"isolated {self.label} build unavailable: " + diagnostic,
                                            artifact_payloads=streams)
-                raise CandidateCompileRejected(diagnostic, artifact_payloads=streams)
+                raise CandidateCompileRejected(self._candidate_diagnostic(diagnostic,result,requirements),
+                                               artifact_payloads=streams)
             return self._receipt(root, source, requirements, streams)

@@ -108,6 +108,14 @@ class IsolatedTritonCompiler(IsolatedCompiler):
                 and all(marker in text for marker in markers)
                 and not any(marker in text for marker in infrastructure))
 
+    def _candidate_diagnostic(self, diagnostic, result, requirements):
+        if result.returncode == 1 and self._candidate_failure(result,requirements):
+            return ('MACA_MMA_SHARED_LAYOUT: the pinned MACA Triton pass refused the '
+                    'operand shared layout. Choose another mapping or decomposition; '
+                    'no general hardware tile limit is inferred. Original stderr is retained.\n'
+                    + diagnostic)
+        return diagnostic
+
     def _receipt(self, root: Path, source: bytes, requirements: Mapping[str, object],
                  streams: dict[str, bytes]) -> TritonCompilation:
         record = json.loads((root / 'compilation.json').read_text())
