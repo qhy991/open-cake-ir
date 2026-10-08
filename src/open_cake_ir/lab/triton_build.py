@@ -91,6 +91,23 @@ class IsolatedTritonCompiler(IsolatedCompiler):
     def _supervise(self, argv, *, cwd, environment, timeout_seconds):
         return run_supervised(argv, cwd=cwd, environment=environment, timeout_seconds=timeout_seconds)
 
+    def _candidate_failure(self, result, requirements):
+        if super()._candidate_failure(result, requirements):
+            return True
+        # F-2026-10-08-002: bounded MACA layout assertion, not a generic
+        # RuntimeError whitelist or an inferred hardware tile restriction.
+        text = result.stderr.decode(errors='replace')
+        markers = ('MACAMmaEncodingAttr::composeSharedLayoutForOperand',
+                   'shape_judge && "tn and tk not meet conditon"',
+                   'TritonGPUReduceDataDuplication', 'RuntimeError: PassManager::run failed')
+        infrastructure = ('ImportError:', 'ModuleNotFoundError:', 'OSError:',
+                          'PermissionError:', 'No space left on device',
+                          'Cannot allocate memory', 'bwrap:')
+        return (result.returncode == 1 and requirements.get('code_object') == 'mcfatbin'
+                and self.triton_version == '3.6.0'
+                and all(marker in text for marker in markers)
+                and not any(marker in text for marker in infrastructure))
+
     def _receipt(self, root: Path, source: bytes, requirements: Mapping[str, object],
                  streams: dict[str, bytes]) -> TritonCompilation:
         record = json.loads((root / 'compilation.json').read_text())
