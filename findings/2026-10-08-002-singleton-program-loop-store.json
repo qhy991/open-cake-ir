@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-08",
+  "id": "F-2026-10-08-002",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Triton loop-store admission requires singleton logical program coordinates",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@9160cbc38176e14ad4d252bad8a6b5a9ece77044",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-main-tasks-round4-20261008/runs",
+    "refused_evaluations": [
+      "aka_momentum_sgd/campaign/evaluations/loop-stages",
+      "aka_histogram/campaign/evaluations/bin-loop-refused"
+    ],
+    "artifacts_in_each_evaluation": [
+      "candidate.py",
+      "assessment.json",
+      "outcome.json"
+    ],
+    "audit": "/private/tmp/bw1100-round4-initial-analysis-20261008/completed-task-compiler-leads-1791458307.md",
+    "readonly_copies": "/private/tmp/bw1100-singleton-loop-store-delivery-20261008/originals"
+  },
+  "observation": "Both original candidates are accepted by common verification but refused by TRITON_LOOP_STORE_OWNERSHIP. Momentum has one logical tile over a rank-1 2048-element parameter and a tile512 output loop; histogram has one logical tile over its 1024-element input and a loop that writes distinct output bins. Their in-loop stores cannot also encode the singleton program coordinate in the same rank-1 output. A minimal loop-copy reproduces the refusal. Changing its program tile to create two logical tiles is a necessary negative control because those programs would write the same loop addresses.",
+  "proposed_change": "Exclude a program coordinate from required loop-store coverage only when ProgramAxis.tile_count on its declared owner extent proves one logical tile. Keep all enclosing loop coordinates and all varying program coordinates mandatory exactly once. Preserve OUTPUT-only destinations and the prohibition on buffer/scalar-buffer indexed stores. Unresolved owners or dimensions do not prove singleton. Do not use physical launch size: a persistent CTA can traverse several logical tiles.",
+  "design_review": "P1/P3 retain existing ProgramMap and access-map primitives with one cardinality owner; P2 retains explicit loop/store spelling; P4/P5/P7 retain common typing, effects and safety verification; P6 requires positive emitted-source CPU semantics and owning negative controls; P8 makes no target capacity or device-performance claim.",
+  "promotion_disposition": "Bounded lowering-admission successor for independent source review and software verification. Original candidates, refusals and frozen Runs remain unchanged. CPU interpretation, preflight and emitted source do not establish device correctness, native compilation or performance; no GPU qualification or performance promotion is claimed.",
+  "implemented_in": null,
+  "verified_by": null
+}

@@ -800,7 +800,15 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             ]
             required = [loop.iterator for loop in chain]
             if schedule.program_map is not None:
-                required.extend(axis.name for axis in schedule.program_map.axes)
+                # Only a varying logical program coordinate distinguishes stores.
+                # A persistent launch may use one physical CTA for many logical
+                # tiles, so the launch grid cannot establish this exception.
+                required.extend(
+                    axis.name for axis in schedule.program_map.axes
+                    if (owner := schedule.buffer(axis.buffer)) is None
+                    or axis.dimension >= len(owner.shape)
+                    or axis.tile_count(owner.shape[axis.dimension]) != 1
+                )
             add(
                 destination.mode is BufferMode.OUTPUT
                 and all(component.source not in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER} for component in access.indices)
@@ -808,7 +816,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 "TRITON_LOOP_STORE_OWNERSHIP",
                 f"operations[{index}]",
                 "an in-loop Triton store requires an output buffer and affine "
-                "coordinates covering every active loop and program axis exactly once",
+                "coordinates covering every active loop and non-singleton program axis exactly once",
             )
 
     for index, operation in enumerate(schedule.operations):

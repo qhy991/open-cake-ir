@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-08-002](2026-10-08-002-singleton-program-loop-store.json) — admit loop stores that omit only provably singleton logical program coordinates; preserve varying-axis ownership and persistent-walk safety, with device qualification pending.
+
 - [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.
 
 - [F-2026-10-07-007](2026-10-07-007-hcu-frozen-pointer-range.json) — reuse a checked contiguous HCU ABI to supply pointer extent without caching addresses; host-only pilot and Compiler qualification remain distinct.
