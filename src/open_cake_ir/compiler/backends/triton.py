@@ -297,6 +297,61 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
+def _multi_region_mma_operand(schedule: Schedule, operation, operand: str) -> bool:
+    """Prove a resident operand is available without inventing a loop carry.
+
+    Loads and typed cast/transpose chains retain their access-axis provenance.
+    A computed terminal value is admitted only outside all active MMA loops; a
+    completed sibling contraction/reduction can provide that invariant value.
+    General arithmetic on a varying load remains outside this bounded slice.
+    """
+    value = schedule.buffer(operand)
+    provenance = schedule.staged_operand_provenance(operand)
+    if (value is None or value.space is not MemorySpace.REGISTER
+            or len(value.shape) != 2 or provenance is None):
+        return False
+    chain, _ = provenance
+    origin = chain[0]
+    active = schedule.enclosing_loops(operation)
+    if origin.kind is OperationKind.LOAD:
+        if (len(origin.reads) != 1 or len(origin.writes) != 1
+                or (source := schedule.buffer(origin.reads[0])) is None
+                or source.space is not MemorySpace.GLOBAL
+                or schedule.access_map(origin.op_id, source.name) is None):
+            return False
+    elif (origin.kind not in {OperationKind.ELEMENTWISE, OperationKind.REDUCE,
+                             OperationKind.MMA, OperationKind.BROADCAST_IN_DIM,
+                             OperationKind.SELECT}
+          or any(loop in active for loop in schedule.enclosing_loops(origin))):
+        return False
+    order = {op.op_id: index for index, op in enumerate(schedule.operations)}
+    for producer, consumer in zip(chain, (*chain[1:], operation)):
+        if order[producer.op_id] >= order[consumer.op_id]:
+            return False
+        produced = schedule.enclosing_loops(producer)
+        consumed = schedule.enclosing_loops(consumer)
+        common = 0
+        while common < min(len(produced), len(consumed)) and produced[common] == consumed[common]:
+            common += 1
+        escaped = produced[common:]
+        if not escaped:
+            continue
+        # Only a direct, finalized fold can cross a region boundary. The common
+        # verifier also owns this rule; admission needs the same proof before it
+        # treats a prior region's result as an invariant MMA operand.
+        if len(escaped) != 1:
+            return False
+        loop = escaped[0]
+        carried = (producer.kind is OperationKind.MMA
+                   and schedule.mma_accumulates_over(producer, loop)) or (
+                       producer.kind is OperationKind.REDUCE
+                       and producer.parameters.across_loop)
+        if (not carried or any(order[op.op_id] >= order[consumer.op_id]
+                               for op in schedule.loop_operations(loop))):
+            return False
+    return True
+
+
 def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) -> tuple[Finding, ...]:
     """Return the constructor's backend-owned lowering requirements.
 
@@ -716,14 +771,14 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             if operation.kind is OperationKind.MMA:
                 add(
                     len(operation.reads) == 2 and all(
-                        any(producer.kind is OperationKind.LOAD
-                            and operand in producer.writes for producer in schedule.operations)
+                        _multi_region_mma_operand(schedule, operation, operand)
                         for operand in operation.reads
                     ),
                     "TRITON_NESTED_MMA_OPERAND",
                     f"operations[{index}].reads",
-                    "the bounded two-loop MMA backend requires two directly loaded operands; "
-                    "cast or transposed operands remain outside this nested emission slice",
+                    "multi-region MMA requires typed load/cast/transpose operands or available "
+                    "loop-invariant computed register values; varying arithmetic and "
+                    "unfinalized region values have no operand provenance",
                 )
                 add(
                     not any(schedule.mma_accumulates_over(operation, loop) for loop in chain[:-1]),
