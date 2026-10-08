@@ -94,6 +94,29 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
     return command
 
 
+def dispatch_must_stop(report, exit_code, fault=None):
+    """An archived author path failure ends its Run, not qualified sibling Runs.
+
+    Unknown reports, custody faults, account/provider availability and device
+    faults stop submissions. This neither retries nor reclassifies a failed Run.
+    """
+    audit = report.get('audit', {})
+    if (exit_code != 0 or audit.get('archive_integrity') is not True
+            or audit.get('filesystem_custody_verified') is not True
+            or report.get('replay', {}).get('refusals')):
+        return True
+    if audit.get('protocol_adherence') == 'adhered':
+        return False
+    messages = {'Claude write is outside the candidate envelope',
+                'Claude candidate write lifecycle is incomplete',
+                'provider candidate-set workspace custody differs'}
+    return not (audit.get('protocol_adherence') == 'provider_fault'
+                and isinstance(fault, dict) and fault.get('fault') == 'provider_fault'
+                and fault.get('stage') == 'provider'
+                and fault.get('exception_message') in messages
+                and fault.get('observed_quota', {}).get('observed') == 'no_notice')
+
+
 def _bounded_map(items, operation, workers, stop):
     """Keep at most workers host jobs active; never own a device allocation."""
     if workers == 1:

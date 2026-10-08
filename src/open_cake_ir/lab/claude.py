@@ -41,11 +41,22 @@ from ._documents import _canonical_json_bytes
 CLAUDE_LEGACY_EVENT_CONTRACT = "claude_stream_candidate_v3"
 CLAUDE_EVENT_CONTRACT = "claude_stream_candidate_v4"
 CLAUDE_RESTRICTED_EVENT_CONTRACT = "claude_stream_candidate_v5"
+CLAUDE_EXACT_FILE_EVENT_CONTRACT = "claude_stream_candidate_v6"
 CLAUDE_EVENT_CONTRACTS = (CLAUDE_LEGACY_EVENT_CONTRACT, CLAUDE_EVENT_CONTRACT,
-                        CLAUDE_RESTRICTED_EVENT_CONTRACT)
-_MODERN_CONTRACTS = (CLAUDE_EVENT_CONTRACT, CLAUDE_RESTRICTED_EVENT_CONTRACT)
+                        CLAUDE_RESTRICTED_EVENT_CONTRACT, CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+_MODERN_CONTRACTS = (CLAUDE_EVENT_CONTRACT, CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                    CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+_DENIAL_CONTRACTS = (CLAUDE_RESTRICTED_EVENT_CONTRACT, CLAUDE_EXACT_FILE_EVENT_CONTRACT)
 CLAUDE_TERMINAL_TOOL = "StructuredOutput"
 CLAUDE_AUTHORING_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")
+
+
+def exact_file_tools(workspace: Path, filename: str) -> str:
+    """Native absolute permission rules; no wildcard or parser metacharacter."""
+    path = str(workspace / filename)
+    if not workspace.is_absolute() or any(c in path for c in ',()*?[]\n\r'):
+        raise ValueError('Claude exact-file permission path differs')
+    return 'Read,Glob,Grep,Write(/' + path + '),Edit(/' + path + ')'
 # The largest auto-compact window this CLI admits. It has no value that turns compaction
 # off, so the boundary is pinned at the maximum. For a model the CLI does not recognize
 # (it logs claude-code:unrecognized_model) the CLI clamps even this window to its assumed
@@ -462,7 +473,7 @@ class ClaudeCandidateWriteUnwitnessed(ValueError):
 def _restricted_denials(terminal, event_contract):
     """A declaration alone never proves refusal; the stream closes every id below."""
     declared = terminal.get('permission_denials', [])
-    if event_contract != CLAUDE_RESTRICTED_EVENT_CONTRACT:
+    if event_contract not in _DENIAL_CONTRACTS:
         if declared != []:
             raise ValueError('Claude Turn did not complete under the declared event contract')
         return {}
@@ -476,6 +487,9 @@ def _restricted_denials(terminal, event_contract):
                 or item['tool_use_id'] in result or not isinstance(item['tool_input'], Mapping)):
             raise ValueError('Claude permission denial declaration differs')
         result[item['tool_use_id']] = item
+        if (event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT
+                and item['tool_name'] not in {'Write', 'Edit'}):
+            raise ValueError('Claude exact-file denial tool differs')
     return result
 
 
@@ -544,19 +558,29 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
             compaction_phase = None if phase == "boundary" else phase
             activity.append(ProviderAuxiliaryActivity(event["uuid"], "context_compaction", phase))
             continue
-        if (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
+        if (event_contract in _DENIAL_CONTRACTS
                 and event.get('type') == 'system' and event.get('subtype') == 'permission_denied'):
             identity = event.get('tool_use_id')
-            if (set(event) != {'type', 'subtype', 'tool_name', 'tool_use_id', 'decision_reason_type',
-                              'decision_reason', 'message', 'uuid', 'session_id'}
+            fields = {'type', 'subtype', 'tool_name', 'tool_use_id', 'message', 'uuid', 'session_id'}
+            if event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
+                fields |= {'decision_reason_type', 'decision_reason'}
+            if (set(event) != fields
                     or not isinstance(identity, str) or identity not in denied_tools
                     or identity not in active_tools or identity in denial_notices
                     or event['tool_name'] != denied_tools[identity]['tool_name']
-                    or event['decision_reason_type'] != 'other'
-                    or event['decision_reason'] != '--restricted: path outside the working directory'
+                    or (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT and (
+                        event['decision_reason_type'] != 'other'
+                        or event['decision_reason'] != '--restricted: path outside the working directory'))
                     or not isinstance(event['message'], str) or not event['message']
                     or not isinstance(event['uuid'], str) or _THREAD_ID.fullmatch(event['uuid']) is None):
                 raise ValueError('Claude restricted permission denial notice differs')
+            if event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT:
+                path = denied_tools[identity]['tool_input'].get('file_path')
+                message = event['message']
+                if (not isinstance(path, str) or not path or path not in message
+                        or not message.startswith('Claude requested permissions to ')
+                        or not message.endswith(", but you haven't granted it yet.")):
+                    raise ValueError('Claude exact-file permission denial notice differs')
             denial_notices[identity] = event['message']
             activity.append(ProviderAuxiliaryActivity(event['uuid'], 'permission_denial', 'observed',
                                                      tool=event['tool_name']))
@@ -610,11 +634,11 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                     # normalized away, so no write can climb out of the envelope.
                     if (not resolved.is_absolute() or ".." in resolved.parts
                             or resolved.name != candidate_filename
-                            or (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
+                            or (event_contract in _DENIAL_CONTRACTS
                                 and working_directory is not None
                                 and resolved.parent != Path(working_directory))):
                         raise ValueError("Claude write is outside the candidate envelope")
-                    if event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
+                    if event_contract in _DENIAL_CONTRACTS:
                         pending_writes[identity] = (str(resolved), name)
                     else:
                         writes.append((str(resolved), name))
@@ -803,6 +827,8 @@ class ClaudeInvocationBuilder:
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
             raise ValueError("Claude builder event contract differs")
         self._event_contract = event_contract
+        if event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT and isolation_policy != CLAUDE_WORKSPACE_V1:
+            raise ValueError('Claude exact-file contract requires OS workspace isolation')
         if any(not isinstance(value, str) or not value or "\x00" in value
                for value in (provider_revision, model, reasoning_effort)):
             raise ValueError("Claude invocation identity and effort are required")
@@ -847,7 +873,8 @@ class ClaudeInvocationBuilder:
         return {**({"isolation_policy": self._isolation_policy} if self._isolation_policy else {}),
                 **({"response_model_aliases": list(self.response_aliases)} if self.response_aliases else {}),
                 "harness": "claude-code", "model": self._model, "reasoning_effort": self._effort,
-                "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
+                "permission_mode": ('default' if self._event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT
+                                    else 'acceptEdits'), "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
                 "submission_contract": self._submission_contract, "terminal_schema": terminal_schema()}
@@ -895,6 +922,10 @@ class ClaudeInvocationBuilder:
         if thread_id is not None and (not isinstance(thread_id, str) or _THREAD_ID.fullmatch(thread_id) is None):
             raise ValueError("Claude resume session id differs")
         tools = ",".join(CLAUDE_AUTHORING_TOOLS)
+        filename = ('candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1
+                    else 'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
+                    else 'candidate-set.json')
+        guarded = self._event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT
         # F-2026-09-10-008: auto-compact silently drops provider context mid-turn, which
         # changes what the author saw and breaks comparability between arms. This CLI has
         # no off switch -- `--autocompact` takes only `auto` or a 100k..1M window -- so the
@@ -907,8 +938,8 @@ class ClaudeInvocationBuilder:
                   else (CLAUDE_AUTOCOMPACT_OPTION, self._autocompact))
         arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
                      *window,
-                     "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
-                     "--tools", tools, "--allowedTools", tools)
+                     "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", 'default' if guarded else 'acceptEdits',
+                     "--tools", tools, "--allowedTools", exact_file_tools(self.workspace, filename) if guarded else tools)
         if self._event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
             arguments += ('--restricted',)
         if (self._event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
@@ -967,6 +998,15 @@ class ClaudeProviderAdapter:
         except (IndexError, ValueError) as error:
             raise ValueError("Claude invocation exact model differs") from error
         arguments = list(invocation.argv)
+        if event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT:
+            expected_tools = exact_file_tools(invocation.cwd, candidate_path.name)
+            if (any(arguments.count(flag) != 1 or arguments[arguments.index(flag)+1] != value
+                    for flag, value in [('--permission-mode','default'),
+                                        ('--allowedTools',expected_tools)])
+                    or any(flag in arguments[:arguments.index('--')] for flag in (
+                        '--dangerously-skip-permissions','--allow-dangerously-skip-permissions',
+                        '--settings','--add-dir'))):
+                raise ValueError('Claude exact-file invocation permissions differ')
         if (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
                 and ('--' not in arguments
                      or arguments[:arguments.index('--')].count('--restricted') != 1)):
