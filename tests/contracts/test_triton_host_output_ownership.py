@@ -66,11 +66,15 @@ class Tensor:
 
 
 class HostOutputOwnership(unittest.TestCase):
-    def entry(self, multi=False, state=False, target_id=None):
+    def entry(self, multi=False, state=False, target_id=None, single=False, entry_name=None):
         name = 'atomic-reservation-b8-smoke' if state else 'gemm-bias-b1-smoke'
+        if single:
+            name = 'gfx938-cast-bf16-fp32-b8-smoke'
         if target_id == 'gfx1151':
             name = 'gfx1151-rmsnorm-b8-smoke'
         d = json.loads((ROOT/'corpus/schedules'/(name+'.json')).read_text())
+        if entry_name is not None:
+            d['lowering']['entry_point'] = entry_name
         if target_id is not None:
             d['target'] = target_id
             if target_id.startswith('gfx'):
@@ -194,3 +198,60 @@ class HostOutputOwnership(unittest.TestCase):
         codes={f.code for f in preflight(Schedule.from_dict(d),Target.load(ROOT/'compiler/targets/sm_100a.json'))}
         self.assertNotIn('BACKEND_IDENTIFIER_COLLISION',codes)
         self.assertNotIn('BACKEND_IDENTIFIER_UNSAFE',codes)
+
+    def test_current_device_is_read_once_per_argument_and_rebound_on_each_call(self):
+        cases = [dict(single=True, target_id='gfx938', entry_name='device'),
+                 dict(), dict(multi=True), dict(state=True),
+                 dict(multi=True, target_id='gfx938'), dict(state=True, target_id='gfx938')]
+        for case in cases:
+            with self.subTest(**case):
+                fn,args,outputs,allocated,launches,_=self.entry(**case)
+                for device,pointer in [('cuda:0',4096),('cuda:1',4100),('cuda:0',4112)]:
+                    for arg in args:
+                        arg.reads.clear()
+                        arg._device=device
+                    args[0].pointer=pointer
+                    fn(*args)
+                    self.assertEqual([arg.reads.count('device') for arg in args], [1]*len(args))
+                    self.assertTrue(all(arg.reads[:3] == ['shape','dtype','contiguous'] for arg in args))
+                    self.assertTrue(all(out._device == device for out in allocated[-len(outputs):]))
+                    self.assertEqual(launches[-1][0],pointer)
+                self.assertEqual(len(allocated),3*len(outputs))
+                self.assertTrue(all(out.reads == [] for out in allocated))
+
+    def test_device_checks_remain_after_all_metadata_guards_and_before_allocation(self):
+        for state in [False,True]:
+            with self.subTest(state=state):
+                fn,args,_,allocated,launches,_=self.entry(state=state, target_id='gfx938')
+                self.assertGreater(len(args),1)
+                args[-1]._device='cuda:1'
+                args[-1]._dtype='wrong'
+                with self.assertRaisesRegex(TypeError, 'frozen dtype'):
+                    fn(*args)
+                self.assertTrue(all('device' not in arg.reads for arg in args))
+                args[-1]._dtype='int32' if state else 'float32'
+                with self.assertRaisesRegex(ValueError, 'must share one device'):
+                    fn(*args)
+                self.assertEqual(allocated,[])
+                self.assertEqual(launches,[])
+
+    def test_supplied_outputs_follow_current_input_device_without_identity_cache(self):
+        for multi,state in [(False,False),(True,False),(False,True)]:
+            with self.subTest(multi=multi,state=state):
+                fn,args,outputs,allocated,launches,spelling=self.entry(multi,state,'gfx938')
+                values=[Tensor(tuple(b['shape']),spelling[b['dtype']],pointer=80+i)
+                        for i,b in enumerate(outputs)]
+                out=values if multi else values[0]
+                fn(*args,out=out)
+                self.assertEqual([t.reads.count('device') for t in [*args,*values]],
+                                 [1]*(len(args)+len(values)))
+                for arg in args:
+                    arg._device='cuda:1'
+                with self.assertRaisesRegex(ValueError, 'out must be contiguous on the input device'):
+                    fn(*args,out=out)
+                self.assertEqual(len(launches),1)
+                for value in values:
+                    value._device='cuda:1'
+                fn(*args,out=out)
+                self.assertEqual(len(launches),2)
+                self.assertEqual(allocated,[])

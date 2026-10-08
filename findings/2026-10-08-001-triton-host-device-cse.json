@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-08",
+  "id": "F-2026-10-08-001",
+  "kind": "behavior",
+  "decision": "proposed",
+  "title": "Triton host wrappers repeat current device reads and compare the anchor with itself",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@9160cbc38176e14ad4d252bad8a6b5a9ece77044",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "source": "src/open_cake_ir/compiler/backends/triton.py:_emit_host,_emit_host_with_state,_emit_output_binding",
+    "audits": [
+      "/private/tmp/bw1100-compiler-round3-delivery-20261008/host-launch-audit.md",
+      "/private/tmp/bw1100-compiler-round3-delivery-20261008/offline-jit-specialization-audit.md"
+    ],
+    "related_run": "/data3/testuser01/experiments/bw1100-main-tasks-round4-20261008/runs/per_channel_moments",
+    "related_run_audit": "/private/tmp/bw1100-round4-initial-analysis-20261008/per-channel-moments-readonly-audit-1791450174.json"
+  },
+  "observation": "For N caller-owned input/state arguments and Q fresh outputs, generated Python reads device 2N+Q times, including an anchor self-comparison. Source establishes redundant synchronous metadata reads, not a measured performance gain. The related Task confirms three candidates on its original five cases but its fixed-order auxiliary burst assay does not isolate pure launch/sync cost or establish a calibrated A/A bound. No inference that every Schedule is host-bound is promoted.",
+  "proposed_change": "After all existing current-call shape/dtype/CUDA/contiguity guards, bind the current anchor device once and compare each other input/state device directly in order. Share that per-call value with output allocation and supplied-output checks. Reuse the reserved launcher namespace with an entry-derived local name. Leave kernel emission, launch constants, current pointer wrappers, Triton specialization, stream handling and output lifecycle unchanged. No persistent cache or new IR surface.",
+  "promotion_disposition": "Source-level redundant-work reduction only; focused ABI regression, complete Corpus/contracts, independent review and bounded same-kernel device replay pending. No device speedup, isolated Compiler causal effect or change to frozen Runs is claimed.",
+  "design_review": "P1/P3 keep one existing caller ABI and one per-call device value; P2 emitted checks stay visible; P4/P5/P7 no IR/types/effects change; P6 full Corpus and caller contracts required; P8 current tensor device and runtime specialization remain authoritative.",
+  "implemented_in": null,
+  "verified_by": null
+}

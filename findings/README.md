@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-08-001](2026-10-08-001-triton-host-device-cse.json) — remove repeated per-call device reads while preserving the current-input and output ABI; source-level reduction proposed, device benefit unmeasured.
+
 - [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.
 
 - [F-2026-10-07-007](2026-10-07-007-hcu-frozen-pointer-range.json) — reuse a checked contiguous HCU ABI to supply pointer extent without caching addresses; host-only pilot and Compiler qualification remain distinct.

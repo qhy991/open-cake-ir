@@ -2651,9 +2651,8 @@ class _TritonEmitter:
         self.line("            raise TypeError(\"an input differs from the frozen dtype\")")
         self.line("        if not tensor.is_cuda or not tensor.is_contiguous():")
         self.line("            raise ValueError(\"every input must be contiguous on CUDA\")")
-        self.line(f"    if any(t.device != {inputs[0].name}.device for t in ({names},)):")
-        self.line("        raise ValueError(\"every input must share one device\")")
-        self._emit_output_binding(outputs, inputs[0].name)
+        device = self._emit_device_binding(inputs, entry, "every input must share one device")
+        self._emit_output_binding(outputs, device)
         self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
@@ -2675,7 +2674,19 @@ class _TritonEmitter:
             if buffer is not None
         ]
 
-    def _emit_output_binding(self, outputs: list[Buffer], anchor: str) -> None:
+    def _emit_device_binding(self, buffers: list[Buffer], entry: str, message: str) -> str:
+        """Read the current device once per caller-owned argument after metadata guards."""
+        device = f"_cake_launch_{entry}_device"
+        self.line(f"    {device} = {buffers[0].name}.device")
+        if len(buffers) > 1:
+            mismatch = " or ".join(
+                f"{buffer.name}.device != {device}" for buffer in buffers[1:]
+            )
+            self.line(f"    if {mismatch}:")
+            self.line(f"        raise ValueError({message!r})")
+        return device
+
+    def _emit_output_binding(self, outputs: list[Buffer], device: str) -> None:
         """Allocate and check the caller's output tensors.
 
         Fresh outputs are constructed by torch.empty with the declared ABI and
@@ -2692,7 +2703,7 @@ class _TritonEmitter:
             self.line("    if out is None:")
             self.line(
                 f"        out = torch.empty({tuple(output.shape)}, "
-                f"dtype={TORCH_DTYPES[output.dtype]}, device={anchor}.device)"
+                f"dtype={TORCH_DTYPES[output.dtype]}, device={device})"
             )
             self.line("    else:")
             self.line(
@@ -2700,7 +2711,7 @@ class _TritonEmitter:
                 f"or out.dtype != {TORCH_DTYPES[output.dtype]}:"
             )
             self.line("            raise ValueError(\"out differs from the frozen output contract\")")
-            self.line(f"        if out.device != {anchor}.device or not out.is_contiguous():")
+            self.line(f"        if out.device != {device} or not out.is_contiguous():")
             self.line("            raise ValueError(\"out must be contiguous on the input device\")")
             return
         self.line("    if out is None:")
@@ -2708,7 +2719,7 @@ class _TritonEmitter:
         for buffer in outputs:
             self.line(
                 f"            torch.empty({tuple(buffer.shape)}, "
-                f"dtype={TORCH_DTYPES[buffer.dtype]}, device={anchor}.device),"
+                f"dtype={TORCH_DTYPES[buffer.dtype]}, device={device}),"
             )
         self.line("        )")
         self.line("    else:")
@@ -2728,7 +2739,7 @@ class _TritonEmitter:
         self.line(
             "                raise ValueError(\"out differs from the frozen output contract\")"
         )
-        self.line(f"            if tensor.device != {anchor}.device or not tensor.is_contiguous():")
+        self.line(f"            if tensor.device != {device} or not tensor.is_contiguous():")
         self.line("                raise ValueError(\"out must be contiguous on the input device\")")
 
     def _emit_launch_arguments(
@@ -2763,7 +2774,6 @@ class _TritonEmitter:
         outputs = self._exported_outputs()
         names = ", ".join(buffer.name for buffer in caller_owned)
         constants = self.constants()
-        anchor = caller_owned[0].name
 
         self.line(f"def {entry}({names}, out=None):")
         self.line("    for tensor, shape, dtype in (")
@@ -2784,11 +2794,10 @@ class _TritonEmitter:
         self.line(
             '            raise ValueError("every input and state must be contiguous on CUDA")'
         )
-        self.line(
-            f"    if any(t.device != {anchor}.device for t in ({names},)):"
+        device = self._emit_device_binding(
+            caller_owned, entry, "every input and state must share one device"
         )
-        self.line('        raise ValueError("every input and state must share one device")')
-        self._emit_output_binding(outputs, anchor)
+        self._emit_output_binding(outputs, device)
         self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
         self._emit_launch_options(constants)
