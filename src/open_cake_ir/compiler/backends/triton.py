@@ -812,10 +812,11 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             add(
                 destination.mode is BufferMode.OUTPUT
                 and all(component.source not in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER} for component in access.indices)
+                and len(coordinates) == len(set(coordinates))
                 and all(coordinates.count(name) == 1 for name in required),
                 "TRITON_LOOP_STORE_OWNERSHIP",
                 f"operations[{index}]",
-                "an in-loop Triton store requires an output buffer and affine "
+                "an in-loop Triton store requires an output buffer and distinct affine "
                 "coordinates covering every active loop and non-singleton program axis exactly once",
             )
 

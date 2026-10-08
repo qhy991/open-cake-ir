@@ -138,6 +138,13 @@ class SingletonLoopStore(unittest.TestCase):
                 store["indices"][0] = dict(source=source, name="row")
                 self.ownership_refused(d)
 
+    def test_an_optional_singleton_coordinate_may_be_omitted_but_not_repeated(self):
+        d = copy_document(rows=1)
+        next(buffer for buffer in d["buffers"] if buffer["name"] == "out")["shape"] = [1, 1, 17]
+        store = next(access for access in d["access_maps"] if access["operation"] == "store_out")
+        store["indices"].insert(0, deepcopy(store["indices"][0]))
+        self.ownership_refused(d)
+
     def test_unresolved_axis_owner_or_dimension_cannot_prove_singleton(self):
         for change in ({"buffer": "missing"}, {"dimension": 2}):
             with self.subTest(change=change):
