@@ -65,6 +65,13 @@ class ProgramContractTest(unittest.TestCase):
         self.assertFalse(program.implementation.stages[0].bindings['pooled'].singleton_view)
         previous = json.loads(self.path.read_text())
         successor = json.loads(path.read_text())
+        v6 = json.loads((ROOT / "contracts/programs/qsa-prefill-t32768-v6.json").read_text())
+        source_only = json.loads(path.read_text())
+        source_only["program_id"] = v6["program_id"]
+        for old_node, new_node in zip(v6["nodes"], source_only["nodes"]):
+            self.assertNotEqual(new_node["lowering_source_sha256"], old_node["lowering_source_sha256"])
+            new_node["lowering_source_sha256"] = old_node["lowering_source_sha256"]
+        self.assertEqual(source_only, v6)
         self.assertEqual(program.program_id, successor["program_id"])
         self.assertNotEqual(successor["program_id"], previous["program_id"])
         for version in (4, 5, 6):
