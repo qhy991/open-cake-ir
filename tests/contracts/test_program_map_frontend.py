@@ -107,7 +107,9 @@ class ProgramMapFrontendTests(unittest.TestCase):
         before = self.compiler.assess(expected)
         after = self.compiler.assess(parse(explicit).document)
         self.assertTrue(after.lowering_eligible, after.findings)
-        self.assertEqual(self.compiler.lower(before).source, self.compiler.lower(after).source)
+        # Explicit false changes the document identity comment, not the program.
+        self.assertEqual(ast.dump(ast.parse(self.compiler.lower(before).source)),
+                         ast.dump(ast.parse(self.compiler.lower(after).source)))
 
     def test_residency_and_occupancy_refusals_match_json(self):
         for residency in (None, {"registers_per_thread": 32}):
@@ -126,7 +128,7 @@ class ProgramMapFrontendTests(unittest.TestCase):
                             "TRITON_PERSISTENT_TARGET_FACTS_MISSING")
 
     def test_invalid_traversal_is_a_localized_canonical_finding(self):
-        for traversal in (("row",), ("row", "row"), ("row", "unknown")):
+        for traversal in ((), ("row",), ("row", "row"), ("row", "unknown")):
             with self.subTest(traversal=traversal):
                 source = SOURCE.replace('("column", "row")', repr(traversal))
                 expected = json_document()
@@ -141,7 +143,6 @@ class ProgramMapFrontendTests(unittest.TestCase):
         for options, path in (
             ({"persistent": 1}, "schedule.program_map.persistent"),
             ({"persistent": True, "traversal": "row"}, "schedule.program_map.traversal"),
-            ({"persistent": True, "traversal": []}, "schedule.program_map.traversal"),
             ({"persistent": False, "traversal": ["column", "row"]}, "schedule.program_map.traversal"),
             ({"persistent": True, "num_ctas": 1}, "schedule.program_map"),
         ):
