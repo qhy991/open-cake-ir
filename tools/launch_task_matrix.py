@@ -108,6 +108,11 @@ def dispatch_must_stop(report, exit_code, fault=None):
     messages = {'Claude write is outside the candidate envelope',
                 'Claude candidate write lifecycle is incomplete',
                 'provider candidate-set workspace custody differs'}
+    if (audit.get('protocol_adherence') == 'provider_fault' and isinstance(fault,dict)
+            and fault.get('exception_type') == 'ProviderDeliveryTimeout'
+            and fault.get('stage') == 'provider'
+            and fault.get('observed_quota') == {'observed':'no_notice'}):
+        return False
     return not (audit.get('protocol_adherence') == 'provider_fault'
                 and isinstance(fault, dict) and fault.get('fault') == 'provider_fault'
                 and fault.get('stage') == 'provider'

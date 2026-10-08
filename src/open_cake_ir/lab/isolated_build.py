@@ -106,6 +106,10 @@ class IsolatedCompiler:
         """Read compilation.json back into the toolchain's typed compilation."""
         raise NotImplementedError
 
+    def _candidate_failure(self, result, requirements: Mapping[str, object]) -> bool:
+        """The worker's explicit rejection, unless a toolchain owns a narrower signature."""
+        return result.returncode == 2
+
     # -- the scaffold ------------------------------------------------------------------
 
     def _argv(self, root: Path, requirements: Mapping[str, object]) -> list[str]:
@@ -147,7 +151,7 @@ class IsolatedCompiler:
                 diagnostic = (result.stderr or result.stdout).decode(errors="replace")[-4096:]
                 # Exit 2 is the worker's own classification of a candidate rejection;
                 # anything else is the toolchain, not the candidate.
-                if result.returncode != 2:
+                if not self._candidate_failure(result, requirements):
                     raise RunProtocolFault("harness_fault",
                                            f"isolated {self.label} build unavailable: " + diagnostic,
                                            artifact_payloads=streams)

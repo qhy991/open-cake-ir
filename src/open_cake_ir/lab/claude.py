@@ -22,7 +22,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
 
-from .faults import RunProtocolFault, ReportedProviderUsage, ProviderBoundaryDeclarationFault
+from .faults import RunProtocolFault, ReportedProviderUsage, ProviderBoundaryDeclarationFault, ProviderDeliveryTimeout
 from .task_package import TaskPackage
 from .process import (
     SupervisedProcessOutputLimit, SupervisedProcessTimeout,
@@ -250,6 +250,27 @@ def observed_claude_quota_at_fault(stdout: bytes) -> dict[str, object]:
     """
     quota = observed_claude_quota(stdout)
     return quota if quota is not None else {"observed": "no_notice"}
+
+
+def author_progress_before_timeout(stdout, *, model, thread_id, event_contract):
+    """A bounded partial-stream observation; never a completed Turn witness."""
+    try:
+        events = [_json(line) for line in stdout.splitlines()]
+        initial = events[_initial_event_index(events, event_contract)]
+        session = initial.get('session_id')
+        if (initial.get('model') != model or not isinstance(session, str)
+                or _THREAD_ID.fullmatch(session) is None
+                or thread_id is not None and thread_id != session
+                or observed_claude_quota_at_fault(stdout) != {'observed':'no_notice'}
+                or any(not isinstance(e, Mapping) or e.get('session_id') != session
+                       or e.get('type') in {'result','rate_limit_event'}
+                       or e.get('subtype') == 'api_retry' for e in events)):
+            return False
+        return any(e.get('type') == 'system' and e.get('subtype') == 'thinking_tokens'
+                   and type(e.get('estimated_tokens_delta')) is int
+                   and e['estimated_tokens_delta'] > 0 for e in events)
+    except (ValueError,TypeError,IndexError,KeyError,UnicodeError):
+        return False
 
 
 def _metadata(event: Mapping) -> bool:
@@ -963,6 +984,11 @@ class ClaudeInvocationBuilder:
                       'Write or edit only this exact file. Do not append the Run id to '
                       'the directory or create a subdirectory. If a file tool refuses '
                       'a path, correct the path inside this same invocation.\n\n' + prompt)
+            prompt = ('The default provider invocation limit is 1800 seconds within the Run budget. '
+                      'Choose at most two bounded hypotheses. After a refusal, repair '
+                      'the named blocking operation first. Write complete candidates '
+                      'and return the structured terminal without exhaustively planning '
+                      'all later attempts. Keep public notes concise.\n\n' + prompt)
         if thread_id is not None:
             arguments += ("--resume", thread_id)
         # The existing process owner takes argv and DEVNULL stdin. Its transport
@@ -1029,11 +1055,17 @@ class ClaudeProviderAdapter:
             completed = run_supervised(tuple(arguments), cwd=invocation.cwd,
                 environment=sanitized_environment(invocation.removed_environment), timeout_seconds=self._timeout_seconds)
         except (SupervisedProcessTimeout, SupervisedProcessOutputLimit) as error:
-            raise RunProtocolFault("provider_fault", str(error), artifact_payloads={
+            progress = (isinstance(error, SupervisedProcessTimeout) and
+                        author_progress_before_timeout(error.stdout,model=requested_model,
+                            thread_id=invocation.thread_id,event_contract=event_contract))
+            fault = ProviderDeliveryTimeout if progress else RunProtocolFault
+            arguments = (str(error),) if progress else ('provider_fault',str(error))
+            raise fault(*arguments, artifact_payloads={
                 "provider_stdout": error.stdout, "provider_stderr": error.stderr},
                 reported_usage=reported_claude_usage(error.stdout, expected_model=requested_model,
                     expected_thread_id=invocation.thread_id, event_contract=event_contract,
-                    response_aliases=self.response_aliases)) from error
+                    response_aliases=self.response_aliases),
+                observed_quota=observed_claude_quota_at_fault(error.stdout)) from error
         except OSError as error:
             raise RunProtocolFault("provider_fault", str(error)) from error
         try:
