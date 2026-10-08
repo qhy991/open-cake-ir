@@ -176,7 +176,10 @@ class MultiRegionMMA(unittest.TestCase):
     def test_ancestor_contraction_and_missing_output_axis_ownership_stay_refused(self):
         document = _gemm()
         document['access_maps'][0]['indices'].reverse()
-        self.refuse(document, 'TRITON_MMA_ANCESTOR_CARRY')
+        target = self.compiler._revision.targets[document['target']]
+        self.assertIn('TRITON_MMA_ANCESTOR_CARRY',
+                      [f.code for f in preflight(Schedule.from_dict(document), target)])
+        self.refuse(document, 'BUFFER_ESCAPES_LOOP')
         document = frontend.parse(attention_source()).document
         store = next(a for a in document['access_maps'] if a['operation'] == 'store_out')
         store['indices'][1] = {'source': 'dimension', 'dimension': 1, 'extent': 16}
