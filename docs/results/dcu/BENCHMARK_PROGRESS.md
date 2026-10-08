@@ -17,3 +17,9 @@
 [Bench 范围与验证来源](https://github.com/qhy991/bw1100-bench/blob/77a2848f95bd2a13fea0ce69dcc1147ccac39a93/README.md) · [已有开发证据](compiler-trig-scan-20261006.md)。
 本条只建立发布起点，没有新启动 provider 或 GPU 实验。后续每轮追加固定版本、逐任务
 正确性/性能、失败和封存报告来源；不把这个起点表回填为旧实验成绩。
+
+## Compiler 开发验证参考（不计入独立 Bench）
+
+- 2026-10-08：[多区域 MMA 有界设备验证](multi-region-mma-qualification-20261008.md)。
+  合法方案已能生成并通过原任务正确性；新候选比旧 incumbent 慢 6.30–6.67%，保留旧实现。
+  该记录不更新上面的独立 Bench 分数，也不证明固定三小时搜索收益。
