@@ -564,6 +564,15 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
             fields = {'type', 'subtype', 'tool_name', 'tool_use_id', 'message', 'uuid', 'session_id'}
             if event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
                 fields |= {'decision_reason_type', 'decision_reason'}
+            elif (event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT
+                    and set(event) == fields | {'decision_reason_type', 'decision_reason'}):
+                # Retained Momentum SGD Turn29: the native CLI names its outer
+                # working-directory refusal separately from an unmatched file rule.
+                # Both still need the same denied invocation and errored completion.
+                if (event.get('decision_reason_type') != 'workingDir'
+                        or event.get('decision_reason') != 'Path is outside allowed working directories'):
+                    raise ValueError('Claude exact-file working-directory denial reason differs')
+                fields |= {'decision_reason_type', 'decision_reason'}
             if (set(event) != fields
                     or not isinstance(identity, str) or identity not in denied_tools
                     or identity not in active_tools or identity in denial_notices
