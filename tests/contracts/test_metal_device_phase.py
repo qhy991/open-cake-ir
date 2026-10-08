@@ -27,6 +27,9 @@ except BlockingIOError:
     locked = True
 finally:
     os.close(fd)
+if request.get('no_report'):
+    while True:
+        time.sleep(30)
 report = {'job': os.environ.get('METAL_JOB_ID'), 'locked': locked,
           'pid': os.getpid(), 'group': os.getpgrp(),
           'descriptor': os.fstat(int(os.environ['METAL_BROKER_LOCK_FD'])).st_ino}
@@ -88,7 +91,7 @@ class MetalDevicePhaseTests(unittest.TestCase):
         for name, extra, timeout, reason in [
             ('failure', {'exit': 7}, 10, 'helper process failed'),
             ('timeout', {'sleep': True}, 1, 'helper did not finish'),
-            ('startup_timeout', {'sleep': True}, 0, 'helper did not finish'),
+            ('timeout_without_report', {'no_report': True}, 1, 'helper did not finish'),
         ]:
             children = []
             def start(*args, **kwargs):
@@ -116,7 +119,7 @@ class MetalDevicePhaseTests(unittest.TestCase):
                     # Timeout can precede a complete report, including interpreter startup.
                     self.assertEqual(stdout, timeout_error.stdout or b'')
                     self.assertEqual(stderr, timeout_error.stderr or b'')
-                    if name == 'startup_timeout':
+                    if name == 'timeout_without_report':
                         self.assertEqual(stdout, b'')
                 with self.assertRaises(ProcessLookupError):
                     os.kill(child.pid, 0)
