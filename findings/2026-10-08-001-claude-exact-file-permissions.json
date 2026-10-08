@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-08",
+  "id": "F-2026-10-08-001",
+  "kind": "protocol",
+  "decision": "proposed",
+  "title": "Explicit native file permissions block misspelled candidates without disabling atomic writes",
+  "compiler_revision_id": "open-cake-ir@b59ef790",
+  "executor_revision": "xcore1002@b59ef790",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006",
+    "locators": [
+      "path-successor-development-20261007-v2/runs/channel_absmax_scale/run-evidence/runs/c550-path-successor-20261007-channel_absmax_scale/events/000000000151.json",
+      "single-file-guard-probe-20261008/stdout.jsonl",
+      "exact-permission-probe-20261008/stdout.jsonl"
+    ]
+  },
+  "observation": "Channel Absmax Scale Turn13 successfully wrote ccandidate-set.py twice and the correct file once; v4 correctly refused. An OS-read-only-directory probe also blocked the correct native atomic Write, so that route is rejected. Claude2.1.226 default permission mode with exact absolute Write/Edit rules refused both a misspelled leaf and a nested candidate, while correct Write/Read/Edit succeeded and left only candidate-set.py. The denied attempts have matching tool invocation, native notice, errored completion and terminal declaration.",
+  "proposed_change": "Opt-in v6 uses the existing OS-isolated wrapper, default permission mode and exact file rules on initial/resumed invocations. It preserves all denial witnesses and requires successful canonical writes. Earlier contracts and sealed Runs retain their semantics. A bounded dispatcher may continue after an archived, replayed, named author path fault; custody, unknown provider/account and device failures stop submissions. No failed Run is retried or counted as success.",
+  "promotion_disposition": "Lab authoring and dispatch protocol only; no Compiler or performance promotion. CPU fixture tests and fresh native initial/resume qualification gate successor experiments.",
+  "implemented_in": "008ba78b",
+  "verified_by": {"software":"101 Claude/provider/qualification/dispatch tests at008ba78b in /tmp/cake-exact-file-guard-tests","native_probe":"exact-permission-probe-20261008/stdout.jsonl","live_qualification":"pending"}
+}
