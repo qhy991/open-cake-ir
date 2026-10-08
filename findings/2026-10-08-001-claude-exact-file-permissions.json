@@ -21,5 +21,12 @@
   "proposed_change": "Opt-in v6 uses the existing OS-isolated wrapper, default permission mode and exact file rules on initial/resumed invocations. It preserves all denial witnesses and requires successful canonical writes. Earlier contracts and sealed Runs retain their semantics. A bounded dispatcher may continue after an archived, replayed, named author path fault; custody, unknown provider/account and device failures stop submissions. No failed Run is retried or counted as success.",
   "promotion_disposition": "Lab authoring and dispatch protocol only; no Compiler or performance promotion. CPU fixture tests and fresh native initial/resume qualification gate successor experiments.",
   "implemented_in": "008ba78b",
-  "verified_by": {"software":"101 Claude/provider/qualification/dispatch tests at008ba78b in /tmp/cake-exact-file-guard-tests","native_probe":"exact-permission-probe-20261008/stdout.jsonl","live_qualification":"pending"}
+  "verified_by": {
+    "software":"101 Claude/provider/qualification/dispatch tests at008ba78b; MetaX integration4bb8830b passes238 relevant tests with1 skip and201 Corpus cases",
+    "native_probe":"exact-permission-probe-20261008/stdout.jsonl",
+    "live_qualification":"provider-exact-file-20261008/receipt.json: initial/resumed lifecycle, usage and OS read-isolation observation qualified on GLM-5.3 high",
+    "native_denial_replay":"exact-permission-terminal-probe-20261008/replay.json: unmodified native stream reparses under v6, two denied writes, canonical successful Write/Edit, final file x=2",
+    "successor_runs":"exact-permission-development-20261008/task-index.json:31 untouched tasks; first GEMM, Momentum SGD, AdamW and FIB RMSNorm H128 each pass fresh A/A and independent profile before authoring",
+    "scope":"Protocol qualification and startup only; no completed successor performance or Compiler-promotion claim"
+  }
 }
