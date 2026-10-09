@@ -26,6 +26,13 @@
     "P4_P5_P7": "Existing typing, placement admission and reduction analyses are retained.",
     "P6": "Affected reduction/emitter contracts and unchanged full Corpus expectations gate this change."
   },
-  "implemented_in": null,
-  "verified_by": null
+  "implemented_in": "ec98dc2fe0188cff021232e4363b6742a419d7a9",
+  "verified_by": {
+    "commit": "ec98dc2fe0188cff021232e4363b6742a419d7a9",
+    "regression_before_fix": "cac86ee0: test_chained_register_reductions_keep_values_for_scalar_and_block_producers fails in 16 subcases after the execution double refuses scalar reshape.",
+    "tests": "84 passed: test_triton_reduction_storage, test_triton_loop_scopes, test_emit_triton, test_triton_sequential_regions, test_triton_multi_mma",
+    "corpus": "204 cases match unchanged expectations.",
+    "native_probe": "singleton-native-probe-002 compares identical source and requirements from 3f6be196 with only singleton reshape versus broadcast_to. sum and max reshape fail; sum and max broadcast_to compile to mcfatbin in the existing isolated CPU compiler.",
+    "scope": "Successor CPU regression and Corpus pass; minimal native compile confirms the operation choice. Full retained-Cosine device qualification and performance remain pending in the platform successor."
+  }
 }
