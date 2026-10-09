@@ -17,13 +17,14 @@
       "5bb474c6:src/open_cake_ir/lab/environments.py::OpenCakeEnvironment._build_program",
       "/tmp/cake-bench-abi-design-20261009.md",
       "attention-component-summary.json: retained four-stage component correctness, event and separate profile observation",
-      "component-source-boundary.json: reviewed d9b92681 to 6b3f3ff3 relevant implementation relation"
+      "component-source-boundary.json: reviewed d9b92681 to 6b3f3ff3 relevant implementation relation",
+      "common-program-aa-20261009: one common-worker A/A and independent four-stage attribution; retained privately"
     ],
     "scope": "A CPU-built two-stage Program and source audit establish an Executor measurement gap. They do not establish a native hardware limitation or provide device qualification. No existing Run was edited or repeated."
   },
   "observation": "C1 can construct and seal an ordered MCFATBIN Program for independent correctness checks, but an optimization environment refuses its timing and attribution because the admitted instruments cover one dispatch. A single-kernel success does not qualify the complete Program interval. NativeTritonEnvironment is also single-kernel and cannot serve as an implicit multi-stage escape route.",
   "proposed_change": "Keep the existing Program and Ralph owners. Admit exact-target event and attribution adapters after reviewed complete-Program device component evidence and its source relation. Then require a fresh common-worker fixed-baseline A/A and separate attribution through the existing external performance_qualified gate before controlled author submission. Preserve default-stream event mean10, fresh-output checks, stage-call accounting and aligned-variant refusal.",
-  "promotion_disposition": "Adapter availability is reviewed for exact xcore1002 based on retained four-stage solx_fib.attention component correctness across five input cases, two five-sample event cohorts and independent full-Program MCPTI profiling. Existing readers replay those records. The relevant Evaluation, worker, measurement policy, Lab build/runtime and qualification-tool source has no changes between component d9b92681 and base 6b3f3ff3; this is not whole-source or host equivalence. The availability source change is 49c867d6. Real common-worker A/A and per-baseline external performance_qualified readiness remain pending. TaskLab has no intrinsic prior-A/A invariant. The Finding remains open; no Compiler optimization or Bench performance claim is promoted. Independent focused source review through 4708b7a1 found no blocker. Fixed Linux successor ba3ec42e passed the four remaining CPU contracts and seven directly affected Program event contracts, with no GPU/provider execution.",
+  "promotion_disposition": "Adapter availability is reviewed for exact xcore1002 based on retained four-stage solx_fib.attention component correctness across five input cases, two five-sample event cohorts and independent full-Program MCPTI profiling. Existing readers replay those records. The relevant Evaluation, worker, measurement policy, Lab build/runtime and qualification-tool source has no changes between component d9b92681 and base 6b3f3ff3; this is not whole-source or host equivalence. The availability source change is 49c867d6. Real common-worker A/A and per-baseline external performance_qualified readiness remain pending. TaskLab has no intrinsic prior-A/A invariant. The Finding remains open; no Compiler optimization or Bench performance claim is promoted. Independent focused source review through 4708b7a1 found no blocker. Fixed Linux successor ba3ec42e passed the four remaining CPU contracts and seven directly affected Program event contracts, with no GPU/provider execution. The subsequent ordinary-component common-worker gate passed on the reviewed availability successor: one confirmatory attempt, ten event samples per arm, close_null, measurement_quality_passed; a separate attribution attempt retained all four ordered stages. Actual confirmatory counters are 336 native calls, 40 module loads, 10 preflights and 20 timing samples; attribution has eight native calls, four module loads, one preflight and zero timing samples. Both have zero compiles and zero fallbacks. The earlier pending common-A/A statement records the prior state. Each original Bench baseline and the editable-provider qualification remain outstanding.",
   "principles_review": {
     "scope": "Executor and measurement change; no IR primitive, syntax, semantics, typing rule, analysis or hardware fact changes.",
     "P1_P3_P4_P5_P7": "Existing Schedule/Program construction and analyses remain unchanged.",
@@ -38,6 +39,17 @@
     "test_log": "/tmp/cake-metax-program-events-cpu-2b2dde58.log",
     "corpus": "204 cases match unchanged expectations at 9be33b11. The subsequent change only restores exact-target qualifier diagnostic wording. The availability change also matches all 204 unchanged Corpus cases at 49c867d6.",
     "corpus_log": "/tmp/cake-metax-program-events-corpus-9be33b11.log",
-    "scope": "Software verification only. Original-device complete Program event, attribution, fixed A/A and full successor qualification are pending; this capacity finding is not closed. Exact xcore1002 adapter availability has independent source review and the incremental CPU verification above. Retained device component evidence and the reviewed relevant d9b92681-to-6b3f3ff3 implementation relation support that declaration; real common-worker A/A and each baseline readiness remain pending."
+    "scope": "Software verification only. Original-device complete Program event, attribution, fixed A/A and full successor qualification are pending; this capacity finding is not closed. Exact xcore1002 adapter availability has independent source review and the incremental CPU verification above. Retained device component evidence and the reviewed relevant d9b92681-to-6b3f3ff3 implementation relation support that declaration; real common-worker A/A and each baseline readiness remain pending. The subsequent common-worker A/A and separate attribution passed with the counters recorded here. Device component and common-worker verification are now present; per-Bench fixed-baseline readiness and fresh provider qualification still remain.",
+    "common_worker": {
+      "evidence": "common-program-aa-20261009",
+      "comparison": "the same sealed four-stage component as both arms",
+      "confirmatory_attempts": 1,
+      "samples_per_arm": 10,
+      "classification": "close_null",
+      "measurement_quality_passed": true,
+      "attribution_attempts": 1,
+      "attribution_stage_count": 4,
+      "scope": "The ordinary component qualifies the common Program path. Original Bench baseline, provider and optimization acceptance are separate gates."
+    }
   }
 }
