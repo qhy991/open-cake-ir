@@ -993,8 +993,8 @@ class ClaudeInvocationBuilder:
                       'all later attempts. Keep public notes concise.\n\n' + prompt)
         if thread_id is not None:
             arguments += ("--resume", thread_id)
-        # The existing process owner takes argv and DEVNULL stdin. Its transport
-        # must evolve explicitly if stdin prompts are required in live integration.
+        # This is a logical invocation. The v7 adapter removes the final prompt
+        # before spawning and supplies those same bytes through supervised stdin.
         return ProviderInvocation(arguments + ("--", prompt), self.workspace, "none",
                                   self.provider_revision, self._removed_environment, thread_id)
 

@@ -39,7 +39,8 @@ class ClaudeProviderContracts(unittest.TestCase):
                        return_value=subprocess.CompletedProcess([],0,self.raw(),b'')) as process:
                 turn=ClaudeProviderAdapter().execute(invocation,candidate_path=self.candidate,
                     expected_change='add' if session is None else 'update',
-                    expected_terminal_message=TERMINAL,event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT)
+                    expected_terminal_message=TERMINAL,event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT,
+                    arm='open_cake')
             self.assertEqual(turn.raw_events,self.raw())
             self.assertEqual(process.call_args.kwargs['input_bytes'],invocation.argv[-1].encode())
             argv=process.call_args.args[0]
