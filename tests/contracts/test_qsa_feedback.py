@@ -408,7 +408,7 @@ class QsaFeedbackTest(unittest.TestCase):
         }
         feedback = qsa_evaluation_feedback(result, arm="open_cake")
 
-        self.assertEqual(feedback["routed_to"], "backend_triage")
+        self.assertEqual(feedback["routed_to"], "verifier")
         self.assertEqual(feedback["compiler"]["diagnostic"], "unsupported instruction")
 
 
