@@ -7,7 +7,7 @@ Raw reference code, input-view observations and generated workloads remain exter
 ## Progress
 
 - [x] Trace the original high-level semantics and Workload/Program boundaries.
-- [ ] Check the stage and rounding design, including two accumulation alternatives.
+- [x] Check the stage and rounding design, including two accumulation alternatives.
 - [ ] Implement and verify small numerical and boundary controls.
 - [ ] Assess and lower all 16 original workloads; report declared memory.
 - [ ] Reconcile the design with implementation and obtain independent review.
@@ -33,8 +33,9 @@ fake arithmetic. Workload validation checks that all inputs remain unchanged.
 
 ## Stage and rounding plan
 
-Every BF16 matrix product accumulates in FP32 and rounds its complete result to
-BF16. Fusing a stage is allowed only if its original casts remain explicit.
+Candidate matrix products use FP32 tile accumulators and preserve each original
+BF16 result boundary. This does not assert the target library's internal reduction
+order. Fusing a stage is allowed only if its original casts remain explicit.
 
 | Stage | Result and required rounding |
 |---|---|
@@ -71,11 +72,30 @@ Two designs avoid a `[B,M,N]` temporary for each weight gradient:
    contraction into an FP32 tile, then FP32 tiles are added before the sole BF16
    output cast. This needs more source but keeps global scratch independent of batch.
 
-The design decision remains pending the minimal carrier experiment. A failed
-expression is retained as a concrete capability lead; it does not authorize a
-Compiler change. Per-batch BF16 partial gradients are rejected because they add a
-rounding boundary absent from the original expression. Large per-batch matrix
-scratch is rejected because the measurement cohort retains many output/scratch sets.
+The nested candidate is refused because the batch loop has no contraction-axis
+carry, and the result cannot escape both loops. The fixed-batch candidate has a
+proven sequence contraction for every batch. Its remaining refusal comes from the
+backend's load-provenance check counting address-index reads as data operands.
+Issue #435 owns that separate shared repair. The candidate selects fixed-batch
+FP32 tile accumulation, with execution proof pending that reviewed successor.
+
+Per-batch BF16 partial gradients are rejected because they add a rounding boundary
+absent from the original expression. Large per-batch matrix scratch is rejected
+because the measurement cohort retains many output/scratch sets. No failure here
+authorizes a Compiler change inside the starter task.
+
+## Design reconciliation
+
+An independent source reader checked the entire original high-level backward
+expression, including unused caches, four-head grouping, supplied normalization
+values and each BF16 seam. The initial conservative alternative kept more than
+thirty separate stages. The selected 22-stage composition keeps those casts inside
+the fused FFN and QKV paths, reducing retained global intermediates.
+
+The attention-output gradient uses explicit `[B,S,H,D]` internal storage so its
+contraction axis stays a direct loop index. Score and logits gradients use
+`[B*H,S,S]` storage so all output axes have direct program ownership. These are
+candidate intermediates; the original five input permutations remain zero-copy.
 
 ## Verification and remaining risks
 
@@ -89,4 +109,18 @@ oracle and spill allocation. The original three-hour task budget remains unchang
 
 Transpose-plus-MMA native execution and the full original device comparator are
 separate gates. No GPU/provider work or performance result is part of this software
-unit. Independent design feedback is pending because all worker slots are occupied.
+unit. Independent source review of the final implementation remains required.
+
+## Current software and memory scope
+
+At `d65f9de0`, seven arithmetic/ABI contracts pass. At the same fixed source, all
+16 original metadata records and the retained input-view observations produce
+complete Programs. B=1 cases lower 19 of 22 stages; larger batches lower 12 of 22.
+All remaining refusals are the indexed-MMA provenance restriction in #435. This
+is not complete software or device acceptance.
+
+The largest per-case declared allocations are 2,887,864,320 input bytes,
+655,400,960 output bytes and 1,321,396,224 scratch bytes. The maximum paired tensor
+lower bound is 41,052,659,712 bytes, about 38.23 GiB. No case exceeds a 64 GiB
+device from this bound alone. This is not memory admission: oracle temporaries,
+runtime allocations and private spill remain outside the estimate.
