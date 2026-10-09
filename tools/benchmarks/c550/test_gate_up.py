@@ -4,6 +4,7 @@ from copy import deepcopy
 import ast
 import importlib.util
 import itertools
+import json
 import math
 from pathlib import Path
 from types import SimpleNamespace
@@ -78,7 +79,7 @@ class GateUpContracts(unittest.TestCase):
             self.assertEqual([item.toolchain_requirements['grid'] for item in lowered.lowerings],
                              [[(sequence + 15) // 16, 768, batch]] * 2 + [[sequence, 96, batch]])
             for stage in program.stages[:2]:
-                document = stage.schedule.to_dict()
+                document = json.loads(stage.schedule_bytes)
                 cast = next(op for op in document['operations'] if op['id'] == 'round_projection')
                 self.assertEqual(cast['parameters']['to'], 'bf16')
             self.assertIn('activated_bf16 = activated.to(tl.bfloat16)', lowered.lowerings[2].source)
