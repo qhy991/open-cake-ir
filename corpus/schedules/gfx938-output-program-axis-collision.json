@@ -1,0 +1,190 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "x",
+      "indices": [
+        {
+          "name": "row_part",
+          "source": "program_tile"
+        },
+        {
+          "name": "column",
+          "source": "program_tile"
+        }
+      ],
+      "operation": "load_x"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "mean",
+      "indices": [
+        {
+          "name": "column",
+          "source": "program_tile"
+        }
+      ],
+      "operation": "store_mean"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "fp32",
+      "mode": "input",
+      "name": "x",
+      "shape": [
+        8,
+        16
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "output",
+      "name": "mean",
+      "shape": [
+        16
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "values",
+      "shape": [
+        4,
+        4
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "total",
+      "shape": [
+        4
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "temporary_0",
+      "shape": [
+        4
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "candidate"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "load_x",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "x"
+      ],
+      "role": "compute",
+      "writes": [
+        "values"
+      ]
+    },
+    {
+      "depends_on": [
+        "load_x"
+      ],
+      "id": "sum_x",
+      "kind": "reduce",
+      "parameters": {
+        "axis": 0,
+        "op": "sum",
+        "scope": "cta"
+      },
+      "reads": [
+        "values"
+      ],
+      "role": "compute",
+      "writes": [
+        "total"
+      ]
+    },
+    {
+      "depends_on": [
+        "sum_x"
+      ],
+      "id": "elementwise_temporary_0",
+      "kind": "elementwise",
+      "parameters": {
+        "op": "div",
+        "scalar": 8.0
+      },
+      "reads": [
+        "total"
+      ],
+      "role": "compute",
+      "writes": [
+        "temporary_0"
+      ]
+    },
+    {
+      "depends_on": [
+        "elementwise_temporary_0"
+      ],
+      "id": "store_mean",
+      "kind": "store",
+      "parameters": {
+        "coalesced": true
+      },
+      "reads": [
+        "temporary_0"
+      ],
+      "role": "compute",
+      "writes": [
+        "mean"
+      ]
+    }
+  ],
+  "outputs": [
+    "mean"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 1,
+        "name": "column",
+        "tile": 4
+      },
+      {
+        "axis": 1,
+        "buffer": "x",
+        "dimension": 0,
+        "name": "row_part",
+        "tile": 4
+      }
+    ]
+  },
+  "roles": [
+    {
+      "execution_groups": [
+        0
+      ],
+      "name": "compute"
+    }
+  ],
+  "schedule_id": "gfx938-output-program-axis-collision",
+  "schema_version": 2,
+  "target": "gfx938",
+  "tile_loops": []
+}

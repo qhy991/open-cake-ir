@@ -268,6 +268,14 @@ class _TL:
         return a.binary(_Tile(tuple(shape), [None] * _size(shape)), lambda value, _: value)
 
     @staticmethod
+    def reshape(a, shape):
+        if not a.shape:
+            raise TypeError("reshape requires a block tensor; splat a scalar before reshaping")
+        if _size(a.shape) != _size(shape):
+            raise ValueError("reshape changes the number of values")
+        return _Tile(shape, a.values)
+
+    @staticmethod
     def trans(a):
         m, n = a.shape
         return _Tile((n, m), [a.at((i, j)) for j in range(n) for i in range(m)])

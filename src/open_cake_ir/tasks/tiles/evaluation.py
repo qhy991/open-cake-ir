@@ -10,24 +10,27 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 
 @dataclass(frozen=True, init=False)
 class PreparedTensorCase:
-    """CPU-only task inputs and original oracle, retained for one worker process.
+    """Task inputs and original oracle in CPU storage for one worker process.
 
     Construction always calls the registered task. This is not a serialized
-    caller-supplied reference or a new cache authority.
+    caller-supplied reference or a new cache authority. A task requiring its
+    target oracle must receive an already verified device admission.
     """
     workload_sha256: str
     case_id: str
     inputs: Mapping
     expected: Mapping
 
-    def __init__(self, workload: WorkloadContract, case_id: str):
+    def __init__(self, workload: WorkloadContract, case_id: str, *, admission=None):
         from open_cake_ir.tasks.workloads import materialize_evaluation_case
-        inputs, expected = materialize_evaluation_case(workload, case_id)
+        inputs, expected = (materialize_evaluation_case(workload, case_id) if admission is None
+                            else materialize_evaluation_case(workload, case_id, admission=admission))
         object.__setattr__(self, 'workload_sha256', workload.canonical_sha256)
         object.__setattr__(self, 'case_id', case_id)
         object.__setattr__(self, 'inputs', MappingProxyType({k: v if _is_torch_tensor(v) else tuple(v)
                                                          for k, v in inputs.items()}))
-        object.__setattr__(self, 'expected', MappingProxyType({k: tuple(v) for k, v in expected.items()}))
+        object.__setattr__(self, 'expected', MappingProxyType({k: v if _is_torch_tensor(v) else tuple(v)
+                                                            for k, v in expected.items()}))
 
     def check(self, workload: WorkloadContract, case_id: str):
         if self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id:

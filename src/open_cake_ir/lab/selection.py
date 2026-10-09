@@ -10,6 +10,7 @@ from typing import Mapping, cast
 
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import EvaluationReceipt
+from open_cake_ir.evaluation.refusals import EvaluationRefusal
 
 from ._documents import _object, differs
 from .executor import ExecutorRevision
@@ -131,6 +132,8 @@ _EMPIRICAL_SELECTION = "external_empirical_advisory_v1"
 
 
 def _receipt_qualifies(receipt: EvaluationReceipt) -> bool:
+    if isinstance(receipt, EvaluationRefusal):
+        return False
     return (
         receipt.correctness_passed
         and receipt.kernel_calls > 0
@@ -205,11 +208,13 @@ def _matched_search_decision(
     *,
     cost_order_applied: bool,
     materiality_ratio: float,
+    unavailable_profiles: frozenset[str] = frozenset(),
 ) -> tuple[list[int], int, dict[str, object] | None]:
     """Choose the measured winner and derive the sole cost-order diagnosis."""
 
     qualified = [
-        index for index, (_, receipt) in enumerate(searched) if _receipt_qualifies(receipt)
+        index for index, (candidate, receipt) in enumerate(searched)
+        if candidate not in unavailable_profiles and _receipt_qualifies(receipt)
     ]
     measured = sorted(
         qualified,

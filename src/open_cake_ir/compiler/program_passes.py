@@ -125,6 +125,9 @@ TRANSFORMATIONS = (
                    'Fuse matching masked rank-two private BF16/FP16 tiles into a loop-free pointwise consumer; retain producer loops and rounding casts.'),
     Transformation('fuse_pointwise_epilogue', ('producer', 'epilogue', 'schedule_id', 'entry_point'),
                    'Fuse a private rounded row intermediate or pure FP32 copy into its only pointwise consumer.'),
+    Transformation('specialize_triton_store_loop',
+                   ('stage', 'loop_name', 'num_stages', 'schedule_id', 'entry_point'),
+                   'Choose existing num_stages for one fixed independent gfx938 store-loop region. Preserve arithmetic/accesses/ABI; no automatic depth choice or performance guarantee.'),
     Transformation('specialize_triton_warps', ('stage', 'num_warps', 'schedule_id', 'entry_point'),
                    'Choose an explicit CTA width within the pass\'s qualified domain.'),
     Transformation('specialize_output_columns', ('stage', 'schedule_id', 'entry_point'),
@@ -140,7 +143,7 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
     if not isinstance(parameters, Mapping) or set(parameters) != set(declaration.parameters):
         return _refuse('transform_parameters', f'Required parameters: {declaration.parameters}.')
     if any(not isinstance(parameters[key], str) or not parameters[key]
-           for key in declaration.parameters if key not in {'num_warps', 'k_tile', 'output_tile', 'loop_unroll_factor'}):
+           for key in declaration.parameters if key not in {'num_warps', 'k_tile', 'output_tile', 'loop_unroll_factor', 'num_stages'}):
         return _refuse('transform_parameters', 'Stage names and result identity must be nonempty strings.')
     try:
         program = Program.from_dict(program.document)
@@ -165,7 +168,7 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
         if transformation in {'fuse_pointwise_epilogue', 'fuse_tiled_epilogue'}:
             return _fuse(compiler, program, transformation=transformation, **parameters)
         from .pointwise_tiling import tile_pointwise_outputs
-        from .passes import specialize_triton_warps, specialize_output_columns
+        from .passes import specialize_triton_warps, specialize_output_columns, specialize_triton_store_loop
         from .reduction_tiling import (tile_squared_difference, tile_squared_difference_outputs,
                                        specialize_squared_difference)
         transform = {
@@ -174,6 +177,7 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
             'tile_squared_difference_outputs': tile_squared_difference_outputs,
             'tile_squared_difference': tile_squared_difference,
             'specialize_triton_warps': specialize_triton_warps,
+            'specialize_triton_store_loop': specialize_triton_store_loop,
             'specialize_output_columns': specialize_output_columns,
         }[transformation]
         return _specialize(compiler, program, transform=transform, **parameters)

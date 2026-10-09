@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel  # noqa: E402
 from open_cake_ir.compiler.corpus import assess_case  # noqa: E402
-from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources  # noqa: E402
+from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources, inspect_amdgcn_resources  # noqa: E402
 from open_cake_ir.compiler.performance.compiled_resources import load_compiled_resources  # noqa: E402
 
 
@@ -162,14 +162,15 @@ def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     if arguments.manifest is not None and arguments.schedules:
         raise ValueError("--manifest and positional Schedules are exclusive")
-    if bool(arguments.compile_to) != bool(arguments.cuobjdump):
-        raise ValueError("--compile-to and --cuobjdump must be supplied together")
+    if arguments.cuobjdump and not arguments.compile_to:
+        raise ValueError("--cuobjdump requires --compile-to")
     output = None
     if arguments.compile_to is not None:
         output = arguments.compile_to.resolve()
         if output == ROOT or ROOT in output.parents:
             raise ValueError("compiled profiles and artifacts must stay outside the checkout")
-        arguments.cuobjdump = arguments.cuobjdump.resolve(strict=True)
+        if arguments.cuobjdump:
+            arguments.cuobjdump = arguments.cuobjdump.resolve(strict=True)
         output.mkdir(parents=True, exist_ok=False)
     observations = (
         load_compiled_resources(arguments.compiled_report)
@@ -204,11 +205,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         if output is not None and not uncovered:
             compilation = compile_triton(lowering.source.encode(), lowering.toolchain_requirements)
-            resources = inspect_triton_resources(compilation, arguments.cuobjdump)
+            if compilation.code_object == "hsaco":
+                resources = inspect_amdgcn_resources(compilation)
+                roles = ("amdgcn", "hsaco")
+            elif compilation.code_object == "cubin":
+                if arguments.cuobjdump is None:
+                    raise ValueError("CUBIN resource collection requires --cuobjdump")
+                resources = inspect_triton_resources(compilation, arguments.cuobjdump)
+                roles = ("ptx", "cubin")
+            else:
+                raise ValueError(f"resource inspector does not cover {compilation.code_object!r}")
             artifacts = output / f"{len(rows):04d}"
             artifacts.mkdir()
             (artifacts / "lowered.py").write_bytes(compilation.source)
-            for role in ("ptx", "cubin"):
+            for role in roles:
                 (artifacts / f"kernel.{role}").write_bytes(compilation.artifacts[role])
         elif arguments.compiled_report is not None and not uncovered:
             resources = observations.get(lowering.source_sha256)

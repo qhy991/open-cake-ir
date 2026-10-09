@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "decision": "proposed",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
+  "backend": "triton",
+  "target": "gfx938",
+  "id": "F-2026-10-07-002",
+  "kind": "capacity",
+  "title": "Width rewrite omits lowerable pure selections and fixed pointwise loops",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/prelu",
+    "locators": [
+      "campaign/evaluations/c3-select/candidate.py",
+      "campaign/evaluations/c3-select/outcome.json",
+      "campaign/evaluations/c6-loopcols-pipe/candidate.py",
+      "campaign/evaluations/c6-loopcols-pipe/outcome.json"
+    ]
+  },
+  "observation": "Both retained PReLU sources pass the original five cases and lower on gfx938; specialize_triton_warps refuses operation_domain for compare/select and loop_domain for the independent pointwise loop. The backend can already generate these structures.",
+  "proposed_change": "Extend the existing explicit width rewrite to typed pure compare/select and one fixed independent pointwise loop, preserving graph, accesses, ABI, casts and existing target/store-ownership gates. Do not create a default width policy, new instruction or accuracy relaxation.",
+  "promotion_disposition": "Proposed bounded applicability extension. Device correctness qualification is required; equal-budget search improvement and community-baseline performance remain separate."
+}

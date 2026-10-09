@@ -114,6 +114,20 @@ def comparison_arm(arms: Mapping[str, object]) -> str | None:
 def bind_baseline(schedule: Mapping[str, object], workload, case_id: str, *, backend: str | None = None) -> dict:
     """Bind an already shaped baseline; the Workload ABI is the only tensor owner."""
     document = json.loads(json.dumps(schedule))
+    if 'program_id' in document:
+        from open_cake_ir.compiler.ir import Program
+        from open_cake_ir.evaluation.program import program_tensor_abi
+        from .python_reference import skeleton_route
+        from .workload_binding import bind_program_workload
+        program = Program.from_dict(document)
+        if backend is None:
+            raise ValueError('native comparison does not support a Program starter')
+        route = skeleton_route(document)
+        expected = tuple((arg.name, arg.shape, arg.dtype, arg.mode) for arg in workload.tensor_abi(case_id))
+        if (program.target != workload.document['semantics'].get('target')
+                or route['backend'] != backend or program_tensor_abi(program) != expected):
+            raise ValueError('Program starter target, stage backend or public ABI differs from the Workload')
+        return bind_program_workload(program, workload.canonical_sha256).document
     if document.get('target') != workload.document['semantics'].get('target'):
         raise ValueError('baseline Schedule target differs from the Workload target')
     abi = workload.tensor_abi(case_id)
