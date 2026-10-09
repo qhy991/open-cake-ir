@@ -200,9 +200,12 @@ class ChunkDelta(unittest.TestCase):
         abi=[TensorABI(name,program.tensors[name].shape,program.tensors[name].dtype.value,mode)
              for mode,names in [('input',program.inputs),('output',program.outputs)] for name in names]
         scale=1/math.sqrt(128)
-        semantics={'fixed_scalar_inputs':{'scale':{'dtype':'float32','value':scale}}}
+        semantics={'fixed_scalar_inputs':{'scale':{'dtype':'float32','value':scale,
+                                                  'binding':'literal_input'}}}
         workload=SimpleNamespace(target='xcore1002',tensor_abi=lambda case:abi,document={'semantics':semantics})
         self.assertEqual(delta.source_for_workload(workload,'primary'),delta.source_for(1,131))
+        semantics['fixed_scalar_inputs']['scale']['binding']='original_factory_literal'
+        with self.assertRaises(ValueError):delta.source_for_workload(workload,'primary')
         semantics['fixed_scalar_inputs']={}
         with self.assertRaises(ValueError):delta.source_for_workload(workload,'primary')
 
