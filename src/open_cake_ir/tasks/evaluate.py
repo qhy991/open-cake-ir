@@ -11,6 +11,7 @@ from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_b
 
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
@@ -86,6 +87,22 @@ def _write_new(path: Path, value: object) -> None:
     write_new(path, _canonical_json_bytes(value), _PROFILE_OUTPUT_OWNER)
 
 
+def _retain_failure_artifacts(result, error, request_root):
+    payloads = getattr(error, 'artifact_payloads', None)
+    if not payloads:
+        return
+    from open_cake_ir.evaluation.failures import failure_artifacts
+    paths = {role:f'failure-{role}.bin' for role in payloads}
+    updated = {**result,'schema_version':2,'failure_artifacts':paths}
+    failure_artifacts(updated)
+    from open_cake_ir.lab.ncu_process import write_new
+    for role,payload in payloads.items():
+        if type(payload) is not bytes:
+            raise ValueError('failed Evaluation diagnostic must be sealed bytes')
+        write_new(request_root/paths[role],payload,_PROFILE_OUTPUT_OWNER)
+    result.update(updated)
+
+
 def _base_result(job_id: str) -> dict[str, object]:
     # The prefix names the allocator that issued the job, and each allocator has one
     # mode; the placeholder the worker starts with is the cluster allocator's.
@@ -127,6 +144,7 @@ class _Authority:
     # none is refused at admission rather than admitted under a default.
     allocation_mode: str | None = None
     prepared_cases: Mapping[str, PreparedTensorCase] | None = None
+    local_queue_seconds: float = 0
 
 
 def _prepared_case(authority, case_id):
@@ -160,12 +178,13 @@ def _prepare_local_tensor_work(authority, kind):
         raise ValueError('CPU preparation cannot start inside an existing allocation')
     if (authority.allocation_mode != 'local_serialized'
             or platform_for(authority.candidate.target).local_job_prefix != kind
-            or not isinstance(authority.manifest, (TensorLaunchManifest, ProgramLaunchManifest))):
+            or not isinstance(authority.manifest, (TensorLaunchManifest, MetalTensorLaunchManifest, ProgramLaunchManifest))):
         raise ValueError('local CPU preparation requires its declared tensor allocation route')
     _admit_program_assay(authority, collect_timing=authority.timed_assay_available
                          and authority.request['purpose'] != 'attribution')
     policy = authority.request['evaluation_protocol']
     cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
+             and not isinstance(authority.manifest, MetalTensorLaunchManifest)
              else validation_case_ids(policy) if 'validation_case_ids' in policy
              else (authority.case_id,))
     # No device APIs, module loading or allocation occurs in this phase. The
@@ -410,6 +429,8 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     passed = True
     metrics = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
     correctness_calls = 0
+    assays = {}
+    active_position = None
     def accumulate(check):
         nonlocal passed
         passed = passed and check['passed']
@@ -451,6 +472,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             for index, order in enumerate(protocol.pair_order):
                 row = {'pair_index': index, 'order': list(order), 'arms': {}}
                 for position, role in enumerate(order):
+                    active_position = {'pair_index':index,'position':position,'arm':role}
                     samples, check = _fresh_tile_cohort(loaded[(role, authority.case_id)], assays[role],
                         authority.workload, inputs, expected,
                         samples_per_cohort=protocol.samples_per_cohort,
@@ -509,6 +531,24 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'kernel_calls': authority.manifest.kernels_per_call, 'fallback_calls': 0, 'timing': timing,
             'artifacts': {'correctness_output': 'correctness-output.json',
                           'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
+    except Exception as error:
+        # Retain the failed native cohort before module teardown and before the
+        # common broker discards its temporary worker directory. A diagnostic
+        # snapshot is not a receipt and cannot qualify timing or correctness.
+        snapshots = {role: deepcopy(assay.last_activity) for role, assay in assays.items()
+                     if getattr(assay, 'last_activity', None) is not None}
+        if snapshots:
+            raw = {'kind':'failed_paired_activity_v1','position':active_position,
+                   'job_id':admission.broker_job_id,'purpose':authority.request['purpose'],
+                   'case_id':authority.case_id,'target':authority.candidate.target,
+                   'evaluation_protocol':dict(evaluation),'completed_pairs':measurements,
+                   'native_activity':snapshots,'correctness_observations':checks,
+                   'launch_manifests':{role:manifest.as_dict() for role,manifest in manifests.items()},
+                   'error':str(error),'error_class':type(error).__name__}
+            retained = dict(getattr(error, 'artifact_payloads', {}))
+            retained['paired_activity'] = _canonical_json_bytes(raw)
+            error.artifact_payloads = retained
+        raise
     finally:
         counters['kernel_calls'] = sum(item.loaded.launch_calls for item in loaded.values())
         pending_error = sys.exc_info()[1]
@@ -763,18 +803,22 @@ def _evaluate_metal_candidate(authority, result):
     if os.environ.get('GPUQ_JOB_ID'):
         from open_cake_ir.evaluation.gpuq import observe_allocation
         job_id = observe_allocation(authority.candidate.target)['job_id']
+    elif authority.prepared_cases is not None and authority.allocation_mode == 'local_serialized':
+        if job_id or os.environ.get('METAL_BROKER_LOCK_FD'):
+            raise ValueError('prepared Metal CPU worker must not own a device allocation')
     elif (re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', job_id) is None
             or job_id == f'{row.local_job_prefix}-000000000000'):
         raise ValueError('Metal worker requires a real broker job allocation')
     from open_cake_ir.evaluation.local_broker import observe_local_metal_job
-    if not os.environ.get('GPUQ_JOB_ID') and observe_local_metal_job() != job_id:
+    if job_id and not os.environ.get('GPUQ_JOB_ID') and observe_local_metal_job() != job_id:
         raise ValueError('Metal broker lock identity differs')
     admission = authority.executor.admit_host()
     if not isinstance(admission, Mapping) or admission.get('kind') != row.host_kind:
         raise ValueError('Metal worker requires an admitted Metal Executor')
-    result['job_id'] = job_id
-    result['mode'] = job_mode(job_id)
-    result['admitted'] = True
+    if job_id:
+        result['job_id'] = job_id
+        result['mode'] = job_mode(job_id)
+        result['admitted'] = True
     profile = authority.request['purpose'] == 'attribution'
     candidates = {'candidate': authority.candidate}
     manifests = {'candidate': authority.manifest}
@@ -786,8 +830,10 @@ def _evaluate_metal_candidate(authority, result):
     from open_cake_ir.tasks.workloads import materialize_case as task_materialize, reference_outputs as task_reference
     input_cases = {}
     for case_id in cases:
-        inputs = task_materialize(authority.workload, case_id)
-        input_cases[case_id] = {'inputs': inputs, 'expected': task_reference(authority.workload, case_id, inputs)}
+        prepared = _prepared_case(authority, case_id)
+        inputs = task_materialize(authority.workload, case_id) if prepared is None else prepared.inputs
+        expected = task_reference(authority.workload, case_id, inputs) if prepared is None else prepared.expected
+        input_cases[case_id] = {'inputs': inputs, 'expected': expected}
     plan = []
     def append(role, phase, case_id, *, timed=False, instrumented=False, pair_index=None, position=None,
                dispatches=1):
@@ -812,9 +858,28 @@ def _evaluate_metal_candidate(authority, result):
         for role in candidates:
             for case_id in cases:
                 append(role, 'postflight', case_id)
-    observation = observe(workload=authority.workload, candidates=candidates, manifests=manifests,
-        input_cases=input_cases, launch_plan=plan, observer_executable=Path(admission['observer_executable']),
-        expected_host=dict(admission['host']), directory=authority.request_root / 'metal-observation')
+    directory = authority.request_root / 'metal-observation'
+    if directory.exists() or directory.is_symlink():
+        raise ValueError('Metal observation requires a fresh output directory')
+    try:
+        observation = observe(workload=authority.workload, candidates=candidates, manifests=manifests,
+            input_cases=input_cases, launch_plan=plan, observer_executable=Path(admission['observer_executable']),
+            expected_host=dict(admission['host']), directory=directory,
+            queue_seconds=authority.local_queue_seconds)
+    finally:
+        # This process does not release a lease. The native child has ended before
+        # observe returns or raises; existing external allocations keep their owner.
+        allocation = directory / 'allocation.json'
+        if allocation.exists():
+            from open_cake_ir.evaluation.metal_device_process import read_metal_admission
+            process_admission = read_metal_admission(allocation)
+            observed_job = process_admission['job_id']
+            if job_id and observed_job != job_id:
+                raise ValueError('Metal observation allocation differs from its worker')
+            job_id = observed_job
+            result.update(job_id=job_id, mode=job_mode(job_id), admitted=process_admission['admitted'])
+    if not job_id:
+        raise ValueError('Metal observation lacks its native process admission')
     launches = observation['launches']
     counters = result['counters']
     counters.update(module_loads=len(candidates), preflight_calls=sum(row['phase'] == 'preflight' for row in launches),
@@ -1367,9 +1432,16 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--local-kind", choices=LOCAL_KINDS,
                         help="prepare tensor inputs/oracles before requesting this local broker")
+    parser.add_argument("--local-device", type=int, help="physical ordinal selected by the local broker after CPU preparation")
+    parser.add_argument("--local-queue-seconds", type=float, default=0)
+    parser.add_argument("--local-runtime-device", type=int)
+    parser.add_argument("--local-expected-pci")
+    parser.add_argument("--local-lock-scope", choices=("user", "device"), default="user")
     parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.local_kind is None and (args.local_device is not None or args.local_queue_seconds != 0 or args.local_lock_scope != "user" or args.local_runtime_device is not None or args.local_expected_pci is not None):
+        parser.error('local device and queue settings require --local-kind')
     request_path = args.request.resolve(strict=True)
     # The allocator that admitted this process names its job in its own variable: the
     # local broker in METAL_JOB_ID under the family's prefix, the cluster allocator in
@@ -1382,8 +1454,19 @@ def main() -> int:
             if args.profile_child or args.profile_admission is not None:
                 raise ValueError('local CPU preparation cannot run as a profiler child')
             authority = _prepare_local_tensor_work(authority, args.local_kind)
-            job = admit_local_job(args.local_kind)
-            result = _base_result(job)
+            if isinstance(authority.manifest, MetalTensorLaunchManifest):
+                if (args.local_device is not None or args.local_lock_scope != 'user'
+                        or args.local_runtime_device is not None or args.local_expected_pci is not None
+                        or not math.isfinite(args.local_queue_seconds) or args.local_queue_seconds < 0):
+                    raise ValueError('Metal local worker requires its single-device user allocation')
+                authority = replace(authority, local_queue_seconds=args.local_queue_seconds)
+            else:
+                job = (admit_local_job(args.local_kind)
+                       if args.local_device is None and args.local_queue_seconds == 0 and args.local_lock_scope == "user" and args.local_runtime_device is None and args.local_expected_pci is None else
+                       admit_local_job(args.local_kind, device=args.local_device, queue_seconds=args.local_queue_seconds,
+                                       lock_scope=args.local_lock_scope, runtime_device=args.local_runtime_device,
+                                       expected_pci=args.local_expected_pci))
+                result = _base_result(job)
         if os.environ.get("GPUQ_BACKEND"):
             from open_cake_ir.evaluation.gpuq import observe_allocation
             _BROKER_ALLOCATION = observe_allocation(authority.candidate.target)
@@ -1464,10 +1547,12 @@ def main() -> int:
     except LocalBrokerBusy as error:
         result = _base_result(error.job_id)
         result.update(error=str(error), failure_class='admission')
+        _retain_failure_artifacts(result, error, request_path.parent)
     except Exception as error:
         result["error"] = "evaluator_failed"
         result["failure_class"] = type(error).__name__
         result["receipt"] = None
+        _retain_failure_artifacts(result,error,request_path.parent)
         print(f'{type(error).__name__}: {error}', file=sys.stderr)
     _write_new(args.output, result)
     return 0

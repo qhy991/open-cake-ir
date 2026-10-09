@@ -25,18 +25,19 @@ consumer 的局部值及输出会被重命名以避免冲突。中间张量从�
 旧阶段的 Workload seal 不适用于新 ABI。结果 `metadata` 为空，必须由任务所有者
 绑定完整组合的 Workload，才能进入 Lab 评测。pass 不替调用者伪造这个绑定。
 
-## 首版支持范围
+## 支持范围
 
 - 两阶段都已通过同一个 Compiler 的检查，并具有相同精确 Target 的 Triton 路线。
 - 一行对应一个 program，完整行的 store、reload、最终 store 相互对应。
 - 单个 role；warp 分配和 residency 承诺一致，不静默改变性能控制。
-- producer 有一个最终 store；中间张量为 BF16 或 FP16，来自一个显式 cast。
+- producer 有一个最终 store；中间张量为 BF16/FP16 的显式 cast 结果，或 FP32 的整行 load/store 纯复制。
 - epilogue 只有 load、cast、elementwise 和最终 store，没有额外输入、归约或副作用。
 - 不处理循环、持久调度、state、共享/TMEM 分配、同步、动态 extent、scale 关系或视图偏移。
 
-FP32 中间张量目前拒绝。删除一个 FP32 store/load 可能改变后端指令收缩；identity
-cast 既不构成可靠的舍入边界，也不是 IR 的合法规范形式。不能以数学公式相同
-代替实际数值契约。BF16/FP16 原有的显式 cast 会保留，epilogue 读取它的结果。
+FP32 算术中间张量仍拒绝。删除它的 store/load 可能改变后端指令收缩；identity
+cast 不构成可靠的舍入边界。FP32 纯复制只允许同形状、同类型、相同完整行访问的
+两个操作：load 和 store；它没有可与 consumer 收缩的 producer 算术。BF16/FP16
+原有的显式 cast 会保留，epilogue 读取它的结果。
 
 匹配不到时返回 `applied=False`、`reason` 和说明，不修改输入或生成半成品候选。
 匹配后会对完整结果重新 `assess`，使用现有分析更新寄存器压力、工作量和合法性。
@@ -99,9 +100,32 @@ Triton/ptxas 的实际优化、硬件 transcendental 或 GPU 性能。
 ## English
 
 `Compiler.fuse_pointwise_epilogue` explicitly composes two validated, row-owned Triton
-Schedules across a caller-declared private BF16/FP16 intermediate. It preserves the
-explicit cast, removes the global store/reload, alpha-renames the consumer, and assesses
+Schedules across a caller-declared private BF16/FP16 intermediate or a pure FP32
+whole-row copy. FP32 arithmetic materialization remains refused. It preserves the
+explicit cast where present, removes the global store/reload, alpha-renames the consumer, and assesses
 the complete result. It is not an automatic graph pass; unknown external consumers and
 physical aliasing are outside the supplied composition boundary. Old Workload metadata
 is cleared because the resulting ABI is new. Unsupported patterns return a reason.
 CPU/source checks establish no GPU, performance or model-level qualification.
+
+## Matching tiled producers and multiple rounded outputs
+
+`Compiler.rewrite_program(program, "fuse_tiled_epilogue", parameters)` uses the same
+producer/epilogue selection and fresh result identity. It admits adjacent stages
+whose private BF16/FP16 outputs feed only the selected consumer. All producer
+outputs must be removed together; a public or extra consumer remains a refusal.
+
+The bounded domain is rank-two masked Cartesian tiles with identical launch axes,
+extents, tile widths, role and residency commitments. The consumer is loop-free
+and pointwise, consumes exactly those intermediates and keeps the same output
+domain. Producer loops remain unchanged. Each removed output is an explicit
+BF16/FP16 cast result and both its cast and store are outside all producer loops.
+The casts remain in the fused Schedule; FP32 arithmetic seams are still refused.
+No permutation, slice, singleton view, state or synchronization is inferred.
+
+This supports the actual dual-GEMM/epilogue structure without introducing a layout
+algebra or a task name into Compiler. It returns a complete reassessed Program or
+a localized reason; lowering never applies it automatically. Input and output
+ABI are preserved by Program bindings. Numerical and performance acceptance still
+requires the unchanged original Workload, strong community baseline and device
+measurement. Software contracts alone do not establish a Task gain.

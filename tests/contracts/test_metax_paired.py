@@ -42,7 +42,7 @@ class MacaPairedReceipts(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
 
-    def execute(self):
+    def execute(self, *, reject_timing=False):
         owner = self
         class Loaded:
             module_count = 1
@@ -91,6 +91,15 @@ class MacaPairedReceipts(unittest.TestCase):
                 self.last_activity = dict(timer=TIMER, cache_policy=RESET, l2_cache_bytes=8388608,
                     reset_bytes=4*8388608, reset_record=reset, reset_activity=reset_activity, activity=activity)
                 self.non_target_dispatches = 0
+                if reject_timing:
+                    # Preserve valid correlation and launch identity; introduce the
+                    # observed same-stream interval overlap into the second reset.
+                    reset_next = next(row for row in activity['records'] if row['kind']==10 and row['correlation']==4)
+                    first_end = next(row['end_ns'] for row in activity['records'] if row['kind']==10 and row['correlation']==3)
+                    reset_next['start_ns']=first_end-256
+                    from open_cake_ir.evaluation.metax_benchmark import dispatch_samples
+                    dispatch_samples(activity,kernel_name=self.manifest.kernel_name,grid=self.manifest.grid,
+                                     block=self.manifest.block,repeats=kwargs['repeat_iters'],reset_record=reset)
                 return [duration/1e6] * kwargs['repeat_iters']
         candidate = self.candidates['candidate']
         host = SimpleNamespace(admit_host=lambda:{'runtime_library':self.admission.runtime_library,
@@ -152,3 +161,16 @@ class MacaPairedReceipts(unittest.TestCase):
         launch['resources']['candidate']['registers_per_thread'] = 99
         with self.assertRaisesRegex(ValueError, 'resources'):
             self.receipt({**self.payloads, 'launch_receipt':encoded(launch)})
+
+    def test_failed_native_cohort_retains_complete_activity_without_qualifying_a_receipt(self):
+        with self.assertRaisesRegex(ValueError,'serialized samples overlap') as failure:
+            self.execute(reject_timing=True)
+        raw=json.loads(failure.exception.artifact_payloads['paired_activity'])
+        self.assertEqual(raw['position'],{'pair_index':0,'position':0,'arm':'candidate'})
+        self.assertEqual(len(raw['native_activity']['candidate']['activity']['records']),100)
+        self.assertEqual(raw['launch_manifests']['candidate']['kernel_name'],'candidate')
+        self.assertIsNone(self.result['receipt'])
+        self.result.update(error='evaluator_failed',failure_class='ValueError',receipt=None)
+        worker._retain_failure_artifacts(self.result,failure.exception,self.root)
+        self.assertEqual(self.result['schema_version'],2)
+        self.assertEqual(json.loads((self.root/self.result['failure_artifacts']['paired_activity']).read_bytes()),raw)

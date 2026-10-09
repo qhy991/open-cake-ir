@@ -58,11 +58,20 @@ class CodexProviderAdapter:
         """Run without shell expansion and remove every contract-declared environment name."""
 
         environment = sanitized_environment(invocation.removed_environment)
+        if (invocation.user_home is None) != (invocation.native_skill_package is None):
+            raise ValueError('provider private HOME and native skill material differ')
+        if invocation.user_home is not None:
+            from .author_home import verify_user_home
+            environment['HOME'] = str(verify_user_home(invocation.user_home, invocation.native_skill_package))
         if invocation.codex_home is not None:
             from .author_home import verify_codex_home
             environment['CODEX_HOME'] = str(verify_codex_home(
                 invocation.codex_home, fresh=invocation.thread_id is None,
                 expected_system_skills=invocation.system_skills_snapshot))
+        skill_prefix = None
+        if invocation.native_skill_package is not None:
+            from .native_skill_observation import before_invocation
+            skill_prefix = before_invocation(invocation)
         try:
             completed = run_supervised(
                 invocation.argv,
@@ -93,7 +102,7 @@ class CodexProviderAdapter:
                                                      expected_thread_id=invocation.thread_id),
             )
         try:
-            return normalize_codex_turn(
+            result = normalize_codex_turn(
                 completed.stdout,
                 candidate_path=candidate_path,
                 expected_change=expected_change,
@@ -103,6 +112,11 @@ class CodexProviderAdapter:
                 arm=arm, environment_kind=environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            if invocation.native_skill_package is not None:
+                from .native_skill_observation import after_invocation
+                result = replace(result, native_skill_input=after_invocation(
+                    invocation, thread_id=result.thread_id, previous=skill_prefix))
+            return result
         except (OSError, ValueError) as error:
             raise RunProtocolFault(
                 "provider_fault",
@@ -159,7 +173,14 @@ class QualifiedRunProvider:
         builders: Mapping[str, InvocationBuilder],
         task_packages: Mapping[str, TaskPackage],
         adapter: ProviderAdapter,
+        qualification_anchor: Mapping[str, object] | None = None,
     ) -> None:
+        from .author_home import ISOLATED_SKILL_PACKAGE_V1
+        if any(builder.configuration.get("author_home_policy") == ISOLATED_SKILL_PACKAGE_V1
+               for builder in builders.values()):
+            from .native_skill_qualification import verify_live_qualification_evidence
+            verify_live_qualification_evidence(qualification=qualification, anchor=qualification_anchor,
+                required_environment_kinds=tuple(package.environment_kind for package in task_packages.values()))
         if (
             not qualification.qualified
             or qualification.scope not in {
@@ -206,6 +227,13 @@ class QualifiedRunProvider:
         for run_id, package in task_packages.items():
             if package.run_id != run_id:
                 raise ValueError("Ralph task package Run identity differs")
+            expected_skill = package.native_skill_package
+            bound_skill = getattr(builders[run_id], 'native_skill_package', None)
+            if ((expected_skill is None) != (bound_skill is None)
+                or expected_skill is not None and (
+                    bound_skill.reference != expected_skill.reference
+                    or bound_skill.raw_bytes != expected_skill.raw_bytes)):
+                raise ValueError('provider native skill material differs from TaskPackage')
             verify_task_package(builders[run_id].workspace, package)
         self._builders = dict(builders)
         self._task_packages = task_packages
@@ -317,7 +345,13 @@ class QualifiedRunProvider:
                     artifact_payloads={'provider_stdout': result.raw_events},
                     reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
                                                            expected_thread_id=request.thread_id)) from error
-        return replace(result, provider_tokens=tokens, reference_bundle=reference_bundle)
+        native_binding = None
+        if package.native_skill_package is not None:
+            from .native_skill_run import bind_invocation
+            native_binding = bind_invocation(invocation=invocation, request=request,
+                configuration=self.configuration, system_skills_snapshot=builder.remembered_system_skills)
+        return replace(result, provider_tokens=tokens, reference_bundle=reference_bundle,
+                       native_skill_binding=native_binding)
 
 
 class CodexRunProvider(QualifiedRunProvider):
@@ -327,6 +361,7 @@ class CodexRunProvider(QualifiedRunProvider):
         self, *, qualification: ProviderQualificationReceipt,
         builders: Mapping[str, CodexInvocationBuilder], task_packages: Mapping[str, TaskPackage],
         adapter: CodexProviderAdapter | None = None,
+        qualification_anchor: Mapping[str, object] | None = None,
     ) -> None:
         for builder in builders.values():
             if (builder.configuration.get('author_home_policy') is not None
@@ -335,4 +370,4 @@ class CodexRunProvider(QualifiedRunProvider):
                      != qualification.system_skills_sha256)):
                 raise ValueError('Run system skills differ from Provider qualification')
         super().__init__(qualification=qualification, builders=builders, task_packages=task_packages,
-                         adapter=adapter or CodexProviderAdapter())
+                         adapter=adapter or CodexProviderAdapter(), qualification_anchor=qualification_anchor)

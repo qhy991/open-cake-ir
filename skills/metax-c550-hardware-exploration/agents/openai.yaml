@@ -1,0 +1,4 @@
+interface:
+  display_name: "MetaX C550 硬件探索"
+  short_description: "用版本化文档与实机证据研究 C550 kernel 上限"
+  default_prompt: "使用 $metax-c550-hardware-exploration 为这项 C550 kernel 优化研究供应商文档、硬件证据与验证方案。"

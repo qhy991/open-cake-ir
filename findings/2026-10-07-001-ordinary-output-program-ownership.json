@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "decision": "proposed",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
+  "backend": "triton",
+  "target": "gfx938",
+  "id": "F-2026-10-07-001",
+  "kind": "bug",
+  "title": "Direct ordinary outputs can omit a varying program axis",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-cake-task-development-20261006/per_channel_moments",
+    "locators": [
+      "campaign/evaluations/twodim-probe/candidate.py",
+      "campaign/evaluations/twodim-probe/source.py",
+      "campaign/evaluations/twodim-probe/assessment.json",
+      "campaign/evaluations/twodim-probe/outcome.json"
+    ]
+  },
+  "observation": "A two-axis (64,2,1) grid loads different row halves but both row_part programs store to the same mean and mean_square columns. The frozen Compiler accepts it; four of five original cases fail. Existing Metal and native backend checks own narrower instances of the same direct-coordinate hazard.",
+  "proposed_change": "Make direct non-loop, non-persistent OUTPUT stores reject an omitted program axis with more than one tile in shared program safety. Preserve input-anchored coordinates, singleton axes and repeated uses. Keep state, loop and indirect-coordinate policies with their existing owners; migrate the duplicate Metal and native non-loop checks.",
+  "promotion_disposition": "Proposed bounded safety coverage. No inference of full Task semantics, complete race freedom or performance."
+}

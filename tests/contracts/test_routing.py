@@ -21,7 +21,6 @@ from open_cake_ir.lab.routing import (  # noqa: E402
     COST_MODEL,
     DESTINATIONS,
     IR_VOCABULARY,
-    VERIFIER,
     Route,
     route_rejection,
 )
@@ -124,16 +123,11 @@ class RoutingContractTests(unittest.TestCase):
         )
         self.assertEqual(decision.destination, CANDIDATE)
 
-    def test_passing_every_gate_and_failing_to_compile_is_the_verifiers(self) -> None:
-        """The one route that matters most, and the easiest to get backwards.
-
-        The gates admitted this Schedule and the toolchain refused it, so something was
-        true of it that the pre-compile model does not cover. Blaming the candidate here
-        is how a missing rule stays missing.
-        """
-
-        decision = route_rejection({"stage": "compile", "diagnostic": "ptxas exit 255"})
-        self.assertEqual(decision.destination, VERIFIER)
+    def test_generated_source_compile_refusal_requires_owner_triage(self) -> None:
+        for diagnostic in ("ptxas exit 255", "unknown instruction", "toolchain unavailable"):
+            with self.subTest(diagnostic=diagnostic):
+                decision = route_rejection({"stage": "compile", "diagnostic": diagnostic})
+                self.assertEqual(decision.destination, BACKEND_TRIAGE)
 
     def test_generic_emitter_refusal_needs_owner_triage(self) -> None:
         decision = route_rejection(

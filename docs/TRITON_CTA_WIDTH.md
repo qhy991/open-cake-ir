@@ -12,13 +12,24 @@ kernels to 16. A fresh common evaluation determines the useful width per task.
 
 ## Contract
 
-- Static admission covers exact `sm_100a`/`sm_103a` Triton routes. GPU performance
-  evidence currently covers only FP32 128x1024 on `sm_103a`. Other targets are
+- Static admission covers exact `sm_100a`/`sm_103a`/`gfx938` Triton routes. Retained
+  NVIDIA performance evidence covers FP32 128x1024 on `sm_103a`. Other targets are
   valid inputs but ineligible for this pass; no target is substituted.
 - Input must already be lowering-eligible, have one zero-based role, and declare
-  no per-role register split, residency, loops, persistent grid, explicit storage
+  no per-role register split, residency, persistent grid, explicit storage
   allocation or synchronization. Only global/register buffers and ordinary loads,
-  pure elementwise arithmetic/casts, CTA reductions and stores are admitted.
+  pure elementwise arithmetic/casts, MMA, CTA reductions and stores are admitted.
+  One fixed sequential loop may contain loads, MMA, FP16/BF16-to-FP32
+  widening and ordinary output stores; alternatively it may contain CTA reductions
+  and pure elementwise arithmetic instead of MMA. Resident and cross-loop
+  reductions keep their existing backend scope and carry declarations. FP32-to-FP16/BF16 rounding is allowed
+  only when every consumer is an output store in that same loop. Existing
+  FP32 operands are used directly; identity casts remain refused. Backend
+  preflight owns store coverage of all active axes. Its body, trip count,
+  tile and precision stay unchanged. Multiple loops, loop exits and loop-level
+  warp specialization remain outside this rewrite.
+  Runtime `valid_extent` masks and their integer length inputs remain unchanged;
+  they describe logical output validity, not an execution-group commitment.
 - The caller requests a positive power-of-two count within the bound Target's
   `maximum_warps_per_cta`, checked before constructing the new role list. Triton
   preflight also owns this compile-option constraint for non-pass callers.
@@ -88,9 +99,43 @@ below materiality. These observations keep the parameter choice in Lab rather th
 turning this pass into a global default. The original Finding owns the actual
 paired values and paths; summaries must use each confirmation's own baseline.
 
+## gfx938 resource-mapping successor
+
+The previous DCU pass returned `target_route`, and the previous pure-operation
+domain refused looped MMA. The retained original GateUp M128 emission uses four
+execution groups and reports 256 VGPR, 16 KiB LDS and scratch32. This footprint
+motivates explicit width candidates; it does not prove a bottleneck or gain.
+The successor exposes the same existing width API for ordinary looped MMA and
+gfx938. It changes only the requested launch width and result identity. Lab still
+chooses the width and must qualify the actual binary against the unchanged
+original Task, baseline, precision and timer. The operation AST is not a proof
+that SDK reduction, dot layout or resource allocation stays identical.
+
+Device qualification and fixed-budget version comparisons remain separate:
+same-candidate replay measures codegen/runtime effects; fresh matched authoring
+starts measure how quickly an agent finds a confirmed result with each Compiler.
+Historical continuation scores are not substituted for fresh version controls.
+
 This tick-tock integration combines the unchanged, approved Compiler v85 source
 with the newer runtime. [Current release status](../reports/current/STATUS.md) owns the
 active version pointers. The historical GPU evidence remains bound to its recorded
 Executor v126; integrating a newer Executor does not rebind or upgrade that evidence.
 Next experiments can vary a shape or dtype under a new frozen workload boundary,
 keeping the selected mechanism and fixed baseline explicit before measuring again.
+
+## Streamed MMA output tiles
+
+The explicit width rewrite also admits one fixed sequential MMA loop containing
+ordinary output stores. The existing backend preflight requires output stores to cover every active loop
+and program axis; the pass retains that owner and its refusal. An FP32-to-FP16/BF16 rounding cast is admitted only when all
+consumers are those stores in the same loop. Intermediate rounded MMA inputs,
+repeated non-tiled output stores, state, dynamic stops, synchronization and explicit
+resource commitments remain outside this domain.
+
+The rewrite changes width and candidate identity only. It preserves the exact
+operation graph, rounding sites, tile loop, masks, access maps and public ABI.
+Existing typing, effects, ownership and backend assessment run before and after;
+no new IR operation or hardware instruction is introduced. Correctness, resource
+use and performance still require external device evaluation. Manual width choices
+in retained DCU PV runs motivate this API coverage; they do not establish a new
+Compiler speedup or a default preferred width.

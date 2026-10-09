@@ -241,6 +241,10 @@ _PARAMETERS = {
     ]},
     OperationKind.COMPARE: _object({"op": {"enum": ["lt", "le", "eq", "ne", "gt", "ge"]}},
                                   {"scalar": {"type": "number"}}),
+    OperationKind.TRANSPOSE: _object({}),
+    OperationKind.BROADCAST_IN_DIM: _object({
+        "dimensions": {"type": "array", "minItems": 1, "items": _NONNEGATIVE}
+    }),
     OperationKind.SELECT: _object({}, {"false_value": {"anyOf": [
         {"type": "number"}, {"const": "negative_infinity"}]}}),
     OperationKind.CAST: _object({"to": _enum(DType)}),
@@ -262,7 +266,7 @@ _PARAMETERS = {
             ),
             _object(
                 {
-                    "op": {"const": ElementwiseOp.TANH.value},
+                    "op": {"enum": [ElementwiseOp.TANH.value, ElementwiseOp.SIN.value, ElementwiseOp.COS.value]},
                     "instruction": _object({"contract": {"type": "string"}}),
                 },
                 {
@@ -276,7 +280,7 @@ _PARAMETERS = {
                         "enum": [
                             member.value
                             for member in ElementwiseOp
-                            if member not in (ElementwiseOp.TANH, ElementwiseOp.FMA)
+                            if member not in (ElementwiseOp.TANH, ElementwiseOp.FMA, ElementwiseOp.SIN, ElementwiseOp.COS)
                         ]
                     }
                 },

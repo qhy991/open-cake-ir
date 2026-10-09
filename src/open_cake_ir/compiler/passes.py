@@ -61,10 +61,10 @@ def _whole_dimension(index, dimension: int) -> bool:
             and index.offset == 0 and index.extent is None)
 
 
-# Where the launch-width rewrite has been measured: B200 and B300 under the Triton
+# Where the launch-width rewrite has been qualified: B200, B300 and gfx938 under the Triton
 # route. An applicability set the pass declares, not a capability the Target does;
 # widening it is a qualification act on the added target.
-_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a'})
+_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a', 'gfx938'})
 
 
 def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
@@ -94,7 +94,7 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', str(error))
     if s.lowering.backend is not LoweringBackend.TRITON or s.target not in _WARP_SPECIALIZATION_EVIDENCE:
-        return refused('target_route', 'This specialization has bounded NVIDIA Triton evidence only.')
+        return refused('target_route', 'This specialization requires a target with retained launch-width qualification.')
     maximum = compiler._revision.targets[s.target].resource_limits.maximum_warps_per_cta
     if num_warps > maximum:
         return refused('warp_count', f'Target {s.target} admits at most {maximum} warps per CTA.')
@@ -103,16 +103,70 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         return refused('result_identity', 'A distinct Schedule id and valid entry point are required.')
     if (len(s.roles) != 1 or s.roles[0].execution_groups != tuple(range(len(s.roles[0].execution_groups)))
         or s.roles[0].registers_per_thread is not None or s.residency is not None
-        or s.allocations or s.pipelines or s.barriers or s.tile_loops
+        or s.allocations or s.pipelines or s.barriers
         or s.program_map is None or s.program_map.persistent
         or any(op.waits or op.signals or op.pipeline for op in s.operations)
         or any(b.space not in {MemorySpace.GLOBAL, MemorySpace.REGISTER}
                or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
-               or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent for b in s.buffers)):
-        return refused('execution_commitments', 'Require one zero-based role without explicit storage, loop, synchronization or residency commitments.')
-    if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
-                          OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
-        return refused('operation_domain', 'Only pure tensor arithmetic, CTA reductions and ordinary loads/stores are admitted.')
+               or b.stages != 1 or b.swizzle or b.scale_of for b in s.buffers)):
+        return refused('execution_commitments', 'Require one zero-based role without explicit storage, synchronization or residency commitments.')
+    pointwise = {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
+                 OperationKind.COMPARE, OperationKind.SELECT, OperationKind.STORE}
+    # Assessment owns compare/select register-storage, shape and dtype checks.
+    if s.tile_loops:
+        by_id = {op.op_id: op for op in s.operations}
+        if len(s.tile_loops) != 1:
+            return refused('loop_domain', 'Require one fixed pointwise, MMA or CTA-reduction loop.')
+        loop = s.tile_loops[0]
+        body = [by_id[name] for name in loop.body]
+        # Initial backend assessment already owns output-store affine coverage
+        # (TRITON_LOOP_STORE_OWNERSHIP); do not duplicate that legality rule here.
+        stores = [op for op in body if op.kind is OperationKind.STORE]
+
+        def width_cast(op) -> bool:
+            source = s.buffer(op.reads[0])
+            if op.parameters.to is DType.FP32 and source.dtype in {DType.FP16, DType.BF16, DType.FP32}:
+                return True
+            # A rounding boundary is preserved, not eliminated or moved. Admit
+            # narrow output tiles only when every consumer is a streamed store
+            # in this same fixed loop; intermediate MMA/carry use stays outside.
+            consumers = [use for use in s.operations if op.writes[0] in use.reads]
+            return (source.dtype is DType.FP32 and op.parameters.to in {DType.FP16, DType.BF16}
+                    and bool(consumers)
+                    and all(use in stores for use in consumers))
+
+        mma_body = any(op.kind is OperationKind.MMA for op in body)
+        reduction_body = any(op.kind is OperationKind.REDUCE for op in body)
+        # No reduction/MMA/scan carry, no reads from written global storage, and
+        # no register updates: each iteration computes fresh pointwise values.
+        # Common verification already proves register producers/lifetimes, and
+        # backend assessment above proves each store's affine loop ownership.
+        pointwise_body = (bool(stores)
+            and all(op.kind in pointwise for op in s.operations)
+            and all(
+                s.buffer(op.reads[0]).mode is BufferMode.INPUT
+                if op.kind is OperationKind.LOAD else
+                s.buffer(op.writes[0]).mode is BufferMode.OUTPUT
+                if op.kind is OperationKind.STORE else
+                not set(op.reads).intersection(op.writes)
+                and all(s.buffer(name).space is MemorySpace.REGISTER
+                        for name in op.reads + op.writes)
+                for op in body))
+        allowed = {OperationKind.LOAD, OperationKind.CAST, OperationKind.STORE}
+        if mma_body:
+            allowed.add(OperationKind.MMA)
+        elif reduction_body:
+            allowed.update({OperationKind.REDUCE, OperationKind.ELEMENTWISE})
+        elif pointwise_body:
+            allowed = pointwise
+        if (loop.stop is not None or loop.range_options.warp_specialize
+                or not (mma_body or reduction_body or pointwise_body)
+                or any(op.kind not in allowed for op in body)
+                or any(op.kind is OperationKind.CAST and not width_cast(op) for op in body)):
+            return refused('loop_domain', 'Require a fixed independent pointwise, MMA or CTA-reduction loop with ordinary loads/casts/stores; rounded output stores must have no intermediate consumers.')
+    if any(op.kind not in pointwise | {OperationKind.MMA, OperationKind.REDUCE}
+           for op in s.operations):
+        return refused('operation_domain', 'Only pure tensor arithmetic/comparisons/selections, MMA, CTA reductions and ordinary loads/stores are admitted.')
     if num_warps == len(s.roles[0].execution_groups):
         return refused('unchanged', 'The requested width is already declared.')
     copied['schedule_id'] = schedule_id
@@ -127,6 +181,78 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
             if f.blocks_lowering or f.blocks_acceptance))
     return SpecializationResult(result, 'applied',
         'CTA width explicitly specialized; Lab must measure correctness, timing and resources.')
+
+
+def specialize_triton_store_loop(compiler: Compiler, schedule: Mapping, *,
+                                loop_name: str, num_stages: int,
+                                schedule_id: str, entry_point: str) -> SpecializationResult:
+    """Explicit pipeline-depth choice for an independent gfx938 output loop.
+
+    Uses the existing range option, without changing arithmetic or guessing a
+    profitable depth. The caller names one fixed store-bearing sibling region.
+    """
+    def refused(reason, message):
+        return SpecializationResult(None, reason, message)
+
+    if type(num_stages) is not int or num_stages < 1:
+        return refused('stage_count', 'num_stages must be a positive integer.')
+    try:
+        copied = deepcopy(dict(schedule))
+        assessment = compiler.assess(copied)
+        if not assessment.lowering_eligible:
+            return refused('input_refused', ', '.join(f.code for f in assessment.findings
+                           if f.blocks_lowering or f.blocks_acceptance))
+        s = assessment.typed_schedule
+        if s.lowering.backend is not LoweringBackend.TRITON or s.target != 'gfx938':
+            return refused('target_route', 'This store-loop choice is qualified only on gfx938 Triton.')
+        if (len(s.roles) != 1 or s.residency or s.allocations or s.pipelines or s.barriers
+                or s.roles[0].registers_per_thread is not None
+                or s.program_map is None or s.program_map.persistent
+                or any(op.waits or op.signals or op.pipeline for op in s.operations)
+                or any(b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
+                       or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent
+                       or b.space not in {MemorySpace.GLOBAL, MemorySpace.REGISTER}
+                       for b in s.buffers)):
+            return refused('execution_commitments', 'Require one pure role and ordinary storage without state, synchronization or residency commitments.')
+        matches = [(i, loop) for i, loop in enumerate(s.tile_loops) if loop.name == loop_name]
+        if len(matches) != 1:
+            return refused('loop_selection', 'Select one existing named TileLoop.')
+        index, loop = matches[0]
+        if s.loop_parent() or loop.stop is not None or loop.range_options.warp_specialize:
+            return refused('loop_domain', 'Require fixed unnested loop regions without warp specialization.')
+        pure = {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.COMPARE,
+                OperationKind.SELECT, OperationKind.CAST, OperationKind.STORE}
+        body = s.loop_operations(loop)
+        if (not any(op.kind is OperationKind.STORE for op in body)
+                or any(op.kind not in pure for op in body)
+                or any(op.kind not in pure | {OperationKind.REDUCE} for op in s.operations)):
+            return refused('loop_domain', 'Select a pure store-bearing loop with no reduction or MMA carry in that region.')
+        for op in body:
+            if (op.kind is OperationKind.LOAD and s.buffer(op.reads[0]).mode is not BufferMode.INPUT
+                or op.kind is OperationKind.STORE and s.buffer(op.writes[0]).mode is not BufferMode.OUTPUT
+                or set(op.reads).intersection(op.writes)):
+                return refused('loop_effects', 'The selected loop reads immutable inputs and writes owned outputs, without mutable state.')
+        extent = s.buffer(loop.buffer).shape[loop.dimension]
+        trips = (extent + loop.tile - 1) // loop.tile
+        if not 1 <= num_stages <= trips:
+            return refused('stage_count', f'Choose a depth no greater than the fixed {trips} trips.')
+        if num_stages == loop.range_options.num_stages:
+            return refused('unchanged', 'The selected region already has this depth.')
+        if (not isinstance(schedule_id, str) or not schedule_id or schedule_id == s.schedule_id
+                or not isinstance(entry_point, str) or not entry_point.isidentifier()):
+            return refused('result_identity', 'Choose a fresh Schedule identity and valid entry point.')
+        copied['schedule_id'] = schedule_id
+        copied['lowering']['entry_point'] = entry_point
+        copied['tile_loops'][index]['range_options']['num_stages'] = num_stages
+        result = compiler.assess(copied)
+        if not result.lowering_eligible:
+            return refused('result_refused', ', '.join(f.code for f in result.findings
+                           if f.blocks_lowering or f.blocks_acceptance))
+        compiler.lower(result)
+        return SpecializationResult(result, 'applied',
+            'Selected store-loop depth changed explicitly; arithmetic, accesses and ABI are preserved. Measure correctness, resources and timing.')
+    except (CompilerError, ScheduleParseError, ValueError, TypeError) as error:
+        return refused('input_refused', str(error))
 
 
 def _row_axis(schedule: Schedule, rows: int):
@@ -154,14 +280,15 @@ def _whole_row(schedule: Schedule, op: str, buffer: str, axis: str) -> bool:
 def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Mapping, *,
                            private_intermediate: str, schedule_id: str,
                            entry_point: str) -> FusionResult:
-    """Fuse one row-owned, low-precision materialization into a unary epilogue.
+    """Fuse one row-owned materialization into a unary epilogue.
 
     This transforms the explicit composition epilogue(producer(inputs)); it cannot
     prove absence of consumers in an unseen graph. The caller must select a private
     intermediate and later bind the composed Workload. Neither source is mutated.
     Only direct-global Triton, one matching role/grid, no loops/state/synchronization,
-    an explicit BF16/FP16 producer cast and a whole-row unary epilogue are admitted.
-    FP32 materialization is refused: an identity cast is not a rounding barrier.
+    a whole-row unary epilogue, and either an explicit BF16/FP16 producer cast or
+    a pure FP32 load/store copy are admitted. FP32 arithmetic materialization is
+    refused: an identity cast is not a rounding barrier.
     """
     originals = []
     typed = []
@@ -205,8 +332,8 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
             or ep_input.shape != middle.shape or ep_input.dtype != middle.dtype
             or ep_output.shape != middle.shape):
         return _refuse('intermediate_abi', 'Both stages must agree on the full rank-2 intermediate and output shape.')
-    if middle.dtype not in {DType.BF16, DType.FP16}:
-        return _refuse('rounding_boundary', 'Only an explicit BF16/FP16 rounding seam is preserved; FP32 store/load fusion is not admitted.')
+    if middle.dtype not in {DType.BF16, DType.FP16, DType.FP32}:
+        return _refuse('rounding_boundary', 'Require an explicit BF16/FP16 rounding seam or a pure FP32 copy.')
     pa, ea = _row_axis(p, middle.shape[0]), _row_axis(e, middle.shape[0])
     if pa is None or ea is None:
         return _refuse('row_ownership', 'Each stage must own one complete row per program.')
@@ -233,10 +360,24 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
     bridge, loaded = p.buffer(store.reads[0]), e.buffer(load.writes[0])
     definitions = [op for op in p.operations if bridge is not None and bridge.name in op.writes]
     if (bridge is None or loaded is None or len(definitions) != 1
-            or definitions[0].kind is not OperationKind.CAST
-            or definitions[0].parameters.to != middle.dtype
             or bridge.dtype != middle.dtype or bridge.shape != (middle.shape[1],)
             or loaded.dtype != bridge.dtype or loaded.shape != bridge.shape):
+        return _refuse('rounding_boundary', 'The forwarded register value must preserve the full intermediate dtype and row shape.')
+    definition = definitions[0]
+    if middle.dtype is DType.FP32:
+        # Removing a plain memory copy cannot join arithmetic across a FP32
+        # rounding seam. A cast, scaling operation or unused arithmetic is not
+        # evidence for this narrow domain and remains refused.
+        copied_input = p.buffer(definition.reads[0]) if definition.reads else None
+        if (len(p.operations) != 2 or p.operations[0] != definition
+                or definition.kind is not OperationKind.LOAD or len(definition.reads) != 1
+                or copied_input is None or copied_input.mode is not BufferMode.INPUT
+                or copied_input.space is not MemorySpace.GLOBAL
+                or copied_input.dtype is not DType.FP32 or copied_input.shape != middle.shape
+                or not _whole_row(p, definition.op_id, copied_input.name, pa.name)):
+            return _refuse('rounding_boundary', 'FP32 fusion admits a pure whole-row load/store copy only; arithmetic materialization keeps its rounding seam.')
+    elif (definition.kind is not OperationKind.CAST
+            or definition.parameters.to != middle.dtype):
         return _refuse('rounding_boundary', 'The forwarded value must be the explicit low-precision cast result, not its pre-round input.')
     # Reject hidden global arguments: every surviving global is a public input or output.
     if any(b.space is MemorySpace.GLOBAL and b.mode not in {BufferMode.INPUT, BufferMode.OUTPUT}
@@ -290,7 +431,9 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
     if not assessed.lowering_eligible:
         return _refuse('result_refused', ', '.join(f.code for f in assessed.findings
             if f.blocks_lowering or f.blocks_acceptance))
-    return FusionResult(assessed, 'applied', 'Removed one intermediate global store and reload; preserved the explicit low-precision cast. No performance qualification is implied.')
+    seam = 'the pure FP32 copy value' if middle.dtype is DType.FP32 else 'the explicit low-precision cast'
+    return FusionResult(assessed, 'applied',
+        f'Removed one intermediate global store and reload; preserved {seam}. No performance qualification is implied.')
 
 
 def specialize_output_columns(compiler: Compiler, schedule: Mapping, *,

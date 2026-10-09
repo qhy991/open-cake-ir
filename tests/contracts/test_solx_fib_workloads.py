@@ -6,9 +6,11 @@ an unrelated rule is visible as such rather than counted as coverage.
 import json
 import math
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib.authoring import starter_source
@@ -79,7 +81,7 @@ class FamilyRegistrationTests(unittest.TestCase):
         self.assertEqual(set(launchable_tasks()), set(TASKS))
         for task in launchable_tasks():
             self.assertEqual(admitting_backends(task),
-                             ("triton-b200", "triton-b300", "triton-gfx1151", "triton-metax"), task)
+                             ("triton-b200", "triton-b300", "triton-dcu", "triton-gfx1151", "triton-metax"), task)
 
     def test_partitioned_rows_cover_each_element_exactly_once(self):
         for task in PARTITIONED_TASKS:
@@ -236,10 +238,13 @@ class RefusalTests(unittest.TestCase):
             workload_document("fib_rmsnorm_h512", rows=8, columns=512, backend="metal-m1-pro")
 
     def test_a_target_that_does_not_declare_cast_is_refused_by_operation_kind(self):
-        # gfx938 declares load/elementwise/reduce/store only, so this BF16 ABI has no
-        # widening or narrowing conversion there. The refusal names that, not the dtype.
-        with self.assertRaisesRegex(ValueError, r"does not admit operation kind 'cast'"):
-            workload_document("fib_rmsnorm_h512", rows=8, columns=512, backend="triton-dcu")
+        # Keep the refusal tied to an absent declaration after gfx938 gains cast.
+        document = json.loads((ROOT / "compiler/targets/gfx938.json").read_text())
+        document["operation_kinds"].remove("cast")
+        without_cast = Target.from_dict(document)
+        with patch.object(Target, "load", return_value=without_cast):
+            with self.assertRaisesRegex(ValueError, r"does not admit operation kind 'cast'"):
+                workload_document("fib_rmsnorm_h512", rows=8, columns=512, backend="triton-dcu")
 
     def test_a_valid_but_different_backend_is_admitted(self):
         document = workload_document("fib_rmsnorm_h512", rows=8, columns=512, backend="triton-b200")

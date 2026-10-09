@@ -24,6 +24,14 @@ responsibility, not separate copies of the Compiler or a hardware qualification.
 这项例外只用于文档/引用/PDF 的同步，不适用于 Compiler、Executor、工具、测试、目标或
 运行配置。涉及这些内容的 main/platform 同步仍按下文保留祖先的 merge 流程执行。
 
+## Compiler 开发与独立 Bench 的标准
+
+遵循[开发与独立评测标准](BENCHMARK_PROTOCOL.md)。metax、metal、dcu 通过 main 共享
+Compiler、任务和流程；各自使用 c550-bench、metal-bench、bw1100-bench 的固定契约。
+main 集成已验收的平台更新，再用保留祖先的 merge/fast-forward 回到三个分支。
+平台 README 链接 `docs/results/<平台>/BENCHMARK_PROGRESS.md`，逐轮追加 Bench 上的
+固定版本性能与覆盖；其他分支收到的是同一发布来源，不另外手写成绩。
+
 ## 六条长期分支
 
 | 分支 | 职责 | 任务分支示例 | 任务 PR 的目标 |

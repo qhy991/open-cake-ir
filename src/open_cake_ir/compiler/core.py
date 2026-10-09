@@ -224,6 +224,21 @@ class Compiler:
         return specialize_output_columns(self, schedule,
             schedule_id=schedule_id, entry_point=entry_point)
 
+    def tile_pointwise_outputs(self, schedule: Mapping[str, object], *, output_tile: int,
+                               schedule_id: str, entry_point: str) -> SpecializationResult:
+        """Explicit independent pointwise columns; never invoked by assess/lower."""
+        from .pointwise_tiling import tile_pointwise_outputs
+        return tile_pointwise_outputs(self, schedule, output_tile=output_tile,
+                                      schedule_id=schedule_id, entry_point=entry_point)
+
+    def specialize_triton_store_loop(self, schedule: Mapping[str, object], *,
+                                     loop_name: str, num_stages: int,
+                                     schedule_id: str, entry_point: str) -> SpecializationResult:
+        """Choose the pipeline depth of one independent store-bearing region."""
+        from .passes import specialize_triton_store_loop
+        return specialize_triton_store_loop(self, schedule, loop_name=loop_name,
+            num_stages=num_stages, schedule_id=schedule_id, entry_point=entry_point)
+
     def specialize_triton_warps(self, schedule: Mapping[str, object], *, num_warps: int,
                                 schedule_id: str, entry_point: str) -> SpecializationResult:
         """Explicit launch-width candidate; never invoked by assess or lower."""

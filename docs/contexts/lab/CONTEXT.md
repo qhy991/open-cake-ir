@@ -60,6 +60,13 @@ Evaluator's Receipt, or turn system qualification into a scientific comparison.
 - KernelSeed and standalone portfolio artifact utilities remain available; there is no
   Portfolio Study lifecycle. A seed does not establish arbitrary-shape or serving generalization.
 
+Author feedback names its completed source Turn and each resolved Candidate's first action
+position. Evaluated, build-rejected, duplicate and unsearched results remain distinct;
+selection alone is not qualification. Bounded diagnostics belong to the retained filter
+observation, evaluation facts to that Candidate's Receipt. Replay reconstructs their
+binding before accepting the next author bundle or terminal StateCard; confirmation
+does not overwrite search feedback. This delivery contract does not prove author learning.
+
 ## Boundary examples
 
 A Run that adheres to the protocol but finds no qualified Candidate is an observed

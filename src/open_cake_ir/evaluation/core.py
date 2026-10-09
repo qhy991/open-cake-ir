@@ -417,6 +417,8 @@ class EvaluationReceipt:
     def measurement_quality(self) -> str:
         if self.timing is None:
             return "not_measured"
+        if self.timing.get('dispersion_gate') == 'diagnostic_only':
+            return 'valid_samples' if self.timing.get('measurement_quality_passed') is True else 'invalid_samples'
         return "stable" if self.timing.get("measurement_quality_passed") is True else "unstable"
 
     @property

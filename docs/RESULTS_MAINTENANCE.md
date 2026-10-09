@@ -13,6 +13,14 @@
 | Hygon DCU | `dcu` | [dcu/records.json](results/dcu/records.json) | [DCU](results/dcu/README.md) |
 | AMD | `amd` | [amd/records.json](results/amd/records.json) | [AMD](results/amd/README.md) |
 
+## 独立 Bench 的版本进步
+
+[Bench 标准](BENCHMARK_PROTOCOL.md)拥有开发/评测边界。平台维护
+`docs/results/<平台>/BENCHMARK_PROGRESS.md`，README 链接同一记录；它是固定原报告
+的发布说明，不是新的证据账本。现有历史 records.json 和生成页继续按下文维护。
+新 Bench 记录必须注明 Bench 与 Compiler commit、强参考、正确性覆盖和计时范围。
+历史开发结果不能直接变成新 Bench 分数；计时协议或题集变化开启新比较段。
+
 ## 哪些文件可以改
 
 `docs/results/<平台>/records.json` 是该平台的**发布投影**：记录要展示的观察、固定来源

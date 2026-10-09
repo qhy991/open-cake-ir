@@ -55,6 +55,29 @@ _TRITON_MODULES = frozenset({"triton", "tl", "libdevice"})
 _TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range", "float"}
 
 
+def _libdevice_function_allowed(name, requirements) -> bool:
+    from .backends.metax import DIRECTED_FMA_FUNCTIONS
+    return (name == "tanh" or name in {"sin", "cos", "fma"} and requirements.get("code_object") == CodeObject.HSACO.value
+            or requirements.get("code_object") == CodeObject.MCFATBIN.value
+            and name in DIRECTED_FMA_FUNCTIONS.values())
+
+
+def _approved_libdevice_call(node, requirements) -> bool:
+    if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute)
+        or not isinstance(node.func.value, ast.Name)
+        or node.func.value.id != "libdevice"):
+        return False
+    if node.func.attr == "tanh":
+        return True  # Preserve the existing source boundary.
+    if node.func.attr in {"sin", "cos"}:
+        return (_libdevice_function_allowed(node.func.attr, requirements)
+                and len(node.args) == 1 and not node.keywords
+                and not isinstance(node.args[0], ast.Starred))
+    return (_libdevice_function_allowed(node.func.attr, requirements)
+            and len(node.args) == 3 and not node.keywords
+            and all(not isinstance(arg, ast.Starred) for arg in node.args))
+
+
 def _infinity_literal(node: ast.AST) -> bool:
     """Only the two constant reduction identities, never Python conversion code."""
     return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
@@ -130,7 +153,10 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     """Admit one kernel-only module without importing or evaluating any source.
 
     Module imports and @triton.jit have one spelling. The optional libdevice import
-    admits only tanh. Constant infinity identities and the exact FP32 FMA instruction
+    admits tanh, unary OCML sin/cos and ternary FMA on HSACO, and direct ternary MACA directed
+    FMA calls on mcfatbin only. A max scan may carry its one exact pure JIT
+    combine helper; no general callback or user helper is admitted.
+    Constant infinity identities and the exact FP32 FMA instruction
     emitted by this Compiler are admitted; arbitrary inline assembly is not.
     Function annotations are only tl.constexpr, defaults and arbitrary
     decorators are forbidden, and kernel calls are a closed Triton language subset.
@@ -140,6 +166,14 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
         tree = ast.parse(source.decode("utf-8"), filename="candidate.triton.py")
     except (UnicodeError, SyntaxError) as error:
         raise ValueError(f"native Triton syntax: {error}") from error
+    from .backends.triton import MAX_SCAN_COMBINE_SOURCE, MAX_SCAN_COMBINE_NAME
+    helper = ast.parse(MAX_SCAN_COMBINE_SOURCE).body[0]
+    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == MAX_SCAN_COMBINE_NAME]
+    has_max_helper = bool(helpers)
+    if has_max_helper:
+        if len(helpers) != 1 or ast.dump(helpers[0]) != ast.dump(helper):
+            raise ValueError("native Triton max scan requires the exact pure combine helper")
+        tree.body.remove(helpers[0])
     imports = _TRITON_IMPORTS + ((_LIBDEVICE_IMPORT,) if len(tree.body) == 4 else ())
     expected_imports = [ast.dump(ast.parse(line).body[0]) for line in imports]
     if (len(tree.body) != len(imports) + 1
@@ -170,8 +204,23 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     for arg in args.args:
         expected = "tl.constexpr" if arg.arg in constants else None
         if ((ast.unparse(arg.annotation) if arg.annotation else None) != expected
-            or arg.arg in _TRITON_RESERVED_NAMES or "__" in arg.arg):
+            or arg.arg in _TRITON_RESERVED_NAMES or arg.arg == MAX_SCAN_COMBINE_NAME or "__" in arg.arg):
             raise ValueError("native Triton parameter annotations or names differ")
+    scans = [n for n in ast.walk(kernel) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name)
+             and n.func.value.id == "tl" and n.func.attr == "associative_scan"]
+    if has_max_helper != bool(scans):
+        raise ValueError("native Triton max scan requires its exact pure combine helper and direct call")
+    def approved_max_scan(node):
+        keywords = {kw.arg: kw.value for kw in node.keywords}
+        return (has_max_helper and len(node.args) == 1 and not isinstance(node.args[0], ast.Starred)
+                and len(keywords) == len(node.keywords) and set(keywords) == {"axis", "combine_fn", "reverse"}
+                and isinstance(keywords["combine_fn"], ast.Name) and keywords["combine_fn"].id == MAX_SCAN_COMBINE_NAME
+                and isinstance(keywords["axis"], ast.Constant) and type(keywords["axis"].value) is int
+                and keywords["axis"].value >= 0 and isinstance(keywords["reverse"], ast.Constant)
+                and type(keywords["reverse"].value) is bool)
+    if any(not approved_max_scan(n) for n in scans):
+        raise ValueError("native Triton max scan requires its exact pure combine helper and direct call")
     forbidden = (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef,
                  ast.ClassDef, ast.Lambda, ast.Global, ast.Nonlocal, ast.With,
                  ast.AsyncWith, ast.Try, ast.Raise, ast.Delete, ast.Await, ast.Yield,
@@ -191,6 +240,12 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
             if isinstance(node, ast.Name) and ("__" in node.id or
                 isinstance(node.ctx, ast.Store) and node.id in _TRITON_RESERVED_NAMES):
                 raise ValueError(f"native Triton reserved name at line {node.lineno}")
+            if isinstance(node, ast.Name) and node.id == MAX_SCAN_COMBINE_NAME:
+                parent = parents.get(node)
+                call = parents.get(parent)
+                if (not isinstance(node.ctx, ast.Load) or not isinstance(parent, ast.keyword)
+                    or parent.arg != "combine_fn" or call not in scans):
+                    raise ValueError("native Triton max scan helper cannot escape its direct combine_fn")
             if isinstance(node, ast.Name) and node.id == "float" and isinstance(node.ctx, ast.Load):
                 if not _infinity_literal(parents.get(node)):
                     raise ValueError(f"native Triton float requires a direct infinity literal at line {node.lineno}")
@@ -198,12 +253,14 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 attribute = parents.get(node)
                 call = parents.get(attribute)
                 if (not isinstance(attribute, ast.Attribute) or attribute.value is not node
-                    or attribute.attr != "tanh" or not isinstance(call, ast.Call)
-                    or call.func is not attribute):
-                    raise ValueError(f"native Triton libdevice requires a direct tanh call at line {node.lineno}")
+                    or not isinstance(call, ast.Call) or call.func is not attribute
+                    or not _approved_libdevice_call(call, requirements)):
+                    raise ValueError(f"native Triton libdevice requires a direct tanh call, unary HSACO sin/cos call, ternary HSACO FMA call or an admitted MACA directed FMA call at line {node.lineno}")
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES
+                    if node.attr == "associative_scan":
+                        allowed = parents.get(node) in scans and approved_max_scan(parents[node])
                     if node.attr == "inline_asm_elementwise":
                         call = parents.get(node)
                         allowed = (isinstance(call, ast.Call) and call.func is node
@@ -211,7 +268,8 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                         if not allowed:
                             raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract or materialization identity at line {node.lineno}")
                 elif isinstance(node.value, ast.Name) and node.value.id == "libdevice":
-                    allowed = has_libdevice and node.attr == "tanh" and isinstance(node.ctx, ast.Load)
+                    allowed = (has_libdevice and isinstance(node.ctx, ast.Load)
+                               and _libdevice_function_allowed(node.attr, requirements))
                 else:
                     allowed = node.attr == "to" and isinstance(node.ctx, ast.Load)
                 if not allowed:
@@ -221,9 +279,12 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 allowed = (isinstance(fn, ast.Name) and fn.id == "range") or (
                     isinstance(fn, ast.Attribute) and (
                         isinstance(fn.value, ast.Name) and fn.value.id == "tl" and fn.attr in _TRITON_CALLS
-                        or has_libdevice and isinstance(fn.value, ast.Name) and fn.value.id == "libdevice" and fn.attr == "tanh"
+                        or has_libdevice and _approved_libdevice_call(node, requirements)
                         or fn.attr == "to" and not (isinstance(fn.value, ast.Name) and fn.value.id in _TRITON_MODULES)
                     ))
+                if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
+                    and fn.value.id == "tl" and fn.attr == "associative_scan"):
+                    allowed = node in scans and approved_max_scan(node)
                 if isinstance(fn, ast.Name) and fn.id == "float":
                     allowed = _infinity_literal(node)
                     if not allowed:
@@ -261,7 +322,16 @@ def project_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> 
     libdevice_import = ast.dump(ast.parse(_LIBDEVICE_IMPORT).body[0])
     if any(ast.dump(node) == libdevice_import for node in tree.body):
         imports += (_LIBDEVICE_IMPORT,)
-    result = ("\n".join(imports) + "\n\n" +
+    from .backends.triton import MAX_SCAN_COMBINE_NAME
+    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == MAX_SCAN_COMBINE_NAME]
+    helper_source = ""
+    if helpers:
+        if len(helpers) != 1:
+            raise ValueError("Compiler lowering max scan helper differs")
+        h = helpers[0]
+        begin = min([h.lineno] + [n.lineno for n in h.decorator_list])
+        helper_source = "\n".join(text.splitlines()[begin - 1:h.end_lineno]) + "\n\n"
+    result = ("\n".join(imports) + "\n\n" + helper_source +
               "\n".join(text.splitlines()[start - 1:kernel.end_lineno]) + "\n").encode()
     validate_triton_kernel(result, requirements)
     return result
@@ -483,7 +553,7 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         )
 
 
-def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
+def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int | None]:
     """Read one unambiguous kernel's allocation from the .amdgpu_metadata note.
 
     The AMDGPU backend writes this note into the assembly it already produced, so there
@@ -499,8 +569,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
       it is not folded into that number.
     - `.private_segment_fixed_size` is one per-lane scratch allocation covering what CUDA
       reports separately as LOCAL and STACK. This ISA does not separate them, so the whole
-      figure is reported as local bytes and the stack figure is zero because it is not an
-      observable quantity here -- not because no stack frame exists.
+      figure is reported as local bytes and separate stack bytes remain unknown.
     """
     # A kernel's first metadata key carries a YAML list dash, so every field pattern
     # here tolerates one. Relying on the keys staying in an order that keeps `-` off
@@ -509,7 +578,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
     names = re.findall(r"^[ \t]*(?:-[ \t]+)?\.name:\s*(\S+)\s*$", assembly, flags=re.MULTILINE)
     if names.count(entry_point) != 1 or len(names) != 1:
         raise ValueError("AMDGCN metadata does not name exactly one requested kernel")
-    result: dict[str, int] = {}
+    result: dict[str, int | None] = {}
     for label, name in (
         (".vgpr_count", "registers_per_thread"),
         (".group_segment_fixed_size", "static_shared_bytes"),
@@ -521,7 +590,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
         if len(values) != 1:
             raise ValueError(f"AMDGCN metadata has missing or ambiguous {label}")
         result[name] = int(values[0])
-    result["stack_bytes"] = 0
+    result["stack_bytes"] = None
     return result
 
 
@@ -535,17 +604,20 @@ def inspect_amdgcn_resources(compilation: TritonCompilation) -> CompiledResource
     route = route_for_code_object(compilation.code_object)
     if route.text_role != "amdgcn":
         raise ValueError(f"target {compilation.target!r} does not produce AMDGCN assembly")
+    allocation = _parse_amdgcn_resources(
+        compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point)
     return CompiledResources(
         source_sha256=sha256(compilation.source).hexdigest(),
-        cubin_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
+        binary_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
         target=compilation.target, entry_point=compilation.entry_point,
         threads_per_cta=compilation.threads_per_cta,
+        # AMDGPU's fixed group segment and the launch's dynamic shared request
+        # are distinct. The DTK HCU route uses dynamic LDS with fixed size zero.
         dynamic_shared_bytes=compilation.dynamic_shared_bytes,
+        code_object="hsaco",
         compiler_version=compilation.compiler_version,
         inspector_version=f"amdgpu-metadata via triton {compilation.compiler_version}",
-        **_parse_amdgcn_resources(
-            compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point
-        ),
+        **allocation,
     )
 
 
@@ -592,7 +664,7 @@ def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Pa
         )
     return CompiledResources(
         source_sha256=sha256(compilation.source).hexdigest(),
-        cubin_sha256=sha256(compilation.artifacts["cubin"]).hexdigest(),
+        binary_sha256=sha256(compilation.artifacts["cubin"]).hexdigest(),
         target=compilation.target, entry_point=compilation.entry_point,
         threads_per_cta=compilation.threads_per_cta,
         dynamic_shared_bytes=compilation.dynamic_shared_bytes,

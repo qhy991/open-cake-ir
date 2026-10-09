@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 
 from tools import kernel_experiment
 from open_cake_ir.source_identity import checkout_commit
+from open_cake_ir.tasks.catalog import collection_rows, select_collection_tasks
 
 PACK = ROOT / 'experiments/flashinfer_rewrites'
 AUTHORING = '''
@@ -36,22 +37,11 @@ measurement or performance-parity claim is supplied by this task package.
 
 
 def catalog():
-    return json.loads((PACK / 'catalog.json').read_text())['tasks']
+    return collection_rows(ROOT)
 
 
 def select_tasks(ids):
-    rows = catalog()
-    selected = [row['id'] for row in rows if row['status'] == 'ready'] if ids is None else ids
-    if not selected or len(set(selected)) != len(selected):
-        raise ValueError('select a nonempty set of unique tasks')
-    by_id = {row['id']: row for row in rows}
-    result = []
-    for ident in selected:
-        row = by_id.get(ident)
-        if row is None or row['status'] != 'ready':
-            raise ValueError(f"{ident}: {row['reason'] if row else 'unknown task'}")
-        result.append(row)
-    return result
+    return select_collection_tasks(ROOT, ids)
 
 
 def reference_path(value):

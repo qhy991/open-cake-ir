@@ -21,9 +21,10 @@ from .pairing import backend_policy
 from . import selection
 from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected
-from .build import BuildRequest, ToolchainBuilder, TritonToolchainBuilder, _ptxas_finding_rows
+from .build import (BuildRequest, ToolchainBuilder, TritonToolchainBuilder, _ptxas_finding_rows,
+                    compiled_allocation_feedback)
 from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1, PYTHON_SOURCE_FILE_V1
-from .workload_binding import bind_program_workload
+from .workload_binding import bind_program_workload, bind_schedule_workload
 
 
 @dataclass(frozen=True)
@@ -146,7 +147,10 @@ class OpenCakeEnvironment:
         self._empirical_selection = None
         selection_binding = self.authority_document.get("candidate_selection")
         if selection_binding is not None:
-            if self._python_enabled or self._explicit_abi:
+            from open_cake_ir.evaluation.platforms import platform_for
+            from open_cake_ir.compiler.target import CodeObject
+            native_mcpti = platform_for(self._target).code_object is CodeObject.MCFATBIN
+            if (self._python_enabled or self._explicit_abi) and not native_mcpti:
                 raise ValueError("empirical selection requires the complete-Schedule/direct-CUDA assay")
             if executor is None:
                 raise ValueError("empirical selection requires the bound Executor")
@@ -154,7 +158,7 @@ class OpenCakeEnvironment:
             self._empirical_selection = selection._EmpiricalSelection(
                 selection_binding,
                 context=selection._empirical_context(
-                    executor, workload_sha256=workload.canonical_sha256, case_id=case_id,
+                    executor, workload_sha256=workload.canonical_sha256, case_id=case_id, target=self._target,
                 ),
                 compiler_revision_id=compiler_ref["revision_id"],
                 target=self._target,
@@ -183,6 +187,9 @@ class OpenCakeEnvironment:
             for item in assessment.findings + assessment.guidance
         ]
 
+    def validate_candidate_semantics(self, document):
+        """Optional Workload-owned semantic admission, before compiling a candidate."""
+
     def _build_program(self, submission, parsed, *, compilation=None):
         from open_cake_ir.compiler.ir import Program
         from open_cake_ir.evaluation.program import (
@@ -200,6 +207,11 @@ class OpenCakeEnvironment:
                 raise ValueError('Program stage backend is outside the authoring environment')
             program = bind_program_workload(program, self._workload_sha256)
             lowered = self._compiler.lower_program(program)
+            if self._empirical_selection is not None and (
+                lowered.compiler_revision_id != self._empirical_selection._compiler_revision_id
+                or program.target != self._empirical_selection._target
+            ):
+                raise ValueError('Program Compiler Revision or target differs from the bound Environment')
             single = single_kernel_lowering(lowered)
             if single is None:
                 # Optimization environments must support their full measurement
@@ -210,7 +222,13 @@ class OpenCakeEnvironment:
                 case_id=self._case_id, compilation=compilation)
             return EnvironmentResult('launchable', submission.sha256, launchable,
                 {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
-                 'cost_model_coverage': 'whole_program_unmodeled'})
+                 **compiled_allocation_feedback(launchable),
+                 'cost_model_coverage': ('single_stage_only' if self._empirical_selection is not None
+                                         and single is not None else 'whole_program_unmodeled'),
+                 'static_profiles': {stage['name']: self._compiler.profile(
+                     self._compiler.assess(stage['schedule'])).as_dict() for stage in program.document['stages']}},
+                empirical_cost=(self._empirical_selection.estimate(program.document)
+                                if self._empirical_selection is not None else None))
         except CandidateCompileRejected as error:
             return EnvironmentResult('rejected', submission.sha256, None,
                 {'stage': 'compile', 'diagnostic': error.diagnostic}, artifact_payloads=error.artifact_payloads)
@@ -248,6 +266,7 @@ class OpenCakeEnvironment:
                                        program_id=parsed['program_id']).document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")
+            self.validate_candidate_semantics(parsed)
             if "program_id" in parsed:
                 return self._build_program(submission, parsed, compilation=compilation)
             metadata = parsed.get("metadata")
@@ -307,9 +326,7 @@ class OpenCakeEnvironment:
             if "workload_contract_sha256" not in metadata:
                 # The frozen Workload, not the author, owns this content binding.
                 # Bind only after the target, route and public tensor ABI agree.
-                parsed = {**parsed, "metadata": {
-                    **metadata, "workload_contract_sha256": self._workload_sha256,
-                }}
+                parsed = bind_schedule_workload(parsed, self._workload_sha256)
             assessment = self._compiler.assess(cast(Mapping[str, object], parsed))
             if self._empirical_selection is not None and (
                 assessment.compiler_revision_id != self._empirical_selection._compiler_revision_id
@@ -378,7 +395,8 @@ class OpenCakeEnvironment:
             submission.sha256,
             launchable,
             MappingProxyType(
-                {"stage": "built", "findings": self._finding_rows(assessment, source)}
+                {"stage": "built", "findings": self._finding_rows(assessment, source),
+                 **compiled_allocation_feedback(launchable)}
             ),
             semantic_sha256=(
                 digest
@@ -400,6 +418,10 @@ class NativeTritonEnvironment:
                  authority_document: Mapping[str, object], workload: WorkloadContract, case_id: str):
         self._toolchain = toolchain
         self._requirements = json.loads(json.dumps(dict(toolchain_requirements)))
+        from open_cake_ir.compiler.toolchain import triton_route
+        self._compile_route = triton_route(self._requirements)
+        if 'num_warps' not in self._requirements.get('compile_options', {}):
+            raise ValueError('native Triton compile contract must declare num_warps')
         self._abi = workload.tensor_abi(case_id)
         self._target = workload.document['semantics']['target']
         # The frozen Compiler owns backend spelling (for example int32 -> *i32).
@@ -453,7 +475,7 @@ class NativeTritonEnvironment:
             # Use the existing structural launch checker before any target compilation.
             CudaKernelSpec.from_dict({
                 'target': self._target, 'kernel_name': requirements['kernel_entry_point'], 'grid': grid,
-                'block': [options.get('num_warps', 4) * 32, 1, 1], 'dynamic_shared_memory_bytes': 0})
+                'block': [options['num_warps'] * self._compile_route.warp_size, 1, 1], 'dynamic_shared_memory_bytes': 0})
             requirements.update(compile_constants=dict(constants), compile_options=dict(options), grid=grid)
             source = document['kernel_source'].encode()
             validate_triton_kernel(source, requirements)
@@ -477,7 +499,8 @@ class NativeTritonEnvironment:
         if launchable.artifact_roles.get('authored_source') != digest:
             raise ValueError('native Triton builder lost source custody')
         return EnvironmentResult('launchable', submission.sha256, launchable,
-            {'stage': 'built', 'source_contract': 'triton_kernel_only_v1'})
+            {'stage': 'built', 'source_contract': 'triton_kernel_only_v1',
+             **compiled_allocation_feedback(launchable)})
 
 
 class NativeCuTeEnvironment:

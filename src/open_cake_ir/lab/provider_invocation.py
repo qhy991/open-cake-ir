@@ -10,13 +10,15 @@ from pathlib import Path
 from typing import Mapping
 
 from .process import sanitized_environment
-from .author_home import (ISOLATED_AUTH_ONLY_V1, system_skills_identity,
-                          system_skills_snapshot, verify_codex_home)
+from .author_home import (CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1, system_skills_identity,
+                          system_skills_snapshot, verify_codex_home, verify_user_home)
+from .native_skills import NativeSkillPackage
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
     PYTHON_CANDIDATE_BUNDLE_V1,
     CODEX_DISABLED_FEATURES,
+    expected_codex_disabled_features,
     ProviderInvocation,
     _THREAD_ID,
 )
@@ -112,6 +114,44 @@ def resolve_codex_code_mode_host(
     raise ValueError("Codex Code Mode host is missing beside the native CLI")
 
 
+def codex_argv(*, executable, model, reasoning_effort, service_tier, output_schema,
+               disabled_features, event_contract, thread_id, prompt=None) -> tuple[str, ...]:
+    """Pure command spelling shared by invocation construction and offline replay."""
+    common = (
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--json",
+        "--strict-config",
+        "--skip-git-repo-check",
+        "--model",
+        model,
+        "--config",
+        f'model_reasoning_effort="{reasoning_effort}"',
+        "--config",
+        f'service_tier="{service_tier}"',
+        "--config",
+        'approval_policy="never"',
+        "--config",
+        'sandbox_mode="workspace-write"',
+        "--output-schema",
+        str(output_schema),
+        "--enable",
+        "code_mode_host",
+    ) + (("--config", 'web_search="disabled"')
+         if event_contract == "closed_file_change_v1" else ()) + tuple(
+        value
+        for feature in disabled_features
+        for value in ("--disable", feature)
+    )
+    prefix = (
+        (str(executable), "exec")
+        if thread_id is None
+        else (str(executable), "exec", "resume")
+    )
+    suffix = (() if thread_id is None else (thread_id,)) + (() if prompt is None else (prompt,))
+    return prefix + common + suffix
+
+
 class CodexInvocationBuilder:
     """Build Codex initial and resume invocations from one shared contract."""
 
@@ -135,6 +175,8 @@ class CodexInvocationBuilder:
         author_home_policy: str | None = None,
         codex_home: Path | None = None,
         qualified_system_skills_sha256: str | None = None,
+        user_home: Path | None = None,
+        native_skill_package: NativeSkillPackage | None = None,
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -146,10 +188,7 @@ class CodexInvocationBuilder:
             or any(not isinstance(feature, str) or not feature for feature in disabled_features)
         ):
             raise ValueError("disabled feature names must be unique and non-empty")
-        if (disabled_features, event_contract) not in {
-            (CODEX_DISABLED_FEATURES, "closed_file_change_v1"),
-            ((), "tool_rich_candidate_v1"),
-        }:
+        if disabled_features != expected_codex_disabled_features(event_contract, author_home_policy):
             raise ValueError("Codex feature and event contracts differ")
         if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
                                        PYTHON_CANDIDATE_BUNDLE_V1}:
@@ -158,10 +197,20 @@ class CodexInvocationBuilder:
             ("independent_task_workspace", "workspace_task_files"),
         }:
             raise ValueError("Codex workspace/reference policy differs")
-        if author_home_policy not in {None, ISOLATED_AUTH_ONLY_V1}:
+        if author_home_policy not in {None, *CODEX_HOME_POLICIES}:
             raise ValueError('Codex author home policy differs')
         if (author_home_policy is None) != (codex_home is None):
             raise ValueError('Codex isolated author home binding differs')
+        if ((author_home_policy == ISOLATED_SKILL_PACKAGE_V1) != (user_home is not None)
+            or (user_home is None) != (native_skill_package is None)):
+            raise ValueError('Codex private HOME and native skill material binding differ')
+        if user_home is not None:
+            user_home = verify_user_home(user_home, native_skill_package)
+            if (user_home == codex_home or user_home in codex_home.parents
+                or codex_home in user_home.parents):
+                raise ValueError('Codex HOME and CODEX_HOME must be separate directories')
+        self._user_home = user_home
+        self._native_skill_package = native_skill_package
         if (qualified_system_skills_sha256 is not None and (
             author_home_policy is None or len(qualified_system_skills_sha256) != 64
             or any(char not in '0123456789abcdef' for char in qualified_system_skills_sha256))):
@@ -201,6 +250,10 @@ class CodexInvocationBuilder:
         return self._executable
 
     @property
+    def native_skill_package(self) -> NativeSkillPackage | None:
+        return self._native_skill_package
+
+    @property
     def configuration(self) -> Mapping[str, object]:
         configuration: dict[str, object] = {
             "model": self._model,
@@ -221,6 +274,12 @@ class CodexInvocationBuilder:
         configuration["submission_contract"] = self._submission_contract
         if self._author_home_policy is not None:
             configuration['author_home_policy'] = self._author_home_policy
+        if self._native_skill_package is not None:
+            # Qualification compares this configuration with its retained receipt.
+            # Reuse the already frozen material identity: an ephemeral Run input
+            # path must not force another real two-Turn provider qualification.
+            # Different bytes still select refusal; this performs no new hashing.
+            configuration['native_skill_package_sha256'] = self._native_skill_package.reference['sha256']
         return configuration
 
     @property
@@ -238,6 +297,8 @@ class CodexInvocationBuilder:
             raise ValueError("provider prompt is required")
         if thread_id is not None and _THREAD_ID.fullmatch(thread_id) is None:
             raise ValueError("provider thread_id is invalid")
+        if self._user_home is not None:
+            verify_user_home(self._user_home, self._native_skill_package)
         resolve_codex_code_mode_host(
             self._executable, expected=self._code_mode_host,
             removed_environment=self._removed_environment, codex_home=self._codex_home,
@@ -251,40 +312,12 @@ class CodexInvocationBuilder:
             else:
                 verify_codex_home(self._codex_home,
                     expected_system_skills=self._system_skills_snapshot)
-        common = (
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--json",
-            "--strict-config",
-            "--skip-git-repo-check",
-            "--model",
-            self._model,
-            "--config",
-            f'model_reasoning_effort="{self._reasoning_effort}"',
-            "--config",
-            f'service_tier="{self._service_tier}"',
-            "--config",
-            'approval_policy="never"',
-            "--config",
-            'sandbox_mode="workspace-write"',
-            "--output-schema",
-            str(self._output_schema),
-            "--enable",
-            "code_mode_host",
-        ) + (("--config", 'web_search="disabled"')
-             if self._event_contract == "closed_file_change_v1" else ()) + tuple(
-            value
-            for feature in self._disabled_features
-            for value in ("--disable", feature)
-        )
-        prefix = (
-            (str(self._executable), "exec")
-            if thread_id is None
-            else (str(self._executable), "exec", "resume")
-        )
-        suffix = (prompt,) if thread_id is None else (thread_id, prompt)
+        argv = codex_argv(executable=self._executable, model=self._model,
+            reasoning_effort=self._reasoning_effort, service_tier=self._service_tier,
+            output_schema=self._output_schema, disabled_features=self._disabled_features,
+            event_contract=self._event_contract, thread_id=thread_id, prompt=prompt)
         return ProviderInvocation(
-            argv=prefix + common + suffix,
+            argv=argv,
             cwd=self._workspace,
             sandbox="workspace-write",
             provider_revision=self._provider_revision,
@@ -292,10 +325,14 @@ class CodexInvocationBuilder:
             thread_id=thread_id,
             codex_home=self._codex_home,
             system_skills_snapshot=self._system_skills_snapshot,
+            user_home=self._user_home,
+            native_skill_package=self._native_skill_package,
         )
 
     def remember_system_skills(self) -> None:
         """Freeze the post-first-Turn tree for qualification and continuations."""
+        if self._user_home is not None:
+            verify_user_home(self._user_home, self._native_skill_package)
         if self._codex_home is None:
             return
         verify_codex_home(self._codex_home)
@@ -306,6 +343,22 @@ class CodexInvocationBuilder:
         if self._system_skills_snapshot is not None and observed != self._system_skills_snapshot:
             raise ValueError('isolated Codex system skills changed between Turns')
         self._system_skills_snapshot = observed
+
+    @property
+    def remembered_system_skills(self) -> tuple[tuple[str, int, str], ...]:
+        """Reuse the existing verified snapshot instead of reopening the installed tree."""
+        if self._system_skills_snapshot is None:
+            raise ValueError('Codex system skills have not been observed')
+        return self._system_skills_snapshot
+
+    @property
+    def system_skill_entrypoints(self) -> tuple[str, ...]:
+        """Entry paths from the already verified installed tree, without rereading it."""
+        if self._system_skills_snapshot is None or self._codex_home is None:
+            raise ValueError('Codex system skills have not been observed')
+        return tuple(str(self._codex_home/'skills/.system'/name)
+                     for name, _, _ in self._system_skills_snapshot
+                     if len(name.split('/')) == 2 and name.endswith('/SKILL.md'))
 
     @property
     def system_skills_sha256(self) -> str | None:
