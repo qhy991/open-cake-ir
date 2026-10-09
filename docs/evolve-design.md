@@ -2,6 +2,8 @@
 
 状态：设计提案，2026-10-09。依据源码 `76549b98`。本文中的新类型、接口和命令均为拟议设计，尚未实现。
 
+合入前已对照 `main@2356886a` 更新实施状态。共同问题由[研究主题](RESEARCH_AGENDA.md)负责，开发与硬件独立评测遵循[Bench 标准](BENCHMARK_PROTOCOL.md)。本提案补充外循环编排设计，不替代这些现行合同；新 schema 仍需单独实现和验收。
+
 `evolve` 将任务优化、经验审查、Compiler 修改和独立版本比较组织成有界、可恢复的工作流程。它复用现有 Run、Study、Evaluation、Evidence 与 Finding。Compiler 继续独立使用，也继续不依赖这些研究流程。
 
 研究问题是：任务探索产生的机制进入 Compiler 后，能否让相同 Agent 在未参与开发的任务上，更可靠、更省成本地获得高性能 kernel？研究者判断机制是否成立、比较是否有效、哪些结论可以对外主张。Agent 承担候选搜索、证据整理、实现和验证。
@@ -45,6 +47,7 @@ Skill 在用户授权范围内循环调用这些入口。计划中的预算约�
 | RunSpecification | 一次执行的版本、作者、权限、预算及评测绑定 | 所有实际搜索继续由它授权和约束 |
 | Study | 分组、任务总体、控制变量、估计量和分析 | 分配版本对照，解释全部分配结果 |
 | Evaluation | 正确性、计时范围、质量门、profiler | 产生独立收据，禁止由作者自报代替 |
+| 独立硬件 Bench | 题目、输入生成、oracle、容差、强参考、计分与计时 | 接收固定 Compiler 生成的候选，独立判定并输出原始报告 |
 | Evidence | 候选、事件、原始收据和终态 | 回放与审计事实 |
 | Finding | 维护判断、实现提交、验证范围 | 决定改动归属及是否可以关闭 |
 | OptimizationKnowledge | 机制材料、证据引用、变换引用 | 冻结每组作者可获得的经验 |
@@ -109,7 +112,7 @@ Finding 继续拥有来源、观察、建议、实现与验证。每个拟晋升
 
 三个阶段 binding 只记录关系，不复制原始事件、测量数值或 owner 的合同字段。尚未具体化的阶段文件不存在。写入完整文件后原子发布；相同内容的重试返回原记录，不同内容的第二次写入被拒绝。
 
-维护结论不在此目录创建第二份权威 `result.json`。`MaintenanceBinding.disposition` 指向已有调查结果的 `promotion_disposition`，或 Finding 的维护决定。现有结果的生成与维护入口是唯一写入者。`lab/reporting.py` 增加窄的读取投影，按来源 owner 的已知格式读取，缺少所需结论时返回待判断，不能凭空补一个成功状态。
+维护结论不在此目录创建第二份权威 `result.json`。`MaintenanceBinding.change.disposition` 指向已有调查结果的 `promotion_disposition`，或 Finding 的维护决定。现有结果的生成与维护入口是唯一写入者。`lab/reporting.py` 增加窄的读取投影，按来源 owner 的已知格式读取，缺少所需结论时返回待判断，不能凭空补一个成功状态。
 
 当前工程结果没有一个覆盖所有历史文件的统一 schema。初版只接入实际使用的结果格式，如 `compare_rewrite_artifacts` 的 `result.json` 和 Finding record；不迁移全部旧记录。对应结果 owner 按既有追加或后继约定记录新 disposition。EvolutionReport 只引用原 locator 和结论范围，不能编辑该结论。
 
@@ -194,6 +197,8 @@ def report(workspace: Path) -> EvolutionReport:
 
 `EvolutionStopPolicy` 只拥有外循环的最大轮数、累计投入上限和预定停止规则。Run 内的次数、时间和确认预留仍归 Run。每次启动前，从原始 accounting 累计已用投入并预留下一分配所需额度。用量缺失时报告已知小计，不能按零计算或宣称满足无法核实的总上限。
 
+新工程 Run 沿用共同规范的三小时默认墙钟预算，包含确认预留；token 仅记账，不设置总量、每轮限额或 token 接受门。外循环累计上限使用明确授权的时间、工具和设备资源，不借此恢复工程 token cap。科学研究若改变预算，在执行前统一声明，历史 Run 保持原合同。
+
 `NeedsJudgment` 包含明确任务、证据引用、允许读取的材料、输出位置和完成条件。Skill 据此完成归因或实现，再调用 `bind`。它不要求程序把任意自然语言决策当作可执行命令。
 
 `InvocationScope` 来自可信调用方的用户指令或已保留的会话授权，不从计划文件和实验内容解析。它限定 workspace、允许动作和停止边界；共同启动入口核对它。`ReviewOnly` 不允许派发。恢复时可复用仍有效的既有授权，无法确认授权范围则只返回只读状态。CLI 的 `--execute` 表达调用意图，不绕过宿主权限，也不要求新增独立审批服务。
@@ -255,6 +260,8 @@ Study 模板固定任务总体、角色、预算规则、终点、对照选择�
 需要修改的重点是 `study_plan.py` 的约束、`study_execution.py` 的逐分配推进及 `study_analysis.py` 的分析选择。公共 outcome 读取可复用，E/P 的系数不能用于版本比较。当前任务去重、参考权限、预算和确认门继续适用。
 
 ## 9. 评测的两条主线
+
+版本评测固定各平台独立 Bench 的 commit，当前维护入口包括 c550-bench、metal-bench 和 bw1100-bench。Bench 的 oracle、计分与计时不能依赖 Cake 的 Verifier、Lab 或 Provider 才能判定。Lab 的 Evaluation 负责开发搜索与证据对接，不能用内部 Workload 结果替换 Bench 的独立判定。报告同时绑定 Compiler 与 Bench 版本；Bench 或参考合同改变时开始新的比较段。
 
 | 主线 | 输入与控制 | 结果解释 |
 | --- | --- | --- |
@@ -350,7 +357,7 @@ description: 在 open-cake-ir 中执行有界的 Kernel–Compiler 进化轮次�
 
 | 单元 | 交付 | 可观察的验收条件 |
 | --- | --- | --- |
-| 1. 修通证据入口 | 当前 Run 诊断读取、保留 triage、成功候选审查输入 | 同一当前格式 fixture 可以汇总；未知 compile error 不被当成已证明 verifier 缺陷 |
+| 1. 接齐证据审查 | 复用已修复的当前 Run 诊断读取，补 triage 与成功候选审查输入 | 现有读取回归继续通过；未知 compile error 不被当成已证明 verifier 缺陷 |
 | 2. 只读外循环 | `inspect`、binding 与报告投影 | 删除视图可重建；相冲突的第二次 binding 被拒绝；No promotion 能正常结束 |
 | 3. 分配恢复 | 共同启动声明、逐项执行 | 并发启动只有一次派发；崩溃窗口不重投；已完成和未知单元都不被重跑 |
 | 4. 版本研究 | RevisionComparison、cohort 绑定、分析 | 执行前分配；不匹配控制被拒绝；所有失败、缺失与旧版不支持案例留在报告 |
@@ -377,6 +384,7 @@ description: 在 open-cake-ir 中执行有界的 Kernel–Compiler 进化轮次�
 - [Compiler 独立与双循环的原始决定](adr/0001-compiler-first-with-dependent-lab.md)。
 - [Program、Run、Study 与 Knowledge 的职责](adr/0076-programs-and-transfer-runs.md)。
 - [取消无校准结构排序与旧 Portfolio Study](adr/0071-retire-uncalibrated-ranking-and-portfolio-study.md)。
+- [共同研究问题与预算](RESEARCH_AGENDA.md)及[独立硬件 Bench 规范](BENCHMARK_PROTOCOL.md)。
 - [维护 Agent 已有的归因与 Compiler 演进规则](../contracts/scaffolds/kernel-reproduction/AGENTS.md)。
 - [批量任务入口](../tools/launch_task_matrix.py)与[单任务入口](../tools/launch_task.py)。
 - [唯一 Run 执行路径](../src/open_cake_ir/lab/execution.py)与[Lab 接口](../src/open_cake_ir/lab/core.py)。
@@ -391,4 +399,4 @@ description: 在 open-cake-ir 中执行有界的 Kernel–Compiler 进化轮次�
 
 交叉审查后，明确了可信调用范围、共同 `dispatch_once` owner、实际 OS 隔离、只引用原处置结果，以及不可变 binding 与 Finding 生命周期的关系。复核未发现该范围内仍未解决的主要设计问题。文档本地链接、Python 草案语法和图解生成已检查；这些检查不证明运行实现或实验效果。
 
-首个可实施任务是单元 1：修通当前 Run 的诊断读取，并让未知编译拒绝保留待归因状态。此后先证明只读重建与保守恢复，再接入付费执行。
+合入时，当前 Run 诊断读取已由 `27def9a2` 修复并随主线集成，记录见 [F-2026-10-05-008](../findings/2026-10-05-008-diagnosis-run-authority.json)。单元 1 剩余工作是让未知编译拒绝保留待归因状态，并接入成功候选的审查材料。此后先证明只读重建与保守恢复，再接入付费执行。
