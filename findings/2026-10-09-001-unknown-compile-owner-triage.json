@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-001",
+  "kind": "bug",
+  "decision": "proposed",
+  "title": "Unknown generated-source compile refusals assert a verifier defect without diagnosis",
+  "executor_revision": "source-only routing observation at eb56476b; no device Executor invoked",
+  "compiler_revision_id": "open-cake-ir@eb56476be9b26fa0e57c8fd6bea6e7264bf0c34f",
+  "backend": "shared Lab routing",
+  "target": "no target qualification change",
+  "evidence": {
+    "source": "src/open_cake_ir/lab/routing.py::route_rejection at eb56476b",
+    "reproducer": "route_rejection({'stage': 'compile', 'diagnostic': 'toolchain failure: cause not yet established'}, arm='open_cake')",
+    "observed": "verifier: every gate passed and the toolchain still refused, so a contract this Schedule violated is not yet modelled",
+    "regression": "tests/contracts/test_routing.py::RoutingContractTests::test_generated_source_compile_refusal_requires_owner_triage"
+  },
+  "observation": "The compile stage establishes a refusal, not whether emission, toolchain, environment or a missing verification rule caused it. The default route overstates that evidence and can direct maintenance to the wrong owner.",
+  "proposed_change": "Route unclassified Compiler-produced source refusals to existing backend_triage. Keep authored-source arms candidate-routed and preserve historical records at their producing source.",
+  "implemented_in": "0d2efcc3",
+  "verified_by": {
+    "source": "23b2e610",
+    "cpu": "58 focused contracts pass, one optional Torch-dependent test skips; 2079 subtests pass. Unknown generated-source refusals route to triage, authored-source arms remain candidate-routed, retained explicitly owned QSA diagnoses remain unchanged, and native feedback/replay retain the current-source route.",
+    "scope": "CPU Lab and tool checks only; no Provider, device or performance qualification."
+  },
+  "promotion_disposition": "Lab diagnosis repair proposed for review. No Compiler capability, device qualification or performance promotion."
+}
