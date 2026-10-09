@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib import import_module
 import json
 from pathlib import Path
 import sys
@@ -14,6 +15,16 @@ from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT, BenchProblem, va
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
 from open_cake_ir.tasks.c550_bench.starters.rms_norm import source as rms_norm_source
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
+
+STARTER_MODULES = {
+    'L1/048_fused_gate_up_projection_with_swiglu': 'gate_up',
+    'L1/011_rotary_position_embedding': 'rope',
+    'L1/058_moe_expert_token_radix_sort_with_prefix_sum': 'stable_routing',
+    'L1/001_attention_softmax_dropout_value_matmul_backward': 'gqa_backward',
+    'L2/018_cu_seqlens_variable_length_vision_attention': 'varlen_attention',
+    'L2/024_moe_expert_parallel_execution': 'expert_execution',
+    'L2/035_convnextv2_block_with_grn': 'convnext',
+}
 
 
 def write_new(path, document):
@@ -68,12 +79,9 @@ def main(argv=None):
             starter = None
             if task == 'L1/069_rms_norm':
                 starter = rms_norm_source(BenchWorkload(document))
-            elif task == 'L1/048_fused_gate_up_projection_with_swiglu':
-                from benchmarks.c550.gate_up import source_for_workload
-                starter = source_for_workload(BenchWorkload(document), 'primary')
-            elif task == 'L1/011_rotary_position_embedding':
-                from benchmarks.c550.rope import source_for_workload
-                starter = source_for_workload(BenchWorkload(document), 'primary')
+            elif task in STARTER_MODULES:
+                module = import_module('benchmarks.c550.' + STARTER_MODULES[task])
+                starter = module.source_for_workload(BenchWorkload(document), 'primary')
             if starter is not None:
                 (case_root / 'starter.py').write_text(starter, encoding='utf-8')
             row.update(workload_path=str(case_root / 'workload.json'),
