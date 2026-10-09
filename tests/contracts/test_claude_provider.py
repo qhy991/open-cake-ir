@@ -44,10 +44,12 @@ class ClaudeProviderContracts(unittest.TestCase):
             self.assertEqual(turn.raw_events,self.raw())
             self.assertEqual(process.call_args.kwargs['input_bytes'],invocation.argv[-1].encode())
             argv=process.call_args.args[0]
+            self.assertEqual(argv[argv.index('--autocompact')+1],'100k')
             self.assertNotIn(invocation.argv[-1],argv)
             self.assertIn('--input-format',argv)
             self.assertEqual('--resume' in argv,session is not None)
             self.assertIn(claude.exact_file_tools(self.workspace,self.candidate.name),argv)
+        self.assertEqual(builder.cli_limitations['context_window'],'100k')
     def exact_file_events(self):
         events = self.recovered_restricted_events()
         notice = events[2]
