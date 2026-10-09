@@ -62,6 +62,73 @@ def write(path, document):
         stream.write(canonical_json_bytes(_json_projection(document)))
 
 
+def storage_patterns(rows, columns, dtype):
+    """Give every logical element a unique signature across the test inputs."""
+    from open_cake_ir.compiler.ir import DType
+    count = rows * columns
+    size = DType(dtype).itemsize
+    if dtype == 'bool':
+        return tuple(bytes((index >> bit) & 1 for index in range(count))
+                     for bit in range(max(1, (count - 1).bit_length())))
+    prefix = {'fp32': 0x3F000000, 'fp16': 0x3000, 'bf16': 0x3000,
+              'int32': 2**24, 'int64': 2**54}[dtype]
+    unique = b''.join((prefix + index).to_bytes(size, 'little') for index in range(count))
+    varied = tuple(bytes((i * (37 + pattern * 2) + pattern * 71) % 256
+                         for i in range(count * size)) for pattern in range(3))
+    return (unique, *varied)
+
+
+def bound_candidates(built_root, source_commit):
+    """Bind each retained artifact before acquiring a device allocation."""
+    from open_cake_ir.compiler import Target, frontend
+    from open_cake_ir.compiler.backends.triton import emit
+    from open_cake_ir.compiler.ir import OperationKind, Schedule
+    from open_cake_ir.evaluation.workload import WorkloadContract
+    from open_cake_ir.evaluation.paired import candidate_from_identity
+    from open_cake_ir.evaluation.core import TensorLaunchManifest
+    from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment
+    from open_cake_ir.serialization import canonical_json_bytes
+    built = json.loads((built_root / 'result.json').read_text())
+    expected = [(dtype, list(shape)) for dtype in DTYPES for shape in SHAPES]
+    refused = [{'name': f'fp8_e4m3-{rows}-{columns}',
+                'codes': ['MACA_FP8_OPERATION_UNQUALIFIED', 'VALUE_OPERATION_TYPE']}
+               for rows, columns in SHAPES]
+    if (not source_commit or built.get('source_commit') != source_commit or built.get('target') != 'xcore1002'
+            or not built.get('passed') or [(c['dtype'], c['shape']) for c in built['cases']] != expected
+            or not all(c['native_compiled'] for c in built['cases'])):
+        raise ValueError('all declared builds must belong to this exact source commit and target')
+    if [{key: row[key] for key in ('name', 'codes')} for row in built.get('refused_cases', [])] != refused:
+        raise ValueError('all declared FP8 refusal controls must be retained')
+    target = Target.load(ROOT / 'compiler/targets/xcore1002.json')
+    if OperationKind.TRANSPOSE in target.operation_kinds:
+        raise ValueError('pre-admission probe requires the production Target to remain closed')
+    probe = replace(target, operation_kinds=target.operation_kinds | {OperationKind.TRANSPOSE})
+    bound = []
+    for item in built['cases']:
+        rows, columns = item['shape']
+        expected_name = f'{item["dtype"]}-{rows}-{columns}'
+        if item['name'] != expected_name:
+            raise ValueError('transpose build path differs from its fixed case')
+        directory = built_root / expected_name
+        identity = json.loads((directory / 'candidate.json').read_text())
+        from open_cake_ir.tasks.evaluate import _input_path
+        candidate = candidate_from_identity(identity, {role: _input_path(directory, role + '.bin', role).read_bytes()
+                                                       for role in identity['artifact_roles']})
+        manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+        workload = WorkloadContract(workload_document(rows, columns, item['dtype']))
+        manifest.check_workload(workload, 'primary')
+        raw = frontend.parse(source(rows, columns, item['dtype'])).document
+        submission = CandidateSubmission.seal(OpenCakeEnvironment.media_type, canonical_json_bytes(raw))
+        emission = emit(Schedule.from_dict(raw), probe)
+        if (candidate.candidate_sha256 != submission.sha256
+                or candidate.artifact_payloads.get('lowered_source') != emission.source.encode()
+                or manifest.kernel_name != emission.toolchain['kernel_entry_point']
+                or list(manifest.grid) != emission.toolchain['grid']):
+            raise ValueError('retained transpose candidate differs from the current fixed probe emission')
+        bound.append((item, candidate, manifest))
+    return tuple(bound)
+
+
 def build(args, result):
     from open_cake_ir.compiler import Compiler, Target, frontend
     from open_cake_ir.compiler.backends.triton import emit, preflight
@@ -145,15 +212,9 @@ def evaluate(args, result):
     from open_cake_ir.evaluation.local_broker import admit_local_job
     from open_cake_ir.evaluation.triton_metax import observe_local_metax
     from open_cake_ir.evaluation.metax_driver import LoadedMetaxCandidate
-    from open_cake_ir.evaluation.paired import candidate_from_identity
-    from open_cake_ir.evaluation.core import TensorLaunchManifest
     from open_cake_ir.lab.executor import ExecutorRevision
     import torch
-    built = json.loads((args.built / 'result.json').read_text())
-    expected_cases = [(dtype, list(shape)) for dtype in DTYPES for shape in SHAPES]
-    if (not built.get('passed') or [(c['dtype'], c['shape']) for c in built['cases']] != expected_cases
-            or not all(c['native_compiled'] for c in built['cases'])):
-        raise ValueError('all declared native probe builds must be complete')
+    candidates = bound_candidates(args.built, result['source_commit'])
     host = ExecutorRevision.for_target(ROOT, 'xcore1002').admit_host()
     job = admit_local_job('maca', device=args.physical_device, runtime_device=args.runtime_device,
                          expected_pci=args.expected_pci, lock_scope='device', queue_seconds=300)
@@ -161,12 +222,7 @@ def evaluate(args, result):
     result.update(job_id=job, admission=asdict(admission), cases=[])
     dtype_names = dict(fp32='float32', fp16='float16', bf16='bfloat16', fp8_e4m3='float8_e4m3fn',
                        int32='int32', int64='int64', bool='bool')
-    for item in built['cases']:
-        directory = args.built / item['name']
-        identity = json.loads((directory / 'candidate.json').read_text())
-        candidate = candidate_from_identity(identity, {role: (directory / (role + '.bin')).read_bytes()
-                                                       for role in identity['artifact_roles']})
-        manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+    for item, candidate, manifest in candidates:
         rows, columns = item['shape']
         dtype = getattr(torch, dtype_names[item['dtype']])
         size = torch.empty((), dtype=dtype).element_size()
@@ -174,11 +230,8 @@ def evaluate(args, result):
         checks = []
         primary = None
         try:
-            for pattern in range(3):
+            for pattern, raw in enumerate(storage_patterns(rows, columns, item['dtype'])):
                 count = rows * columns * size
-                raw = bytes((i * (37 + pattern * 2) + pattern * 71) % 256 for i in range(count))
-                if item['dtype'] == 'bool':
-                    raw = bytes(value % 2 for value in raw)
                 cpu_bytes = torch.frombuffer(bytearray(raw), dtype=torch.uint8).clone()
                 expected = cpu_bytes.reshape(rows, columns, size).permute(1, 0, 2).contiguous().reshape(-1)
                 x = cpu_bytes.view(dtype).reshape(rows, columns).to('cuda:0')
