@@ -22,7 +22,7 @@ sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tools')]
 from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.target import CodeObject
-from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt
+from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt, _plain_json
 from open_cake_ir.evaluation.local_broker import admit_local_job
 from open_cake_ir.evaluation.paired import candidate_from_identity, candidate_identity
 from open_cake_ir.evaluation.platforms import platform_for
@@ -78,7 +78,7 @@ def profile_program(candidate, workload, protocol, admission, prepared, host):
             'gpu_uuid': admission.gpu_uuid, 'allocation_mode': 'local_serialized', 'external_gpu_activity': 'not_excluded',
             'separate_instrumented_launch': True, 'evaluation_protocol': policy,
             'raw': raw, 'summary': MACA_PROGRAM_PROFILE.summary(raw)}
-        payloads = {role: canonical_json_bytes(document) for role, document in (
+        payloads = {role: canonical_json_bytes(_plain_json(document)) for role, document in (
             ('correctness_output', correctness), ('launch_receipt', launch), ('profile', profile))}
         retained.update(payloads)
         return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256,
