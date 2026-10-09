@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-10-001](2026-10-10-001-c550-bench-mapping-boundary.json) — shallow named-output mapping adaptation at the original C550 Bench API preserves immutable common preparation and original verdicts; exact CPU failure replay and twenty contracts pass, while successor device measurement remains pending.
+
 - [F-2026-10-09-013](2026-10-09-013-triton-indexed-mma-provenance.json) — shared Triton multi-region MMA keeps typed indexed-load address dependencies; source/CPU replay passes while native and original Bench qualification remain separate.
 
 - [F-2026-10-09-010](2026-10-09-010-metax-complete-program-measurement.json) — complete MACA Program event and separate attribution adapters have reviewed exact-target component support; real common-worker A/A and per-baseline readiness remain pending.

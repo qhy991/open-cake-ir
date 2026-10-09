@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "id": "F-2026-10-10-001",
+  "kind": "bug",
+  "decision": "accepted",
+  "title": "Original Bench comparator misreads immutable named output mappings as positional outputs",
+  "compiler_revision_id": "open-cake-ir@0c8ef54e79d0d05dc59efb1418fa2a3880c5dfa9",
+  "executor_revision": "xcore1002@0c8ef54e79d0d05dc59efb1418fa2a3880c5dfa9",
+  "backend": "triton",
+  "target": "xcore1002",
+  "tracking_issue": "https://github.com/qhy991/open-cake-ir/issues/448",
+  "pull_request": "https://github.com/qhy991/open-cake-ir/pull/449",
+  "evidence": {
+    "root": "c550-bench-bridge-qualification-20261009-001",
+    "locators": [
+      "gpu-001/rms-aa-all16-001/case-00/confirmatory/attempt-0-evaluator_result.artifact",
+      "gpu-001/rms-aa-all16-001/case-00/confirmatory/attempt-0-stderr.artifact",
+      "evidence/mapping-boundary-repro-001/reproduce.py",
+      "evidence/mapping-boundary-cpu-002/contracts.stderr",
+      "evidence/mapping-boundary-cpu-002/reproduce-fixed.py"
+    ],
+    "mirror": "c550-bench-ralph-20261009/bench-mapping-boundary-20261010",
+    "scope": "The retained first common A/A attempt failed after one native call. Private evidence paths are logical artifact locators, not public data. CPU reproduction uses the fixed original Bench comparator and an original RMS output shape without running a factory, reference or GPU."
+  },
+  "observation": "Job maca-42d5e67213fa was admitted, loaded one module and made one native call, then returned evaluator_failed with KeyError: 0, zero preflight calls, zero timing samples and no receipt. The remaining fifteen cases were not submitted. PreparedTensorCase intentionally freezes expected named outputs as MappingProxyType. BenchProblem.compare passed that mapping unchanged to the pinned external comparator, whose dict-only dispatch took its reference[0] positional branch. CPU replay at the same frozen source confirms that a dict passes while the identical tensors in an immutable mapping raise at c550bench.py:104, before numeric comparison.",
+  "proposed_change": "At BenchProblem.compare only, shallowly convert Mapping expected and observed outputs to dict. Preserve Tensor object identity, names, insertion order, dtypes, original definition, axes and tolerance. Leave non-Mapping output forms and the common immutable prepared-data model unchanged.",
+  "promotion_disposition": "Repair the external Bench API boundary. No Compiler, IR, Target, oracle, tolerance, numerical-policy or measurement-contract change is promoted. The old failed A/A stays failed; a reviewed successor must qualify its own measurement path. No operator speedup or restored device qualification is claimed.",
+  "implemented_in": "cdeaec7cb01acb3c1cdac7e5513fab963a725fef",
+  "verified_by": {
+    "commit": "cdeaec7cb01acb3c1cdac7e5513fab963a725fef",
+    "tests": "Twenty Linux CPU contracts passed with zero skips or errors in 1.695 seconds: test_c550_bench_binding and test_c550_bench_real_comparison, using the pinned original Bench and installed Torch. New controls preserve passing, failing and matched-ratio verdicts, reject wrong output names, keep tensor objects, and leave non-Mapping values unchanged.",
+    "original_replay": "At the fixed successor, the same original-shape CPU reproduction returns the identical original-comparator PASS and full statistics for dict, immutable expected, and immutable expected plus observed. At private 0c8ef54e, the latter two cases retain their exact KeyError stack.",
+    "independent_review": "Read-only review of cdeaec7c found no source blocker. The adapter owns the container conversion; the original comparator still owns verdicts and numeric rules.",
+    "preserved_failures": "The original GPU A/A is not retried. CPU001 stopped before tests: its source setup requested a non-exported bundle ref and inherited container-invisible shared-object paths. CPU002 used a fresh complete, detached checkout with no remotes or alternates; it did not repair the failed checkout or change the accepted container.",
+    "scope": "Source and CPU only. No GPU, provider, native build, new A/A, or Run was executed for this repair. Compiler and Target code did not change; Corpus expectations were not refreshed."
+  }
+}
