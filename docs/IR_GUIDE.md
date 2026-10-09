@@ -201,6 +201,24 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 - `top_k` 保留所选维度并返回 values 与 indices；它不是 argmin 加一个开关。驻留 signed INT32 top-k 与跨循环 FP32 top-k 也有不同后端边界。
 - `FenceProxyParameters` 是保留的 Python 参数类型，但 `OperationKind` 中没有可提交的 fence kind；不要把类型列表当成可编写操作清单。
 
+### INT64 与 BOOL 存储
+
+`int64` 是 8 字节有符号整数；`bool` 使用 1 字节存储，值为 false 或 true。
+Triton 路径可以显式 load/store，两者均可参与同类型比较与选择；BOOL 只允许 eq/ne
+比较，也可直接作 select 谓词。比较结果沿用 INT32 0/1，不改变既有表达形式。
+INT64 可作有边界掩码的运行时索引；BOOL 不能作地址。INT64 与 BOOL 均不自动进入
+算术、归约、scan 或 MMA，须先使用适用的显式 cast。
+
+- BOOL → INT32 / FP32：精确得到 0 或 1。
+- INT32 → INT64：精确符号扩展。
+- INT64 → FP32：round-to-nearest, ties-to-even；可能丢失整数精度，但整个 INT64
+  范围转换后均为有限 FP32。INT32 → FP32 保持既有规则。
+- INT64 → INT32、浮点 → INT64、数值 → BOOL 没有隐式或默认截断规则，明确拒绝。
+
+存储宽度参与同一 Buffer 字节数和资源分析。未实现这些类型的 Metal、CuTe DSL、
+原生 CUDA emitter 按 dtype 拒绝。Triton 源码生成、CPU语义与运行时ABI合同检查
+不等于目标设备资格；MetaX上的新类型与转换仍须独立原生编译和设备验收。
+
 ## 7. 同步与硬件承诺
 
 `Pipeline` 声明复用阶段数。`Barrier` 声明交接计数、生产者、消费者、关联 pipeline 与机制；机制枚举包含 `mbarrier` 和 `barrier.sync`。

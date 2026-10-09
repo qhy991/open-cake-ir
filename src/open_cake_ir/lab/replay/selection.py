@@ -1,6 +1,7 @@
 """Independently check search, confirmation and candidate-selection event order."""
 
 from __future__ import annotations
+from open_cake_ir.evaluation.refusals import EvaluationRefusal
 
 import json, math
 from typing import Mapping, Sequence, cast
@@ -320,6 +321,7 @@ def _replay_candidate_selection(
                        observed=searched_candidates, expected=expected_searched)
             qualified_search = [
                 key[2] for key in search_keys if _receipt_qualifies(receipts[key])
+                and not isinstance(receipts.get((key[0], 'attribution', key[2])), EvaluationRefusal)
             ]
             expected_selected = (
                 min(

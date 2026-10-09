@@ -14,7 +14,7 @@ from ._documents import _object
 from .bindings import source_reference_path
 from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
-from .python_reference import bind_python_reference
+from .python_reference import bind_python_reference, skeleton_route
 from .reference_access import document_role, reference_access, validate_reference_handoff
 from .provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
 from open_cake_ir.compiler import frontend
@@ -168,12 +168,18 @@ def build_run_reference_documents(
             python_starter = str(skeleton_ref['path']).endswith('.py')
             if arm.get('input_format') == 'python_source_v1' and not python_starter:
                 raise ValueError('Python-only Authoring Environment requires a Python starter')
-            if skeleton.get('lowering') != arm.get('lowering_route'):
+            if skeleton_route(skeleton) != arm.get('lowering_route'):
                 raise ValueError('Schedule skeleton lowering route differs')
             skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
             if python_starter:
                 if arm.get("input_format") not in {"schedule_or_python_v1", "python_source_v1"}:
                     raise ValueError("Python starter requires the existing Python-enabled Authoring Environment")
+                if 'program_id' in skeleton:
+                    documents['program-starter.md'] = (
+                        'This starter is a complete ordered Cake Program. Submit the complete Program through '
+                        'the Python candidate-bundle contract. The authoring lowering_route.entry_point is only '
+                        'the default entry name for a single-Schedule candidate, not a Program device function. '
+                        'Every stage must use the declared backend and exact target; keep the complete public ABI.\n').encode()
                 documents["schedule-starter.py"] = bind_python_reference(
                     skeleton_bytes.decode("utf-8"), skeleton, filename=str(skeleton_ref["path"]))
             else:

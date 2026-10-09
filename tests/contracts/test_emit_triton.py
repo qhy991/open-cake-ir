@@ -170,7 +170,11 @@ class ArgminDomainTest(unittest.TestCase):
         document = self.scores()
         document["operations"][1]["parameters"]["across_loop"] = True
         self.refuse(document, "TRITON_ARGMIN_DOMAIN")
-        self.refuse(self.scores(65), "TRITON_ARGMIN_DOMAIN")
+        split = self.scores(65)
+        self.refuse(split, "OUTPUT_STORE_PROGRAM_AXIS_COLLISION")
+        # Shared output ownership now fires before backend capability checks.
+        self.assertIn("TRITON_ARGMIN_DOMAIN", [f.code for f in preflight(
+            Schedule.from_dict(split), TARGET)])
         document = self.scores()
         document["buffers"][-1]["shape"] = [2, 1]
         # Common store-shape verification rejects this malformed graph before

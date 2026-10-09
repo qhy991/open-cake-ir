@@ -244,6 +244,7 @@ class BackendCoverageTest(unittest.TestCase):
         ("triton", "TORCH_DTYPES"),
         ("triton", "_POINTER_TYPES"),
         ("cutedsl", "BODY_EMITTERS"),
+        ("cutedsl", "_CUTLASS_DTYPE"),
     }
 
     def test_every_other_enum_keyed_table_is_total(self) -> None:

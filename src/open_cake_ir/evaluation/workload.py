@@ -50,6 +50,9 @@ class TensorABI:
 class WorkloadContract:
     """Canonical operator semantics, cases and correctness authority."""
 
+    requires_target_preparation = False
+    preserve_output_tensors = False
+
     def __init__(self, document: Mapping[str, object], source_path: Path | None = None) -> None:
         self._document = json.loads(_canonical_json_bytes(document))
         self.source_path = source_path
@@ -144,6 +147,15 @@ class WorkloadContract:
     def target(self) -> str:
         return _name(self._document["semantics"].get("target"), "workload target")
 
+    def compare_output_values(self, expected, observed):
+        """Let a registered task retain its external numerical comparison owner.
+
+        The default retains the existing elementwise comparison. A task override
+        returns its verdict and metrics, including the original comparison record.
+        Input effects remain checked by common Evaluation.
+        """
+        return NotImplemented
+
     def tensor_abi(self, case_id: str) -> tuple[TensorABI, ...]:
         """Resolve the explicitly ordered input/output ABI, without operator dispatch.
 
@@ -179,7 +191,7 @@ class WorkloadContract:
                 ):
                     raise ValueError(f"workload tensor {name} has an unresolved shape")
                 dtype = tensor.get("dtype")
-                if not isinstance(dtype, str) or dtype not in {"fp32", "bf16", "fp16", "fp8_e4m3", "int32"}:
+                if not isinstance(dtype, str) or dtype not in {"fp32", "bf16", "fp16", "fp8_e4m3", "int32", "int64", "bool"}:
                     raise ValueError(f"workload tensor {name} dtype is unsupported")
                 if tensor.get("layout") != "contiguous_row_major":
                     raise ValueError(f"workload tensor {name} must be contiguous row major")

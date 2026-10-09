@@ -49,6 +49,8 @@ TORCH_DTYPES = {
     DType.FP32: "torch.float32",
     DType.FP8_E4M3: "torch.float8_e4m3fn",
     DType.INT32: "torch.int32",
+    DType.INT64: "torch.int64",
+    DType.BOOL: "torch.bool",
 }
 
 

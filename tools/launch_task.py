@@ -454,7 +454,11 @@ def _prepare_baseline(root, workspace, compiler, executor, host, workload, autho
         root, workspace, executor, host, workload, compiler_reference)
     environment = TaskOpenCakeEnvironment(compiler, builder, authority_document=authoring,
                                          workload=workload, case_id="primary", executor=executor)
-    submission = CandidateSubmission.seal(environment.media_type, canonical({"python_source": source}))
+    from open_cake_ir.lab.python_reference import parse_skeleton
+    skeleton = parse_skeleton(source, filename='baseline-starter.py')
+    payload = ({'python_program_source': source, 'program_id': skeleton['program_id']}
+               if 'program_id' in skeleton else {'python_source': source})
+    submission = CandidateSubmission.seal(environment.media_type, canonical(payload))
     result = environment.build(submission)
     _write(workspace / "baseline-feedback.json", canonical(dict(result.feedback)))
     if result.launchable is None:
@@ -514,6 +518,8 @@ def _qualify(root, workspace, args, executable, source_path):
                 command.extend(('--native-skill-name', name))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
+    if getattr(args, 'claude_event_contract', None) is not None:
+        command.extend(('--claude-event-contract', args.claude_event_contract))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
     _write(workspace / "qualification.stdout", completed.stdout.encode())
     _write(workspace / "qualification.stderr", completed.stderr.encode())
@@ -560,13 +566,21 @@ def _run_exit_code(report) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=TASKS, required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--task", choices=TASKS)
+    selection.add_argument("--workload-file", type=Path,
+                           help="external Workload from a registered task owner; requires --starter-file")
+    parser.add_argument("--starter-file", type=Path,
+                        help="complete Python starter for the external Workload's exact ABI")
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
     parser.add_argument('--metal-timing', choices=('mean30', 'legacy'),
                         help='Metal default: 30 batched samples per arm, arithmetic mean; legacy retains median/IQR assay')
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    parser.add_argument('--claude-event-contract', choices=CLAUDE_EVENT_CONTRACTS,
+                        help='explicit Claude transport successor; default preserves v4')
     parser.add_argument("--response-model-alias", action="append", default=[],
                         help="explicit additional assistant-response model name for Claude; request/init/usage model stays exact")
     parser.add_argument("--workspace", type=Path, required=True)
@@ -638,6 +652,15 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if (args.workload_file is None) != (args.starter_file is None):
+        parser.error('--workload-file and --starter-file must be supplied together')
+    if args.workload_file is not None:
+        if any(value is not None for value in (args.rows, args.columns, args.depth)):
+            parser.error('external Workload dimensions are fixed; omit --rows/--columns/--depth')
+        if args.reference_access != 'known_kernel_reproduction':
+            parser.error('a complete external starter requires known-kernel reference access')
+        if args.starter_file.suffix != '.py':
+            parser.error('external Cake starter must be Python source')
     if args.native_skill_name:
         if args.author_skill_package is None:
             parser.error('--native-skill-name requires --author-skill-package')
@@ -675,9 +698,17 @@ def main(argv=None) -> int:
     if args.reference_access == 'clean_start':
         raise ValueError('clean-start provider read isolation is not qualified; refusing launch')
     workspace = _new_workspace(args.workspace)
-    rows, columns = _default_shape(args.task, args.rows, args.columns)
-    document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
-                                   depth=args.depth, case_id=args.case)
+    if args.workload_file is not None:
+        original_workload = load_workload(args.workload_file.resolve(strict=True))
+        document = original_workload.document
+        from open_cake_ir.tasks.devices import backend_for_target
+        if backend_for_target(original_workload.target) != args.backend:
+            raise ValueError('external Workload target differs from the requested backend')
+        source = args.starter_file.resolve(strict=True).read_text(encoding='utf-8')
+    else:
+        rows, columns = _default_shape(args.task, args.rows, args.columns)
+        document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
+                                       depth=args.depth, case_id=args.case)
     if args.metax_timing in {'native-mean10-events', 'torch-reset-mean10-events', 'gated-mean10-events'}:
         from open_cake_ir.tasks.metax_authoring import native_event_starter
         from open_cake_ir.evaluation.workload import WorkloadContract
@@ -722,7 +753,8 @@ def main(argv=None) -> int:
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
         source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
-        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10)
+        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10,
+        claude_event_contract=args.claude_event_contract)
     if route == 'metal':
         admit_cohort_payload(workload, args.case,
             inputs['evaluation_protocol']['paired_timing']['route_calls_per_cohort'])

@@ -76,14 +76,15 @@ class TrigContract(unittest.TestCase):
                 with self.assertRaises(EmitError):
                     emit(schedule,target)
 
-    def test_direct_unary_jail_calls_are_hsaco_only_without_escape(self):
+    def test_direct_unary_jail_calls_use_declared_math_routes_without_escape(self):
         source='import triton\nimport triton.language as tl\nfrom triton.language.extra import libdevice\n@triton.jit\ndef kernel(a,b):\n    x=tl.load(a)\n    y=libdevice.sin(x)\n    tl.store(b,y)\n'
         req={'kernel_entry_point':'kernel','signature':{'a':'*fp32','b':'*fp32'},'compile_constants':{},'code_object':'hsaco'}
         validate_triton_kernel(source.encode(),req)
+        validate_triton_kernel(source.encode(),{**req,'code_object':'mcfatbin'})
         for expr in ('libdevice.sin', 'libdevice.sin(*x)', 'libdevice.sin(x,x)', 'libdevice.sin(x=x)', 'libdevice.sin.to(x)'):
             with self.subTest(expr=expr),self.assertRaises(ValueError):
                 validate_triton_kernel(source.replace('libdevice.sin(x)',expr).encode(),req)
-        for obj in ('cubin','mcfatbin',None):
+        for obj in ('cubin',None):
             with self.assertRaises(ValueError):
                 validate_triton_kernel(source.encode(),{**req,'code_object':obj})
 

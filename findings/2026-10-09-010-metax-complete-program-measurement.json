@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-010",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Complete MACA Programs need their own optimization measurement qualification",
+  "compiler_revision_id": "open-cake-ir@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "executor_revision": "xcore1002@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "/tmp/cake-metax-program-event-red",
+    "locators": [
+      "16eb2421:tests/contracts/test_metax_program_events.py::ProgramEvents",
+      "5bb474c6:src/open_cake_ir/evaluation/program.py::admit_program_execution",
+      "5bb474c6:src/open_cake_ir/lab/environments.py::OpenCakeEnvironment._build_program",
+      "/tmp/cake-bench-abi-design-20261009.md"
+    ],
+    "scope": "A CPU-built two-stage Program and source audit establish an Executor measurement gap. They do not establish a native hardware limitation or provide device qualification. No existing Run was edited or repeated."
+  },
+  "observation": "C1 can construct and seal an ordered MCFATBIN Program for independent correctness checks, but an optimization environment refuses its timing and attribution because the admitted instruments cover one dispatch. A single-kernel success does not qualify the complete Program interval. NativeTritonEnvironment is also single-kernel and cannot serve as an implicit multi-stage escape route.",
+  "proposed_change": "Keep the existing Program and Ralph owners. Add complete default-stream Program event capture with fresh-output checks, explicit stage-call counts and separately collected full-Program MCPTI attribution. Qualify the actual device path and fixed-baseline A/A before adding an exact target to the production measurement evidence set.",
+  "promotion_disposition": "Software adapters and CPU replay are implemented; device admission remains withheld. The evidence set is empty. The standalone events command records qualification observations only and cannot publish a Run endpoint, A/A pass, or kernel promotion. No Compiler optimization is promoted from this finding.",
+  "principles_review": {
+    "scope": "Executor and measurement change; no IR primitive, syntax, semantics, typing rule, analysis or hardware fact changes.",
+    "P1_P3_P4_P5_P7": "Existing Schedule/Program construction and analyses remain unchanged.",
+    "P2_P8": "The complete interval explicitly includes loader checks and host submission gaps; native single-dispatch intervals retain their previous scope.",
+    "P6": "Focused worker, Program, receipt, event and attribution contracts plus unchanged Corpus expectations verify software behavior. Device evidence remains a separate gate."
+  },
+  "implemented_in": "cbadd0cd86f36d7e6f240cbefcaad79e4f62bf98",
+  "verified_by": {
+    "commit": "2b2dde583769d29440d0e82cacab5f3bab08acae",
+    "regression_before_fix": "16eb2421: the new complete event and missing-stage contracts fail because the Program event adapter is absent; the existing production refusal still holds.",
+    "tests": "52 tests at 2b2dde58: 49 passed and 3 existing CPU-Torch-dependent tests skipped because Torch is absent on this Mac. All five new contracts pass, including real ordered-loader calculations and common paired/attribution worker receipts.",
+    "test_log": "/tmp/cake-metax-program-events-cpu-2b2dde58.log",
+    "corpus": "204 cases match unchanged expectations at 9be33b11. The subsequent change only restores exact-target qualifier diagnostic wording.",
+    "corpus_log": "/tmp/cake-metax-program-events-corpus-9be33b11.log",
+    "scope": "Software verification only. Original-device complete Program event, attribution, fixed A/A and full successor qualification are pending; this capacity finding is not closed."
+  }
+}

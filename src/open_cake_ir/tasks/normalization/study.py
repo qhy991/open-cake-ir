@@ -176,7 +176,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    reference_access: str = 'known_kernel_reproduction',
                    lowering_route=None, source_file: bool = False,
                    generated_source_feedback: bool = False,
-                   native_skill_package: Path | None = None, metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False, metax_torch_mean10: bool = False, metax_gated_mean10: bool = False) -> dict:
+                   native_skill_package: Path | None = None, metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False, metax_torch_mean10: bool = False, metax_gated_mean10: bool = False,
+                   claude_event_contract: str | None = None) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -191,6 +192,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         raise ValueError('generated source feedback requires explicit known-kernel authoring')
     if harness not in {"codex", "claude-code"} or any(not isinstance(v, str) or not v.strip() or v != v.strip() for v in (model, effort)):
         raise ValueError("exact harness, model and effort are required")
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    if claude_event_contract is not None and (harness != 'claude-code' or claude_event_contract not in CLAUDE_EVENT_CONTRACTS):
+        raise ValueError('Claude event contract requires the exact Claude harness and supported protocol')
     skill_package_reference = None
     if native_skill_package is not None:
         if harness != 'codex' or reference_access != 'known_kernel_reproduction':
@@ -238,10 +242,13 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         route = dict(lowering_route)
         starter_reference = {'python_starter': {'path': str(starter_path)}}
     else:
-        source = frontend.read_schedule(starter_path)
-        route = source.document['lowering']
+        from open_cake_ir.lab.python_reference import read_skeleton, skeleton_route
+        source = read_skeleton(starter_path)
+        if 'program_id' in source and source_file:
+            raise ValueError('Program starter requires the Python candidate-bundle submission contract')
+        route = skeleton_route(source)
         starter_reference = {'schedule_skeleton': {'path': str(starter_path),
-            'canonical_sha256': sha256(canonical(source.document)).hexdigest()}}
+            'canonical_sha256': sha256(canonical(source)).hexdigest()}}
     input_format = 'python_source_v1'
     tool_surface = (['submit_python_bundle'] if reference_access == 'known_kernel_reproduction'
                     and not source_file else ['submit_python_source'])
@@ -259,8 +266,10 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         from open_cake_ir.lab.claude import response_model_aliases
         provider["response_model_aliases"] = list(response_model_aliases(model, response_aliases))
     if harness == "claude-code":
-        provider.update(harness=harness, permission_mode="acceptEdits", sandbox="none", safe_mode=True,
-                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
+        from open_cake_ir.lab.claude import CLAUDE_FILE_CONTRACTS
+        provider.update(harness=harness, permission_mode=('default' if claude_event_contract in CLAUDE_FILE_CONTRACTS else 'acceptEdits'), sandbox="none", safe_mode=True,
+                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=claude_event_contract or CLAUDE_EVENT_CONTRACT,
+                        terminal_schema=terminal_schema())
     else:
         from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1
         from open_cake_ir.lab.provider_documents import expected_codex_disabled_features
