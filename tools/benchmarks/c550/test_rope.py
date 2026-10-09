@@ -29,12 +29,14 @@ class ScalarBinding(unittest.TestCase):
         abi = (TensorABI('position_ids', (2, 131), 'int64', 'input'),
                TensorABI('inv_freq', (64,), 'fp32', 'input'),
                TensorABI('cos_sin', (2, 131, 128, 2), 'bf16', 'output'))
-        semantics = {'fixed_scalar_inputs': {'attention_scaling': {'dtype': 'float32', 'value': 1.0}}}
+        semantics = {'fixed_scalar_inputs': {'attention_scaling': {'dtype': 'float32', 'value': 1.0,
+                                                               'binding': 'original_factory_literal'}}}
         workload = SimpleNamespace(target='xcore1002', tensor_abi=lambda case: abi,
                                    document={'semantics': semantics})
         self.assertEqual(rope.source_for_workload(workload, 'primary'), rope.source_for(2, 131))
-        for scalars in ({}, {'attention_scaling': {'dtype': 'float32', 'value': True}},
-                        {'attention_scaling': {'dtype': 'float32', 'value': float('nan')}}):
+        for scalars in ({}, {'attention_scaling': {'dtype': 'float32', 'value': True, 'binding': 'literal_input'}},
+                        {'attention_scaling': {'dtype': 'float32', 'value': float('nan'), 'binding': 'literal_input'}},
+                        {'attention_scaling': {'dtype': 'float32', 'value': 1., 'binding': 'unchecked'}}):
             semantics['fixed_scalar_inputs'] = scalars
             with self.assertRaises(ValueError): rope.source_for_workload(workload, 'primary')
 

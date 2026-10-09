@@ -58,7 +58,8 @@ def source_for_workload(workload, case_id: str) -> str:
     scalars = workload.document['semantics'].get('fixed_scalar_inputs')
     if (not isinstance(scalars, dict) or set(scalars) != {'attention_scaling'}
             or not isinstance(scalars['attention_scaling'], dict)
-            or set(scalars['attention_scaling']) != {'dtype', 'value'}
-            or scalars['attention_scaling']['dtype'] != 'float32'):
+            or set(scalars['attention_scaling']) != {'dtype', 'value', 'binding'}
+            or scalars['attention_scaling']['dtype'] != 'float32'
+            or scalars['attention_scaling']['binding'] not in {'literal_input', 'original_factory_literal'}):
         raise ValueError('RoPE requires the original checked scalar binding')
     return source_for(batch, sequence, attention_scaling=scalars['attention_scaling']['value'])
