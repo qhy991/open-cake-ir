@@ -60,6 +60,38 @@ scoped in-memory Target declaration to exercise emission while confirming that
 the committed Target still refuses the operation. It cannot grant production
 admission or device numerical correctness.
 
+### Bounded device probe
+
+[PR #430](https://github.com/qhy991/open-cake-ir/pull/430) adds
+`tools/qualify_metax_trig_device.py`. Its `build` command emits both probes;
+`build --native` uses the captured isolated compiler and seals both native
+candidates. `evaluate --built <directory> --physical-device <ordinal>
+--runtime-device <ordinal> --expected-pci <PCI> --output <new-directory>`
+binds those artifacts before acquiring the existing MACA physical-device lock.
+Build and evaluation require the same clean source commit. All output directories
+must be new and outside the checkout. The production Target remains closed.
+
+The probe fixes five 4x256 FP32 bit patterns, sampled across [-65536,65536],
+including the original RoPE angle envelope [0,2047], small magnitudes, adjacent
+FP32 values around quadrant boundaries, signed zero, NaN and infinities. Each
+finite output is compared with Python `math.sin` or `math.cos` of the exact
+decoded input, using `abs(error) <= 2e-6 + 2e-6*abs(reference)`. Sin must preserve
+the sign of zero; cos of either zero must be exactly one. NaN and infinity
+inputs require NaN outputs, without a NaN-payload requirement.
+
+Each operation runs each pattern twice with fresh output storage initialized to
+2 and -2. This detects omitted stores even at exceptional-value positions.
+Inputs must remain byte-identical. A complete check makes twenty native kernel
+calls and closes both modules. It gathers no timing, profiling or provider data.
+Source/CPU controls reject swapped operations, omitted stores, wrong signed zero,
+changed input bits and resealed source/manifest substitutions before allocation.
+
+At software commit `e7f29973`, twelve scoped contracts and all 204 Corpus cases
+pass. The emitted CPU test models mathematical calls; it does not establish the
+native library's accuracy. Native/device qualification of this new probe remains
+pending. Samples do not prove every FP32 input correct or qualify the complete
+RoPE operation. Original Bench tolerances are unchanged.
+
 Before adding real Target declarations, retain original-domain device checks
 for signed zero, representative angle magnitudes and trigonometric boundaries,
 then validate the complete original RoPE task. Record actual error statistics,
