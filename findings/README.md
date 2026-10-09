@@ -1,5 +1,6 @@
 # Findings
 
+- [F-2026-10-09-012](2026-10-09-012-metax-math-library-trig.json) — installed MACA sin/cos API and isolated native compilation confirmed; explicit software contracts implemented while real Target admission and original-domain device correctness remain pending.
 
 - [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
 
