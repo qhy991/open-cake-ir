@@ -56,7 +56,7 @@ class ProgramContractTest(unittest.TestCase):
             ProgramContract.load(ROOT, self.path, self.compiler)
 
     def test_current_program_successor_preserves_the_frozen_workload_and_composition(self) -> None:
-        path = ROOT / "contracts/programs/qsa-prefill-t32768-v6.json"
+        path = ROOT / "contracts/programs/qsa-prefill-t32768-v7.json"
         program = ProgramContract.load(ROOT, path, self.compiler)
         self.assertEqual(program.implementation.outputs, program.public_outputs)
         self.assertEqual([stage.name for stage in program.implementation.stages],
@@ -65,9 +65,16 @@ class ProgramContractTest(unittest.TestCase):
         self.assertFalse(program.implementation.stages[0].bindings['pooled'].singleton_view)
         previous = json.loads(self.path.read_text())
         successor = json.loads(path.read_text())
+        v6 = json.loads((ROOT / "contracts/programs/qsa-prefill-t32768-v6.json").read_text())
+        source_only = json.loads(path.read_text())
+        source_only["program_id"] = v6["program_id"]
+        for old_node, new_node in zip(v6["nodes"], source_only["nodes"]):
+            self.assertNotEqual(new_node["lowering_source_sha256"], old_node["lowering_source_sha256"])
+            new_node["lowering_source_sha256"] = old_node["lowering_source_sha256"]
+        self.assertEqual(source_only, v6)
         self.assertEqual(program.program_id, successor["program_id"])
         self.assertNotEqual(successor["program_id"], previous["program_id"])
-        for version in (4, 5):
+        for version in (4, 5, 6):
             frozen = ROOT / f"contracts/programs/qsa-prefill-t32768-v{version}.json"
             with self.assertRaisesRegex(ValueError, "lowering differs"):
                 ProgramContract.load(ROOT, frozen, self.compiler)

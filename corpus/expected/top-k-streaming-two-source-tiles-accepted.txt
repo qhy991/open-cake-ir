@@ -111,14 +111,13 @@ def cake_top_k_streaming_merge2_b8_smoke(scores, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != scores.device for t in (scores,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_top_k_streaming_merge2_b8_smoke_device = scores.device
     if out is None:
-        out = torch.empty((8, 8), dtype=torch.int32, device=scores.device)
+        out = torch.empty((8, 8), dtype=torch.int32, device=_cake_launch_cake_top_k_streaming_merge2_b8_smoke_device)
     else:
         if tuple(out.shape) != (8, 8) or out.dtype != torch.int32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != scores.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_top_k_streaming_merge2_b8_smoke_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_top_k_streaming_merge2_b8_smoke(
         scores,

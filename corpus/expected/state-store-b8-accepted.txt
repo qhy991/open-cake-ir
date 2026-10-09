@@ -56,8 +56,9 @@ def cake_state_store_b8_smoke(state, update, out=None):
             raise TypeError("an input or state differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input and state must be contiguous on CUDA")
-    if any(t.device != state.device for t in (state, update,)):
-        raise ValueError("every input and state must share one device")
+    _cake_launch_cake_state_store_b8_smoke_device = state.device
+    if update.device != _cake_launch_cake_state_store_b8_smoke_device:
+        raise ValueError('every input and state must share one device')
     if out is None:
         out = (
         )
@@ -69,7 +70,7 @@ def cake_state_store_b8_smoke(state, update, out=None):
         ):
             if tuple(tensor.shape) != shape or tensor.dtype != dtype:
                 raise ValueError("out differs from the frozen output contract")
-            if tensor.device != state.device or not tensor.is_contiguous():
+            if tensor.device != _cake_launch_cake_state_store_b8_smoke_device or not tensor.is_contiguous():
                 raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_state_store_b8_smoke(
         state,

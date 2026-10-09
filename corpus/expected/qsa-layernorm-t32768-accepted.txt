@@ -89,14 +89,15 @@ def cake_qsa_layernorm_t32768(pooled, k_norm_weight, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != pooled.device for t in (pooled, k_norm_weight,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_qsa_layernorm_t32768_device = pooled.device
+    if k_norm_weight.device != _cake_launch_cake_qsa_layernorm_t32768_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((8192, 128), dtype=torch.float32, device=pooled.device)
+        out = torch.empty((8192, 128), dtype=torch.float32, device=_cake_launch_cake_qsa_layernorm_t32768_device)
     else:
         if tuple(out.shape) != (8192, 128) or out.dtype != torch.float32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != pooled.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_qsa_layernorm_t32768_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_qsa_layernorm_t32768(
         pooled,

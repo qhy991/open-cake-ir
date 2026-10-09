@@ -56,14 +56,15 @@ def cake_ragged_zero_pad_b1_smoke(ragged, lengths, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != ragged.device for t in (ragged, lengths,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_ragged_zero_pad_b1_smoke_device = ragged.device
+    if lengths.device != _cake_launch_cake_ragged_zero_pad_b1_smoke_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((4, 8, 16), dtype=torch.float32, device=ragged.device)
+        out = torch.empty((4, 8, 16), dtype=torch.float32, device=_cake_launch_cake_ragged_zero_pad_b1_smoke_device)
     else:
         if tuple(out.shape) != (4, 8, 16) or out.dtype != torch.float32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != ragged.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_ragged_zero_pad_b1_smoke_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_ragged_zero_pad_b1_smoke(
         ragged,

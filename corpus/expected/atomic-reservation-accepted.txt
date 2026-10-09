@@ -58,14 +58,15 @@ def cake_atomic_reservation_b8_smoke(expert_ids, counts, out=None):
             raise TypeError("an input or state differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input and state must be contiguous on CUDA")
-    if any(t.device != expert_ids.device for t in (expert_ids, counts,)):
-        raise ValueError("every input and state must share one device")
+    _cake_launch_cake_atomic_reservation_b8_smoke_device = expert_ids.device
+    if counts.device != _cake_launch_cake_atomic_reservation_b8_smoke_device:
+        raise ValueError('every input and state must share one device')
     if out is None:
-        out = torch.empty((8, 8), dtype=torch.int32, device=expert_ids.device)
+        out = torch.empty((8, 8), dtype=torch.int32, device=_cake_launch_cake_atomic_reservation_b8_smoke_device)
     else:
         if tuple(out.shape) != (8, 8) or out.dtype != torch.int32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != expert_ids.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_atomic_reservation_b8_smoke_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_atomic_reservation_b8_smoke(
         expert_ids,

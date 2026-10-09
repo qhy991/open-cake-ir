@@ -73,14 +73,15 @@ def cake_indexed_gather_b8_smoke(expert_rows, expert_ids, row_ids, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != expert_rows.device for t in (expert_rows, expert_ids, row_ids,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_indexed_gather_b8_smoke_device = expert_rows.device
+    if expert_ids.device != _cake_launch_cake_indexed_gather_b8_smoke_device or row_ids.device != _cake_launch_cake_indexed_gather_b8_smoke_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((8, 8, 16), dtype=torch.bfloat16, device=expert_rows.device)
+        out = torch.empty((8, 8, 16), dtype=torch.bfloat16, device=_cake_launch_cake_indexed_gather_b8_smoke_device)
     else:
         if tuple(out.shape) != (8, 8, 16) or out.dtype != torch.bfloat16:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != expert_rows.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_indexed_gather_b8_smoke_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_indexed_gather_b8_smoke(
         expert_rows,

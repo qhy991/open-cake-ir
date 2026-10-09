@@ -101,14 +101,15 @@ def cake_moe_group_scores(routing_logits, routing_bias, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != routing_logits.device for t in (routing_logits, routing_bias,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_moe_group_scores_device = routing_logits.device
+    if routing_bias.device != _cake_launch_cake_moe_group_scores_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((1, 8), dtype=torch.float32, device=routing_logits.device)
+        out = torch.empty((1, 8), dtype=torch.float32, device=_cake_launch_cake_moe_group_scores_device)
     else:
         if tuple(out.shape) != (1, 8) or out.dtype != torch.float32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != routing_logits.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_moe_group_scores_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_moe_group_scores(
         routing_logits,

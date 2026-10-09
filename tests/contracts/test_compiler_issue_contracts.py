@@ -133,10 +133,10 @@ class CompilerIssueContracts(unittest.TestCase):
         base = document('relu-b8-smoke')
         fake = SimpleNamespace(shape=(8, 128), dtype='fp32', is_cuda=True,
                                is_contiguous=lambda: True, device='cpu-fixture')
-        for name in ('any', 'tuple', 'ValueError'):
+        for name in ('tuple', 'ValueError', 'TypeError'):
             changed = rename(base, 'x', name)
             self.refuses(changed, 'BACKEND_IDENTIFIER_COLLISION', accepted=True)
-        changed = rename(base, 'x', 'any')
+        changed = rename(base, 'x', 'tuple')
         raw = triton._TritonEmitter(Schedule.from_dict(changed), self.target, _namespace=False).emit().source
         wrapper = next(node for node in ast.parse(raw).body if isinstance(node, ast.FunctionDef)
                        and node.name == changed['lowering']['entry_point'])
@@ -145,27 +145,30 @@ class CompilerIssueContracts(unittest.TestCase):
         with self.assertRaises(TypeError):
             env[wrapper.name](fake)
         changed = deepcopy(base)
-        changed['lowering']['entry_point'] = 'any'
+        changed['lowering']['entry_point'] = 'tuple'
         self.refuses(changed, 'BACKEND_IDENTIFIER_COLLISION', accepted=True)
         with self.assertRaises(ValueError):
-            triton.emit(Schedule.from_dict(base), self.target, entry_point='any')
+            triton.emit(Schedule.from_dict(base), self.target, entry_point='tuple')
         # A valid output named out keeps the public wrapper ABI and executes all
         # validation plus its launch callback with CPU objects only.
-        changed = rename(base, 'y', 'out')
-        lowered = self.compiler.lower(self.compiler.assess(changed))
-        wrapper = next(node for node in ast.parse(lowered.source).body if isinstance(node, ast.FunctionDef)
-                       and node.name == changed['lowering']['entry_point'])
-        calls = []
-        class Launch:
-            def __getitem__(self, grid):
-                return lambda *args, **kwargs: calls.append((grid, args, kwargs))
-        env = {'torch': SimpleNamespace(float32='fp32'), '_' + changed['lowering']['entry_point'] + '_kernel': Launch()}
-        binding = next(node for node in ast.parse(lowered.source).body
-                       if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
-                           and target.id.startswith('_cake_launch_') for target in node.targets))
-        exec(compile(ast.Module(body=[binding, wrapper], type_ignores=[]), '<valid-wrapper>', 'exec'), env)
-        self.assertIs(env[wrapper.name](fake, out=fake), fake)
-        self.assertEqual(len(calls), 1)
+        released_input = rename(base, 'x', 'any')
+        released_entry = deepcopy(base)
+        released_entry['lowering']['entry_point'] = 'any'
+        for changed in (rename(base, 'y', 'out'), released_input, released_entry):
+            lowered = self.compiler.lower(self.compiler.assess(changed))
+            wrapper = next(node for node in ast.parse(lowered.source).body if isinstance(node, ast.FunctionDef)
+                           and node.name == changed['lowering']['entry_point'])
+            calls = []
+            class Launch:
+                def __getitem__(self, grid):
+                    return lambda *args, **kwargs: calls.append((grid, args, kwargs))
+            env = {'torch': SimpleNamespace(float32='fp32'), '_' + changed['lowering']['entry_point'] + '_kernel': Launch()}
+            binding = next(node for node in ast.parse(lowered.source).body
+                           if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                               and target.id.startswith('_cake_launch_') for target in node.targets))
+            exec(compile(ast.Module(body=[binding, wrapper], type_ignores=[]), '<valid-wrapper>', 'exec'), env)
+            self.assertIs(env[wrapper.name](fake, out=fake), fake)
+            self.assertEqual(len(calls), 1)
 
     def test_cute_generated_host_names_and_register_allocator_preserve_ownership(self):
         base = document('flash-kmeans-assignment-full')

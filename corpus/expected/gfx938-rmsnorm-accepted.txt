@@ -96,14 +96,15 @@ def cake_gfx938_rmsnorm_b8_smoke(x, gamma, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != x.device for t in (x, gamma,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_cake_gfx938_rmsnorm_b8_smoke_device = x.device
+    if gamma.device != _cake_launch_cake_gfx938_rmsnorm_b8_smoke_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((8, 512, 128), dtype=torch.float32, device=x.device)
+        out = torch.empty((8, 512, 128), dtype=torch.float32, device=_cake_launch_cake_gfx938_rmsnorm_b8_smoke_device)
     else:
         if tuple(out.shape) != (8, 512, 128) or out.dtype != torch.float32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != x.device or not out.is_contiguous():
+        if out.device != _cake_launch_cake_gfx938_rmsnorm_b8_smoke_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_cake_gfx938_rmsnorm_b8_smoke(
         _cake_pointer_range_arg(x, torch.float32, 2097152),

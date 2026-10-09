@@ -118,14 +118,15 @@ def multi_region_attention(q, k, v, out=None):
             raise TypeError("an input differs from the frozen dtype")
         if not tensor.is_cuda or not tensor.is_contiguous():
             raise ValueError("every input must be contiguous on CUDA")
-    if any(t.device != q.device for t in (q, k, v,)):
-        raise ValueError("every input must share one device")
+    _cake_launch_multi_region_attention_device = q.device
+    if k.device != _cake_launch_multi_region_attention_device or v.device != _cake_launch_multi_region_attention_device:
+        raise ValueError('every input must share one device')
     if out is None:
-        out = torch.empty((17, 49), dtype=torch.float32, device=q.device)
+        out = torch.empty((17, 49), dtype=torch.float32, device=_cake_launch_multi_region_attention_device)
     else:
         if tuple(out.shape) != (17, 49) or out.dtype != torch.float32:
             raise ValueError("out differs from the frozen output contract")
-        if out.device != q.device or not out.is_contiguous():
+        if out.device != _cake_launch_multi_region_attention_device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_multi_region_attention(
         _cake_pointer_range_arg(q, torch.float32, 2244),
