@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes as C
 from pathlib import Path
 import threading
+import time
 
 
 _API_VERSION = 18
@@ -93,6 +94,9 @@ class McptiActivity:
         self._errors = []
         self._dropped = 0
         self._enabled = []
+        self._flushes = []
+        self._buffer_observations = []
+        self._phase = 'initialization'
         self._active = False
         self._owner_thread = None
         # The SDK clock remains the default. Custom clocks are explicit diagnostics,
@@ -130,6 +134,10 @@ class McptiActivity:
             pointer[0], size[0], count[0] = None, 0, 0
 
     def _completed(self, context, stream, address, size, valid):
+        sequence = getattr(self, '_buffer_sequence', 0) + 1
+        self._buffer_sequence = sequence
+        phase = getattr(self, '_phase', 'unspecified')
+        record_count = 0
         try:
             if address not in self._buffers or size != _BUFFER_BYTES or valid > size:
                 raise ValueError("MCPTI returned an unowned or invalid buffer")
@@ -144,7 +152,7 @@ class McptiActivity:
                 if at is None or not address <= at <= address + valid - 4:
                     raise ValueError("MCPTI record is outside its returned buffer")
                 kind = C.c_uint32.from_address(at).value
-                row = {"kind": kind}
+                row = {"kind": kind, "capture_buffer": sequence}
                 if kind == _KERNEL:
                     if at + C.sizeof(_Kernel8Prefix) > address + valid:
                         raise ValueError("MCPTI kernel record is truncated")
@@ -155,7 +163,9 @@ class McptiActivity:
                         end_ns=item.end, device=item.device, context=item.context, stream=item.stream,
                         correlation=item.correlation, grid=list(item.grid), block=list(item.block),
                         registers_per_thread=item.registers, static_shared_bytes=item.static_shared,
-                        dynamic_shared_bytes=item.dynamic_shared, local_bytes_per_thread=item.local_per_thread)
+                        dynamic_shared_bytes=item.dynamic_shared, local_bytes_per_thread=item.local_per_thread,
+                        completed_ns=item.completed, grid_id=item.grid_id,
+                        raw_prefix_hex=C.string_at(at, C.sizeof(_Kernel8Prefix)).hex())
                 elif kind in (4, 5):
                     if at + C.sizeof(_ApiActivity) > address + valid:
                         raise ValueError("MCPTI API record is truncated")
@@ -165,13 +175,59 @@ class McptiActivity:
                 if len(self._rows) >= _MAX_RECORDS:
                     raise ValueError("MCPTI record count exceeds the bounded session")
                 self._rows.append(row)
+                record_count += 1
             dropped = C.c_size_t()
             self._call("mcptiActivityGetNumDroppedRecords", context, stream, C.byref(dropped))
             self._dropped += dropped.value
         except BaseException as error:
             self._errors.append(str(error))
         finally:
+            if not hasattr(self, '_buffer_observations'):
+                self._buffer_observations = []
+            if len(self._buffer_observations) < _MAX_RECORDS:
+                self._buffer_observations.append({
+                    'phase': phase, 'stream': stream, 'sequence': sequence,
+                    'buffer_bytes': size, 'valid_bytes': valid, 'record_count': record_count})
+            else:
+                self._errors.append('MCPTI buffer observation count exceeds the bounded session')
             self._buffers.pop(address, None)
+
+    def _flush(self, phase, flag=0):
+        """Retain host collection order; these timestamps are not the device timer."""
+        self._phase = phase
+        if not hasattr(self, '_flushes'):
+            self._flushes = []
+        observation = {'phase': phase, 'flag': flag, 'host_start_ns': time.monotonic_ns(),
+                       'pending_buffers_before': len(self._buffers)}
+        self._flushes.append(observation)
+        try:
+            self._call('mcptiActivityFlushAll', flag)
+        except BaseException as error:
+            observation['error'] = str(error)
+            raise
+        finally:
+            observation.update(host_end_ns=time.monotonic_ns(),
+                               pending_buffers_after=len(self._buffers), records_after=len(self._rows))
+
+    def _drain_rejected(self):
+        # Forced flush is teardown evidence only. It can expose incomplete records,
+        # so its rows remain in a rejected snapshot, never an accepted measurement.
+        try:
+            self._flush('rejected_session_teardown', 1)
+        except BaseException as error:
+            self._errors.append(str(error))
+
+    def _snapshot(self, failure=None):
+        snapshot = {'source': 'mcpti_activity', 'api_version': self.version,
+                    'dropped_records': self._dropped, 'pending_buffers': len(self._buffers),
+                    'records': list(self._rows),
+                    'timestamp_source': getattr(self, '_timestamp_source', None),
+                    'collection': {'flush_policy': 'completed_records_only',
+                        'flushes': list(getattr(self, '_flushes', [])),
+                        'buffers': list(getattr(self, '_buffer_observations', []))}}
+        if failure is not None:
+            snapshot['collection_errors'] = [*self._errors, str(failure)]
+        return snapshot
 
     def begin(self):
         if not self._ready:
@@ -179,19 +235,24 @@ class McptiActivity:
         if not self._session.acquire(blocking=False):
             raise RuntimeError("MCPTI activity collection is already active")
         try:
-            self._call("mcptiActivityFlushAll", 1)
+            self._flushes, self._buffer_observations = [], []
+            self._flush('begin_drain')
             if self._buffers:
-                self._errors.append("MCPTI retained activity buffers after forced drain")
+                self._errors.append("MCPTI retained activity buffers after completed-record drain")
             if self._errors or self._dropped:
                 raise ValueError("MCPTI has unreconciled errors from the preceding activity session")
             self._rows, self._errors, self._dropped = [], [], 0
+            self._buffer_observations, self._buffer_sequence = [], 0
             self._active = True
+            self._phase = 'active_collection'
             self._owner_thread = threading.get_ident()
             for kind in _KINDS:
                 self._call("mcptiActivityEnable", kind)
                 self._enabled.append(kind)
-        except BaseException:
+        except BaseException as error:
             self._disable()
+            self._drain_rejected()
+            error.activity_snapshot = self._snapshot(error)
             self._active = False
             self._owner_thread = None
             self._session.release()
@@ -212,25 +273,22 @@ class McptiActivity:
             raise RuntimeError("MCPTI activity collection must finish on its owning thread")
         failure = None
         try:
-            self._call("mcptiActivityFlushAll", 1)
+            self._flush('finish_before_disable')
             self._disable()
-            self._call("mcptiActivityFlushAll", 1)
+            self._flush('finish_after_disable')
             if self._buffers:
-                self._errors.append("MCPTI retained activity buffers after forced drain")
+                self._errors.append("MCPTI retained activity buffers after completed-record drain")
             if self._errors or self._dropped:
                 raise ValueError(f"MCPTI incomplete activity: dropped={self._dropped}, errors={self._errors}")
         except BaseException as error:
             failure = error
         finally:
             self._disable()
+            if failure is not None:
+                self._drain_rejected()
             # Freeze this session while still holding ownership. A subsequent
             # begin() may replace the collector's rows immediately after release.
-            snapshot = {"source": "mcpti_activity", "api_version": self.version,
-                        "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
-                        "records": list(self._rows),
-                        "timestamp_source": getattr(self, '_timestamp_source', None)}
-            if failure is not None:
-                snapshot['collection_errors'] = [*self._errors, str(failure)]
+            snapshot = self._snapshot(failure)
             self._active = False
             self._owner_thread = None
             self._session.release()

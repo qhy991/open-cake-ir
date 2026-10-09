@@ -95,7 +95,7 @@ class McptiMeasurements(unittest.TestCase):
         raw=deepcopy(self.raw);raw['records'][-1]['start_ns']=0
         with self.assertRaises(ValueError):self.samples(raw)
 
-    def test_forced_end_drain_refuses_buffers_the_sdk_did_not_return(self):
+    def test_completed_end_drain_refuses_pending_buffers_and_forces_only_rejected_teardown(self):
         import threading
         collector=object.__new__(McptiActivity)
         collector.version=18
@@ -104,14 +104,100 @@ class McptiMeasurements(unittest.TestCase):
         collector._session.acquire();calls=[]
         collector._call=lambda name,flag:calls.append((name,flag))
         with self.assertRaisesRegex(ValueError,'retained activity buffers'):collector.finish()
-        self.assertEqual(calls,[('mcptiActivityFlushAll',1),('mcptiActivityFlushAll',1)])
+        self.assertEqual(calls,[('mcptiActivityFlushAll',0),('mcptiActivityFlushAll',0),
+                                ('mcptiActivityFlushAll',1)])
         self.assertFalse(collector._active)
+
+    def test_accepted_collection_never_forces_and_retains_host_flush_order(self):
+        import threading
+        collector=object.__new__(McptiActivity)
+        collector.version=18;collector._ready=True
+        collector._buffers={};collector._errors=[];collector._rows=[];collector._dropped=0
+        collector._enabled=[];collector._active=False;collector._session=threading.Lock()
+        calls=[]
+        collector._call=lambda name,flag:calls.append((name,flag))
+        collector.begin()
+        snapshot=collector.finish()
+        self.assertEqual([flag for name,flag in calls if name=='mcptiActivityFlushAll'],[0,0,0])
+        self.assertEqual(snapshot['collection']['flush_policy'],'completed_records_only')
+        self.assertEqual([row['phase'] for row in snapshot['collection']['flushes']],
+                         ['begin_drain','finish_before_disable','finish_after_disable'])
+        for row in snapshot['collection']['flushes']:
+            self.assertGreaterEqual(row['host_end_ns'],row['host_start_ns'])
+            self.assertEqual(row['pending_buffers_after'],0)
+        self.assertFalse(collector._active)
+        self.assertTrue(collector._session.acquire(blocking=False))
+        collector._session.release()
+
+    def test_forced_teardown_cannot_convert_an_incomplete_capture_into_success(self):
+        import threading
+        collector=object.__new__(McptiActivity)
+        collector.version=18;collector._buffers={1:object()};collector._errors=[]
+        collector._rows=[];collector._dropped=0;collector._enabled=[];collector._active=True
+        collector._owner_thread=threading.get_ident();collector._session=threading.Lock()
+        collector._session.acquire()
+        def flush(name,flag):
+            if flag==1:
+                collector._buffers.clear()
+                collector._rows.append(kernel('late_incomplete',1,1000))
+        collector._call=flush
+        with self.assertRaises(ValueError) as caught:collector.finish()
+        snapshot=caught.exception.activity_snapshot
+        self.assertEqual(snapshot['pending_buffers'],0)
+        self.assertEqual(snapshot['records'][0]['name'],'late_incomplete')
+        self.assertEqual(snapshot['collection']['flushes'][-1]['flag'],1)
+        with self.assertRaisesRegex(ValueError,'coverage'):kernel_records(snapshot)
+
+    def test_begin_failure_preserves_rejected_drain_and_releases_ownership(self):
+        import threading
+        collector=object.__new__(McptiActivity)
+        collector.version=18;collector._ready=True;collector._buffers={1:object()}
+        collector._errors=[];collector._rows=[];collector._dropped=0;collector._enabled=[]
+        collector._active=False;collector._session=threading.Lock()
+        collector._call=lambda name,flag:None
+        with self.assertRaisesRegex(ValueError,'preceding activity session') as caught:collector.begin()
+        self.assertEqual([row['flag'] for row in caught.exception.activity_snapshot['collection']['flushes']],[0,1])
+        self.assertTrue(collector._session.acquire(blocking=False))
+        collector._session.release()
+        self.assertFalse(collector._active)
+
+    def test_kernel_callback_retains_native_completion_and_exact_prefix(self):
+        import open_cake_ir.evaluation.metax_activity as activity
+        from types import SimpleNamespace
+        name=ctypes.create_string_buffer(b'cake')
+        prefix=_Kernel8Prefix(kind=10,start=1000,end=3048,completed=4096,
+            device=0,context=1,stream=2,correlation=11,grid_id=23,
+            name=ctypes.addressof(name))
+        storage=ctypes.create_string_buffer(activity._BUFFER_BYTES)
+        address=ctypes.addressof(storage)
+        ctypes.memmove(address,ctypes.addressof(prefix),ctypes.sizeof(prefix))
+        collector=object.__new__(McptiActivity)
+        collector._buffers={address:storage};collector._errors=[];collector._rows=[];collector._dropped=0
+        collector._phase='finish_before_disable';collector._buffer_observations=[]
+        calls=[]
+        def next_record(buffer,valid,pointer):
+            calls.append(1)
+            if len(calls)>1:return 12
+            pointer._obj.value=address
+            return 0
+        collector.api=SimpleNamespace(mcptiActivityGetNextRecord=next_record)
+        collector._call=lambda name,*args:None
+        collector._completed(None,2,address,activity._BUFFER_BYTES,ctypes.sizeof(prefix))
+        self.assertEqual(collector._errors,[])
+        row=collector._rows[0]
+        self.assertEqual((row['completed_ns'],row['grid_id'],row['name']),(4096,23,'cake'))
+        self.assertEqual(bytes.fromhex(row['raw_prefix_hex']),
+                         ctypes.string_at(ctypes.addressof(prefix),ctypes.sizeof(prefix)))
+        self.assertEqual(row['capture_buffer'],collector._buffer_observations[0]['sequence'])
+        self.assertEqual(collector._buffer_observations[0]['record_count'],1)
+        self.assertEqual(collector._buffer_observations[0]['phase'],'finish_before_disable')
+        self.assertEqual(collector._buffers,{})
 
     def test_python_prefix_agrees_with_the_qualified_sdk_layout(self):
         # These are the installed SDK ABI offsets, not C550 hardware constants.
         observed={name:getattr(_Kernel8Prefix,name).offset for name in
-                  ("registers","start","end","device","stream","grid","block","static_shared","local_per_thread","correlation","grid_id","name")}
-        self.assertEqual(observed,dict(registers=6,start=16,end=24,device=40,stream=48,
+                  ("registers","start","end","completed","device","stream","grid","block","static_shared","local_per_thread","correlation","grid_id","name")}
+        self.assertEqual(observed,dict(registers=6,start=16,end=24,completed=32,device=40,stream=48,
             grid=52,block=64,static_shared=76,local_per_thread=84,correlation=92,grid_id=96,name=104))
         self.assertEqual(ctypes.sizeof(_ApiActivity),40)
 
@@ -154,6 +240,71 @@ class CollectorOwnership(unittest.TestCase):
             benchmark._collect(launch)
         self.assertIn("launch failed",str(result.exception))
         self.assertIn("drain failed",str(result.exception))
+
+
+class DispatchCompletionBoundary(unittest.TestCase):
+    def test_cold_sample_requires_reset_and_sample_completion_before_reuse(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        trace = []
+        reset = kernel('fill', 1, 1000)
+        raw = capture(reset, kernel('cake', 2, 4000),
+                      kernel('fill', 3, 7000), kernel('cake', 4, 10000))
+        assay = object.__new__(McptiDispatchBenchmark)
+        assay.manifest = SimpleNamespace(kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1))
+        assay.l2_cache_bytes = 4
+        assay._reset_record = reset
+        assay._reset_activity = capture(reset)
+        assay._prepare_reset = lambda: None
+        assay._reset = SimpleNamespace(fill_=lambda value: trace.append('reset'))
+        assay._collector = SimpleNamespace(
+            begin=lambda: trace.clear(), finish=lambda: raw)
+        torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: trace.append('complete')))
+        with patch.dict('sys.modules', {'torch': torch}):
+            samples = assay(lambda: trace.append('sample'), dry_run_iters=1,
+                            repeat_iters=2, cold_l2_cache=True, use_cuda_graph=False)
+        # Read actual submission boundaries, rather than trusting stream ordering
+        # to survive the captured SDK's device-to-epoch timestamp mapping.
+        for index, operation in enumerate(trace):
+            if operation == 'sample':
+                self.assertEqual(trace[index - 1], 'complete', 'reset must complete before its sample')
+            if operation == 'reset' and index:
+                self.assertEqual(trace[index - 1], 'complete', 'sample must complete before the next reset')
+        self.assertEqual(samples, [0.002048, 0.002048])
+
+    def test_warm_samples_also_complete_before_next_submission(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        trace = []
+        assay = object.__new__(McptiDispatchBenchmark)
+        assay.manifest = SimpleNamespace(kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1))
+        assay.l2_cache_bytes = 4
+        assay._reset_activity = assay._reset_record = None
+        assay._collector = SimpleNamespace(begin=lambda: trace.clear(),
+            finish=lambda: capture(kernel('cake', 1, 1000), kernel('cake', 2, 4000)))
+        torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: trace.append('complete')))
+        with patch.dict('sys.modules', {'torch': torch}):
+            assay(lambda: trace.append('sample'), dry_run_iters=1,
+                  repeat_iters=2, cold_l2_cache=False, use_cuda_graph=False)
+        indices = [i for i, value in enumerate(trace) if value == 'sample']
+        self.assertIn('complete', trace[indices[0] + 1:indices[1]])
+
+    def test_epoch_quantum_overlap_remains_invalid_for_both_boundaries(self):
+        epoch = 1791107372284255488
+        reset = kernel('fill', 1, epoch)
+        candidate = kernel('cake', 2, epoch + 2048)
+        next_reset = kernel('fill', 3, epoch + 4096)
+        second = kernel('cake', 4, epoch + 6144)
+        raw = capture(reset, candidate, next_reset, second)
+        raw['records'][2]['start_ns'] -= 256
+        with self.assertRaisesRegex(ValueError, 'serialized samples overlap'):
+            dispatch_samples(raw, kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1),
+                             repeats=2, reset_record=reset)
+        raw = capture(reset, candidate, next_reset, second)
+        raw['records'][1]['start_ns'] -= 256
+        with self.assertRaisesRegex(ValueError, 'cache reset did not precede'):
+            dispatch_samples(raw, kernel_name='cake', grid=(8, 1, 1), block=(64, 1, 1),
+                             repeats=2, reset_record=reset)
 
 
 class RejectedCaptureEvidence(unittest.TestCase):

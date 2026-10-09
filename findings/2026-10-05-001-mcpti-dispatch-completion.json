@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-05",
+  "id": "F-2026-10-05-001",
+  "kind": "protocol",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "executor_revision": "xcore1002@afa75c13a0c1de2723047a43d954065a8eda075e",
+  "title": "Completion fences qualify bounded MACA captures but a later cohort still fails timing quality",
+  "decision": "deferred",
+  "evidence": {
+    "original_root": "c550-2:/root/open-cake-runs-reviewed/c550-parallel-authoring-20261004/matrix-v1",
+    "original_events": [
+      "softmax:228,229",
+      "residual_rmsnorm:380,381"
+    ],
+    "successor_root": "c550-2:/root/open-cake-runs-reviewed/c550-mechanism-combination-20261004/control-successor-20261004",
+    "locators": [
+      "../retained-failure-replay.json",
+      "controls-plan.json",
+      "controls-qualified.json",
+      "controls-results.jsonl",
+      "comparison-plan.json",
+      "combinations-results.jsonl",
+      "observations/combination-test1-n4-k32-u1-session2/timing_samples",
+      "startup-result-summary.json"
+    ],
+    "software_before": "962db954",
+    "software_successor": "1b18e15bc7bce8c3af33530ce4f891e9c3c8957e",
+    "pull_request": "https://github.com/qhy991/open-cake-ir/pull/305"
+  },
+  "observation": "The two original SDK-default captures each contain a256ns same-stream overlap, at sample-to-reset and reset-to-sample boundaries. Both retained records still refuse under the successor. Host completion fences outside the measured kernel interval pass32 fresh A/A comparisons across short/medium/long kernels and serial/three-host-submission conditions, four known positive/negative paired controls, and four separate profiles. The fixed eight-combination experiment then obtains six quality-passed comparisons, all slower than the N4 whole-K strong seed. Its seventh comparison passes correctness but one baseline cohort has CV0.1767329199624791 against0.05, with minimum0.770us and median4.608us. That receipt is not a performance result. The predeclared first-invalid-quality stop prevents the remaining41 comparisons; no rejected sample is removed and no comparison is retried. No interval overlap was observed in these successor captures. The SDK mapping cause, the short baseline sample's cause, global timing reliability and interaction/generalization effects remain unestablished.",
+  "proposed_change": "Retain the completion-fenced acquisition as a bounded qualified successor while keeping SDK-default timestamps, reset/stream/correlation and quality checks. Investigate the retained baseline outlier before another formal batch; do not add a duration floor, discard a sample, relax CV or retrospectively change the stop rule. Preserve F-2026-10-04-001's separate monotonic-clock limitation.",
+  "implemented_in": "1b18e15bc7bce8c3af33530ce4f891e9c3c8957e",
+  "verified_by": {
+    "commit": "1b18e15bc7bce8c3af33530ce4f891e9c3c8957e",
+    "software": "Both completion-boundary tests fail at962db954;113 MetaX contracts pass in fixed macOS and C550 source checkouts, Corpus181 matches, F821 and credential-shape checks pass, and Python3.10/3.11/3.12 CI passes.",
+    "device": "32 A/A, four signed controls and four profiles qualify at the successor; six additional paired observations pass quality. The seventh is retained as quality failure and the batch stops.",
+    "scope": "Captured C550-2/MACA3.8/Triton3.6 cadence, exact Workloads and local-serialized physicalGPU0. External activity is not excluded. No global SDK repair, compiler-mechanism promotion, completed factorial study, held-out, Agent-treatment or application claim."
+  },
+  "promotion_disposition": "No Compiler optimization promotion. Completion-boundary source change has bounded device evidence; the broader timing-reliability finding remains deferred. Preserve all old Runs and the successor's negative and failed observations.",
+  "review_addenda": [
+    {
+      "date": "2026-10-05",
+      "kind": "measurement_review_correction",
+      "evidence": "c550-2:/root/open-cake-runs-reviewed/c550-mechanism-combination-20261004/control-successor-20261004/continued-review-result-20261005.json",
+      "corrections": [
+        "The frozen contract uses population CV0.173162189864085 for the failed baseline cohort. The earlier0.1767329199624791 was a sample-standard-deviation calculation, not the contract value. The quality refusal is unchanged.",
+        "Twelve timing controls used inherited CV0.15;24 timing controls used CV0.05. Four attribution controls have no timing gate. Every0.15 control would fail a hypothetical uniform0.05 gate. Preserve their original per-policy outcomes; uniform5% readiness is not established."
+      ],
+      "audit": "All43 retained paired observations replay through the frozen1b18e15b common owner and match their saved summaries.43000 kernel records have matching launch correlations and no sample-duration derivation mismatches. Five end timestamps depart from the observed256ns grid, including records whose cohorts otherwise pass; that pattern is not an admission rule.",
+      "diagnostic_lead": "The installed MCPTI SDK documents that forced flush may return incomplete records. Kernel8 completed timestamp and raw-prefix/lifecycle diagnostics were not retained. This leaves a collection-completeness uncertainty; it does not prove the0.770us sample cause.",
+      "disposition": "Keep experiments stopped and PR305 open. Require explicit uniform controls in a successor and bounded collection diagnostics before further hardware qualification. No sample deletion, modulo rule, CV relaxation or promotion."
+    },
+    {
+      "date": "2026-10-05",
+      "kind": "completed_record_successor_verification",
+      "implemented_in": "d3d4c696958f541f797cd0356728b85f470a7848",
+      "evidence": "c550-2:/root/open-cake-runs-reviewed/c550-completed-capture-20261005",
+      "locators": [
+        "admission-sdk-paths/cpu-preflight-result.json",
+        "cpu-build-result.json",
+        "controls-plan.json",
+        "controls-results.jsonl",
+        "controls-exit.json",
+        "collection-forensics.json",
+        "observations/aa-serial-softmax-1/timing_samples"
+      ],
+      "source_change": "Accepted collection uses SDK completed-record flush0; forced flush1 is rejected-session teardown only. Retain completed timestamp, grid id,112-byte native prefix, callback buffer attribution and host flush lifecycle. Completed timestamp is diagnostic information, not a boolean admission condition.",
+      "software": "117 MetaX contracts and failed-worker transport contracts pass at the frozen C550 successor; Corpus181 matches. The installed Kernel8 layout probe confirms completed32,gridId96,name104,full size200. Initial probe invocation omitted the installed mcr include directory; preserve its failure and the separate corrected-command admission. No runtime package repair or GPU calls occurred during CPU gates. Python3.10/3.11/3.12 CI passes at d3d4c696.",
+      "device": "21 strict timing controls and four profiles were predeclared.16 of17 attempted timing comparisons pass uniform population CV0.05: twelve serial/queued A/A and four signed controls. Positive output partition controls reproduce15.872->4.608us(3.4444x) at R128K256N32 and32.000->8.192us(3.90625x) at R256K256N64. Full unroll controls remain slower. No new Agent comparison or combined-pass speedup is claimed.",
+      "failure": "The17th Softmax A/A comparison passes correctness but cohort0 baseline CV0.078802917239899 and candidate CV0.065401516379315 exceed0.05. Slowest samples are baseline index13=5.376us and candidate index1=5.120us; this is not evidence of a first-timed-sample-only warmup defect. The stop leaves four timing controls and all four profiles unattempted; no replacement or sample deletion.",
+      "audit": "All17 comparisons replay identically through the frozen common owner.340 cohorts contain17000 kernel records with no raw-prefix projection mismatch and no forced flush in timed captures. The failed capture has no dropped records or pending buffers. Completed-record acquisition therefore does not establish global timestamp stability or explain the former0.770us outlier.",
+      "disposition": "Collector coverage and diagnostics improved; global uniform5% readiness remains unestablished. Keep the finding deferred and PR305 open pending timing-readiness investigation. No cost-model calibration or primary GLM experiment resumed."
+    }
+  ]
+}
