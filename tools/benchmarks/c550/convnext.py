@@ -139,12 +139,13 @@ def _spatial_norm(b, c, p):
 def _channel_norm(b, c, eps):
     f=4*c
     return _header('channel_norm', [_tensor('global_norm',(b,f)), _tensor('response_norm',(b,f),True)]) + f'''    batch = lm.program(response_norm, axis=0, dimension=0, tile=1)
+    feature = lm.program(response_norm, axis=1, dimension=1, tile={1 << (f-1).bit_length()})
     with compute:
-        values = lm.load(global_norm[batch, :], id="values")
+        values = lm.load(global_norm[batch, feature], id="values")
         total = lm.reduce(values, op="sum", axis=0, scope="cta", across_loop=False, id="total")
         mean = total / {float(f)!r}
         result = values / (mean + {eps!r})
-        lm.store(response_norm[batch, :], result, id="store_response")
+        lm.store(response_norm[batch, feature], result, id="store_response")
 '''
 
 
@@ -185,12 +186,14 @@ def _output(b, c, h, w):
         y = lm.coordinate(source="program", name="row", id="y")
         x_index = lm.coordinate(source="program", name="column", id="x_index")
         pixel = y * {w} + x_index
-        values = lm.load(projected[batch, lm.scalar_index(pixel), :], id="values")
-        bias = lm.load(pwconv2_bias[:], id="bias")
-        with_bias = values + bias
-        original = lm.load(x[batch, :, row, column], id="original")
-        result = original + with_bias
-        lm.store(output[batch, :, row, column], result, coalesced=False, id="store_output")
+    for channel in lm.range(x, name="channels", dimension=1, tile=32, num_stages=1, loop_unroll_factor=1):
+        with compute:
+            values = lm.load(projected[batch, lm.scalar_index(pixel), channel], id="values")
+            bias = lm.load(pwconv2_bias[channel], id="bias")
+            with_bias = values + bias
+            original = lm.load(x[batch, channel, row, column], id="original")
+            result = original + with_bias
+            lm.store(output[batch, channel, row, column], result, coalesced=False, id="store_output")
 '''
 
 
