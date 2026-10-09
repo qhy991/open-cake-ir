@@ -53,7 +53,7 @@ class MetaxTrig(unittest.TestCase):
 
     def test_maca_contract_cannot_borrow_another_code_object_or_dtype(self):
         for op in ('sin', 'cos'):
-            for target_id in ('gfx938', 'sm_103a'):
+            for target_id in ('gfx938', 'sm_103a', 'apple_gpu_family9'):
                 schedule = Schedule.from_dict(frontend.parse(source(op).replace('xcore1002', target_id)).document)
                 target = Target.load(ROOT / f'compiler/targets/{target_id}.json')
                 target = replace(target, instruction_contracts=target.instruction_contracts | {f'maca.{op}.f32'})
