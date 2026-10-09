@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import sys
+import tempfile
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
@@ -126,10 +127,13 @@ class OracleNumerics(unittest.TestCase):
             }))
             stack.enter_context(patch.dict(os.environ, {'TORCH_ALLOW_TF32_CUBLAS_OVERRIDE': '1'}))
             stack.enter_context(patch('open_cake_ir.evaluation.triton_metax.observe_local_metax', return_value='lease'))
-            stack.enter_context(patch.object(binding, 'physical_input_view', side_effect=lambda value, order: value))
+            def view(value, order):
+                if drift == 'before_reference': state['float32_matmul_precision'] = 'highest'
+                return value
+            stack.enter_context(patch.object(binding, 'physical_input_view', side_effect=view))
             if drift == 'entry': state['float32_matmul_precision'] = 'highest'
             if drift:
-                expected_phase = {'entry': 'before_input_factory', 'factory': 'after_input_factory', 'reference': 'after_reference'}[drift]
+                expected_phase = {'entry': 'before_input_factory', 'factory': 'after_input_factory', 'reference': 'after_reference', 'before_reference': 'before_reference'}[drift]
                 with self.assertRaisesRegex(ValueError, expected_phase):
                     original.prepare_on_target('original-7', runtime_library='/not-loaded', oracle_numerics=policy())
             else:
@@ -144,6 +148,27 @@ class OracleNumerics(unittest.TestCase):
         self.assertEqual(self._prepare(drift='entry'), [])
         self.assertEqual(self._prepare(drift='factory'), ['factory'])
         self.assertEqual(self._prepare(drift='reference'), ['factory', 'reference'])
+        self.assertEqual(self._prepare(drift='before_reference'), ['factory'])
+
+
+    def test_preparation_cli_uses_retained_observation_for_all_original_workloads(self):
+        from tools import prepare_c550_bench as entry
+        original = problem()
+        original.api.document = lambda name: {'seed': 200, 'tasks': [{'id': 'fixture'}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            observation = root / 'oracle-numerics.json'
+            observation.write_text(json.dumps(policy()))
+            output = root / 'prepared'
+            with patch.object(entry.BenchProblem, 'open', return_value=original), patch.dict(sys.modules, {'torch': None}):
+                entry.main(['--bench-root', str(root), '--output', str(output),
+                    '--task', 'fixture', '--oracle-numerics', str(observation)])
+            prepared = json.loads((output / 'prepared.json').read_text())
+            self.assertEqual(prepared['oracle_numerics_observation'], str(observation.resolve()))
+            cases = sorted((output / 'fixture').glob('case-*/workload.json'))
+            self.assertEqual(len(cases), 16)
+            for path in cases:
+                self.assertEqual(json.loads(path.read_text())['semantics']['oracle_numerics'], policy())
 
     def test_actual_torch_precision_drift_is_read_only(self):
         try:

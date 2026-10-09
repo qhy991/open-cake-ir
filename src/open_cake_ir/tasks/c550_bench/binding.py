@@ -6,10 +6,12 @@ the repository and outside the candidate's authoring directory.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import ast
 import importlib.util
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,51 @@ OPERATOR = "c550_bench_original_case"
 TARGET = "xcore1002"
 DTYPES = {"float32": "fp32", "float16": "fp16", "bfloat16": "bf16",
           "int32": "int32", "int64": "int64", "bool": "bool"}
+
+
+_ORACLE_BOOLEAN_SETTINGS = (
+    "allow_tf32", "allow_fp16_reduced_precision_reduction",
+    "allow_bf16_reduced_precision_reduction",
+)
+_ORACLE_INITIALIZATION_OVERRIDE = "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"
+
+
+def validate_oracle_numerics(value) -> dict:
+    """Copy the explicitly observed reference policy, without consulting Torch."""
+    keys = {"float32_matmul_precision", "initialization", *_ORACLE_BOOLEAN_SETTINGS}
+    if not isinstance(value, Mapping) or set(value) != keys:
+        raise ValueError("Bench oracle numerics requires all four effective settings and initialization source")
+    if (value["float32_matmul_precision"] not in ("highest", "high", "medium")
+            or any(type(value[name]) is not bool for name in _ORACLE_BOOLEAN_SETTINGS)):
+        raise ValueError("Bench oracle numerics has an invalid effective matrix setting")
+    initialization = value["initialization"]
+    if (not isinstance(initialization, Mapping)
+            or set(initialization) != {_ORACLE_INITIALIZATION_OVERRIDE}
+            or (initialization[_ORACLE_INITIALIZATION_OVERRIDE] is not None
+                and not isinstance(initialization[_ORACLE_INITIALIZATION_OVERRIDE], str))):
+        raise ValueError("Bench oracle numerics requires its observed initialization override")
+    return {"float32_matmul_precision": value["float32_matmul_precision"],
+            **{name: value[name] for name in _ORACLE_BOOLEAN_SETTINGS},
+            "initialization": dict(initialization)}
+
+
+def observe_oracle_numerics() -> dict:
+    """Read effective Torch matrix settings and the narrow initialization input."""
+    import torch
+    return validate_oracle_numerics({
+        "float32_matmul_precision": torch.get_float32_matmul_precision(),
+        **{name: getattr(torch.backends.cuda.matmul, name) for name in _ORACLE_BOOLEAN_SETTINGS},
+        "initialization": {_ORACLE_INITIALIZATION_OVERRIDE: os.environ.get(_ORACLE_INITIALIZATION_OVERRIDE)},
+    })
+
+
+def require_oracle_numerics(expected, *, phase: str) -> None:
+    """Refuse drift at the caller's oracle boundary; never change math settings."""
+    expected = validate_oracle_numerics(expected)
+    observed = observe_oracle_numerics()
+    changed = [name for name in expected if expected[name] != observed[name]]
+    if changed:
+        raise ValueError(f"Bench oracle numerics changed at {phase}: {', '.join(changed)}")
 
 
 def factory_scalar(definition, name: str):
@@ -158,7 +205,8 @@ class BenchProblem:
                 return workload, raw
         raise ValueError("The selected workload ID is absent from the original Bench task")
 
-    def workload_document(self, uuid: str, *, input_views=None) -> dict:
+    def workload_document(self, uuid: str, *, oracle_numerics, input_views=None) -> dict:
+        oracle_numerics = validate_oracle_numerics(oracle_numerics)
         selected, raw = self.selected(uuid)
         definition = self.definition
         tensors, scalars, views, original_shapes = {}, {}, {}, {}
@@ -217,6 +265,13 @@ class BenchProblem:
                 "original_tensor_shapes": original_shapes,
                 "input_views": views,
                 "input_view_contract": "zero_copy_dense_axis_permutation_before_native_submission",
+                "oracle_numerics": oracle_numerics,
+                "oracle_numerics_contract": (
+                    "The original reference uses these observed Torch matrix settings. "
+                    "FP32 storage does not imply IEEE FP32 matrix multiplication. "
+                    "Preserve the original comparator; validate arithmetic rewrites on the target. "
+                    "The initialization override records this environment, not a Target capability."
+                ),
                 "oracle_preparation": "original_factory_and_reference_on_leased_target",
                 "search_scope": "one_original_case_one_seed",
                 "final_acceptance": "original_all_16_workloads_10_rounds",
@@ -233,7 +288,7 @@ class BenchProblem:
                            "qualification": "single_original_case_search_only"},
         }
 
-    def original_inputs_on_target(self, uuid: str, *, runtime_library: str):
+    def original_inputs_on_target(self, uuid: str, *, runtime_library: str, oracle_numerics):
         """Materialize the original inputs only after verifying their device lease."""
         from open_cake_ir.evaluation.triton_metax import observe_local_metax
         admission = observe_local_metax(TARGET, runtime_library=runtime_library)
@@ -244,12 +299,18 @@ class BenchProblem:
         custom = (getattr(reference, self.definition.custom_inputs_entrypoint)
                   if self.definition.custom_inputs_entrypoint else None)
         set_seed(self.api.document("suite.json")["seed"])
-        arguments = gen_inputs(self.definition, selected, "cuda:0", custom_inputs_fn=custom)
+        require_oracle_numerics(oracle_numerics, phase="before_input_factory")
+        try:
+            arguments = gen_inputs(self.definition, selected, "cuda:0", custom_inputs_fn=custom)
+        finally:
+            require_oracle_numerics(oracle_numerics, phase="after_input_factory")
         return arguments, reference, admission
 
     def discover_input_views_on_target(self, uuid: str, *, runtime_library: str):
         """Observe concrete input layouts for a later frozen Workload binding."""
-        arguments, _, admission = self.original_inputs_on_target(uuid, runtime_library=runtime_library)
+        observed_numerics = observe_oracle_numerics()
+        arguments, _, admission = self.original_inputs_on_target(uuid, runtime_library=runtime_library,
+            oracle_numerics=observed_numerics)
         import torch
         views, metadata = {}, {}
         for name, value in zip(self.definition.inputs, arguments, strict=True):
@@ -264,24 +325,29 @@ class BenchProblem:
         torch.cuda.synchronize(0)
         return views, metadata, admission
 
-    def prepare_on_target(self, uuid: str, *, runtime_library: str, input_views=None):
+    def prepare_on_target(self, uuid: str, *, runtime_library: str, oracle_numerics, input_views=None):
         """Run the original factory/reference under an already acquired MACA lease.
 
         Return CPU tensors with their original storage dtype. No conversion to
         Python float lists or substitute CPU mathematical reference is allowed.
         Callers must keep this phase outside all timed candidate intervals.
         """
-        arguments, reference, admission = self.original_inputs_on_target(uuid, runtime_library=runtime_library)
+        arguments, reference, admission = self.original_inputs_on_target(uuid, runtime_library=runtime_library,
+            oracle_numerics=oracle_numerics)
         import torch
         from sol_execbench.core.bench.io import normalize_outputs
         from sol_execbench.core.data.dtypes import dtype_str_to_torch_dtype
 
-        document = self.workload_document(uuid, input_views=input_views)
+        document = self.workload_document(uuid, input_views=input_views, oracle_numerics=oracle_numerics)
         views = document['semantics']['input_views']
         original = {name: physical_input_view(value, views[name]).detach().cpu().clone() for name, value
                     in zip(self.definition.inputs, arguments, strict=True)
                     if isinstance(value, torch.Tensor)}
-        expected = reference.run(*self.api.cloned_inputs(arguments))
+        require_oracle_numerics(oracle_numerics, phase="before_reference")
+        try:
+            expected = reference.run(*self.api.cloned_inputs(arguments))
+        finally:
+            require_oracle_numerics(oracle_numerics, phase="after_reference")
         torch.cuda.synchronize(0)
         names = list(self.definition.outputs)
         expected = normalize_outputs(expected, device="cuda:0", output_names=names,
@@ -304,8 +370,10 @@ class BenchProblem:
 
 
 def validate_document(document):
+    numerics = validate_oracle_numerics(document["semantics"].get("oracle_numerics"))
     binding = document["semantics"]["benchmark"]
     problem = BenchProblem.open(Path(binding["root"]), binding["task"])
-    expected = problem.workload_document(binding["workload_uuid"], input_views=document['semantics']['input_views'])
+    expected = problem.workload_document(binding["workload_uuid"], input_views=document['semantics']['input_views'],
+        oracle_numerics=numerics)
     if json.dumps(document, sort_keys=True, allow_nan=False) != json.dumps(expected, sort_keys=True, allow_nan=False):
         raise ValueError("Bench Workload differs from its original ABI, scalar, oracle or tolerance")
