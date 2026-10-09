@@ -677,8 +677,10 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
                 result = self.compiler.assess(document)
                 self.assertFalse(result.lowering_eligible)
                 findings = [f for f in result.findings if f.blocks_lowering]
-                self.assertEqual([(f.code, f.path) for f in findings],
-                                 [("STORE_ACCESS_SHAPE_MISMATCH", "operations[4].reads[0]")])
+                expected = [("STORE_ACCESS_SHAPE_MISMATCH", "operations[4].reads[0]")]
+                if component_index == 0:
+                    expected.append(("OUTPUT_STORE_PROGRAM_AXIS_COLLISION", "operations[4]"))
+                self.assertEqual([(f.code, f.path) for f in findings], expected)
                 self.assertFalse(result.accepted)
                 with self.assertRaisesRegex(CompilerError, "STORE_ACCESS_SHAPE_MISMATCH"):
                     self.compiler.lower(result)
@@ -697,12 +699,12 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         document["access_maps"][1]["indices"][0]["name"] = "other"
         result = self.compiler.assess(document)
         self.assertFalse(result.lowering_eligible)
-        ownership = [f for f in result.findings if f.code == "METAL_STORE_OWNERSHIP"]
-        self.assertEqual([f.path for f in ownership], ["access_maps[2].indices"])
+        ownership = [f for f in result.findings if f.code == "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"]
+        self.assertEqual([f.path for f in ownership], ["operations[4]"])
         self.assertIn("other", ownership[0].message)
-        with self.assertRaisesRegex(CompilerError, "METAL_STORE_OWNERSHIP"):
+        with self.assertRaisesRegex(CompilerError, "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"):
             self.compiler.lower(result)
-        with self.assertRaisesRegex(metal.EmitError, "does not own varying program axes"):
+        with self.assertRaisesRegex(metal.EmitError, "omits program axis"):
             metal.emit(Schedule.from_dict(document), self.target)
 
         # An omitted extent-one coordinate creates no second threadgroup writer.

@@ -170,7 +170,11 @@ class ArgminDomainTest(unittest.TestCase):
         document = self.scores()
         document["operations"][1]["parameters"]["across_loop"] = True
         self.refuse(document, "TRITON_ARGMIN_DOMAIN")
-        self.refuse(self.scores(65), "TRITON_ARGMIN_DOMAIN")
+        split = self.scores(65)
+        self.refuse(split, "OUTPUT_STORE_PROGRAM_AXIS_COLLISION")
+        # Shared output ownership now fires before backend capability checks.
+        self.assertIn("TRITON_ARGMIN_DOMAIN", [f.code for f in preflight(
+            Schedule.from_dict(split), TARGET)])
         document = self.scores()
         document["buffers"][-1]["shape"] = [2, 1]
         # Common store-shape verification rejects this malformed graph before
@@ -677,7 +681,7 @@ class ElementwiseArityTest(unittest.TestCase):
 
         templates = _TritonEmitter._ELEMENTWISE_TEXT
         # Every operator the IR admits has a body, or the gate admits what cannot lower.
-        self.assertEqual(set(templates) | {ElementwiseOp.TANH}, set(ElementwiseOp))
+        self.assertEqual(set(templates) | {ElementwiseOp.TANH, ElementwiseOp.SIN, ElementwiseOp.COS}, set(ElementwiseOp))
         for op, template in templates.items():
             with self.subTest(op=op.value):
                 for index, operand in enumerate(("a", "b", "c"), start=1):
@@ -872,7 +876,10 @@ class MultiOutputHostTest(unittest.TestCase):
         tree = ast.parse(source)
         module = {
             node.name for node in tree.body if isinstance(node, ast.FunctionDef)
-        } | {"torch", "tl", "triton"}
+        } | {"torch", "tl", "triton"} | {
+            target.id for node in tree.body if isinstance(node,ast.Assign)
+            for target in node.targets if isinstance(target,ast.Name)
+        }
         host = next(
             node
             for node in tree.body
@@ -914,7 +921,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         passed = [ast.unparse(argument) for argument in launch.args]
         self.assertEqual(passed[-2:], ["out[0]", "out[1]"])
@@ -974,7 +981,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         passed = [ast.unparse(argument) for argument in launch.args]
         # the state buffer stays caller-owned by name; only the outputs take slots
@@ -995,7 +1002,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         passed = [ast.unparse(argument) for argument in launch.args]
 
@@ -1020,7 +1027,7 @@ class MultiOutputHostTest(unittest.TestCase):
         launch = next(
             node
             for node in ast.walk(host)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Subscript)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.startswith("_cake_launch_")
         )
         self.assertIn("out", [ast.unparse(argument) for argument in launch.args])
 

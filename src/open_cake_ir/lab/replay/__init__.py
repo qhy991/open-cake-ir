@@ -26,6 +26,8 @@ from .refusals import ReplayRefusal, ReplayResult, refuse
 from .selection import _replay_candidate_selection
 from .nomination import replay_nomination
 from .compilations import replay_compilations
+from .feedback import replay_feedback
+from .history import replay_optimization_history
 
 _REQUIRED_FAULT_FIELDS = frozenset({
     "fault", "exception_type", "turn", "stage", "terminal_provider_tokens",
@@ -98,6 +100,11 @@ def _replay_matched_run(
     task_package: Callable,
 ) -> None:
     from ..bindings import load_compiler_reference
+    from ..native_skills import author_skill_reference
+    from ..admission import admit_native_skill_authoring
+    # Validate even the zero-provider and initial-fault paths before their early returns.
+    author_skill_reference(lock.document['authoring'])
+    admit_native_skill_authoring(authoring=lock.document['authoring'], project_root=project_root)
     compiler_ref = _identity_reference(lock.document["compiler_revision"], "compiler_revision")
     load_compiler_reference(project_root, compiler_ref, "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)
@@ -183,7 +190,13 @@ def _replay_matched_run(
                 checkpoint_events=checkpoint_events,cumulative_by_turn={},fault_terminal_tokens=None,faults=(),
                 lock=lock,observations=(),receipts={},searches_per_turn=protocol.get('searches_per_turn',1),
                 confirmation=confirmation,search_state=search_state)
+            replay_feedback(events=events, evidence=evidence, specification=lock)
+            replay_optimization_history(events=events, evidence=evidence, receipts={},
+                                        arm=lock.environment_kind, specification=lock)
             return
+        from ..native_skill_fault import has_native_rejection
+        native_rejection = any(event.get('kind') == 'run_fault' and has_native_rejection(event['payload'])
+                               for event in events)
         _replay_provider_fault(
             audit=audit,
             checkpoint_events=checkpoint_events,
@@ -191,8 +204,11 @@ def _replay_matched_run(
             lock=lock,
             evidence=evidence,
             expected_task_package=(task_package(lock, audit.run_id)
-                if lock.document['authoring'].get('provider', {}).get('harness') == 'responses' else None),
+                if native_rejection or lock.document['authoring'].get('provider', {}).get('harness') == 'responses' else None),
         )
+        replay_feedback(events=events, evidence=evidence, specification=lock)
+        replay_optimization_history(events=events, evidence=evidence, receipts={},
+                                    arm=lock.environment_kind, specification=lock)
         return
     replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
     maximum_candidates_per_turn = int(
@@ -212,6 +228,7 @@ def _replay_matched_run(
             context=_empirical_context(
                 executor, workload_sha256=lock.document["workload"]["canonical_sha256"],
                 case_id=lock.document["evaluation_protocol"]["case_id"],
+                target=lock.document["execution"]["target"],
             ),
             compiler_revision_id=compiler_ref["revision_id"],
             target=lock.document["execution"]["target"],
@@ -322,6 +339,8 @@ def _replay_matched_run(
         workload_sha256=workload_sha256,
     )
     launchables, receipts, receipt_order, rejected = candidates
+    replay_optimization_history(events=events, evidence=evidence, receipts=receipts,
+                                arm=lock.environment_kind, specification=lock)
     try:
         invocation_counts = replay_evaluation_invocations(events, receipts=receipts,
             budget=replay_budget, protocol=lock.document["evaluation_protocol"])
@@ -343,6 +362,10 @@ def _replay_matched_run(
         rejected=rejected,
     )
     observations, searches_per_turn, attribution_evaluation = selected
+    replay_feedback(events=events, evidence=evidence, specification=lock,
+        provider_candidates_by_turn=provider_candidates_by_turn, receipts=receipts,
+        rejected=rejected, fault_turn=fault_turn,
+        launchables=launchables, authored=provider_candidate_bytes)
     confirmation, search_state = replay_nomination(events=events, observations=observations,
         launchables=launchables, receipts=receipts,budget=replay_budget,protocol=lock.document['evaluation_protocol'],
         compilation_count=compilation_count,

@@ -6,6 +6,8 @@ CAS, and the current incumbent is a replay projection.  There is deliberately no
 """
 from __future__ import annotations
 
+from open_cake_ir.evaluation.timing import timing_latencies, timing_statistic
+
 import fcntl
 import json
 import math
@@ -305,15 +307,16 @@ class TaskIncumbentRegistry:
         comparison = _object(payload["comparison"], "incumbent comparison")
         source = _object(payload["source"], "incumbent source")
         authority = ('run_specification' if events[0]['kind']==_RUN_PROMOTION_KIND else 'campaign_lock')
-        if set(comparison) != {
+        statistic = timing_statistic(comparison)
+        if set(comparison) != ({
             "baseline_candidate_sha256",
             "classification",
             "speedup",
-            "candidate_median_ms",
-            "baseline_median_ms",
+            f"candidate_{statistic}_ms",
+            f"baseline_{statistic}_ms",
             "measurement_quality_passed",
             "materiality_ratio",
-        } or set(source) != {
+        } | ({'statistic'} if statistic == 'mean' else set())) or set(source) != {
             authority+"_path",
             authority+"_sha256",
             "evidence_root",
@@ -362,7 +365,7 @@ class TaskIncumbentRegistry:
             receipt.get("timing"), "incumbent confirmation timing"
         )
         receipt_medians = _object(
-            receipt_timing.get("pooled_medians_ms"),
+            timing_latencies(receipt_timing),
             "incumbent confirmation medians",
         )
         if (
@@ -378,10 +381,11 @@ class TaskIncumbentRegistry:
             != comparison.get("classification")
             or receipt_timing.get("measurement_quality_passed") is not True
             or receipt_timing.get("speedup") != comparison.get("speedup")
+            or timing_statistic(receipt_timing) != statistic
             or receipt_medians.get("candidate")
-            != comparison.get("candidate_median_ms")
+            != comparison.get(f"candidate_{statistic}_ms")
             or receipt_medians.get("baseline")
-            != comparison.get("baseline_median_ms")
+            != comparison.get(f"baseline_{statistic}_ms")
         ):
             raise ValueError("incumbent confirmation receipt differs")
         return {
@@ -662,7 +666,8 @@ def _publish_incumbent(project,registry_root,evidence_path,*,document,selected_r
         _object(document["evaluation_protocol"], "evaluation protocol")
     )
     speedup = timing.get("speedup")
-    medians = _object(timing.get("pooled_medians_ms"), "confirmation medians")
+    statistic = timing_statistic(timing)
+    medians = timing_latencies(timing)
     if (
         protocol is None
         or timing.get("classification") != "first_arm_faster"
@@ -756,8 +761,9 @@ def _publish_incumbent(project,registry_root,evidence_path,*,document,selected_r
             "baseline_candidate_sha256": baseline["candidate_sha256"],
             "classification": timing["classification"],
             "speedup": timing["speedup"],
-            "candidate_median_ms": medians["candidate"],
-            "baseline_median_ms": medians["baseline"],
+            **({"statistic": statistic} if statistic == "mean" else {}),
+            f"candidate_{statistic}_ms": medians["candidate"],
+            f"baseline_{statistic}_ms": medians["baseline"],
             "measurement_quality_passed": True,
             "materiality_ratio": protocol.materiality_ratio,
         }

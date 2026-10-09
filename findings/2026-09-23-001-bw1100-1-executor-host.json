@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-23-001",
+  "kind": "capacity",
+  "date": "2026-09-23",
+  "title": "bw1100-1 needs its own captured gfx938 Executor host before a transfer Run",
+  "backend": "triton",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@51a3a9fb8a1743abe4a5ed44431c6f775a6d6506",
+  "executor_revision": "gfx938@51a3a9fb8a1743abe4a5ed44431c6f775a6d6506",
+  "evidence": {
+    "workspace": "bw1100-1:/home/testuser01/oci-transfer-b300-bw1101-node4-20260923",
+    "record": "capture_node4_host.sh and the captured runtime/hosts/gfx938.json in task/dcu-bw1100-1-host",
+    "observation": "node4 reports BW1101 gfx938 and one selected visible device in the exact DTK image. Python, PyTorch and Triton package versions match the prior gfx938 capture, but the host kernel release, build LD_LIBRARY_PATH and rocm-smi version differ. The existing gfx938 Executor belongs to node2 and cannot name node4. A first device probe failed within a 64 MiB container tmpfs; a 1 GiB successor passed without a kernel launch. Host capture then admitted the new closure and its profiler."
+  },
+  "observation": "A same-target device on a second node is not the same Executor host. Reusing the node2 capture would misstate the environment of every compiled and measured artifact.",
+  "proposed_change": "Commit the node4 gfx938 host capture on a separate source successor, retain the node2 capture at its historical commit, and independently review the resulting Executor identity. Run the frozen five-case pair and target-local timer only after source, host, toolchain and device admission pass at that new commit.",
+  "principles": "P2/P8 make the exact target environment inspectable; P6 retains Corpus Gate. No Schedule syntax, Target hardware fact or backend capability is generalized from the new host.",
+  "decision": "accepted",
+  "implemented_in": "d61d7c423a61f50c788f26d36228dc3163968166",
+  "verified_by": "bw1100-1:/home/testuser01/oci-transfer-b300-bw1101-node4-20260923/node4-k64-confirmatory-v1/result.json: exact gfx938@4c9f4cc0 Executor admitted; all five cases passed before and after HIP timing with zero output mismatches, measurement quality passed, and the candidate won all ten pairs. The K=256 fixed-pair confirmation in node4-pair-confirmatory-v1/result.json also passed correctness and quality. These qualify the captured host for this bounded Workload, not every gfx938 kernel or physical GPU exclusivity.",
+  "partial_verification": {
+    "source_commit": "d61d7c423a61f50c788f26d36228dc3163968166",
+    "tests": "47 focused Executor, host-capture, source-identity and Target contracts passed; 1 optional test skipped; 102 subtests passed",
+    "corpus_cases": 179,
+    "scope": "The canonical host-capture tool returned host_admitted=true and profiler_admitted=true on bw1100-1. The successor's software checks pass at a clean commit. Bounded pairwise-sqdist device correctness and timing were subsequently verified by the cited receipts; unrelated Workloads, physical GPU exclusivity and E/P treatment effects remain outside this Finding."
+  }
+}

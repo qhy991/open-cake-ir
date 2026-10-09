@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-04",
+  "id": "F-2026-10-04-004",
+  "kind": "bug",
+  "backend": "triton",
+  "target": [
+    "xcore1002",
+    "gfx938",
+    "sm_103a"
+  ],
+  "compiler_revision_id": "open-cake-ir@634e1ebfa5180be23aa0bf3b2d0a87d0a533eac3",
+  "executor_revision": "no device execution; native-source admission only",
+  "title": "Native Triton source admission uses32-lane launch checks for every target",
+  "decision": "accepted",
+  "evidence": {
+    "pinned_before": "a2d0f1ca",
+    "probe": "tests/contracts/test_native_triton_launch_width.py",
+    "workspace": "/tmp/cake-native-triton-width-red-v2",
+    "source": "src/open_cake_ir/lab/environments.py::NativeTritonEnvironment.build"
+  },
+  "observation": "At the actual native authoring boundary, a32-group xcore1002 or gfx938 request reaches the builder because the structural check computes32*32=1024threads. Both declared routes have64lanes, so the requested launch is2048threads and exceeds the Target maximum1024. The same group count is legal on the32-lane sm_103a route. Removing warp_size also leaves the constructor admitted. The pinned before suite reproduces three failures and one valid32-lane control; the rejecting builder fixture performs no compilation or device work.",
+  "proposed_change": "Resolve the existing Triton route from the immutable emission requirements, require declared num_warps and compute block threads from the route-owned lane width before building. Refuse missing route facts rather than substituting32. Use vendor-neutral wording in the shared structural specification refusal. Add no Target table, vendor fallback, hardware limit, IR primitive or experiment policy.",
+  "implemented_in": "3de36ac1",
+  "verified_by": {
+    "commit": "3de36ac1",
+    "tests": "55 focused CPU contracts passed, including original before probes, Native Triton pairing, declared width and vendor-neutrality controls",
+    "scope": "Native source/launch admission; no new hardware or performance qualification"
+  },
+  "promotion_disposition": "Promoted the shared native-authoring structural guard. Oversized wave64 requests now refuse before any builder call; valid32-lane requests retain their path. Old frozen Runs remain unchanged."
+}

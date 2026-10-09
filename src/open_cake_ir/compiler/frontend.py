@@ -535,6 +535,17 @@ class _Builder:
                         index = self.symbols[item["name"]]
                         if index not in reads:
                             reads.append(index)
+        if kind == "reduce":
+            # Python exposes the familiar explicit default and negative-axis
+            # spellings. The IR still records only its positive canonical axis
+            # and the exceptional across_loop=False commitment.
+            if parameters.get("across_loop") is True:
+                del parameters["across_loop"]
+            axis = parameters.get("axis")
+            if reads and type(axis) is int and axis < 0:
+                rank = len(self.buffer(reads[0], node).shape)
+                if -rank <= axis:
+                    parameters["axis"] = axis + rank
         outputs = controls.pop("out", None)
         if outputs is None:
             if not reads and kind != "coordinate":
@@ -577,6 +588,13 @@ class _Builder:
                 if type(axis) is not int or not 0 <= axis < len(shape):
                     self.fail(node, "reduce requires a valid static axis")
                 shape = shape[:axis] + shape[axis + 1:] or [1]
+            elif kind == "transpose":
+                if len(reads) != 1 or len(first.shape) != 2:
+                    self.fail(node, "transpose requires one rank-two register value")
+                shape = list(reversed(first.shape))
+            elif kind == "scan":
+                # The scan's accumulator type owns its result, as in the verifier.
+                dtype = "int32" if first.dtype.value == "int32" else "fp32"
             elif kind == "cast":
                 if "to" not in parameters:
                     self.fail(node, "lm.cast requires to=...", "SCHEDULE_STRUCTURE",
@@ -742,6 +760,19 @@ class _Builder:
             if key in options:
                 self.document[key] = options.pop(key)
                 self.mark(key, decorator)
+        if "program_map" in options:
+            mapping = options.pop("program_map")
+            keyword = next(item for item in decorator.keywords if item.arg == "program_map")
+            if not isinstance(mapping, dict):
+                self.fail(keyword.value, "program_map must be a dictionary of map options")
+            if "axes" in mapping:
+                self.fail(keyword.value, "lm.program declarations own program_map.axes")
+            # Axes remain single-assignment declarations in the body. All other fields
+            # go directly to ProgramMap's existing structural and semantic checks.
+            self.document["program_map"] = dict(axes=[], **mapping)
+            self.mark("program_map", keyword.value)
+            for key, value in zip(keyword.value.keys, keyword.value.values):
+                self.mark(f"program_map.{self.literal(key)}", value)
         if options:
             self.fail(decorator, f"unknown schedule options: {', '.join(options)}")
         args = function.args

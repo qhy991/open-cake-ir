@@ -1,0 +1,160 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "x",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "values"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "y",
+      "indices": [
+        {
+          "name": "row",
+          "source": "program"
+        },
+        {
+          "dimension": 1,
+          "source": "dimension"
+        }
+      ],
+      "operation": "store_y"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "int32",
+      "mode": "input",
+      "name": "x",
+      "shape": [
+        2,
+        8
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "int32",
+      "mode": "output",
+      "name": "y",
+      "shape": [
+        2,
+        8
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "int32",
+      "mode": "scratch",
+      "name": "values",
+      "shape": [
+        8
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "int32",
+      "mode": "scratch",
+      "name": "prefix",
+      "shape": [
+        8
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "gfx938_int32_max_scan"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "values",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "x"
+      ],
+      "role": "compute",
+      "writes": [
+        "values"
+      ]
+    },
+    {
+      "depends_on": [
+        "values"
+      ],
+      "id": "prefix",
+      "kind": "scan",
+      "parameters": {
+        "axis": 0,
+        "direction": "forward",
+        "op": "max"
+      },
+      "reads": [
+        "values"
+      ],
+      "role": "compute",
+      "writes": [
+        "prefix"
+      ]
+    },
+    {
+      "depends_on": [
+        "prefix"
+      ],
+      "id": "store_y",
+      "kind": "store",
+      "parameters": {
+        "coalesced": false
+      },
+      "reads": [
+        "prefix"
+      ],
+      "role": "compute",
+      "writes": [
+        "y"
+      ]
+    }
+  ],
+  "outputs": [
+    "y"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 0,
+        "name": "row",
+        "tile": 1
+      }
+    ]
+  },
+  "roles": [
+    {
+      "execution_groups": [
+        0
+      ],
+      "name": "compute"
+    }
+  ],
+  "schedule_id": "gfx938-int32-max-scan",
+  "schema_version": 2,
+  "target": "gfx938",
+  "tile_loops": []
+}

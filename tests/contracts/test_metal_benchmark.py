@@ -215,7 +215,7 @@ class MetalBenchmarkContracts(unittest.TestCase):
             ("batch", {"stage": "compile", "artifact": "unrecognized", "status": "started"},
              "batch", None, "unknown", None),
             ("batch", {"stage": "compile", "artifact": "canonical", "status": "started"},
-             "compile", "canonical", "compiler_generated", "verifier"),
+             "compile", "canonical", "compiler_generated", "backend_triage"),
         )
         for failure_at, event, stage, artifact, origin, route in cases:
             with self.subTest(failure_at=failure_at, event=event), tempfile.TemporaryDirectory() as temporary:

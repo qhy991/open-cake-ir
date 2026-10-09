@@ -213,3 +213,17 @@ raise SystemExit(7)
                 process.kill()
                 process.wait()
         self.unlocked()
+
+    def test_failure_artifacts_cross_actual_worker_terminal_without_a_receipt(self):
+        def device(authority,result):
+            local_broker.observe_local_job('maca')
+            error=RuntimeError('native observation failed')
+            error.artifact_payloads={'native_activity':b'{"records":[{"start_ns":17,"end_ns":16}]}'}
+            raise error
+        result,inputs,gold=self.run_worker(device)
+        self.assertEqual(result['schema_version'],2)
+        self.assertEqual(result['failure_class'],'RuntimeError')
+        self.assertIsNone(result['receipt'])
+        path=self.request.parent/result['failure_artifacts']['native_activity']
+        self.assertEqual(json.loads(path.read_bytes())['records'][0]['start_ns'],17)
+        self.unlocked()

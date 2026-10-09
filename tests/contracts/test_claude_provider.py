@@ -29,6 +29,127 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    def recovered_restricted_events(self):
+        events = self.events()
+        events[0]['cwd'] = str(self.workspace)
+        arguments = {'file_path': str(self.root / 'wrong-task' / self.candidate.name), 'content': 'denied'}
+        message = 'outside actor workspace; --restricted confines the file tools to the working directory.'
+        denied_call = {'type': 'assistant', 'session_id': SESSION, 'parent_tool_use_id': None,
+            'message': {'model': 'exact-requested-model', 'content': [
+                {'type': 'tool_use', 'id': 'toolu_denied', 'name': 'Write', 'input': arguments}]}}
+        notice = {'type': 'system', 'subtype': 'permission_denied', 'tool_name': 'Write',
+            'tool_use_id': 'toolu_denied', 'decision_reason_type': 'other',
+            'decision_reason': '--restricted: path outside the working directory',
+            'message': message, 'uuid': OTHER_SESSION, 'session_id': SESSION}
+        completion = {'type': 'user', 'session_id': SESSION, 'parent_tool_use_id': None,
+            'message': {'content': [{'type': 'tool_result', 'tool_use_id': 'toolu_denied',
+                                      'is_error': True, 'content': message}]}}
+        events[1:1] = [denied_call, notice, completion]
+        events[-1]['permission_denials'] = [{'tool_name': 'Write', 'tool_use_id': 'toolu_denied',
+                                             'tool_input': arguments}]
+        return events
+
+    def test_v5_restricted_denial_recovery_preserves_raw_events_and_successful_path(self):
+        raw = self.raw(self.recovered_restricted_events())
+        turn = self.normalize(raw, event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.candidates, self.normalize().candidates)
+        parsed = parse_claude_turn_events(raw, expected_terminal_message=TERMINAL,
+                                        event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        self.assertEqual(parsed.candidate_path, str(self.candidate))
+        self.assertEqual(parsed.write_tools, ('Write',))
+        self.assertEqual(parsed.provider_tokens, 205)
+        self.assertEqual([(a.item_type, a.status) for a in turn.tool_activity[:2]],
+                         [('tool_use', 'error_recovered'), ('permission_denial', 'observed')])
+        # Historical v4 never gains the successor's interpretation.
+        with self.assertRaisesRegex(ValueError, 'declared event contract'):
+            self.normalize(raw)
+
+    def test_v5_refuses_unwitnessed_malformed_or_successful_permission_denials(self):
+        cases = []
+        e = self.recovered_restricted_events(); e.pop(2); cases.append(e)
+        e = self.recovered_restricted_events(); e.pop(3); cases.append(e)
+        e = self.recovered_restricted_events(); e[-1]['permission_denials'] = []; cases.append(e)
+        e = self.recovered_restricted_events(); e[-1]['permission_denials'][0]['tool_input'] = {}; cases.append(e)
+        e = self.recovered_restricted_events(); e[-1]['permission_denials'] *= 2; cases.append(e)
+        e = self.recovered_restricted_events(); e[3]['message']['content'][0]['is_error'] = False; cases.append(e)
+        e = self.recovered_restricted_events(); e[3]['message']['content'][0]['content'] = 'actually read outside'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['tool_use_id'] = 'unbound'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['decision_reason'] = 'user approved outside write'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['uuid'] = 'bad'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['unknown'] = True; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['session_id'] = OTHER_SESSION; cases.append(e)
+        e = self.recovered_restricted_events(); e[1]['message']['content'][0]['name'] = 'Bash'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2], e[3] = e[3], e[2]; cases.append(e)
+        e = self.recovered_restricted_events(); e[4]['message']['content'][0]['input']['file_path'] = str(self.root / self.candidate.name); cases.append(e)
+        for index, events in enumerate(cases):
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v5_denied_or_failed_write_never_witnesses_a_candidate(self):
+        events = self.recovered_restricted_events()
+        del events[4:6]
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        events = self.events()
+        events[2]['message']['content'][0]['is_error'] = True
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v5_retains_compaction_and_ui_boundaries(self):
+        events = self.recovered_restricted_events()
+        events[1:1] = self.compaction_events()
+        events.insert(0, self.ui_preamble())
+        turn = self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        self.assertEqual([a.status for a in turn.tool_activity if a.item_type == 'context_compaction'],
+                         ['started', 'started', 'completed', 'boundary'])
+
+    def test_v5_common_replay_requires_the_retained_denial_projection(self):
+        from hashlib import sha256
+        from types import SimpleNamespace
+        from open_cake_ir.lab.replay.provider import _replay_provider_turns
+        from open_cake_ir.lab.task_package import TaskPackage
+        contract = claude.CLAUDE_RESTRICTED_EVENT_CONTRACT
+        events = self.recovered_restricted_events()
+        raw = self.raw(events)
+        turn = self.normalize(raw, event_contract=contract)
+        package = TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')
+        state = {'kind': 'ralph_state_v1', 'iteration': 1, 'cumulative_provider_tokens': 0,
+                 'terminal_reason': None}
+        objects = {'provider_events': raw, 'provider_reference_bundle': package.evidence_bundle(state),
+                   'provider_submission_envelope': self.submission, 'candidate_submission_0000': turn.candidates[0]}
+        payload = {'turn': 1, 'thread_id': SESSION, 'turn_provider_tokens': turn.provider_tokens,
+                   'cumulative_provider_tokens': turn.provider_tokens, 'normalization': turn.normalization,
+                   'candidate_count': 1,
+                   'objects': [{'role': role, 'sha256': sha256(value).hexdigest()} for role, value in objects.items()],
+                   'auxiliary_activity': [dict(item.document) for item in turn.tool_activity]}
+        arguments = dict(arm='open_cake', audit=SimpleNamespace(run_id='open_cake-1'),
+            evidence=SimpleNamespace(read_object=lambda ref: objects[ref['role']]),
+            expected_task_package=package, maximum_candidates_per_turn=1,
+            provider_events=[{'payload': payload}], event_contract=contract,
+            provider_authority={'event_contract': contract, 'model': 'exact-requested-model'})
+        self.assertEqual(_replay_provider_turns(**arguments)[0], {1: turn.provider_tokens})
+        payload['auxiliary_activity'] = [item for item in payload['auxiliary_activity']
+                                         if item['item_type'] != 'permission_denial']
+        with self.assertRaisesRegex(ReplayRefusal, 'provider_turn_completed'):
+            _replay_provider_turns(**arguments)
+
+    def test_v4_qualification_cannot_admit_v5_runtime(self):
+        from hashlib import sha256
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        from open_cake_ir.lab.task_package import TaskPackage
+        previous = self.builder()
+        receipt = ProviderQualificationReceipt(provider_revision=previous.provider_revision,
+            executable_sha256=sha256(self.executable.read_bytes()).hexdigest(),
+            configuration_sha256=sha256(canonical_json_bytes(previous.configuration)).hexdigest(),
+            initial_and_resume_equivalent=True, file_lifecycle_observed=True, usage_observed=True,
+            qualified=True, scope='live_two_turn_tool_rich_provider')
+        with self.assertRaisesRegex(ValueError, 'configuration differs from provider qualification'):
+            ClaudeRunProvider(qualification=receipt,
+                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)},
+                task_packages={'open_cake-1': TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')})
+
     def test_raw_python_file_has_the_same_sealed_projection_as_codex(self):
         from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
         from open_cake_ir.serialization import canonical_json_bytes
@@ -272,6 +393,42 @@ class ClaudeProviderContracts(unittest.TestCase):
                     arm="open_cake")
         args.update(kwargs)
         return normalize_claude_turn(self.raw() if raw is None else raw, **args)
+
+    def ui_preamble(self):
+        return dict(type='system', subtype='ui_invalidate', event='ui.render',
+                    uuid=OTHER_SESSION, session_id=SESSION)
+
+    def test_v4_ui_preamble_retains_raw_events_candidate_and_usage(self):
+        raw = self.raw([self.ui_preamble(), *self.events()])
+        ordinary = self.normalize()
+        observed = self.normalize(raw)
+        self.assertEqual(observed.raw_events, raw)
+        self.assertEqual(observed.candidates, ordinary.candidates)
+        self.assertEqual(observed.provider_tokens, ordinary.provider_tokens)
+        self.assertEqual(observed.tool_activity[0].item_type, 'ui_invalidate')
+        usage = reported_claude_usage(raw, expected_model='exact-requested-model')
+        self.assertIsNotNone(usage)
+        self.assertEqual(usage.provider_tokens, ordinary.provider_tokens)
+        with self.assertRaises(ValueError):
+            self.normalize(raw, event_contract=CLAUDE_LEGACY_EVENT_CONTRACT)
+
+    def test_ui_preamble_does_not_hide_unknown_events_or_session_changes(self):
+        for key, value in [('event','tool.call'),('uuid','bad'),('session_id',OTHER_SESSION),
+                           ('payload','untrusted'),('subtype','unknown')]:
+            with self.subTest(key=key):
+                prefix = self.ui_preamble(); prefix[key] = value
+                raw = self.raw([prefix,*self.events()])
+                with self.assertRaises(ValueError):
+                    self.normalize(raw)
+                self.assertIsNone(reported_claude_usage(raw, expected_model='exact-requested-model'))
+        for events in ([self.ui_preamble(),self.ui_preamble(),*self.events()],
+                       [self.ui_preamble(),*self.events()[1:]]):
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(events))
+        events = [self.ui_preamble(),*self.events()]
+        events[-1]['structured_output']['turn'] = 9
+        with self.assertRaisesRegex(ValueError,'structured terminal'):
+            self.normalize(self.raw(events))
 
     def test_response_alias_is_explicit_and_preserves_raw_identity_and_usage(self):
         alias = "vendor/exact-requested-model"

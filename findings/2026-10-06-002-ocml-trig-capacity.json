@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-06",
+  "id": "F-2026-10-06-002",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Explicit OCML trig for the RoPE arithmetic stage",
+  "executor_revision": "external-bw1100-bench@77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "compiler_revision_id": "open-cake-ir@76a937bef4f7f61cdc3fda547cb62a071ffc2f35",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-compiler-night-rope-base-20261005-r1",
+    "locators": [
+      "campaign/instruction-exploration/attempts/rope-trig-gap-probe-n16384.json",
+      "campaign/instruction-exploration/HANDOFF.md"
+    ]
+  },
+  "observation": "Construction refuses cos/sin while the native prototype uses the OCML FP32 software path. Hardware trig assembly acceptance has no numerical qualification.",
+  "proposed_change": "Add explicit FP32 OCML sin/cos with shared typing/effects and HSACO-only library emission; preserve multiplication and BF16 rounding boundaries. No approximate hardware trig or packed-output primitive is added.",
+  "implemented_in": "dfb58b84cf41a50eab37f1576f61acc59fe98718",
+  "verified_by": {
+    "cpu": "Independent shared Compiler review approved dfb58b84. Affected91 DCU contracts/167 subtests pass; new hardware Corpus cases supplement the shared suite and preserve existing expectations. Final CI/full-suite outcomes are owned by the current core/hardware PRs.",
+    "device": "/data3/testuser01/experiments/bw1100-compiler-trig-scan-qualification-20261006/bench/campaign/results/component-summary.json; component-isa.json: each trig operation matches8,388,620 external Torch results exactly in FP32 and BF16. Full fused RoPE ABI/call performance is not qualified by this component check.",
+    "release": "component and decoder correctness/caller/timing admissions exit0, no running container, after_vram0%, no KFD visibility; four terminal receipts under the qualification root.",
+    "scope": "Component capacity for trig/max scan; original whole-task same-choice replay for reduction width. No global performance/search-efficiency/default-width/ISA precision claim."
+  },
+  "promotion_disposition": "Promote reviewed capacity only after shared and hardware branch gates. A fresh equal-budget authoring result remains separate; frozen Runs and native outcomes stay unchanged."
+}

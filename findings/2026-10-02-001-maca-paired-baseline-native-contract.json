@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-10-02-001",
+  "date": "2026-10-02",
+  "kind": "bug",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@080be989bfc6419e7a4137257066ccb48e346084",
+  "executor_revision": "xcore1002@080be989bfc6419e7a4137257066ccb48e346084",
+  "title": "Paired baseline admission omitted the declared MACA native family and kernel identity",
+  "decision": "accepted",
+  "implemented_in": "8a1b51e35525b2c508d8a28b3ec4a3854dbfb2eb",
+  "verified_by": {
+    "source_commit": "8a1b51e35525b2c508d8a28b3ec4a3854dbfb2eb",
+    "retained_baseline_replay": "c550-2:/root/open-cake-experiments/claude-glm53-run-20261002/baseline-admission-replay.json",
+    "CPU_contracts": "95 passed, including the actual baseline-admission caller with native zero/two scratch pointers and wrong-count/wrong-kernel counterexamples",
+    "Corpus_Gate": "180 unchanged cases passed",
+    "scope": "Admission replay only; no GPU or performance qualification"
+  },
+  "evidence": {
+    "host": "c550-2",
+    "preflight_failure": "/root/open-cake-experiments/claude-glm53-run-20261002/run-preflight.log",
+    "baseline_bundle": "/root/open-cake-experiments/claude-glm53-run-20261002/baseline-preparation-v3/baseline/candidate.json",
+    "baseline_build": "/root/open-cake-experiments/claude-glm53-run-20261002/baseline-preparation-v3-exit.json",
+    "qualification": "/root/open-cake-experiments/claude-glm53-run-20261002/provider-qualification.json"
+  },
+  "observation": "The committed C550-2 runtime successfully compiled and sealed the FP32 pairwise_sqdist R1024 K1024 N64 starter with two native launcher scratch pointers. Run preparation then refused before author optimization or device evaluation: validate_paired_baseline called _hidden_pointers without codegen_arch or kernel_name, causing device_image to receive architecture=None. The retained artifact is a CLANG offload bundle; its Target already declares the xcore1000 codegen family independently of physical xcore1002 and Triton API architecture 80. A CPU regression through the actual baseline-admission caller reproduces the same refusal.",
+  "proposed_change": "Pass the frozen lowering requirements' codegen_arch and kernel_entry_point to the existing native argument inspector, matching sealing. Keep Target fact ownership, artifact inspection, source/launch comparison and wrong-kernel/hidden-pointer refusals intact.",
+  "principles": "P1 author syntax unchanged; P2 retain inspectable lowering facts; P3 no second architecture table; P4/P5/P7 reuse the existing native ABI inspector and its legality checks; P6 exercise the real admission caller for zero/two scratch pointers and owned counterexamples plus the unchanged Corpus; P8 inspect the exact declared native family without substituting a target.",
+  "promotion_disposition": "Promote the Lab admission bug fix after retained-baseline replay and software gates. No new primitive, target capability or performance qualification; the original failed preparation remains failed."
+}

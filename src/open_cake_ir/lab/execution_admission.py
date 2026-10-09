@@ -34,7 +34,8 @@ def campaign_provider_bindings(lock, project_root):
             admitted_scopes={'zero_gpu_contract_fixture_only',
                              required_live_provider_qualification_scope(lock.claim_scope)},
             require_native_pair=native_backend(comparison_arm(arms)) is not None,
-            evaluation_protocol=lock.document['evaluation_protocol'])
+            evaluation_protocol=lock.document['evaluation_protocol'],
+            required_environment_kinds=(arm['environment_kind'],))
         result[name] = (provider, qualification)
     return result
 
@@ -148,6 +149,8 @@ def validate_run_bindings(specification, *, project_root, workload_loader, provi
     from .admission import admit_run_inputs
 
     document = specification.document
+    from .admission import admit_native_skill_authoring
+    admit_native_skill_authoring(authoring=document['authoring'], project_root=project_root)
     protocol = document['evaluation_protocol']
     if (getattr(evaluator, 'protocol', None) != protocol
         or getattr(evaluator, 'protocol_sha256', None) != sha256(_canonical_json_bytes(protocol)).hexdigest()):

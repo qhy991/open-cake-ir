@@ -93,14 +93,170 @@ def device_image(payload: bytes, architecture: str) -> bytes:
     return image
 
 
+def _metadata_object(payload: bytes):
+    """Decode the maps, arrays, strings and integers in a MACA MessagePack note.
+
+    This is a bounded metadata subset, not a general serialization interface.
+    Unsupported encodings, duplicate keys and trailing bytes are refusals.
+    """
+    position = 0
+
+    def take(size):
+        nonlocal position
+        if size < 0 or position + size > len(payload):
+            raise ValueError("MACA metadata is truncated")
+        result = payload[position:position + size]
+        position += size
+        return result
+
+    def number(size):
+        return int.from_bytes(take(size), "big")
+
+    def read(depth=0):
+        if depth > 32:
+            raise ValueError("MACA metadata nesting exceeds the supported domain")
+        tag = number(1)
+        if tag < 0x80:
+            return tag
+        if tag in (0xCC, 0xCD, 0xCE, 0xCF):
+            return number(1 << (tag - 0xCC))
+        if 0xA0 <= tag <= 0xBF or tag in (0xD9, 0xDA, 0xDB):
+            size = tag & 31 if tag <= 0xBF else number(1 << (tag - 0xD9))
+            try:
+                return take(size).decode("utf-8")
+            except UnicodeError as error:
+                raise ValueError("MACA metadata string is not UTF-8") from error
+        if 0x90 <= tag <= 0x9F or tag in (0xDC, 0xDD):
+            count = tag & 15 if tag <= 0x9F else number(2 if tag == 0xDC else 4)
+            if count > len(payload) - position:
+                raise ValueError("MACA metadata array is truncated")
+            return [read(depth + 1) for _ in range(count)]
+        if 0x80 <= tag <= 0x8F or tag in (0xDE, 0xDF):
+            count = tag & 15 if tag <= 0x8F else number(2 if tag == 0xDE else 4)
+            if count > (len(payload) - position) // 2:
+                raise ValueError("MACA metadata map is truncated")
+            result = {}
+            for _ in range(count):
+                key = read(depth + 1)
+                if not isinstance(key, str) or key in result:
+                    raise ValueError("MACA metadata keys must be unique strings")
+                result[key] = read(depth + 1)
+            return result
+        raise ValueError(f"MACA metadata encoding {tag:#x} is unsupported")
+
+    result = read()
+    if position != len(payload):
+        raise ValueError("MACA metadata has trailing bytes")
+    return result
+
+
+def native_kernel_metadata(payload: bytes, architecture: str, kernel_name: str | None = None) -> dict:
+    """Read the exact kernel's native metadata without a runtime or GPU handle.
+
+    The offload directory, native family and sole kernel identity are admitted
+    together. Argument and allocation readers share this one metadata owner.
+    """
+    image = device_image(payload, architecture)
+    offset = struct.unpack_from("<Q", image, 40)[0]
+    width, count = struct.unpack_from("<HH", image, 58)
+    if width != 64 or count == 0 or offset < 64 or offset + width * count > len(image):
+        raise ValueError("MACA ELF section directory differs")
+    notes = []
+    for index in range(count):
+        row = offset + width * index
+        if struct.unpack_from("<I", image, row + 4)[0] != 7:  # SHT_NOTE
+            continue
+        start, size = struct.unpack_from("<QQ", image, row + 24)
+        end = start + size
+        if start < 64 or end > len(image):
+            raise ValueError("MACA ELF note bounds differ")
+        while start < end:
+            if start + 12 > end:
+                raise ValueError("MACA ELF note is truncated")
+            names, descriptions, kind = struct.unpack_from("<III", image, start)
+            name_start = start + 12
+            desc_start = name_start + ((names + 3) & ~3)
+            next_note = desc_start + ((descriptions + 3) & ~3)
+            if names == 0 or next_note > end:
+                raise ValueError("MACA ELF note is truncated")
+            if image[name_start:name_start + names].rstrip(b"\0") == b"MetaX" and kind == 0x30:
+                notes.append(_metadata_object(image[desc_start:desc_start + descriptions]))
+            start = next_note
+    if len(notes) != 1 or not isinstance(notes[0], dict):
+        raise ValueError("MACA ELF must carry one MetaX kernel metadata note")
+    kernels = notes[0].get("macahca.kernels")
+    if not isinstance(kernels, list) or len(kernels) != 1 or not isinstance(kernels[0], dict):
+        raise ValueError("MACA ELF must declare exactly one kernel")
+    kernel = kernels[0]
+    if (not isinstance(kernel.get(".name"), str)
+            or kernel_name is not None and kernel[".name"] != kernel_name):
+        raise ValueError("MACA native kernel name differs")
+    return kernel
+
+
+def native_pointer_parameters(payload: bytes, architecture: str, kernel_name: str | None = None) -> int:
+    """Read public and launcher scratch pointers from the native ELF, not TTGIR."""
+    kernel = native_kernel_metadata(payload,architecture,kernel_name)
+    args = kernel.get(".args")
+    if not isinstance(args, list) or not args:
+        raise ValueError("MACA native kernel has no argument metadata")
+    pointers = 0
+    hidden = False
+    for argument in args:
+        if not isinstance(argument, dict):
+            raise ValueError("MACA native argument metadata differs")
+        kind = argument.get(".arg_param_pass")
+        if kind == "global_buffer":
+            if (hidden or argument.get(".arg_size_bytes") != 8
+                    or argument.get(".arg_offset_bytes") != pointers * 8):
+                raise ValueError("MACA launcher arguments must be contiguous eight-byte pointers")
+            pointers += 1
+        elif kind in {"hidden_global_offset_x", "hidden_global_offset_y", "hidden_global_offset_z",
+                      "hidden_none", "hidden_multigrid_sync_arg"}:
+            hidden = True
+        else:
+            raise ValueError("MACA native argument kind is unsupported")
+    if pointers == 0:
+        raise ValueError("MACA native kernel declares no launcher pointers")
+    return pointers
+
+
+def native_allocation(payload: bytes, architecture: str, kernel_name: str) -> dict:
+    """Report native allocation fields without inventing CUDA equivalents.
+
+    These are the exact ELF metadata names. Private storage is not dynamic spill
+    traffic, scalar registers are not per-lane registers, and static shared storage
+    excludes the launch's dynamic shared allocation. No residency or latency model
+    is inferred from these fields.
+    """
+    kernel = native_kernel_metadata(payload, architecture, kernel_name)
+    fields = ('.mtreg_count', '.streg_count', '.private_memory_size',
+              '.share_memory_size', '.max_block_size')
+    facts, missing = {}, []
+    for name in fields:
+        if name not in kernel:
+            missing.append(name)
+            continue
+        value = kernel[name]
+        if type(value) is not int or value < 0:
+            raise ValueError(f'MACA native allocation {name} must be a nonnegative integer')
+        facts[name] = value
+    return {'kind': 'maca_native_allocation', 'native_family': architecture,
+            'kernel_name': kernel_name, 'facts': facts, 'missing_metadata': missing,
+            'unmodeled': ['stack bytes', 'dynamic spill traffic',
+                          'register allocation granularity', 'achieved occupancy',
+                          'latency prediction']}
+
+
 @dataclass(frozen=True)
 class MetaxRoute:
-    """The observed FlagTree 0.5.1+metax3.1 compilation interface.
+    """The observed MACA Triton compilation interface.
 
     This package emits no source/LLVM/PTX assembly entries. The source role records
     the exact kernel module passed to compilation; TTIR and TTGIR are actual outputs.
-    It declares no explicit scratch pointers or scratch-size metadata. The SDK fills
-    its own hidden dispatch fields; these are not user parameters to mcModuleLaunchKernel.
+    Triton 3.1 declares no launcher scratch pointers; the captured 3.6 route adds two
+    zero-sized scratch pointers. Native ELF argument metadata owns their count.
+    SDK-populated hidden dispatch fields are not launcher pointer parameters.
     """
 
     gpu_backend: str = "maca"
@@ -139,3 +295,12 @@ class MetaxRoute:
                 or target.warp_size != requirements["warp_size"]):
             raise ValueError("MACA compiler metadata differs from the declared target")
         device_image(artifacts[self.binary_role], requirements.get("codegen_arch"))
+        scratch = ("global_scratch_size", "profile_scratch_size")
+        present = [hasattr(metadata, name) for name in scratch]
+        if any(present) and (not all(present) or any(
+                type(getattr(metadata, name)) is not int or getattr(metadata, name) != 0 for name in scratch)):
+            raise ValueError("MACA compilation has unmodeled auxiliary scratch requirements")
+        native = native_pointer_parameters(artifacts[self.binary_role], requirements.get("codegen_arch"), metadata.name)
+        extra = native - pointer_parameters(artifacts[self.text_role])
+        if extra not in (0, 2) or extra == 2 and not all(present):
+            raise ValueError("MACA native scratch slots lack a qualified zero-sized compiler contract")

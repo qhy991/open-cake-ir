@@ -10,7 +10,7 @@ from hashlib import sha256
 import json
 from collections.abc import Mapping
 
-from open_cake_ir.compiler import Program
+from open_cake_ir.compiler import Program, CompilerError
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.serialization import canonical_json_bytes
 
@@ -67,6 +67,10 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
             return ActionResolution(action_sha256, 'submit', payload)
         return ActionResolution(action_sha256, 'submit', None, reason='author_format',
                                 message='Author must submit Python source in a python_source member.')
+    if (source_bundle and environment_kind=='open_cake' and isinstance(document,Mapping)
+        and set(document)=={'python_bundle_error'} and isinstance(document['python_bundle_error'],str)):
+        return ActionResolution(action_sha256,'submit',None,reason='author_format',
+                                message=document['python_bundle_error'])
     if not isinstance(document, Mapping) or 'action' not in document:
         program_source = (source_bundle and isinstance(document, Mapping)
                           and set(document) == {'python_program_source', 'program_id'}
@@ -114,3 +118,25 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
 def resolve_action_set(payloads, **context):
     """All parents come from earlier turns; same-turn proposal ordering grants nothing."""
     return tuple(resolve_action(payload, **context) for payload in payloads)
+
+
+def author_parent_choices(*, candidates, baselines, turn, allow_python):
+    """Derive usable parent names and stage contracts from this Run's own bytes.
+
+    This is a Turn projection, not an alias registry or another source of authority.
+    All Cake authors receive it; transformation permission remains in Run knowledge.
+    """
+    sources = [(f'baseline:{name}', source) for name, source in baselines.items()]
+    sources.extend(candidates.items())
+    choices = []
+    for parent, source in sources:
+        try:
+            program = candidate_program(source, allow_python=allow_python)
+        except (CompilerError, TypeError, ValueError):
+            continue
+        choices.append({'parent': parent,
+            'stages': [{'name': stage.name, 'schedule_id': stage.schedule.schedule_id,
+                        'entry_point': stage.schedule.lowering.entry_point}
+                       for stage in program.stages],
+            'suggested_schedule_id': f'rewrite_turn_{turn}_parent_{len(choices)+1}'})
+    return choices

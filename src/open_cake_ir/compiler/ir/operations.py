@@ -54,6 +54,8 @@ def elementwise_result_dtype(operands: Iterable[DType], op: ElementwiseOp | None
     dtypes = set(operands)
     if dtypes == {DType.INT32} and op in INT_ARITHMETIC:
         return DType.INT32
+    if op in {ElementwiseOp.SIN, ElementwiseOp.COS}:
+        return DType.FP32 if dtypes == {DType.FP32} else None
     if op in {ElementwiseOp.FLOOR_DIV, ElementwiseOp.REMAINDER}:
         return None
     if not dtypes or not dtypes <= ELEMENTWISE_FLOAT_DTYPES:
@@ -271,7 +273,12 @@ class ReduceParameters:
 
 @dataclass(frozen=True)
 class ScanParameters:
-    """An inclusive running prefix along one declared axis."""
+    """An inclusive resident prefix; integer sum wraps in signed INT32.
+
+    Floating inputs accumulate in FP32. INT32 inputs retain INT32 and sum
+    modulo 2**32, interpreted as signed two's-complement. No carry between
+    independently launched tiles or tile-loop iterations is implied.
+    """
 
     op: ScanOp
     axis: int
@@ -414,6 +421,18 @@ class SelectParameters:
 
 
 @dataclass(frozen=True)
+class TransposeParameters:
+    """Rank-two register-value axis swap; no storage or dtype conversion."""
+
+
+@dataclass(frozen=True)
+class BroadcastInDimParameters:
+    """Source-axis positions in the declared result; shape has one buffer owner."""
+
+    dimensions: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class StoreParameters:
     coalesced: bool
 
@@ -424,7 +443,7 @@ class FenceProxyParameters:
 
 
 OperationParameters = Union[
-    CoordinateParameters, CompareParameters, SelectParameters,
+    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters, TransposeParameters,
     LoadParameters,
     MmaParameters,
     EpilogueParameters,
@@ -468,6 +487,15 @@ def _operation_parameters(
         if "scalar" in obj and type(scalar) not in {int, float}:
             raise ScheduleParseError(f"{context}.scalar must be a number")
         return CompareParameters(obj["op"], scalar)
+    if kind is OperationKind.TRANSPOSE:
+        _strict_object(value, required=set(), context=context)
+        return TransposeParameters()
+    if kind is OperationKind.BROADCAST_IN_DIM:
+        obj = _strict_object(value, required={"dimensions"}, context=context)
+        values = _object_list(obj["dimensions"], f"{context}.dimensions", allow_empty=False)
+        return BroadcastInDimParameters(tuple(
+            _nonnegative_int(axis, f"{context}.dimensions[{i}]") for i, axis in enumerate(values)
+        ))
     if kind is OperationKind.SELECT:
         obj = _strict_object(value, required=set(), optional={"false_value"}, context=context)
         fallback = obj.get("false_value")
@@ -727,12 +755,12 @@ def _operation_parameters(
         )
         op = _enum(ElementwiseOp, obj["op"], f"{context}.op")
         instruction = obj.get("instruction")
-        if op in (ElementwiseOp.TANH, ElementwiseOp.FMA) and instruction is None:
+        if op in (ElementwiseOp.TANH, ElementwiseOp.FMA, ElementwiseOp.SIN, ElementwiseOp.COS) and instruction is None:
             raise ScheduleParseError(
                 f"{context}.instruction is required for {op.value} so the backend does not "
                 "choose its numerical and performance contract"
             )
-        if op not in (ElementwiseOp.TANH, ElementwiseOp.FMA) and instruction is not None:
+        if op not in (ElementwiseOp.TANH, ElementwiseOp.FMA, ElementwiseOp.SIN, ElementwiseOp.COS) and instruction is not None:
             raise ScheduleParseError(
                 f"{context}.instruction has no defined effect for {op.value}"
             )

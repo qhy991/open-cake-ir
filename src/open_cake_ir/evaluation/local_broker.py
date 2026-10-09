@@ -1,4 +1,4 @@
-"""Serialize local single-device jobs for one user, then exec the bound common worker.
+"""Admit local single-device jobs, then exec the bound common worker.
 
 This is process admission only. It does not evaluate a candidate, own a Ralph loop,
 or promise exclusive physical GPU access against WindowServer or unrelated apps.
@@ -16,13 +16,16 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
 import re
 import stat
 import sys
 import tempfile
+import time
 import uuid
+from dataclasses import asdict
 
 from .attempts import valid_job_mode
 from .platforms import PLATFORMS
@@ -38,13 +41,21 @@ def _lock_path(kind: str = "metal") -> Path:
     return Path(tempfile.gettempdir()) / f"open-cake-ir-{kind}-{os.geteuid()}.lock"
 
 
-def _acquire(path: Path) -> int:
+def _device_lock_path(kind: str, device: int) -> Path:
+    _selection_environment(kind, device)
+    if type(device) is not int or device < 0:
+        raise ValueError('device-scoped local admission requires an explicit physical device')
+    base = _lock_path(kind)
+    return base.with_name(f'{base.stem}-device-{device}{base.suffix}')
+
+
+def _acquire(path: Path, *, shared: bool = False) -> int:
     fd = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
         metadata = os.fstat(fd)
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_nlink != 1:
             raise ValueError("local broker lock ownership differs")
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
         return fd
     except BaseException:
         os.close(fd)
@@ -60,11 +71,41 @@ def observe_local_job(kind: str = "metal") -> str:
         raise ValueError(f"local {kind} broker admission is missing")
     fd = int(raw_fd)
     metadata = os.fstat(fd)
-    expected = _lock_path(kind).stat(follow_symlinks=False)
+    scope = os.environ.get('OPEN_CAKE_LOCAL_LOCK_SCOPE', 'user')
+    selected = os.environ.get('OPEN_CAKE_LOCAL_DEVICE')
+    runtime_selected = os.environ.get('OPEN_CAKE_LOCAL_RUNTIME_DEVICE', selected)
+    runtime_override = os.environ.get('OPEN_CAKE_LOCAL_RUNTIME_DEVICE')
+    expected_pci = os.environ.get('OPEN_CAKE_LOCAL_EXPECTED_PCI')
+    if runtime_override is not None or expected_pci is not None:
+        validate_namespace_mapping(kind, int(selected) if selected and selected.isdecimal() else None,
+            scope, int(runtime_override) if runtime_override and runtime_override.isdecimal() else None,
+            expected_pci)
+    if scope not in {'user', 'device'}:
+        raise ValueError('local broker lock scope differs')
+    if selected is not None:
+        keys = _selection_environment(kind, int(runtime_selected)) if selected.isdecimal() and runtime_selected is not None and runtime_selected.isdecimal() else ()
+        if not keys or any(os.environ.get(key) != runtime_selected for key in keys):
+            raise ValueError('local broker device mapping differs from admission')
+    if scope == 'device' and (selected is None or not selected.isdecimal()):
+        raise ValueError('device-scoped local admission lacks a physical device')
+    path = _device_lock_path(kind, int(selected)) if scope == 'device' else _lock_path(kind)
+    expected = path.stat(follow_symlinks=False)
     if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
             or metadata.st_nlink != 1 or (metadata.st_dev, metadata.st_ino) != (expected.st_dev, expected.st_ino)):
-        raise ValueError(f"local {kind} broker descriptor is not the shared user lock")
+        raise ValueError('local broker descriptor is not the admitted shared lock')
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    barrier = os.environ.get('OPEN_CAKE_LOCAL_LEGACY_FD')
+    if scope == 'device':
+        if barrier is None or not barrier.isdecimal() or int(barrier) < 3 or int(barrier) == fd:
+            raise ValueError('device-scoped local admission lacks the legacy compatibility lock')
+        observed = os.fstat(int(barrier))
+        legacy = _lock_path(kind).stat(follow_symlinks=False)
+        if (not stat.S_ISREG(observed.st_mode) or observed.st_uid != os.geteuid()
+                or observed.st_nlink != 1 or (observed.st_dev, observed.st_ino) != (legacy.st_dev, legacy.st_ino)):
+            raise ValueError('legacy compatibility lock differs')
+        fcntl.flock(int(barrier), fcntl.LOCK_SH | fcntl.LOCK_NB)
+    elif barrier is not None:
+        raise ValueError('user-scoped local admission cannot carry a device compatibility lock')
     return job
 
 
@@ -79,46 +120,153 @@ class LocalBrokerBusy(BlockingIOError):
         self.job_id = job_id
 
 
-def admit_local_job(kind: str) -> str:
+_VISIBILITY_KEYS = ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "MACA_VISIBLE_DEVICES")
+
+
+def _selection_environment(kind: str, device: int | None) -> tuple[str, ...]:
+    row = next((row for row in PLATFORMS.values() if row.local_job_prefix == kind), None)
+    if row is None:
+        raise ValueError(f"local broker kind {kind!r} is unsupported")
+    if device is not None:
+        if type(device) is not int or device < 0:
+            raise ValueError("local physical device must be a nonnegative integer")
+        if not row.local_visibility_environment:
+            raise ValueError(f"local broker kind {kind!r} has no device-selection API")
+    return row.local_visibility_environment
+
+
+def validate_namespace_mapping(kind: str, device: int | None, lock_scope: str,
+                               runtime_device: int | None, expected_pci: str | None) -> None:
+    """Validate an explicit host-ordinal to runtime-ordinal binding before allocation."""
+    if runtime_device is not None or expected_pci is not None:
+        if (kind != 'maca' or lock_scope != 'device' or type(device) is not int or device < 0
+                or type(runtime_device) is not int or runtime_device < 0
+                or not isinstance(expected_pci, str)
+                or re.fullmatch(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}', expected_pci) is None):
+            raise ValueError('runtime namespace mapping requires a MACA device lease and exact PCI binding')
+        _selection_environment(kind, runtime_device)
+
+def admit_local_job(kind: str, *, device: int | None = None, queue_seconds: float = 0,
+                    lock_scope: str = 'user', runtime_device: int | None = None,
+                    expected_pci: str | None = None) -> str:
     """Acquire this process's local job after its CPU preparation completes.
+
+    The default user scope remains compatible with frozen workers. Device scope
+    requires an explicit physical ordinal and shares the legacy user lock while
+    holding its own device lock exclusively. Thus device-scoped jobs on different
+    cards can overlap; legacy workers still exclude them without knowing a device.
 
     Ownership lasts until process exit, exactly as in the exec entry point. The
     descriptor deliberately remains open through failures and final reporting:
     a partially constructed device object cannot cause an early in-process unlock.
     Call only from a short-lived worker's process entry, never a reusable host.
     """
-    path = _lock_path(kind)
-    if os.environ.get('METAL_BROKER_LOCK_FD') or os.environ.get('GPUQ_JOB_ID'):
+    selection = _selection_environment(kind, device)
+    validate_namespace_mapping(kind, device, lock_scope, runtime_device, expected_pci)
+    visible = device if runtime_device is None else runtime_device
+    if (type(queue_seconds) not in (int, float) or not math.isfinite(queue_seconds)
+            or queue_seconds < 0):
+        raise ValueError("local queue seconds must be finite and nonnegative")
+    if lock_scope not in {'user', 'device'}:
+        raise ValueError('unknown local lock scope')
+    path = _device_lock_path(kind, device) if lock_scope == 'device' else _lock_path(kind)
+    if any(os.environ.get(key) for key in ('METAL_BROKER_LOCK_FD', 'GPUQ_JOB_ID',
+                                         'OPEN_CAKE_LOCAL_LEGACY_FD', 'OPEN_CAKE_LOCAL_LOCK_SCOPE',
+                                         'OPEN_CAKE_LOCAL_RUNTIME_DEVICE', 'OPEN_CAKE_LOCAL_EXPECTED_PCI')):
         raise ValueError('a local job cannot nest an existing allocation')
     job = f"{kind}-" + uuid.uuid4().hex[:12]
-    print(f"[{kind}-run] accepted job {job}", file=sys.stderr, flush=True)
+    deadline = time.monotonic() + queue_seconds
+    while True:
+        barrier_fd = None
+        try:
+            # Old workers take an exclusive user lock and cannot declare their
+            # device. New workers hold it shared, then lock their own device.
+            # This permits new/new cross-device concurrency without bypassing
+            # the old admission boundary. Waiting retains neither descriptor.
+            if lock_scope == 'device':
+                barrier_fd = _acquire(_lock_path(kind), shared=True)
+            try:
+                fd = _acquire(path)
+            except BaseException:
+                if barrier_fd is not None:
+                    os.close(barrier_fd)
+                raise
+            break
+        except BlockingIOError as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise LocalBrokerBusy(kind, job) from error
+            time.sleep(min(.1, remaining))
     try:
-        fd = _acquire(path)
-    except BlockingIOError as error:
-        raise LocalBrokerBusy(kind, job) from error
-    try:
+        if device is not None:
+            for key in _VISIBILITY_KEYS:
+                os.environ.pop(key, None)
+            for key in selection:
+                os.environ[key] = str(visible)
+            os.environ['OPEN_CAKE_LOCAL_DEVICE'] = str(device)
+            if runtime_device is not None:
+                os.environ['OPEN_CAKE_LOCAL_RUNTIME_DEVICE'] = str(runtime_device)
+                os.environ['OPEN_CAKE_LOCAL_EXPECTED_PCI'] = expected_pci
         os.set_inheritable(fd, True)
+        if barrier_fd is not None:
+            os.set_inheritable(barrier_fd, True)
+            os.environ['OPEN_CAKE_LOCAL_LEGACY_FD'] = str(barrier_fd)
+            os.environ['OPEN_CAKE_LOCAL_LOCK_SCOPE'] = 'device'
         os.environ.update(METAL_JOB_ID=job, METAL_BROKER_LOCK_FD=str(fd))
     except BaseException:
         os.close(fd)
+        if barrier_fd is not None:
+            os.close(barrier_fd)
         raise
+    print(f"[{kind}-run] accepted job {job}", file=sys.stderr, flush=True)
     return job
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--worker-module", required=True)
+    parser.add_argument("--worker-module")
     parser.add_argument("--kind", choices=LOCAL_KINDS, default="metal",
                         help="which local device family this job serializes")
-    parser.add_argument("--request", type=Path, required=True)
+    parser.add_argument("--request", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--local-device", type=int)
+    parser.add_argument("--local-runtime-device", type=int)
+    parser.add_argument("--local-expected-pci")
+    parser.add_argument("--local-lock-scope", choices=("user", "device"), default="user")
+    parser.add_argument("--local-queue-seconds", type=float, default=0)
+    parser.add_argument("--probe-target", help="exact MACA device admission only; no kernel or timing")
+    parser.add_argument("--runtime-library", type=Path)
     args = parser.parse_args(argv)
+    if args.probe_target is not None:
+        if (args.kind != 'maca' or args.request is not None or args.worker_module is not None
+                or args.runtime_library is None or not args.runtime_library.is_absolute()
+                or not args.output.is_absolute() or args.output.exists()):
+            parser.error('MACA probe requires only its exact target, runtime library and new absolute output')
+        from .triton_metax import observe_local_metax
+        try:
+            job = admit_local_job(args.kind, device=args.local_device, queue_seconds=args.local_queue_seconds, lock_scope=args.local_lock_scope,
+                                  runtime_device=args.local_runtime_device, expected_pci=args.local_expected_pci)
+            admission = observe_local_metax(args.probe_target, runtime_library=str(args.runtime_library))
+            result = {'schema_version': 1, 'scope': 'local_device_admission_only',
+                      'admitted': True, 'job_id': job, 'mode': 'local_serialized',
+                      'physical_device': args.local_device, 'runtime_device': (args.local_device if args.local_runtime_device is None else args.local_runtime_device),
+                      'expected_pci': args.local_expected_pci, 'lock_scope': args.local_lock_scope, 'device_admission': asdict(admission),
+                      'kernel_calls': 0, 'timing_samples': 0}
+        except (ValueError, OSError, RuntimeError) as error:
+            result = {'schema_version': 1, 'scope': 'local_device_admission_only',
+                      'admitted': False, 'error': str(error), 'kernel_calls': 0, 'timing_samples': 0}
+        with args.output.open('x') as stream:
+            json.dump(result, stream, indent=2)
+        return 0 if result['admitted'] else 1
+    if args.worker_module is None or args.request is None or args.runtime_library is not None:
+        parser.error('worker execution requires --worker-module and --request')
     if re.fullmatch(r"open_cake_ir\.[a-zA-Z0-9_.]+", args.worker_module) is None:
         parser.error("worker must be a bound open_cake_ir module")
     if not args.request.is_absolute() or not args.output.is_absolute() or args.output.exists():
         parser.error("request/output must be absolute and output must be new")
     try:
-        admit_local_job(args.kind)
+        admit_local_job(args.kind, device=args.local_device, queue_seconds=args.local_queue_seconds, lock_scope=args.local_lock_scope,
+                                  runtime_device=args.local_runtime_device, expected_pci=args.local_expected_pci)
         # Exec preserves the supervisor-owned process group and lock. Its
         # timeout kills the worker and native children together as before.
         from .source_bootstrap import module_command

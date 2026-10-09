@@ -34,13 +34,16 @@ def arm_feedback(evaluation) -> list[str]:
 
 
 def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sample: int | None = None,
-                      maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6) -> dict:
+                      maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
+                      metal_mean30: bool = False) -> dict:
     if type(searches_per_turn) is not int or searches_per_turn <= 0:
         raise ValueError("searches per Turn must be a positive integer")
     backend = backend_for_target(workload.target)
     if backend is None:
         raise ValueError("evaluation policy requires a supported exact target")
     metal = BACKENDS[backend]["route"] == "metal"
+    if metal_mean30 and not metal:
+        raise ValueError("Metal mean30 requires a Metal target")
     if maximum_cv is None:
         maximum_cv = 0.05 if metal else 0.15
     if required_pair_wins is None:
@@ -101,6 +104,15 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
             # sample cannot veto. This assay does not exclude other GPU clients.
             "maximum_relative_iqr": 0.05,
         })
+    if metal_mean30:
+        if dispatches != 64:
+            raise ValueError("Metal mean30 requires 64 dispatches per sample")
+        # One AB and one BA cohort, fifteen timed samples each: thirty per arm.
+        # Three warmup command buffers per cohort are excluded from that count.
+        policy["paired_timing"].update(
+            statistic="mean", pair_order=[["candidate", "baseline"], ["baseline", "candidate"]],
+            samples_per_cohort=15, route_calls_per_cohort=18,
+            maximum_cv=None, maximum_relative_iqr=None, required_pair_wins=0)
     if searches_per_turn > 1:
         policy["search_materiality_ratio"] = 1.05
     paired_protocol(policy)
@@ -147,7 +159,10 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
                    agents_md: Path | None = None, response_aliases=(),
                    reference_access: str = 'known_kernel_reproduction',
-                   lowering_route=None, source_file: bool = False) -> dict:
+                   lowering_route=None, source_file: bool = False,
+                   generated_source_feedback: bool = False,
+                   native_skill_package: Path | None = None, metal_mean30: bool = False,
+                   claude_event_contract: str | None = None) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -157,8 +172,20 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     validate_workload_document(workload.document)
     if reference_access not in {'clean_start', 'known_kernel_reproduction'}:
         raise ValueError('Cake task authoring requires clean_start or known_kernel_reproduction')
+    if (type(generated_source_feedback) is not bool
+        or generated_source_feedback and reference_access != 'known_kernel_reproduction'):
+        raise ValueError('generated source feedback requires explicit known-kernel authoring')
     if harness not in {"codex", "claude-code"} or any(not isinstance(v, str) or not v.strip() or v != v.strip() for v in (model, effort)):
         raise ValueError("exact harness, model and effort are required")
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    if claude_event_contract is not None and (harness != 'claude-code' or claude_event_contract not in CLAUDE_EVENT_CONTRACTS):
+        raise ValueError('Claude event contract requires the exact Claude harness and supported protocol')
+    skill_package_reference = None
+    if native_skill_package is not None:
+        if harness != 'codex' or reference_access != 'known_kernel_reproduction':
+            raise ValueError('native skill packages require Codex known-kernel authoring')
+        from open_cake_ir.lab.native_skills import NativeSkillPackage
+        skill_package_reference = NativeSkillPackage.bind(root, native_skill_package)
     if type(searches_per_turn) is not int or type(maximum_candidates) is not int or not 1 <= searches_per_turn <= maximum_candidates:
         raise ValueError("searches per Turn must fit the candidate budget")
     if source_file and (reference_access != 'known_kernel_reproduction'
@@ -222,16 +249,23 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         provider["response_model_aliases"] = list(response_model_aliases(model, response_aliases))
     if harness == "claude-code":
         provider.update(harness=harness, permission_mode="acceptEdits", sandbox="none", safe_mode=True,
-                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
+                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=claude_event_contract or CLAUDE_EVENT_CONTRACT,
+                        terminal_schema=terminal_schema())
     else:
-        from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1
-        provider.update(sandbox="workspace-write", service_tier="default", disabled_features=[],
-                        author_home_policy=ISOLATED_AUTH_ONLY_V1,
+        from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1
+        from open_cake_ir.lab.provider_documents import expected_codex_disabled_features
+        home_policy = (ISOLATED_SKILL_PACKAGE_V1 if skill_package_reference is not None
+                       else ISOLATED_AUTH_ONLY_V1)
+        provider.update(sandbox="workspace-write", service_tier="default",
+                        disabled_features=list(expected_codex_disabled_features('tool_rich_candidate_v1', home_policy)),
+                        author_home_policy=home_policy,
                         event_contract="tool_rich_candidate_v1", code_mode_host=dict(CAMPAIGN_BINDING),
                         output_schema={"path": OUTPUT_SCHEMA, "sha256": sha256((root / OUTPUT_SCHEMA).read_bytes()).hexdigest()})
+        if skill_package_reference is not None:
+            provider['native_skill_package'] = skill_package_reference
     evaluation = evaluation_policy(workload, searches_per_turn=searches_per_turn,
                                    dispatches_per_sample=dispatches_per_sample,
-                                   maximum_cv=maximum_cv, required_pair_wins=required_pair_wins)
+                                   maximum_cv=maximum_cv, required_pair_wins=required_pair_wins, metal_mean30=metal_mean30)
     return {
         "schema_version": 1, "run_id": "open_cake-1", "sequence": 1, "assignment": None,
         "compiler_revision": dict(CURRENT_RELEASE_BINDING),
@@ -251,7 +285,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
             # limitation, and an arm that still advertised `qualified_timing` and
             # `profile` would promise an author two kinds of feedback nothing on this
             # device can produce.
-            "feedback": arm_feedback(evaluation),
+            "feedback": arm_feedback(evaluation) + (['generated_source_v1'] if generated_source_feedback else []),
             "toolchain_sha256": dict(CAMPAIGN_BINDING),
         },
         "budget": budget,
