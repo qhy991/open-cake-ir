@@ -123,8 +123,11 @@ def _spatial_norm(b, c, p):
 '''
     if loop:
         source += '    for pixel in lm.range(activated, name="pixels", dimension=1, tile=128, num_stages=1, loop_unroll_factor=1):\n'
-    index = 'pixel' if loop else ':'
-    source += inner + 'with compute:\n' + '\n'.join(inner + '    '+line for line in [
+    index = 'pixel' if loop else 'pixels'
+    source += inner + 'with compute:\n'
+    if not loop:
+        source += f'        pixels = lm.coordinate(source="range", start=0, extent={1 << (p-1).bit_length()}, id="pixels")\n'
+    source += '\n'.join(inner + '    '+line for line in [
         f'values = lm.load(activated[batch, {index}, feature], id="values")',
         'squares = lm.square(values, id="squares")',
         f'total = lm.reduce(squares, op="sum", axis=0, scope="cta", across_loop={loop}, id="total")',
