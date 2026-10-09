@@ -66,6 +66,7 @@ def execute(program, inputs):
                 if isinstance(x, float) or isinstance(y, float) else function(x, y))
         return method
     def sum_values(values):
+        values = list(values)
         if all(type(value) in (int, bool) for value in values): return sum(values)
         total = 0.
         for value in values: total = rounded(total + value, 'fp32')
