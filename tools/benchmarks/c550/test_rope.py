@@ -2,7 +2,6 @@
 import ast
 from copy import deepcopy
 from contextlib import ExitStack
-from dataclasses import replace
 import importlib.util
 import itertools
 import math
@@ -154,11 +153,9 @@ class RoPEArithmetic(unittest.TestCase):
                   rope.source_for(batch, sequence, attention_scaling=scale))
         schedule = Schedule.from_dict(frontend.parse(source).document)
         real = Target.load(ROOT / 'compiler/targets/xcore1002.json')
-        self.assertIn('TARGET_INSTRUCTION_UNSUPPORTED', {item.code for item in verify(schedule, real)})
-        probe = replace(real, instruction_contracts=real.instruction_contracts | {'maca.sin.f32', 'maca.cos.f32'})
-        findings = (*verify(schedule, probe), *preflight(schedule, probe))
+        findings = (*verify(schedule, real), *preflight(schedule, real))
         self.assertFalse([item for item in findings if item.blocks_lowering], findings)
-        return emit(schedule, probe)
+        return emit(schedule, real)
 
     def execute(self, emitted, positions, frequencies):
         tree = ast.parse(emitted.source)

@@ -21,9 +21,14 @@
     "shared_memory_per_multiprocessor_bytes": 65536,
     "maximum_threads_per_multiprocessor": 2048
   },
-  "instruction_contracts": ["maca.tanh.f32", "maca.fma.f32", "maca.fma.rz.f32", "maca.fma.rd.f32", "maca.fma.ru.f32", "maca.simt.fp8e4m3_compensated_fp32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
+  "instruction_contracts": ["maca.tanh.f32", "maca.sin.f32", "maca.cos.f32", "maca.fma.f32", "maca.fma.rz.f32", "maca.fma.rd.f32", "maca.fma.ru.f32", "maca.simt.fp8e4m3_compensated_fp32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "MetaX C550, MACA 3.5.3 / Triton 3.1.0, 2026-10-09 and 2026-10-10",
+      "locator": "Public component source 379f8372, job maca-facf96c7db49: both MACA FP32 library calls pass five 4x256 input patterns with two output poisons, 20 native calls and 20480 output checks. Finite inputs sample [-65536,65536], compared with decoded-input Python math at abs_error <= 2e-6 + 2e-6*abs(reference); maximum observed finite error 7.796446133134793e-08. Sin preserves exact signed zero, cos of zero is exactly +1, and NaN/infinity inputs produce NaN classes. Inputs are unchanged and modules close. Public original RoPE qualification da9390fc, job maca-c742da8d2a88, passes fixed Bench ababa4c0 all16 workloads and ten rounds, with reported absolute/relative errors zero, unchanged inputs and closed modules. This qualifies the named MCFATBIN library route, not universal correctly rounded FP32, a ULP bound, NaN payloads, subnormal preservation, another SDK or performance. TF32 stays unadmitted and its prior failures remain. Source, sealed artifacts and cleanup records are retained in the private qualification archive referenced by PR430 and PR447; bounded scope is documented in docs/metax-sincos-admission.md."
+    },
     {
       "kind": "device_observation",
       "source": "MetaX C550 native storage qualification, 2026-10-09",

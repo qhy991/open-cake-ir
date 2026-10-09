@@ -84,8 +84,8 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "apple_gpu_family9": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
             # Each target retains exactly its own measured instruction contracts.
             "gfx1151": {"elementwise": ["ocml.tanh.f32"]},
-            "xcore1002": {"elementwise": ["maca.fma.f32", "maca.fma.rd.f32",
-                                            "maca.fma.ru.f32", "maca.fma.rz.f32", "maca.tanh.f32"],
+            "xcore1002": {"elementwise": ["maca.cos.f32", "maca.fma.f32", "maca.fma.rd.f32",
+                                            "maca.fma.ru.f32", "maca.fma.rz.f32", "maca.sin.f32", "maca.tanh.f32"],
                           "mma": ["maca.simt.fp8e4m3_compensated_fp32", "triton.dot.bf16_fp32",
                                   "triton.dot.fp16_fp32", "triton.dot.fp32_ieee"]},
             "gfx938": {"atomic": ["triton.atomic_add.i32.relaxed.gpu"],
@@ -191,8 +191,8 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
         # metal_fma.py reaches its fma, and sm_100a has none because its atomic is bound
         # implicitly.
         self.assertEqual(unreached, {
-            "xcore1002": ["maca.fma.f32", "maca.fma.rd.f32", "maca.fma.ru.f32",
-                          "maca.fma.rz.f32", "maca.tanh.f32"],
+            "xcore1002": ["maca.cos.f32", "maca.fma.f32", "maca.fma.rd.f32", "maca.fma.ru.f32",
+                          "maca.fma.rz.f32", "maca.sin.f32", "maca.tanh.f32"],
             "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "apple_gpu_family8": ["metal.precise.tanh.f32"],
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
@@ -201,9 +201,9 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
                         "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
                         "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
         })
-        # gfx1151 and xcore1002 retain their device evidence but have no tanh
-        # Corpus case. Preserve both explicit gaps without manufacturing cases.
-        self.assertEqual(sum(len(v) for v in unreached.values()), 17)
+        # gfx1151 has no tanh Corpus case. C550 sin/cos/tanh retain bounded
+        # device evidence without Corpus cases. Report those gaps honestly.
+        self.assertEqual(sum(len(v) for v in unreached.values()), 19)
         for target in ("gfx938", "sm_100a"):
             self.assertNotIn(target, unreached)
 
