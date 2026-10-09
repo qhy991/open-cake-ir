@@ -880,6 +880,8 @@ class ClaudeInvocationBuilder:
         # say "never execute this fixture", and a constructor that ran `--help` on it
         # would be executing exactly that.
         options = frozenset(cli_options)
+        if event_contract == CLAUDE_STDIN_EVENT_CONTRACT and '--input-format' not in options:
+            raise ValueError('Claude stdin successor requires --input-format support')
         if (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
                 and '--restricted' not in options):
             raise ValueError('Claude v5 requires a qualified executable with --restricted support')
