@@ -80,6 +80,7 @@ def storage_patterns(rows, columns, dtype):
 
 def bound_candidates(built_root, source_commit):
     """Bind each retained artifact before acquiring a device allocation."""
+    built_root = built_root.resolve(strict=True)
     from open_cake_ir.compiler import Target, frontend
     from open_cake_ir.compiler.backends.triton import emit
     from open_cake_ir.compiler.ir import OperationKind, Schedule
