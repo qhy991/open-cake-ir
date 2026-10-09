@@ -2,7 +2,6 @@
 from dataclasses import replace
 from pathlib import Path
 import importlib.util
-import json
 import tempfile
 import unittest
 
@@ -32,24 +31,27 @@ def candidate(lm, x: cake.Tensor((4, 256), "fp32"), out: cake.Tensor((4, 256), "
 
 
 class MetaxTrig(unittest.TestCase):
-    def test_registered_types_emit_only_under_explicit_maca_probe_admission(self):
+    def test_exact_target_admits_library_calls_and_closed_target_refuses_them(self):
         real = Target.load(ROOT / 'compiler/targets/xcore1002.json')
+        compiler = Compiler.load(ROOT)
+        self.assertNotIn('triton.dot.fp32_tf32', real.instruction_contracts)
         for op in ('sin', 'cos'):
             record = contract(f'maca.{op}.f32')
             self.assertIsNotNone(record)
             self.assertEqual(record.elementwise_op.value, op)
             self.assertEqual(record.elementwise_dtype.value, 'fp32')
-            schedule = Schedule.from_dict(frontend.parse(source(op)).document)
-            # This synthetic target is only a software probe, never a target file.
-            probe = replace(real, instruction_contracts=real.instruction_contracts | {record.name})
-            self.assertFalse([f for f in verify(schedule, probe) if f.blocks_lowering])
-            self.assertFalse([f for f in preflight(schedule, probe) if f.blocks_lowering])
-            emitted = emit(schedule, probe)
-            projected = project_triton_kernel(emitted.source.encode(), emitted.toolchain)
+            document = frontend.parse(source(op)).document
+            schedule = Schedule.from_dict(document)
+            assessment = compiler.assess(document)
+            self.assertTrue(assessment.lowering_eligible, assessment.findings)
+            lowered = compiler.lower(assessment)
+            projected = project_triton_kernel(lowered.source.encode(), lowered.toolchain_requirements)
             self.assertIn(f'libdevice.{op}(values)'.encode(), projected)
-            validate_triton_kernel(projected, emitted.toolchain)
+            validate_triton_kernel(projected, lowered.toolchain_requirements)
+            # This explicit closed document keeps the admission refusal covered.
+            closed = replace(real, instruction_contracts=real.instruction_contracts - {record.name})
             self.assertIn('TARGET_INSTRUCTION_UNSUPPORTED',
-                          {f.code for f in Compiler.load(ROOT).assess(frontend.parse(source(op)).document).findings})
+                          {f.code for f in verify(schedule, closed) if f.blocks_lowering})
 
     def test_maca_contract_cannot_borrow_another_code_object_or_dtype(self):
         for op in ('sin', 'cos'):
@@ -77,23 +79,29 @@ class MetaxTrig(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_triton_kernel(native.encode(), {**req, 'code_object': code_object})
 
-    def test_qualification_binds_complete_compile_fields_before_native_build(self):
+    def test_admitted_compiler_binds_complete_fields_before_native_build(self):
         from open_cake_ir.compiler.toolchain import triton_route
+        compiler = Compiler.load(ROOT)
+        for op in ('sin', 'cos'):
+            lowered = compiler.lower(compiler.assess(frontend.parse(source(op)).document))
+            requirements = lowered.toolchain_requirements
+            self.assertEqual(requirements['compiler'], 'triton')
+            self.assertEqual(requirements['source_language'], 'python')
+            self.assertEqual(requirements['target'], 'xcore1002')
+            self.assertEqual(triton_route(requirements).gpu_backend, 'maca')
+
+    def test_legacy_preadmission_probe_refuses_the_now_admitted_target(self):
         spec = importlib.util.spec_from_file_location('qualify_metax_trig', ROOT / 'tools/qualify_metax_trig.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'new'
             result = module.run(output, False)
-            self.assertTrue(result['passed'], result)
+            self.assertFalse(result['passed'], result)
             self.assertFalse(result['target_admission_changed'])
-            for op in ('sin', 'cos'):
-                requirements = json.loads((output / op / 'requirements.json').read_text())
-                self.assertEqual(requirements['compiler'], 'triton')
-                self.assertEqual(requirements['source_language'], 'python')
-                self.assertEqual(requirements['target'], 'xcore1002')
-                self.assertEqual(triton_route(requirements).gpu_backend, 'maca')
-                self.assertFalse(result['operations'][op]['native_compiled'])
+            self.assertFalse(result['device_execution'])
+            self.assertEqual(result['operations'], {})
+            self.assertIn('expects the committed Target to remain unqualified', result['error'])
 
 
 if __name__ == '__main__':

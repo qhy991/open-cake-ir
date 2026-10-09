@@ -33,9 +33,11 @@ HSACO contract. A contract from another code object, implicit dtype promotion,
 function aliases, keywords, extra operands, and unrelated library calls are
 refused by their owning checks.
 
-The production `xcore1002` Target still declares neither new contract. It returns
-`TARGET_INSTRUCTION_UNSUPPORTED`. No Target document, hardware fact, or Corpus
-expectation changed in this work.
+The initial software tick left both contracts unadmitted. The subsequent
+[bounded device qualification and original RoPE result](metax-sincos-admission.md)
+support declaring them on exact `xcore1002`. The current Target admits those
+named FP32 library calls; TF32 remains unadmitted. Other code objects and dtypes
+still require their own contracts. No Corpus expectation was refreshed.
 
 ## Qualification evidence and limits
 
@@ -60,12 +62,12 @@ scoped in-memory Target declaration to exercise emission while confirming that
 the committed Target still refuses the operation. It cannot grant production
 admission or device numerical correctness.
 
-Before adding real Target declarations, retain original-domain device checks
-for signed zero, representative angle magnitudes and trigonometric boundaries,
-then validate the complete original RoPE task. Record actual error statistics,
-exceptional-value coverage, exact toolchain and input domain. CPU compilation
-does not establish those facts. Update the Target declaration and its pinned
-admitted-contract test only in a reviewed successor supported by that evidence.
+The later device checks cover signed zero, sampled angles and trigonometric
+boundaries, followed by the complete original RoPE task. Their retained numerical
+contract, actual errors, toolchain and coverage limits are documented in the
+[admission record](metax-sincos-admission.md). CPU compilation alone did not
+establish those facts. The historical pre-admission tools still refuse an already
+admitted Target; replay their old evidence at its producing commit.
 
 ## Original RoPE starter
 
@@ -82,12 +84,15 @@ must also reject an original scalar argument that differs from the frozen value.
 The candidate receives no extra scalar tensor and performs no second frequency
 scaling.
 
-All sixteen original shapes pass construction, verification and source emission
-in the integration-only software probe that combines the integer-storage and
-math changes. The same real Target continues to refuse unqualified trig. CPU
-contracts exercise interleaved output order, repeated frequencies, FP32 casting
-of large INT64 positions, BF16 output rounding, input preservation and scalar
-binding. They do not model the native library's numerical error.
+The initial integration-only software probe emitted all sixteen original shapes
+under a synthetic declaration. That evidence remains software-only. The original
+IEEE angle starter then failed a device case, and explicit TF32 failed its own
+angle comparison. The [bounded RNE10 starter](metax-rope-bounded-rne10.md) preserves
+the original HIGH policy and subsequently passed all original 16×10 checks.
+Current CPU contracts exercise the admitted route, interleaved output order,
+producer casts, BF16 rounding, input preservation and scalar binding. They do
+not model the native library's numerical error or turn the earlier failures
+into passing results.
 
 ## ERF follow-up
 
