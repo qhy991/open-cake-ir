@@ -30,3 +30,24 @@ CPU contracts exercise the real timer and native loader with device API doubles.
 They check dispatch count, validation order, rejection, exception identity and
 restoration. No physical GPU qualification has been performed for this helper.
 No promotion is proposed by this change.
+
+## Fixed single-arm entry
+
+`tools/diagnose_c550_event_interval.py` binds all sixteen same-source RMS
+baselines, then selects original case index 1 before device admission. The block
+is fixed: one preflight, eleven warmups, five instrumented samples, one postflight.
+It uses the existing physical lock, original input factory/comparator and tensor
+lifecycle. Every cohort output is checked. It never computes a paired verdict.
+An existing output path refuses another invocation. Keep all terminal results;
+creating a different path does not authorize a repeat.
+
+Hypothesis: host argument preparation, event submission or runtime submission
+may explain the earlier long interval. This block observes these phases with
+wall and caller-thread CPU clocks. It neither reproduces an A/A nor determines
+that the historical spike had the same cause. If no long sample recurs, the
+historical cause stays unresolved. There is no automatic follow-up block.
+
+Before execution, use a clean successor source, same-source baselines, accepted
+CPU contracts and host/isolation gates. Record exact physical/runtime/PCI
+binding and the argv outside source. The output explicitly states that it is
+instrumented and not performance-qualified. This entry has not yet run on a GPU.
