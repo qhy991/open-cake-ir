@@ -15,7 +15,7 @@ DIRECTED_FMA_FUNCTIONS = MappingProxyType({
 })
 
 
-_BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
+_BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.INT64, DType.BOOL, DType.FP8_E4M3})
 
 
 def comparison_magnitude_input(schedule: Schedule, operation) -> str | None:
@@ -245,7 +245,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
         if buffer.dtype not in _BUFFER_DTYPES:
             findings.append(refusal(
                 "MACA_DTYPE_UNQUALIFIED", f"buffers[{index}].dtype",
-                "this MACA route admits FP32, FP16, BF16, INT32 and E4M3FN buffers; "
+                "this MACA emitter supports FP32, FP16, BF16, INT32, INT64, BOOL and E4M3FN buffers; "
                 "other tensor representations require their own device qualification",
             ))
     for index, operation in enumerate(schedule.operations):

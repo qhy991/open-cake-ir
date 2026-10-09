@@ -57,6 +57,8 @@ _TL_DTYPE = {
     DType.FP32: "tl.float32",
     DType.FP8_E4M3: "tl.float8e4nv",
     DType.INT32: "tl.int32",
+    DType.INT64: "tl.int64",
+    DType.BOOL: "tl.int1",
 }
 
 
@@ -66,6 +68,8 @@ _POINTER_TYPES = {
     DType.FP32: "*fp32",
     DType.FP8_E4M3: "*fp8e4nv",
     DType.INT32: "*i32",
+    DType.INT64: "*i64",
+    DType.BOOL: "*i1",
 }
 
 
@@ -1180,7 +1184,8 @@ class _TritonEmitter:
                 domain = None
             elif component.source is AccessIndexKind.SCALAR_BUFFER:
                 # A [1] block and a scalar-producing tl.load both normalize to rank zero.
-                expression = f"tl.sum(tl.full((1,), 0, tl.int32) + {component.name}, axis=0)"
+                dtype = _TL_DTYPE[self.schedule.buffer(component.name).dtype]
+                expression = f"tl.sum(tl.full((1,), 0, {dtype}) + {component.name}, axis=0)"
                 domain = None
             elif component.source is AccessIndexKind.PROGRAM_TILE:
                 expression = f"{component.name}_offsets"
@@ -1758,7 +1763,7 @@ class _TritonEmitter:
     def _emit_compare(self, operation, pad):
         p = operation.parameters
         left = operation.reads[0]
-        integer = self.schedule.buffer(operation.reads[0]).dtype is DType.INT32
+        integer = self.schedule.buffer(operation.reads[0]).dtype in {DType.INT32, DType.INT64, DType.BOOL}
         right = repr(int(p.scalar) if integer else p.scalar) if p.scalar is not None else operation.reads[1]
         symbol = {"lt": "<", "le": "<=", "eq": "==", "ne": "!=", "gt": ">", "ge": ">="}[p.op]
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
@@ -1776,7 +1781,7 @@ class _TritonEmitter:
                 return
         false_value = ('float("-inf")' if p.false_value == "negative_infinity" else repr(p.false_value)) if p.false_value is not None else operation.reads[2]
         dtype = self.schedule.buffer(operation.writes[0]).dtype
-        if p.false_value is not None and dtype is DType.INT32:
+        if p.false_value is not None and dtype in {DType.INT32, DType.INT64, DType.BOOL}:
             false_value = repr(int(p.false_value))
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{operation.writes[0]} = tl.where({operation.reads[0]} != 0, {operation.reads[1]}, {false_value}).to({_TL_DTYPE[dtype]})", declares=(operation.writes[0],))

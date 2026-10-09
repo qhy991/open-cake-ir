@@ -11,6 +11,8 @@ class DType(str, Enum):
     FP32 = "fp32"
     FP8_E4M3 = "fp8_e4m3"
     INT32 = "int32"
+    INT64 = "int64"
+    BOOL = "bool"
 
     @property
     def itemsize(self) -> int:
@@ -23,6 +25,8 @@ _DTYPE_ITEMSIZE = {
     DType.FP32: 4,
     DType.FP8_E4M3: 1,
     DType.INT32: 4,
+    DType.INT64: 8,
+    DType.BOOL: 1,
 }
 
 

@@ -24,7 +24,7 @@ from .ir import (
     ProgramAxis, Role, Schedule, ScheduleParseError,
 )
 
-from .ir.operations import elementwise_result_dtype
+from .ir.operations import cast_supported, elementwise_result_dtype
 
 
 @dataclass(frozen=True)
@@ -318,9 +318,9 @@ class _Builder:
                     continue
                 if isinstance(index, _Ref) and index.collection == "buffers":
                     index_buffer = self.buffer(index, component)
-                    if (index_buffer.dtype.value != "int32" or index_buffer.space.value != "register"
+                    if (index_buffer.dtype.value not in {"int32", "int64"} or index_buffer.space.value != "register"
                         or len(index_buffer.shape) != 1):
-                        self.fail(component, "gather indices require rank-one INT32 register buffers")
+                        self.fail(component, "gather indices require rank-one INT32 or INT64 register buffers")
                     if buffer.space.value != "global":
                         self.fail(node, "buffer-indexed loads require global source storage")
                     if index_shape is not None and index_buffer.shape != index_shape:
@@ -422,11 +422,11 @@ class _Builder:
             return result
         if method == "scalar_index":
             if len(node.args) != 1 or node.keywords:
-                self.fail(node, "scalar_index takes one INT32 [1] register buffer")
+                self.fail(node, "scalar_index takes one INT32 or INT64 [1] register buffer")
             ref = self.reference(self.value(node.args[0]), node)
             buffer = self.buffer(ref, node)
-            if buffer.dtype.value != "int32" or buffer.shape != (1,) or buffer.space.value != "register":
-                self.fail(node, "scalar_index takes one INT32 [1] register buffer")
+            if buffer.dtype.value not in {"int32", "int64"} or buffer.shape != (1,) or buffer.space.value != "register":
+                self.fail(node, "scalar_index takes one INT32 or INT64 [1] register buffer")
             return _ScalarIndex(ref)
         if method == "broadcast":
             if len(node.args) != 1 or set(k.arg for k in node.keywords) != {"axis"}:
@@ -600,6 +600,12 @@ class _Builder:
                     self.fail(node, "lm.cast requires to=...", "SCHEDULE_STRUCTURE",
                               canonical_path=f"operations[{len(self.document['operations'])}].parameters")
                 dtype = parameters["to"]
+                if first.dtype.value in {"int64", "bool"} or dtype in {"int64", "bool"}:
+                    from .ir import DType
+                    if not cast_supported(first.dtype, DType(dtype)):
+                        self.fail(node, "this explicit storage conversion is unsupported",
+                                  "CAST_DTYPE_UNSUPPORTED",
+                                  canonical_path=f"operations[{len(self.document['operations'])}].parameters.to")
             elif kind == "mma":
                 if len(reads) != 2 or len(first.shape) != 2:
                     self.fail(node, "automatic MMA results require two rank-two operands")

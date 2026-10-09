@@ -5,7 +5,8 @@ import math
 from .vocabulary import DType, MemorySpace, OperationKind
 
 VALUE_KINDS = frozenset({OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT, OperationKind.BROADCAST_IN_DIM, OperationKind.TRANSPOSE})
-NUMERIC = frozenset({DType.INT32, DType.FP32, DType.FP16, DType.BF16})
+NUMERIC = frozenset({DType.INT32, DType.INT64, DType.FP32, DType.FP16, DType.BF16})
+VALUES = NUMERIC | {DType.BOOL}
 
 
 def _broadcast_shape(buffers):
@@ -18,8 +19,12 @@ def _broadcast_shape(buffers):
 def _scalar(value, dtype):
     if type(value) not in {int, float} or not math.isfinite(value):
         raise ValueError('numeric scalar must be finite')
-    if dtype is DType.INT32 and (value != int(value) or not -(2**31) <= value < 2**31):
-        raise ValueError('INT32 scalar must be an exactly representable signed integer')
+    if dtype in {DType.INT32, DType.INT64}:
+        bits = dtype.itemsize * 8
+        if value != int(value) or not -(2**(bits-1)) <= value < 2**(bits-1):
+            raise ValueError(f'{dtype.value.upper()} scalar must be an exactly representable signed integer')
+    if dtype is DType.BOOL and value not in (0, 1):
+        raise ValueError('BOOL scalar must be zero or one')
 
 
 def result_type(schedule, operation):
@@ -47,8 +52,8 @@ def result_type(schedule, operation):
     if operation.kind is OperationKind.TRANSPOSE:
         if len(reads) != 1 or len(reads[0].shape) != 2:
             raise ValueError('transpose reads exactly one rank-two register value')
-        if reads[0].dtype not in NUMERIC:
-            raise ValueError('transpose supports FP32, FP16, BF16 and INT32 without conversion')
+        if reads[0].dtype not in VALUES:
+            raise ValueError('transpose requires a declared numeric or BOOL value without conversion')
         return reads[0].dtype, tuple(reversed(reads[0].shape))
     if operation.kind is OperationKind.BROADCAST_IN_DIM:
         if len(reads) != 1:
@@ -68,21 +73,23 @@ def result_type(schedule, operation):
     if operation.kind is OperationKind.COMPARE:
         if len(reads) != (1 if p.scalar is not None else 2):
             raise ValueError('compare needs two operands, optionally a scalar second operand')
-        if len({buffer.dtype for buffer in reads}) != 1 or reads[0].dtype not in NUMERIC:
-            raise ValueError('compare requires matching numeric dtypes')
+        if len({buffer.dtype for buffer in reads}) != 1 or reads[0].dtype not in VALUES:
+            raise ValueError('compare requires matching numeric or BOOL dtypes')
+        if reads[0].dtype is DType.BOOL and p.op not in {'eq', 'ne'}:
+            raise ValueError('BOOL comparison admits equality and inequality only')
         if p.scalar is not None:
             _scalar(p.scalar, reads[0].dtype)
         return DType.INT32, _broadcast_shape(reads)
     if operation.kind is OperationKind.SELECT:
         if len(reads) != (2 if p.false_value is not None else 3):
             raise ValueError('select reads predicate, true value and false value or literal')
-        if reads[0].dtype is not DType.INT32:
-            raise ValueError('select predicate must be INT32; zero is false')
+        if reads[0].dtype not in {DType.INT32, DType.BOOL}:
+            raise ValueError('select predicate must be BOOL or INT32; zero is false')
         dtype = reads[1].dtype
-        if dtype not in NUMERIC or any(buffer.dtype is not dtype for buffer in reads[1:]):
-            raise ValueError('select values require matching numeric dtypes')
+        if dtype not in VALUES or any(buffer.dtype is not dtype for buffer in reads[1:]):
+            raise ValueError('select values require matching numeric or BOOL dtypes')
         if p.false_value == 'negative_infinity':
-            if dtype is DType.INT32:
+            if dtype in {DType.INT32, DType.INT64, DType.BOOL}:
                 raise ValueError('negative infinity is a floating selection value')
         elif p.false_value is not None:
             _scalar(p.false_value, dtype)
