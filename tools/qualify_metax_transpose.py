@@ -18,12 +18,13 @@ import traceback
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tools')]
 
-DTYPES = ('fp32', 'fp16', 'bf16', 'fp8_e4m3', 'int32', 'int64', 'bool')
+DTYPES = ('fp32', 'fp16', 'bf16', 'int32', 'int64', 'bool')
+REFUSED_DTYPES = ('fp8_e4m3',)
 SHAPES = ((16, 32), (35, 67), (1, 3))
 
 
 def source(rows, columns, dtype):
-    if dtype not in DTYPES or (rows, columns) not in SHAPES:
+    if dtype not in DTYPES + REFUSED_DTYPES or (rows, columns) not in SHAPES:
         raise ValueError('transpose probe is limited to its declared dtype and shape set')
     return f'''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="transpose_probe", target="xcore1002", backend="triton", entry_point="transpose_probe")
@@ -90,8 +91,8 @@ def build(args, result):
         executor.admit_host()
         isolated = IsolatedTritonCompiler(**_triton_toolchain_config(executor))
         isolated.check_executor(executor, author_workspace=args.output)
-    result['cases'] = []
-    for dtype in DTYPES:
+    result.update(cases=[], refused_cases=[])
+    for dtype in DTYPES + REFUSED_DTYPES:
         for rows, columns in SHAPES:
             name = f'{dtype}-{rows}-{columns}'
             directory = args.output / name
@@ -106,6 +107,13 @@ def build(args, result):
             write(directory / 'production-findings.json', production.findings)
             findings = (*verify(schedule, probe), *preflight(schedule, probe))
             write(directory / 'probe-findings.json', findings)
+            if dtype in REFUSED_DTYPES:
+                codes = {f.code for f in findings if f.blocks_lowering}
+                if codes != {'VALUE_OPERATION_TYPE', 'MACA_FP8_OPERATION_UNQUALIFIED'}:
+                    raise ValueError(f'{name}: FP8 refusal ownership differs')
+                result['refused_cases'].append({'name': name, 'codes': sorted(codes),
+                                                'scope': 'existing type and target restriction; no device call'})
+                continue
             if any(f.blocks_lowering for f in findings):
                 raise ValueError(f'{name}: synthetic transpose has a blocking finding')
             emission = emit(schedule, probe)
