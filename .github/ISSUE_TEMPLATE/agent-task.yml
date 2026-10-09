@@ -1,0 +1,39 @@
+name: Agent task
+description: Track agent work, acceptance evidence, and issue dependencies.
+title: "[Agent] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal and scope
+      description: Describe the intended result and the boundaries of this task.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: State the observable result that establishes completion.
+    validations:
+      required: true
+  - type: textarea
+    id: blocks
+    attributes:
+      label: Blocks
+      description: List issues that cannot proceed until this issue is resolved. Write None if there are no dependent issues.
+      placeholder: "#123, or None"
+    validations:
+      required: true
+  - type: textarea
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      description: List issues that must be resolved before this issue can proceed. Write None if there are no blockers.
+      placeholder: "#456, or None"
+    validations:
+      required: true
+  - type: textarea
+    id: pull-requests
+    attributes:
+      label: Corresponding pull requests
+      description: Add the PR links when you open them.
