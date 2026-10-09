@@ -153,6 +153,10 @@ class ChunkDelta(unittest.TestCase):
             self.assertTrue(all(set(trace.stores.values())=={1} for trace in traces))
             self.assertEqual(program.outputs,('output',))
             self.assertNotIn(f'state_{(sequence+3)//4}',program.tensors)
+        source,inputs=self.fixture(9)
+        inputs['beta']=bf16(inputs['beta']-np.float32(.2))
+        observed,_,_=execute(parse_program(source).program,inputs)
+        np.testing.assert_allclose(observed,reference(inputs,.5,4),rtol=.01,atol=1e-4)
 
     def test_causal_group_and_recurrent_dependency_counterexamples(self):
         source,inputs=self.fixture(9)
@@ -160,7 +164,9 @@ class ChunkDelta(unittest.TestCase):
         mutations=[source.replace('key_head = head_index % 2','key_head = head_index // 2'),
                    source.replace('lm.compare(lanes, row, op="le", id="causal_domain")',
                                   'lm.compare(lanes, row, op="lt", id="causal_domain")'),
-                   source.replace('corrected = u - correction','corrected = u + correction')]
+                   source.replace('corrected = u - correction','corrected = u + correction'),
+                   source.replace('        decay = lm.exp(raw_g, id="raw_gate_exp")',
+                                  '        decay = lm.exp(row_prefix, id="raw_gate_exp")')]
         for changed in mutations:
             self.assertNotEqual(changed,source)
             actual,_,_=execute(parse_program(changed).program,inputs)
