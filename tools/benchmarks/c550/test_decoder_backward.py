@@ -58,7 +58,7 @@ class DecoderBackwardContracts(unittest.TestCase):
         b,s,h,i=1,33,64,32
         go=[bf16(1.25)]*(b*s*h)
         weight=[bf16(.03125)]*(h*i)
-        gate=[bf16(.57421875)]*(b*s*i)
+        gate=[bf16(.0517578125)]*(b*s*i)
         up=[bf16(-1.375)]*(b*s*i)
         silu=[bf16(-.27734375)]*(b*s*i)
         memory,_=single(stages.swiglu_backward(b,s,h,i,{}),
@@ -72,7 +72,7 @@ class DecoderBackwardContracts(unittest.TestCase):
         changed=stages.swiglu_backward(b,s,h,i,{}).replace('lm.cast(first_bf16, to="fp32", id="widen_first_product")',
                                                         'lm.cast(first_product, to="fp32", id="widen_first_product")')
         mutant,_=single(changed,{'grad_output':go,'down_weight':weight,'gate':gate,'up':up,'silu_up':silu},('grad_gate','grad_up'))
-        self.assertNotEqual(mutant['grad_up'],memory['grad_up'])
+        self.assertTrue(any(a != b for a,b in zip(mutant['grad_up'],memory['grad_up'])), 'the first BF16 product cast must change this control')
 
     def test_rms_input_reads_supplied_variance_and_rounds_before_residual_add(self):
         b,s,h=1,2,3
