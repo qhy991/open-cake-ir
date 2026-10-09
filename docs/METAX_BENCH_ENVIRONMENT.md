@@ -38,5 +38,9 @@ qualification. Partial input-layout observations do not qualify a complete task.
 
 ## Current scope
 
-CPU acceptance is in progress. Device, original-reference and performance
+CPU host admission, isolated native compilation of a small two-stage Program,
+and discrete-storage/conversion compilation have passed. A software coverage
+contract failure was retained and resolved by its owner in a separate reviewed
+tick; the affected contracts passed at the successor commit. These results cover
+software preparation only. Device, original-reference and performance
 qualification remain open under the tracking issue.
