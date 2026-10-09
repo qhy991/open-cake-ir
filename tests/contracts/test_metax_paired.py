@@ -42,7 +42,7 @@ class MacaPairedReceipts(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
 
-    def execute(self, *, reject_timing=False):
+    def execute(self, *, reject_timing=False, reject_launch=False, reject_teardown=False):
         owner = self
         class Loaded:
             module_count = 1
@@ -58,12 +58,18 @@ class MacaPairedReceipts(unittest.TestCase):
             def snapshot(self, values):
                 return values, self.inputs
             def launch_tensors(self, candidate, manifest, inputs):
+                if reject_launch:
+                    from open_cake_ir.evaluation.metax_failures import MetaxLaunchResourceError
+                    error = MetaxLaunchResourceError('MACA mcModuleLaunchKernel failed with status 32 (mcErrorMemoryValueTooLarge)')
+                    error.retain_launch(candidate, manifest, {**self.loaded.resources, 'local_bytes': 7680}, completed_target_calls=0)
+                    raise error
                 values = {}; self.launch(values)
                 return values, inputs, {'candidate_sha256':candidate.candidate_sha256,
                     'kernel_calls':1, 'fallback_calls':0, 'manifest_sha256':manifest.canonical_sha256,
                     'device_admission':asdict(owner.admission), 'resources':self.loaded.resources}
             def close(self):
-                pass
+                if reject_teardown:
+                    raise RuntimeError('module teardown failed')
         sequence = 0
         class Assay:
             def __init__(self, manifest, **kwargs):
@@ -135,6 +141,19 @@ class MacaPairedReceipts(unittest.TestCase):
         self.assertEqual(launch['allocation_mode'], 'local_serialized')
         self.assertEqual(launch['external_gpu_activity'], 'not_excluded')
         self.assertEqual(launch['device_admission'], asdict(self.admission))
+
+    def test_resource_launch_failure_retains_diagnostics_without_a_receipt(self):
+        from open_cake_ir.evaluation.metax_failures import MetaxLaunchResourceError
+        for cleanup_failed in (False, True):
+            with self.subTest(cleanup_failed=cleanup_failed), self.assertRaises(MetaxLaunchResourceError) as caught:
+                self.execute(reject_launch=True, reject_teardown=cleanup_failed)
+            diagnostic = json.loads(caught.exception.artifact_payloads['launch_resource'])
+            self.assertEqual(diagnostic['arm'], 'candidate')
+            self.assertEqual(diagnostic['phase'], 'preflight')
+            self.assertEqual(diagnostic['purpose'], 'search')
+            self.assertEqual(diagnostic['teardown_completed'], not cleanup_failed)
+            self.assertEqual(self.result['counters']['kernel_calls'], 0)
+            self.assertIsNone(self.result['receipt'])
 
     def test_native_record_reset_manifest_device_and_samples_are_not_replaceable(self):
         self.execute()

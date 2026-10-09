@@ -243,6 +243,7 @@ class BackendCoverageTest(unittest.TestCase):
         ("triton", "_TL_DTYPE"),
         ("triton", "TORCH_DTYPES"),
         ("triton", "_POINTER_TYPES"),
+        ("triton", "_TRITON_TRIG_LIBRARIES"),
         ("cutedsl", "BODY_EMITTERS"),
     }
 

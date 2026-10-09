@@ -110,10 +110,13 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
                or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
                or b.stages != 1 or b.swizzle or b.scale_of for b in s.buffers)):
         return refused('execution_commitments', 'Require one zero-based role without explicit storage, synchronization or residency commitments.')
+    pointwise = {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
+                 OperationKind.COMPARE, OperationKind.SELECT, OperationKind.STORE}
+    # Assessment owns compare/select register-storage, shape and dtype checks.
     if s.tile_loops:
         by_id = {op.op_id: op for op in s.operations}
         if len(s.tile_loops) != 1:
-            return refused('loop_domain', 'Require one fixed sequential MMA or CTA-reduction loop.')
+            return refused('loop_domain', 'Require one fixed pointwise, MMA or CTA-reduction loop.')
         loop = s.tile_loops[0]
         body = [by_id[name] for name in loop.body]
         # Initial backend assessment already owns output-store affine coverage
@@ -134,19 +137,36 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
 
         mma_body = any(op.kind is OperationKind.MMA for op in body)
         reduction_body = any(op.kind is OperationKind.REDUCE for op in body)
+        # No reduction/MMA/scan carry, no reads from written global storage, and
+        # no register updates: each iteration computes fresh pointwise values.
+        # Common verification already proves register producers/lifetimes, and
+        # backend assessment above proves each store's affine loop ownership.
+        pointwise_body = (bool(stores)
+            and all(op.kind in pointwise for op in s.operations)
+            and all(
+                s.buffer(op.reads[0]).mode is BufferMode.INPUT
+                if op.kind is OperationKind.LOAD else
+                s.buffer(op.writes[0]).mode is BufferMode.OUTPUT
+                if op.kind is OperationKind.STORE else
+                not set(op.reads).intersection(op.writes)
+                and all(s.buffer(name).space is MemorySpace.REGISTER
+                        for name in op.reads + op.writes)
+                for op in body))
         allowed = {OperationKind.LOAD, OperationKind.CAST, OperationKind.STORE}
         if mma_body:
             allowed.add(OperationKind.MMA)
         elif reduction_body:
             allowed.update({OperationKind.REDUCE, OperationKind.ELEMENTWISE})
+        elif pointwise_body:
+            allowed = pointwise
         if (loop.stop is not None or loop.range_options.warp_specialize
-                or not (mma_body or reduction_body)
+                or not (mma_body or reduction_body or pointwise_body)
                 or any(op.kind not in allowed for op in body)
                 or any(op.kind is OperationKind.CAST and not width_cast(op) for op in body)):
-            return refused('loop_domain', 'Require a fixed MMA or CTA-reduction loop with ordinary loads/casts/stores; rounded output stores must have no intermediate consumers.')
-    if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
-                          OperationKind.MMA, OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
-        return refused('operation_domain', 'Only pure tensor arithmetic, MMA, CTA reductions and ordinary loads/stores are admitted.')
+            return refused('loop_domain', 'Require a fixed independent pointwise, MMA or CTA-reduction loop with ordinary loads/casts/stores; rounded output stores must have no intermediate consumers.')
+    if any(op.kind not in pointwise | {OperationKind.MMA, OperationKind.REDUCE}
+           for op in s.operations):
+        return refused('operation_domain', 'Only pure tensor arithmetic/comparisons/selections, MMA, CTA reductions and ordinary loads/stores are admitted.')
     if num_warps == len(s.roles[0].execution_groups):
         return refused('unchanged', 'The requested width is already declared.')
     copied['schedule_id'] = schedule_id
@@ -161,6 +181,78 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
             if f.blocks_lowering or f.blocks_acceptance))
     return SpecializationResult(result, 'applied',
         'CTA width explicitly specialized; Lab must measure correctness, timing and resources.')
+
+
+def specialize_triton_store_loop(compiler: Compiler, schedule: Mapping, *,
+                                loop_name: str, num_stages: int,
+                                schedule_id: str, entry_point: str) -> SpecializationResult:
+    """Explicit pipeline-depth choice for an independent gfx938 output loop.
+
+    Uses the existing range option, without changing arithmetic or guessing a
+    profitable depth. The caller names one fixed store-bearing sibling region.
+    """
+    def refused(reason, message):
+        return SpecializationResult(None, reason, message)
+
+    if type(num_stages) is not int or num_stages < 1:
+        return refused('stage_count', 'num_stages must be a positive integer.')
+    try:
+        copied = deepcopy(dict(schedule))
+        assessment = compiler.assess(copied)
+        if not assessment.lowering_eligible:
+            return refused('input_refused', ', '.join(f.code for f in assessment.findings
+                           if f.blocks_lowering or f.blocks_acceptance))
+        s = assessment.typed_schedule
+        if s.lowering.backend is not LoweringBackend.TRITON or s.target != 'gfx938':
+            return refused('target_route', 'This store-loop choice is qualified only on gfx938 Triton.')
+        if (len(s.roles) != 1 or s.residency or s.allocations or s.pipelines or s.barriers
+                or s.roles[0].registers_per_thread is not None
+                or s.program_map is None or s.program_map.persistent
+                or any(op.waits or op.signals or op.pipeline for op in s.operations)
+                or any(b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
+                       or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent
+                       or b.space not in {MemorySpace.GLOBAL, MemorySpace.REGISTER}
+                       for b in s.buffers)):
+            return refused('execution_commitments', 'Require one pure role and ordinary storage without state, synchronization or residency commitments.')
+        matches = [(i, loop) for i, loop in enumerate(s.tile_loops) if loop.name == loop_name]
+        if len(matches) != 1:
+            return refused('loop_selection', 'Select one existing named TileLoop.')
+        index, loop = matches[0]
+        if s.loop_parent() or loop.stop is not None or loop.range_options.warp_specialize:
+            return refused('loop_domain', 'Require fixed unnested loop regions without warp specialization.')
+        pure = {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.COMPARE,
+                OperationKind.SELECT, OperationKind.CAST, OperationKind.STORE}
+        body = s.loop_operations(loop)
+        if (not any(op.kind is OperationKind.STORE for op in body)
+                or any(op.kind not in pure for op in body)
+                or any(op.kind not in pure | {OperationKind.REDUCE} for op in s.operations)):
+            return refused('loop_domain', 'Select a pure store-bearing loop with no reduction or MMA carry in that region.')
+        for op in body:
+            if (op.kind is OperationKind.LOAD and s.buffer(op.reads[0]).mode is not BufferMode.INPUT
+                or op.kind is OperationKind.STORE and s.buffer(op.writes[0]).mode is not BufferMode.OUTPUT
+                or set(op.reads).intersection(op.writes)):
+                return refused('loop_effects', 'The selected loop reads immutable inputs and writes owned outputs, without mutable state.')
+        extent = s.buffer(loop.buffer).shape[loop.dimension]
+        trips = (extent + loop.tile - 1) // loop.tile
+        if not 1 <= num_stages <= trips:
+            return refused('stage_count', f'Choose a depth no greater than the fixed {trips} trips.')
+        if num_stages == loop.range_options.num_stages:
+            return refused('unchanged', 'The selected region already has this depth.')
+        if (not isinstance(schedule_id, str) or not schedule_id or schedule_id == s.schedule_id
+                or not isinstance(entry_point, str) or not entry_point.isidentifier()):
+            return refused('result_identity', 'Choose a fresh Schedule identity and valid entry point.')
+        copied['schedule_id'] = schedule_id
+        copied['lowering']['entry_point'] = entry_point
+        copied['tile_loops'][index]['range_options']['num_stages'] = num_stages
+        result = compiler.assess(copied)
+        if not result.lowering_eligible:
+            return refused('result_refused', ', '.join(f.code for f in result.findings
+                           if f.blocks_lowering or f.blocks_acceptance))
+        compiler.lower(result)
+        return SpecializationResult(result, 'applied',
+            'Selected store-loop depth changed explicitly; arithmetic, accesses and ABI are preserved. Measure correctness, resources and timing.')
+    except (CompilerError, ScheduleParseError, ValueError, TypeError) as error:
+        return refused('input_refused', str(error))
 
 
 def _row_axis(schedule: Schedule, rows: int):

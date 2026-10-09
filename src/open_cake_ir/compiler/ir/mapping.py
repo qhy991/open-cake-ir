@@ -282,6 +282,14 @@ class AccessMap:
     indices: tuple[AccessIndex, ...]
     boundary: BoundaryPolicy
 
+    @property
+    def program_axes(self) -> tuple[str, ...]:
+        """Direct program-coordinate uses; duplicates retain ownership multiplicity."""
+        return tuple(component.name for component in self.indices
+                     if component.source in {
+                         AccessIndexKind.PROGRAM, AccessIndexKind.PROGRAM_TILE,
+                     } and component.name is not None)
+
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "AccessMap":
         obj = _strict_object(

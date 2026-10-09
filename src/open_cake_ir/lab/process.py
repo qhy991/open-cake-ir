@@ -7,6 +7,7 @@ import re
 import signal
 import subprocess
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -52,17 +53,27 @@ def run_supervised(
     timeout_seconds: int,
     environment: Mapping[str, str] | None = None,
     maximum_output_bytes: int = 64 * 1024 * 1024,
+    input_bytes: bytes | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """Run without shell; on timeout kill and reap the whole new process group."""
 
     if not arguments or timeout_seconds <= 0 or maximum_output_bytes <= 0:
         raise ValueError("supervised command or timeout differs")
-    with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+    if input_bytes is not None and not isinstance(input_bytes, bytes):
+        raise ValueError('supervised stdin must be bytes')
+    with ExitStack() as stack:
+        stdout_file = stack.enter_context(tempfile.TemporaryFile())
+        stderr_file = stack.enter_context(tempfile.TemporaryFile())
+        input_file = subprocess.DEVNULL
+        if input_bytes is not None:
+            input_file = stack.enter_context(tempfile.TemporaryFile())
+            input_file.write(input_bytes)
+            input_file.seek(0)
         process = subprocess.Popen(
             list(arguments),
             cwd=cwd,
             env=dict(environment) if environment is not None else None,
-            stdin=subprocess.DEVNULL,
+            stdin=input_file,
             stdout=stdout_file,
             stderr=stderr_file,
             start_new_session=True,
