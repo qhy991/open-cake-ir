@@ -266,7 +266,7 @@ class PortableProgramEvaluation(unittest.TestCase):
                 authority_document={'lowering_route': program.document['stages'][0]['schedule']['lowering']})
             result = environment.build(CandidateSubmission.seal(environment.media_type, program.document_bytes))
             self.assertNotEqual(result.disposition, 'launchable')
-            self.assertIn('one dispatch', str(result.feedback))
+            self.assertIn('not qualified' if backend == 'triton-metax' else 'one dispatch', str(result.feedback))
             toolchain.build_stage.assert_not_called()
 
     def test_local_worker_prepares_complete_program_oracles_and_refuses_timing_before_lock(self):

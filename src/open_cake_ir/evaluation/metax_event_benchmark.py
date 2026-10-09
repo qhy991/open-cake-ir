@@ -22,6 +22,7 @@ TORCH_RESET = 'torch_fp32_fill_ones_twice_4x_declared_l2_before_start_event'
 GATED_TIMER = 'maca_native_gated_event_elapsed_ms'
 GATED_RESET = 'torch_fp32_fill_ones_twice_4x_declared_l2_owned_stream_before_start_event'
 GATED_INTERVAL = 'owned_stream_device_events_after_all_target_commands_are_enqueued'
+PROGRAM_INTERVAL = 'default_stream_events_around_complete_program_including_checks_and_submission_gaps'
 
 
 class MacaEventBenchmark:
@@ -39,6 +40,19 @@ class MacaEventBenchmark:
         self.last_activity = None
         self.non_target_dispatches = None  # No profiler observes foreign dispatches.
 
+    def _event_record(self, warmups, observations):
+        return {
+            'kind': 'maca_event_samples_v1', 'timer': TIMER, 'cache_policy': RESET,
+            'interval': INTERVAL, 'coverage': COVERAGE, 'profiler_enabled': False,
+            'target': self.manifest.target, 'device': 0, 'stream': 0,
+            'l2_cache_bytes': self.l2_cache_bytes, 'reset_bytes': 4 * self.l2_cache_bytes,
+            'warmup_calls': warmups, 'event_pair_primed': False,
+            'launch': {'kernel_name': self.manifest.kernel_name,
+                       'grid': list(self.manifest.grid), 'block': list(self.manifest.block),
+                       'dynamic_shared_memory_bytes': self.manifest.dynamic_shared_memory_bytes},
+            'samples': observations,
+        }
+
     def __call__(self, function, *, dry_run_iters, repeat_iters, cold_l2_cache, use_cuda_graph):
         import torch
         if (use_cuda_graph or cold_l2_cache is not True or dry_run_iters != 11
@@ -54,17 +68,7 @@ class MacaEventBenchmark:
         if self._reset is None:
             self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device='cuda:0')
         observations = []
-        self.last_activity = {
-            'kind': 'maca_event_samples_v1', 'timer': TIMER, 'cache_policy': RESET,
-            'interval': INTERVAL, 'coverage': COVERAGE, 'profiler_enabled': False,
-            'target': self.manifest.target, 'device': 0, 'stream': 0,
-            'l2_cache_bytes': self.l2_cache_bytes, 'reset_bytes': 4 * self.l2_cache_bytes,
-            'warmup_calls': dry_run_iters, 'event_pair_primed': False,
-            'launch': {'kernel_name': self.manifest.kernel_name,
-                       'grid': list(self.manifest.grid), 'block': list(self.manifest.block),
-                       'dynamic_shared_memory_bytes': self.manifest.dynamic_shared_memory_bytes},
-            'samples': observations,
-        }
+        self.last_activity = self._event_record(dry_run_iters, observations)
         with torch.cuda.stream(stream):
             # Warm the reset operation before the first formal interval as well.
             self._reset.fill_(1.0)
@@ -88,6 +92,66 @@ class MacaEventBenchmark:
                 if not math.isfinite(elapsed) or elapsed <= 0:
                     raise ValueError('MACA event interval must be finite and positive')
         return [row['elapsed_ms'] for row in observations]
+
+
+class MacaProgramEventBenchmark(MacaEventBenchmark):
+    """One interval covers all ordered stages; allocation precedes every interval.
+
+    The implementation can be exercised by device qualification tools. Production
+    Run admission remains with ``admit_program_execution`` and its evidence set.
+    """
+
+    def __init__(self, manifest, *, l2_cache_bytes):
+        from .program import ProgramLaunchManifest
+        target = declared_target(manifest.target)
+        if (not isinstance(manifest, ProgramLaunchManifest) or manifest.aligned_stages
+                or target.code_object is not CodeObject.MCFATBIN
+                or type(l2_cache_bytes) is not int or l2_cache_bytes <= 0
+                or target.l2_cache_bytes != l2_cache_bytes):
+            raise ValueError('MACA Program event manifest or L2 declaration differs')
+        self.manifest, self.l2_cache_bytes = manifest, l2_cache_bytes
+        self._reset = self.last_activity = self.non_target_dispatches = None
+
+    def _event_record(self, warmups, observations):
+        return {
+            'kind': 'maca_program_event_samples_v1', 'timer': TIMER, 'cache_policy': RESET,
+            'interval': PROGRAM_INTERVAL, 'coverage': COVERAGE, 'profiler_enabled': False,
+            'target': self.manifest.target, 'device': 0, 'stream': 0,
+            'l2_cache_bytes': self.l2_cache_bytes, 'reset_bytes': 4 * self.l2_cache_bytes,
+            'warmup_calls': warmups, 'event_pair_primed': False,
+            'stage_names': [stage.name for stage in self.manifest.program.stages],
+            'completed_program_calls': 0, 'completed_stage_calls': 0, 'samples': observations,
+        }
+
+    def __call__(self, *args, **kwargs):
+        raise ValueError('MACA Program events require the complete loaded Program adapter')
+
+    def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
+        from .program import LoadedProgram
+        if (not isinstance(loaded.loaded, LoadedProgram)
+                or loaded.manifest.as_dict() != self.manifest.as_dict()
+                or loaded.loaded.manifest.as_dict() != self.manifest.as_dict()
+                or dry_run_iters != 11 or repeat_iters != 5
+                or len(arguments) != dry_run_iters + repeat_iters
+                or len({id(values) for values in arguments}) != len(arguments)):
+            raise ValueError('MACA Program event arguments or cohort differs')
+        used = 0
+        def launch():
+            nonlocal used
+            if used >= len(arguments):
+                raise ValueError('MACA Program event invocation budget exceeded')
+            before = loaded.loaded.launch_calls
+            loaded.launch(arguments[used])
+            if loaded.loaded.launch_calls - before != self.manifest.kernels_per_call:
+                raise ValueError('MACA Program event stage count differs')
+            used += 1
+            self.last_activity['completed_program_calls'] = used
+            self.last_activity['completed_stage_calls'] += self.manifest.kernels_per_call
+        values = super().__call__(launch, dry_run_iters=dry_run_iters,
+                                  repeat_iters=repeat_iters, cold_l2_cache=True, use_cuda_graph=False)
+        if used != len(arguments):
+            raise ValueError('MACA Program event invocation count differs')
+        return values
 
 
 class MacaNativeEventBenchmark(MacaEventBenchmark):
@@ -157,6 +221,10 @@ def validate_cohort(record, manifest, *, sample_count, native=False, torch_reset
     from .program import ProgramLaunchManifest
     target = declared_target(manifest.target)
     raw = record.get('native_activity')
+    if isinstance(manifest, ProgramLaunchManifest):
+        if native or torch_reset or gated:
+            raise ValueError('MACA Program events do not use a single-dispatch native timer')
+        return validate_program_cohort(record, manifest, sample_count=sample_count)
     expected_launch = {'kernel_name': manifest.kernel_name,
                        'grid': list(manifest.grid), 'block': list(manifest.block),
                        'dynamic_shared_memory_bytes': manifest.dynamic_shared_memory_bytes}
@@ -181,7 +249,33 @@ def validate_cohort(record, manifest, *, sample_count, native=False, torch_reset
             or raw.get('launch') != expected_launch
             or record.get('non_target_dispatches') is not None):
         raise ValueError('MACA event interval, reset, coverage or launch declaration differs')
-    rows = raw['samples']
+    _validate_samples(record, sample_count)
+
+
+def validate_program_cohort(record, manifest, *, sample_count):
+    target = declared_target(manifest.target)
+    raw = record.get('native_activity')
+    calls = 11 + sample_count
+    expected = {
+        'kind': 'maca_program_event_samples_v1', 'timer': TIMER, 'cache_policy': RESET,
+        'interval': PROGRAM_INTERVAL, 'coverage': COVERAGE, 'profiler_enabled': False,
+        'target': manifest.target, 'device': 0, 'stream': 0,
+        'l2_cache_bytes': target.l2_cache_bytes, 'reset_bytes': 4 * target.l2_cache_bytes,
+        'warmup_calls': 11, 'event_pair_primed': True,
+        'stage_names': [stage.name for stage in manifest.program.stages],
+        'completed_program_calls': calls, 'completed_stage_calls': calls * manifest.kernels_per_call,
+    }
+    if (target.code_object is not CodeObject.MCFATBIN or manifest.aligned_stages
+            or not isinstance(raw, Mapping) or set(raw) != set(expected) | {'samples'}
+            or any(raw.get(key) != value or type(raw.get(key)) is not type(value)
+                   for key, value in expected.items())
+            or record.get('non_target_dispatches') is not None):
+        raise ValueError('MACA Program interval, stage count, reset or coverage differs')
+    _validate_samples(record, sample_count)
+
+
+def _validate_samples(record, sample_count):
+    rows = record['native_activity']['samples']
     if not isinstance(rows, list) or len(rows) != sample_count:
         raise ValueError('MACA event sample count differs')
     values = []
@@ -200,13 +294,16 @@ def validate_cohort(record, manifest, *, sample_count, native=False, torch_reset
 
 def validate_paired_events(raw, protocol):
     from .core import TensorLaunchManifest
+    from .program import ProgramLaunchManifest
     from .paired import PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND, PAIRED_MACA_GATED_EVENT_KIND
     documents, participants = raw.get('launch_manifests'), raw.get('participants')
     if (not isinstance(documents, Mapping) or set(documents) != set(protocol.arms)
             or not isinstance(participants, Mapping) or set(participants) != set(protocol.arms)):
         raise ValueError('MACA event pair requires both sealed manifests')
     for role in protocol.arms:
-        manifest = TensorLaunchManifest.from_dict(documents[role])
+        manifest_type = (ProgramLaunchManifest if documents[role].get('abi') == ProgramLaunchManifest.abi
+                         else TensorLaunchManifest)
+        manifest = manifest_type.from_dict(documents[role])
         if (manifest.canonical_sha256 != participants[role].get('launch_spec_sha256')
                 or manifest.target != participants[role].get('target')
                 or manifest.workload_sha256 != raw.get('workload_sha256')
@@ -237,9 +334,21 @@ def validate_paired_device(raw, launch, participants):
     if not isinstance(resources, Mapping) or set(resources) != set(participants):
         raise ValueError('MACA event loaded resource coverage differs')
     for role, values in resources.items():
-        if any(type(values.get(name)) is not int or values[name] < 0
-               for name in ('registers_per_thread', 'local_bytes', 'dynamic_shared_bytes')):
-            raise ValueError('MACA event loaded resources differ')
         manifest = raw['launch_manifests'][role]
+        if manifest.get('abi') == 'ordered_program_v1':
+            names = {stage['name'] for stage in manifest['program']['stages']}
+            if (values.get('kind') != 'ordered_program' or not isinstance(values.get('stages'), Mapping)
+                    or set(values['stages']) != names):
+                raise ValueError('MACA Program loaded stage resource coverage differs')
+            for stage in values['stages'].values():
+                _validate_resource_values(stage)
+            continue
+        _validate_resource_values(values)
         if values['dynamic_shared_bytes'] != manifest['dynamic_shared_memory_bytes']:
             raise ValueError('MACA event loaded shared memory differs')
+
+
+def _validate_resource_values(values):
+    if not isinstance(values, Mapping) or any(type(values.get(name)) is not int or values[name] < 0
+            for name in ('registers_per_thread', 'local_bytes', 'dynamic_shared_bytes')):
+        raise ValueError('MACA event loaded resources differ')

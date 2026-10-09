@@ -320,6 +320,11 @@ def _admit_program_assay(authority, *, collect_timing):
         if candidate is not None and candidate.is_program:
             admit_program_execution(candidate.target, timing=collect_timing,
                                     attribution=authority.request['purpose'] == 'attribution')
+            if collect_timing and platform_for(candidate.target).code_object is CodeObject.MCFATBIN:
+                from open_cake_ir.evaluation.paired import PAIRED_MACA_EVENT_KIND
+                timing = authority.request['evaluation_protocol'].get('paired_timing', {})
+                if timing.get('kind') != PAIRED_MACA_EVENT_KIND:
+                    raise ValueError('MACA Program timing requires its complete default-stream event interval')
 
 
 def _execution_platform(authority: _Authority) -> CodeObject:
@@ -708,6 +713,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     cohorts = []
     non_target = []
     timed_checks = []
+    closed = False
+    profile_raw = None
     try:
         preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded,
                 **_correctness_preparation(authority, authority.case_id))
@@ -790,6 +797,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             instrumented = loaded.fresh_argument_sets(1)[0]
             raw = profile_source(lambda: loaded.launch(instrumented),
                                  authority.manifest.kernel_name)
+            profile_raw = raw
             observed, after = loaded.snapshot(instrumented)
             expected = _reference_for(authority, authority.case_id, inputs)
             correct, instrumented_metrics = compare_tile_outputs(
@@ -802,6 +810,18 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             metrics['output_mismatches'] += instrumented_metrics['output_mismatches']
             metrics['max_abs_error'] = max(metrics['max_abs_error'], instrumented_metrics['max_abs_error'])
             metrics['inputs_unchanged'] &= instrumented_metrics['inputs_unchanged']
+            if authority.candidate.is_program:
+                from open_cake_ir.evaluation.program import program_components
+                _, children, _ = program_components(authority.candidate)
+                launch_document['stage_candidates'] = {
+                    name: candidate_identity(child) for name, child in children.items()}
+                # A Program profile promises complete module teardown. Do it before
+                # publishing either the profile or its receipt, retaining failures.
+                loaded.close()
+                closed = True
+                launch_document['module_unloaded'] = loaded.loaded.closed
+                if not loaded.loaded.closed:
+                    raise ValueError('MACA Program modules remain open after attribution')
             profile_path = authority.request_root / 'profile.json'
             _write_new(profile_path, {
                 'kind': profile_format.kind,
@@ -830,10 +850,17 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         # the raw launch artifact retain the separate preflight and timing work.
         result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
             'kernel_calls': authority.manifest.kernels_per_call, 'fallback_calls': 0, 'timing': timing, 'artifacts': artifacts}
+    except BaseException as error:
+        if authority.candidate.is_program and profile_raw is not None:
+            retained = dict(getattr(error, 'artifact_payloads', {}))
+            retained['program_activity'] = _canonical_json_bytes(profile_raw)
+            error.artifact_payloads = retained
+        raise
     finally:
         counters['kernel_calls'] = loaded.loaded.launch_calls
         counters['timing_samples'] = sum(len(s) for s in cohorts)
-        loaded.close()
+        if not closed:
+            loaded.close()
 
 
 def _evaluate_metal_candidate(authority, result):
@@ -1082,6 +1109,16 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
     result.update(job_id=admission.broker_job_id, mode=job_mode(admission.broker_job_id), admitted=True)
     authority = _prepare_target_tensor_work(authority, admission)
     if authority.request['purpose'] == 'attribution':
+        if authority.candidate.is_program:
+            from open_cake_ir.evaluation.metax_program_profile import (
+                capture_program_activity, MACA_PROGRAM_PROFILE,
+            )
+            _evaluate_tile_candidate(authority, result, None, admission, False,
+                route_calls_per_cohort=None, profile_format=MACA_PROGRAM_PROFILE,
+                profile_source=lambda launch, name: capture_program_activity(launch,
+                    candidate=authority.candidate, admission=admission,
+                    activity_library=host['activity_library']))
+            return
         _evaluate_tile_candidate(authority, result, None, admission, False,
             route_calls_per_cohort=None, profile_format=MACA_PROFILE,
             profile_source=lambda launch, name: collect_maca_activity(launch, name,
@@ -1092,13 +1129,13 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
             raise ValueError('MACA timing requires the declared paired baseline')
         from open_cake_ir.evaluation.paired import MACA_EVENT_KINDS, PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND, PAIRED_MACA_GATED_EVENT_KIND
         if authority.request['evaluation_protocol']['paired_timing']['kind'] in MACA_EVENT_KINDS:
-            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark, MacaTorchResetEventBenchmark, MacaGatedEventBenchmark
+            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark, MacaTorchResetEventBenchmark, MacaGatedEventBenchmark, MacaProgramEventBenchmark
             assay = (MacaGatedEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
                      == PAIRED_MACA_GATED_EVENT_KIND else MacaTorchResetEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
                      == PAIRED_MACA_TORCH_EVENT_KIND else MacaNativeEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
                      == PAIRED_MACA_NATIVE_EVENT_KIND else MacaEventBenchmark)
             _evaluate_paired_tile(authority, result,
-                lambda role, manifest: assay(manifest,
+                lambda role, manifest: (MacaProgramEventBenchmark if isinstance(manifest, ProgramLaunchManifest) else assay)(manifest,
                     l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
         else:
             _evaluate_paired_tile(authority, result,

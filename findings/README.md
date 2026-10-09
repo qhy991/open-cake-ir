@@ -1,5 +1,6 @@
 # Findings
 
+- [F-2026-10-09-010](2026-10-09-010-metax-complete-program-measurement.json) — complete MACA Program event and separate attribution adapters are software-verified; exact-target device qualification remains pending and the production evidence set stays empty.
 
 - [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
 
