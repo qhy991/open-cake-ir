@@ -896,9 +896,12 @@ class ClaudeInvocationBuilder:
         # window unpinned: it reaches that refusal sooner, and the run ends there. That is
         # the consequence `cli_limitations` states, and `tools/qualify_codex_provider.py`
         # writes beside the receipt it just issued.
-        self._autocompact = (CLAUDE_AUTOCOMPACT_WINDOW
+        self._autocompact = (('100k' if event_contract == CLAUDE_STDIN_EVENT_CONTRACT
+                             else CLAUDE_AUTOCOMPACT_WINDOW)
                              if CLAUDE_AUTOCOMPACT_OPTION in options
                              else CLAUDE_AUTOCOMPACT_UNSUPPORTED)
+        if event_contract == CLAUDE_STDIN_EVENT_CONTRACT and self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED:
+            raise ValueError('Claude stdin successor requires explicit native compaction control')
 
     @property
     def configuration(self) -> Mapping[str, object]:
@@ -924,10 +927,12 @@ class ClaudeInvocationBuilder:
         unpinned = self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED
         if not unpinned:
             return {
-                "context_window": CLAUDE_AUTOCOMPACT_WINDOW,
+                "context_window": self._autocompact,
                 "finding": "F-2026-09-10-008",
                 "severity": "none",
-                "consequence": "the context window is pinned at the maximum this build accepts",
+                "consequence": ('v7 compacts at100k to reserve room for the next complete task projection'
+                                if self._event_contract == CLAUDE_STDIN_EVENT_CONTRACT else
+                                'the context window is pinned at the maximum this build accepts'),
             }
         return {
             "context_window": CLAUDE_AUTOCOMPACT_UNSUPPORTED,
