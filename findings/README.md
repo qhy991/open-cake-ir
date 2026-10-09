@@ -1,5 +1,7 @@
 # Findings
 
+- F-2026-10-05-001 — completion-fenced MACA acquisition passes 32 A/A, four signed controls and four profiles. Six fixed-combination comparisons pass quality, but a later baseline cohort contains a 0.770 us sample and fails CV; the predeclared batch stops. SDK reliability remains deferred and no Compiler mechanism is promoted.
+
 Append-only records between campaign evidence and Compiler/Executor changes. One file
 per finding, named `YYYY-MM-DD-NNN-slug.json`. The evidence ledger already records what
 happened; a finding is the curated "so what" that a Revision decision can cite.
