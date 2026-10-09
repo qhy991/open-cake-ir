@@ -17,5 +17,11 @@
   },
   "observation": "The compile stage establishes a refusal, not whether emission, toolchain, environment or a missing verification rule caused it. The default route overstates that evidence and can direct maintenance to the wrong owner.",
   "proposed_change": "Route unclassified Compiler-produced source refusals to existing backend_triage. Keep authored-source arms candidate-routed and preserve historical records at their producing source.",
+  "implemented_in": "0d2efcc3",
+  "verified_by": {
+    "source": "23b2e610",
+    "cpu": "58 focused contracts pass, one optional Torch-dependent test skips; 2079 subtests pass. Unknown generated-source refusals route to triage, authored-source arms remain candidate-routed, retained explicitly owned QSA diagnoses remain unchanged, and native feedback/replay retain the current-source route.",
+    "scope": "CPU Lab and tool checks only; no Provider, device or performance qualification."
+  },
   "promotion_disposition": "Lab diagnosis repair proposed for review. No Compiler capability, device qualification or performance promotion."
 }

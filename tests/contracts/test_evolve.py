@@ -191,9 +191,42 @@ class BenchFreezeTests(unittest.TestCase):
             self.freeze()
         self.assertFalse(self.output.exists())
 
+    def test_two_plans_cannot_assign_the_same_cohort_workspaces(self):
+        first = self.freeze()
+        self.output = self.output.with_name("second-plan.json")
+        self.draft["hypothesis"] = "A different comparison"
+        with self.assertRaisesRegex(ValueError, "one plan.json"):
+            self.freeze()
+        self.output = self.root / "second-cohort/plan.json"
+        second = self.freeze()
+        self.assertFalse({r["workspace"] for r in first["allocations"]} &
+                         {r["workspace"] for r in second["allocations"]})
+
     def test_dirty_sources_refuse_before_output(self):
         (self.checkouts["successor"] / "compiler/revision.json").write_text("changed")
         with self.assertRaisesRegex(ValueError, "clean"):
+            self.freeze()
+        self.assertFalse(self.output.exists())
+
+    def test_untracked_suite_cannot_supply_a_frozen_population(self):
+        repo = self.checkouts["bench"]
+        self.git(repo, "rm", "--cached", "suite.json")
+        (repo / ".gitignore").write_text("suite.json\n")
+        self.git(repo, "add", ".gitignore")
+        self.git(repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Untrack suite")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.freeze()
+        self.assertFalse(self.output.exists())
+
+    def test_tracked_symlink_cannot_pin_an_external_baseline(self):
+        repo = self.checkouts["bench"]
+        external = self.root / "mutable-baseline.py"
+        external.write_text("# mutable external reference\n")
+        (repo / "baseline.py").unlink()
+        (repo / "baseline.py").symlink_to(external)
+        self.git(repo, "add", "baseline.py")
+        self.git(repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Link baseline")
+        with self.assertRaisesRegex(ValueError, "not a file"):
             self.freeze()
         self.assertFalse(self.output.exists())
 

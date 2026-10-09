@@ -175,7 +175,6 @@ def _review_task(assignment, *, mirror=None):
     return {**_identity(assignment), "state": state, "issues": issues,
             "reported_done_status": done.get("status") if done else None,
             "release_verified_by_owner": released,
-            "retained_starter": best.get("id") == "starter-baseline" if isinstance(best, dict) else None,
             "nominee": best.get("id") if isinstance(best, dict) else None,
             "baseline": {"kind": "canonical_development_starter",
                          "source": locator("campaign/candidates/starter.py"),
@@ -256,7 +255,8 @@ def _tracked_file(root, relative):
     if not isinstance(relative, str) or not relative or Path(relative).is_absolute() or ".." in Path(relative).parts:
         raise ValueError("a Bench reference must be a repository-relative file")
     _git(root, "cat-file", "-e", f"HEAD:{relative}")
-    if not (Path(root) / relative).is_file():
+    path = Path(root).resolve(strict=True) / relative
+    if path != path.resolve() or not path.is_file():
         raise ValueError(f"Bench reference is not a file: {relative}")
 
 
@@ -278,6 +278,7 @@ def freeze_bench(draft_path, *, bench, control, successor, output):
         _tracked_file(compiler_root, "compiler/revision.json")
     if bindings["control"]["commit"] == bindings["successor"]["commit"]:
         raise ValueError("no source change: record No promotion or use a separately declared material comparison")
+    _tracked_file(bench, "suite.json")
     suite = read_object(Path(bench) / "suite.json")
     available = {task["id"] for task in suite["tasks"]}
     tasks = draft["task_ids"]
@@ -306,6 +307,8 @@ def freeze_bench(draft_path, *, bench, control, successor, output):
     for relative in [draft["measurement_protocol"], *baselines.values()]:
         _tracked_file(bench, relative)
     output = Path(output).absolute()
+    if output.name != "plan.json":
+        raise ValueError("each cohort directory owns one plan.json; use a new directory for a new segment")
     if output != output.resolve() or any((parent / ".git").exists() for parent in (output.parent, *output.parents)):
         raise ValueError("freeze output must be canonical and outside Git checkouts")
     rng = random.Random(seed)

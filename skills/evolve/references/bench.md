@@ -41,6 +41,8 @@ python3 tools/evolve.py freeze-bench \
 ```
 
 All checkouts must be clean committed roots. The output must be outside Git checkouts.
+Each comparison directory owns exactly one `plan.json`. A different comparison needs
+a different directory, so two plans cannot assign the same Run workspaces.
 The command freezes their commits, exact target, selected Bench tasks, shared controls,
 fixed references and all condition/task/replicate workspaces. Identical retries return
 the existing plan. A different plan cannot overwrite it; existing allocated workspaces

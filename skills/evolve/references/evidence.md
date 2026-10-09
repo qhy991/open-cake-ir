@@ -56,6 +56,8 @@ Missing outcome files remain visible. Read the emitted source and profiler repor
 distinguish a useful kernel from a reusable Compiler mechanism. Read release receipts
 with the gateway's own verifier before subsequent device admission; the reader reports
 the retained owner's release verdict rather than reimplementing that verifier.
+Candidate names do not establish whether the original starter was retained. Compare
+the nominee's retained source with the canonical starter and read the owner's rationale.
 
 For native EvidenceStore Runs, retain their existing reader and pinned semantic audit:
 
