@@ -83,13 +83,34 @@ class DecoderBackwardContracts(unittest.TestCase):
 
     def test_two_linear_branches_round_before_their_sum(self):
         b,s,k,n=2,33,64,32
-        x=quantized(b*s*k,3,.25);w=quantized(k*n,5,.125)
-        y=quantized(b*s*k,7,.0625);v=quantized(k*n,11,.25)
+        x=([1.,2**-8]+[0.]*(k-2))*(b*s)
+        w=[1.]*(2*n)+[0.]*((k-2)*n)
+        y=([1.]+[0.]*(k-1))*(b*s)
+        v=[-1.]*n+[0.]*((k-1)*n)
         source=stages.linear_paths('two_linear',b,s,n,[('x','w',k),('y','v',k)],'out')
         memory,traces=single(source,{'x':x,'w':w,'y':y,'v':v},('out',))
         expected=[bf16(a+b) for a,b in zip(linear(x,w,b,s,k,n),linear(y,v,b,s,k,n))]
         self.assertEqual(memory['out'],expected)
+        self.assertEqual(set(expected),{0.})
         self.assertTrue(all(set(trace.stores.values())=={1} for trace in traces))
+        changed=source.replace('lm.cast(rounded_0, to="fp32", id="prior_1")',
+                               'lm.cast(dot_0, to="fp32", id="prior_1")')
+        mutant,_=single(changed,{'x':x,'w':w,'y':y,'v':v},('out',))
+        self.assertEqual(set(mutant['out']),{2**-8})
+
+    def test_three_linear_branches_round_the_q_plus_k_sum_before_adding_v(self):
+        b,s,k,n=1,33,64,32
+        x=([1.]+[0.]*(k-1))*(b*s)
+        inputs={f'x_{j}':x[:] for j in range(3)}
+        for j,value in enumerate((1.,2**-8,-1.)):
+            inputs[f'w_{j}']=[value]*n+[0.]*((k-1)*n)
+        source=stages.linear_paths('three_linear',b,s,n,[(f'x_{j}',f'w_{j}',k) for j in range(3)],'out')
+        result,_=single(source,inputs,('out',))
+        self.assertEqual(set(result['out']),{0.})
+        changed=source.replace('lm.cast(rounded_sum_1, to="fp32", id="prior_2")',
+                               'lm.cast(sum_1, to="fp32", id="prior_2")')
+        mutant,_=single(changed,inputs,('out',))
+        self.assertEqual(set(mutant['out']),{2**-8})
 
     def test_swiglu_uses_silu_of_up_and_two_up_product_rounds(self):
         b,s,h,i=1,33,64,32
@@ -154,6 +175,41 @@ class DecoderBackwardContracts(unittest.TestCase):
                     rotated=grad[row*width+head*d+((feature+d//2)%d)]*(-1 if feature<d//2 else 1)
                     expected.append(bf16(bf16(grad[index]*cosine[row*d+feature])+bf16(rotated*-sine[row*d+feature])))
         self.assertEqual(result['out'],expected)
+
+    def test_rope_and_rms_rounding_seams_have_distinguishing_inputs(self):
+        source=stages.inverse_rope('rope_round',1,1,1,64,'grad','out')
+        inputs={'grad':[1.0625]*64,'cos':[1.0625]*64,'sin':[-1.0625]*64}
+        result,_=single(source,inputs,('out',))
+        self.assertEqual(result['out'][:32],[0.]*32)
+        changed=source.replace('lm.cast(cosine_bf16, to="fp32", id="widen_cos_product")',
+                               'lm.cast(cosine_product, to="fp32", id="widen_cos_product")')
+        mutant,_=single(changed,inputs,('out',))
+        self.assertEqual(mutant['out'][:32],[2**-8]*32)
+        source=stages.rms_input('rms_round',1,1,3,.017,'g','x','variance','weight','residual_gradient','out')
+        inputs={'g':[1.0625]*3,'x':[0.]*3,'variance':[fp32(.983)],'weight':[1.0625]*3,'residual_gradient':[-1.125]*3}
+        result,_=single(source,inputs,('out',))
+        self.assertEqual(result['out'],[0.]*3)
+        changed=source.replace('lm.cast(hidden_bf16, to="fp32", id="widen_hidden")',
+                               'lm.cast(complete, to="fp32", id="widen_hidden")')
+        mutant,_=single(changed,inputs,('out',))
+        self.assertEqual(mutant['out'],[2**-8]*3)
+
+    def test_gqa_rounds_each_head_matmul_before_the_group_sum(self):
+        b,s,heads,kv,d=1,33,4,1,64
+        weights=[0.]*(heads*s*s);grad=[0.]*(s*heads*d)
+        for query,value in ((0,1.),(1,2**-8)):
+            for key in range(s):weights[query*s+key]=1.
+            for feature in range(d):grad[(query*heads)*d+feature]=value
+        for key in range(s):weights[s*s+key]=1.
+        for feature in range(d):grad[d+feature]=-1.
+        source=stages.grouped_gradient('group_round',b,s,heads,kv,d,key_gradient=False)
+        inputs={'attn_weights':weights,'grad_attn_output':grad}
+        result,_=single(source,inputs,('grad_value',))
+        self.assertEqual(set(result['grad_value']),{0.})
+        changed=source.replace('lm.cast(bf16_0, to="fp32", id="widen_head_0")',
+                               'lm.cast(product_0, to="fp32", id="widen_head_0")')
+        mutant,_=single(changed,inputs,('grad_value',))
+        self.assertEqual(set(mutant['grad_value']),{2**-8})
 
     def test_softmax_uses_given_weights_without_an_extra_causal_mask(self):
         b,s,heads,d=1,33,2,64
