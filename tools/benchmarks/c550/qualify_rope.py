@@ -88,15 +88,23 @@ def build(args, result):
     result['passed'] = True
 
 
-def read_candidate(directory):
+def read_candidate(built_root, uuid):
     from open_cake_ir.evaluation.paired import candidate_from_identity
     from open_cake_ir.evaluation.core import TensorLaunchManifest
+    from open_cake_ir.evaluation.loaders import check_candidate_authority
     from open_cake_ir.tasks.evaluate import _input_path
-    directory = directory.resolve(strict=True)
-    identity = json.loads((directory / 'candidate.json').read_text())
+    built_root = built_root.resolve(strict=True)
+    if not isinstance(uuid, str) or Path(uuid).name != uuid or uuid in ('', '.', '..'):
+        raise ValueError('RoPE case directory differs')
+    directory = built_root / uuid
+    if directory.is_symlink() or not directory.is_dir() or built_root not in directory.resolve().parents:
+        raise ValueError('RoPE case directory escapes its built root')
+    directory = directory.resolve()
+    identity = json.loads(_input_path(directory, 'candidate.json', 'RoPE candidate').read_text())
     candidate = candidate_from_identity(identity, {role: _input_path(directory, role + '.bin', role).read_bytes()
                                                   for role in identity['artifact_roles']})
     manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+    check_candidate_authority(candidate, candidate.artifact_payloads['mcfatbin'], 'mcfatbin', manifest)
     return candidate, manifest
 
 
@@ -104,8 +112,9 @@ def bind_original_build(built_root, bench_root, commit):
     from open_cake_ir.compiler import Target
     from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment
     from open_cake_ir.evaluation.program import check_triton_launch_record
+    from open_cake_ir.tasks.evaluate import _input_path
     built_root = built_root.resolve(strict=True)
-    index = json.loads((built_root / 'result.json').read_text())
+    index = json.loads(_input_path(built_root, 'result.json', 'RoPE build').read_text())
     problem = BenchProblem.open(bench_root, TASK)
     target = Target.load(ROOT / 'compiler/targets/xcore1002.json')
     if (index.get('source_commit') != commit or not index.get('passed') or index.get('bench_commit') != BENCH_COMMIT
@@ -115,7 +124,7 @@ def bind_original_build(built_root, bench_root, commit):
     for case in index['cases']:
         workload = BenchWorkload(problem.workload_document(case['uuid']))
         raw, emission = emission_for(workload)
-        candidate, manifest = read_candidate(built_root / case['uuid'])
+        candidate, manifest = read_candidate(built_root, case['uuid'])
         manifest.check_workload(workload, 'primary')
         submission = CandidateSubmission.seal(OpenCakeEnvironment.media_type, canonical_json_bytes(raw))
         shape = tuple(workload.tensor_abi('primary')[0].shape)
@@ -135,8 +144,12 @@ class NativeRope:
     def __init__(self, built_root, trace_path):
         from open_cake_ir.lab.executor import ExecutorRevision
         from open_cake_ir.evaluation.triton_metax import observe_local_metax
-        self.root, self.trace = Path(built_root), Path(trace_path)
-        index = json.loads((self.root / 'result.json').read_text())
+        from open_cake_ir.tasks.evaluate import _input_path
+        self.root, self.trace = Path(built_root).resolve(strict=True), Path(trace_path)
+        index = json.loads(_input_path(self.root, 'result.json', 'RoPE build').read_text())
+        if (not index.get('passed') or index.get('source_commit') != checkout_commit(ROOT)
+                or index.get('bench_commit') != BENCH_COMMIT or index.get('task') != TASK):
+            raise ValueError('RoPE runtime requires the current complete build')
         self.cases = {tuple(item['shape']): item['uuid'] for item in index['cases']}
         host = ExecutorRevision.for_target(ROOT, 'xcore1002').admit_host()
         self.admission = observe_local_metax('xcore1002', runtime_library=host['runtime_library'])
@@ -147,7 +160,7 @@ class NativeRope:
         shape = tuple(position_ids.shape)
         if shape not in self.cases or type(attention_scaling) not in (float, int) or attention_scaling != 1.0:
             raise ValueError('RoPE input shape or original scalar differs')
-        candidate, manifest = read_candidate(self.root / self.cases[shape])
+        candidate, manifest = read_candidate(self.root, self.cases[shape])
         before = [value.view(torch.uint8).cpu().clone() for value in (position_ids, inv_freq)]
         out = torch.full((*shape, 128, 2), float('nan'), dtype=torch.bfloat16, device='cuda:0')
         loaded = LoadedMetaxCandidate.load(candidate, manifest, self.admission)
