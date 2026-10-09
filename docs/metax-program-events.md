@@ -104,6 +104,22 @@ Finding F-2026-10-09-010 remains open. A real common-worker A/A, attribution and
 each Bench baseline's readiness remain pending; the adapter declaration does not
 assert their success.
 
+## Source verification
+
+The availability change is `49c867d6`; independent review of the focused change
+through `4708b7a1` found no blocking issue. At fixed `49c867d6`, the existing
+Corpus Gate matched all 204 cases without refreshing expectations. The related
+Mac CPU suite ran 76 tests: 72 passed, three skipped because CPU Torch was absent,
+and one existing EvidenceStore directory operation failed with `EPERM`. That
+result remains recorded.
+
+A separate fixed Linux successor `ba3ec42e`, which includes public `4708b7a1`,
+passed all eleven selected tests with no skips or errors. It covers the four
+unverified Mac tests and seven directly affected Program event contracts. This
+includes the real CPU worker and receipt path with the production availability
+entry, without patching the entry open. These are source and CPU checks; no new
+GPU, common A/A, provider or author Run result is claimed here.
+
 ## Scope and resource limits
 
 This change does not modify IR syntax, semantics, analyses, or target hardware
