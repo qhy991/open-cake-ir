@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import math, re
+import json, math, re
 from typing import Callable, Mapping, Sequence, cast
 
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate
+from open_cake_ir.evaluation.refusals import EvaluationRefusal, refusal_from_artifacts
 from open_cake_ir.evidence import EvidenceStore
 
 from .._documents import _DIGEST, _object
@@ -137,7 +138,7 @@ def _replay_candidates(
     receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}
     receipt_order: list[tuple[int, str, str]] = []
     rejected: dict[tuple[int, str], Mapping[str, object]] = {}
-    ordinals = {"candidate_rejected": 0, "candidate_evaluated": 0}
+    ordinals = {"candidate_rejected": 0, "candidate_evaluated": 0, "evaluation_refused": 0}
     for event in events:
         kind = event.get("kind")
         payload = _object(event.get("payload"), f"event.{kind}.payload")
@@ -193,6 +194,32 @@ def _replay_candidates(
                 refuse(location, "a second rejection for one Turn and candidate",
                        observed={"turn": turn, "candidate_sha256": candidate_sha256})
             rejected[(turn, candidate_sha256)] = payload
+        elif kind == 'evaluation_refused':
+            expected = {'turn', 'purpose', 'candidate_sha256', 'refusal', 'elapsed_wall_seconds'}
+            if set(payload) != expected or payload.get('purpose') not in {'search', 'attribution'}:
+                refuse(location, 'Evaluation refusal fields or phase differ')
+            turn, purpose, candidate_sha256 = payload['turn'], payload['purpose'], payload['candidate_sha256']
+            key = (turn, purpose, candidate_sha256)
+            launchable = launchables.get((turn, candidate_sha256))
+            attempt_payload = attempt_payloads.get(key)
+            if launchable is None or attempt_payload is None or key in receipts:
+                refuse(location, 'Evaluation refusal needs one sealed candidate and one unconsumed attempt')
+            _replay_evaluation_attempt_event(evidence, attempt_payload, candidate=launchable,
+                protocol_sha256=protocol_sha256, compiler_reference=lock.document['compiler_revision'],
+                final_receipt=None, case_id=case_id, used_job_ids=used_job_ids, location=location)
+            refs = {ref['role']: ref for ref in attempt_payload['objects']}
+            ledger = json.loads(evidence.read_object(refs['broker_attempt_ledger']))
+            if len(ledger['attempts']) != 1:
+                refuse(location, 'Evaluation refusal cannot follow an automatic resubmission')
+            raw = {name.removeprefix('attempt_1_'): evidence.read_object(ref)
+                   for name, ref in refs.items() if name.startswith('attempt_1_')}
+            outcome = refusal_from_artifacts(raw, candidate=launchable, case_id=case_id,
+                purpose=purpose, job_id=ledger['attempts'][0]['job_id'])
+            if outcome is None or payload['refusal'] != outcome.document:
+                refuse(location, 'Evaluation refusal differs from the retained zero-work evidence')
+            receipts[key] = outcome
+            receipt_order.append(key)
+            replayed_attempts.add(key)
         elif kind == "candidate_evaluated":
             turn = evaluation_origin(payload)
             purpose = payload.get("purpose")

@@ -72,6 +72,7 @@ _MATCHED_EVENT_KINDS_V1 = frozenset(
         "launchable_candidate_sealed",
         "evaluation_attempt_started",
         "evaluation_attempt_completed",
+        "evaluation_refused",
         "candidate_evaluated",
         "diagnosis_routed",
         "candidate_selected",

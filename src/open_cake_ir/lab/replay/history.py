@@ -57,7 +57,7 @@ def replay_optimization_history(*, events, evidence, receipts, arm, specificatio
         if kind == 'candidate_set_filtered':
             diagnostics_by_candidate.update({(payload['turn'], row['candidate_sha256']): row['diagnostics']
                 for row in payload['order']})
-        elif kind == 'candidate_evaluated' and payload['purpose'] == 'search':
+        elif kind in {'candidate_evaluated', 'evaluation_refused'} and payload['purpose'] == 'search':
             key = (payload['turn'], payload['candidate_sha256'])
             if key not in diagnostics_by_candidate:
                 refuse(f"events[{event['sequence']}].candidate_evaluated",
@@ -66,11 +66,13 @@ def replay_optimization_history(*, events, evidence, receipts, arm, specificatio
                                         diagnostics=diagnostics_by_candidate[key])
             evaluations.append(row)
             by_candidate[key] = row
-        elif (kind == 'candidate_evaluated' and payload['purpose'] == 'attribution'
+        elif (kind in {'candidate_evaluated', 'evaluation_refused'} and payload['purpose'] == 'attribution'
               and 'turn' in payload):
             key = (payload['turn'], payload['candidate_sha256'])
             if key in by_candidate:
-                by_candidate[key]['profile'] = profile_observation(receipts[(key[0], 'attribution', key[1])])
+                by_candidate[key].update(evaluated_observation(payload['turn'],
+                    receipts[(key[0], 'search', key[1])], receipts[(key[0], 'attribution', key[1])],
+                    diagnostics=diagnostics_by_candidate[key]))
         elif kind == 'candidate_rejected':
             row = rejected_candidate_feedback(payload['candidate_sha256'], payload['feedback'], arm=arm)
             rejections.append(rejected_observation(payload['turn'], row))
