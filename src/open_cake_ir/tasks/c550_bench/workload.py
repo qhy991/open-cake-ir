@@ -53,7 +53,8 @@ def prepare_evaluation_case(workload, case_id, *, admission):
     if case_id != "primary" or workload.target != admission.target:
         raise ValueError("Bench preparation differs from its case or admitted target")
     problem, uuid = problem_for(workload)
-    inputs, expected, observed = problem.prepare_on_target(uuid, runtime_library=admission.runtime_library)
+    inputs, expected, observed = problem.prepare_on_target(uuid, runtime_library=admission.runtime_library,
+        input_views=workload.document['semantics']['input_views'])
     if observed != admission:
         raise ValueError("Bench oracle preparation changed the device lease")
     return inputs, expected

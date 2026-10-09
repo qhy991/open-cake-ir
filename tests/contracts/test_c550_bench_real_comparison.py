@@ -65,6 +65,20 @@ class OriginalBenchComparison(unittest.TestCase):
         self.assertEqual(record['original_bench_check']['outputs']['out']['max_absolute_error'], 1.)
         self.assertEqual(record['comparison_unit'], 'original_bench_output_contract')
 
+    def test_dense_transpose_view_preserves_pointer_and_inverse_values_without_copy(self):
+        import torch
+        from open_cake_ir.tasks.c550_bench.binding import physical_input_view
+        original = torch.arange(24).reshape(2, 3, 4).transpose(0, 1)
+        physical = physical_input_view(original, [1, 0, 2])
+        self.assertTrue(physical.is_contiguous())
+        self.assertEqual(physical.data_ptr(), original.data_ptr())
+        self.assertTrue(torch.equal(physical.permute(1, 0, 2), original))
+        with self.assertRaisesRegex(ValueError, 'zero-copy dense'):
+            physical_input_view(original, [0, 1, 2])
+        sliced = torch.arange(40).reshape(5, 8)[:, ::2]
+        with self.assertRaisesRegex(ValueError, 'zero-copy dense'):
+            physical_input_view(sliced, [0, 1])
+
 
 if __name__ == '__main__':
     unittest.main()

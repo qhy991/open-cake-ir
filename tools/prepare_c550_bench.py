@@ -27,6 +27,8 @@ def main(argv=None):
     parser.add_argument('--bench-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--task', action='append', help='original suite task ID; default is all ten')
+    parser.add_argument('--input-views', type=Path, action='append', default=[],
+                        help='retained original-factory dense-view observations')
     args = parser.parse_args(argv)
     # The original suite owns its task list. A pinned problem opening verifies
     # the source before any private task data are imported.
@@ -37,6 +39,17 @@ def main(argv=None):
         parser.error('select each original suite task at most once')
     if args.output.resolve().is_relative_to(ROOT):
         parser.error('generated Workloads and plans must stay outside the source checkout')
+    observed_views = {}
+    for path in args.input_views:
+        observation = json.loads(path.read_text())
+        if (observation.get('bench_commit') != BENCH_COMMIT or observation.get('status') != 'complete'
+                or observation.get('target') != 'xcore1002'):
+            parser.error('input-view observation lacks complete original-target qualification')
+        for row in observation['cases']:
+            key = (observation['task'], row['workload_uuid'])
+            if key in observed_views:
+                parser.error('duplicate input-view observation')
+            observed_views[key] = row['input_views']
     args.output.mkdir(parents=True, exist_ok=False)
     summary = {'bench_commit': BENCH_COMMIT, 'status': 'prepared_not_launched',
                'search_owner': 'existing_TaskLab_Ralph', 'tasks': []}
@@ -49,11 +62,15 @@ def main(argv=None):
         for index, row in enumerate(plan['cases']):
             case_root = directory / f'case-{index:02d}'
             case_root.mkdir()
-            document = problem.workload_document(row['workload_uuid'])
+            document = problem.workload_document(row['workload_uuid'],
+                input_views=observed_views.get((task, row['workload_uuid'])))
             write_new(case_root / 'workload.json', document)
             starter = None
             if task == 'L1/069_rms_norm':
                 starter = rms_norm_source(BenchWorkload(document))
+            elif task == 'L1/048_fused_gate_up_projection_with_swiglu':
+                from benchmarks.c550.gate_up import source_for_workload
+                starter = source_for_workload(BenchWorkload(document), 'primary')
             if starter is not None:
                 (case_root / 'starter.py').write_text(starter, encoding='utf-8')
             row.update(workload_path=str(case_root / 'workload.json'),

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from open_cake_ir.tasks.c550_bench.binding import BenchProblem, validate_document
+from open_cake_ir.tasks.c550_bench.binding import BenchProblem, factory_scalar, validate_document
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
 from open_cake_ir.evaluation.core import compare_tile_output_values
@@ -35,6 +35,35 @@ def problem():
 
 
 class BenchBindingTest(unittest.TestCase):
+    def test_custom_scalar_uses_original_named_return_and_rejects_dynamic_values(self):
+        original = problem()
+        original.definition.custom_inputs_entrypoint = 'get_inputs'
+        original.definition.reference = "def get_inputs():\n    scale = 0.1\n    return {'positions': None, 'mask': None, 'scale': scale}\n"
+        original.raw_workloads[7]['inputs']['scale'] = {'type': 'custom'}
+        document = original.workload_document('original-7')
+        self.assertEqual(document['semantics']['fixed_scalar_inputs']['scale']['value'], .1)
+        original.definition.reference = "def get_inputs():\n    return {'scale': 1.0}\n"
+        self.assertEqual(factory_scalar(original.definition, 'scale'), 1.)
+        for source in [
+            "def get_inputs():\n    scale = 0.1\n    if condition:\n        scale = 0.2\n    return {'scale': scale}\n",
+            "def get_inputs():\n    return {'scale': random_value()}\n",
+        ]:
+            original.definition.reference = source
+            with self.assertRaises(ValueError):
+                factory_scalar(original.definition, 'scale')
+
+    def test_input_permutation_is_explicit_in_candidate_shape_and_original_shape_survives(self):
+        original = problem()
+        original.definition.get_input_shapes = lambda axes: {'positions': (2, 3, 4), 'mask': (24,), 'scale': None}
+        document = original.workload_document('original-7', input_views={'positions': [1, 0, 2]})
+        self.assertEqual(document['tensors']['positions']['shape'], [3, 2, 4])
+        self.assertEqual(document['semantics']['original_tensor_shapes']['positions'], [2, 3, 4])
+        with patch.object(BenchProblem, 'open', return_value=original):
+            validate_document(document)
+        for order in ([0, 0, 1], [0, 1], [True, 0, 2]):
+            with self.assertRaises(ValueError):
+                original.workload_document('original-7', input_views={'positions': order})
+
     def test_rejected_nonfinite_statistics_do_not_become_serialization_faults(self):
         import json
         for statistic, encoded in [(float('inf'), 'Infinity'), (float('-inf'), '-Infinity'), (float('nan'), 'NaN')]:

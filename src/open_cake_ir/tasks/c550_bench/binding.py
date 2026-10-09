@@ -7,6 +7,7 @@ the repository and outside the candidate's authoring directory.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ast
 import importlib.util
 import json
 from pathlib import Path
@@ -19,6 +20,65 @@ OPERATOR = "c550_bench_original_case"
 TARGET = "xcore1002"
 DTYPES = {"float32": "fp32", "float16": "fp16", "bfloat16": "bf16",
           "int32": "int32", "int64": "int64", "bool": "bool"}
+
+
+def factory_scalar(definition, name: str):
+    """Resolve a literal original return value without executing the input factory.
+
+    Runtime preparation still checks the actual scalar. A dynamic scalar or a
+    reassigned value needs an explicit ABI; it cannot inherit a guessed constant.
+    """
+    functions = [node for node in ast.parse(definition.reference).body
+                 if isinstance(node, ast.FunctionDef)
+                 and node.name == definition.custom_inputs_entrypoint]
+    if len(functions) != 1 or not functions[0].body or not isinstance(functions[0].body[-1], ast.Return):
+        raise ValueError(f"Original custom scalar {name!r} requires an explicit factory binding")
+    factory = functions[0]
+    result = factory.body[-1].value
+    if isinstance(result, ast.Dict):
+        keys = [node.value for node in result.keys
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+        if len(keys) != len(result.keys) or len(set(keys)) != len(keys) or name not in keys:
+            raise ValueError(f"Original custom scalar {name!r} has no static named return binding")
+        expression = result.values[keys.index(name)]
+    elif isinstance(result, (ast.List, ast.Tuple)) and len(result.elts) == len(definition.inputs):
+        expression = result.elts[list(definition.inputs).index(name)]
+    else:
+        raise ValueError(f"Original custom scalar {name!r} has no static ordered return binding")
+    if isinstance(expression, ast.Name):
+        symbol = expression.id
+        writes = [node for node in ast.walk(factory)
+                  if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == symbol]
+        assignments = [node for node in factory.body
+                       if isinstance(node, ast.Assign) and len(node.targets) == 1
+                       and isinstance(node.targets[0], ast.Name) and node.targets[0].id == symbol]
+        if len(writes) != 1 or len(assignments) != 1:
+            raise ValueError(f"Original custom scalar {name!r} is not one immutable literal")
+        expression = assignments[0].value
+    try:
+        value = ast.literal_eval(expression)
+    except (ValueError, TypeError, SyntaxError) as error:
+        raise ValueError(f"Original custom scalar {name!r} is not a literal") from error
+    if type(value) not in (int, float, bool):
+        raise ValueError(f"Original custom scalar {name!r} is not a numeric scalar")
+    return value
+
+
+def physical_input_view(value, order):
+    """Expose a declared dense physical order without copying or computing data."""
+    order = tuple(order)
+    if any(type(axis) is not int for axis in order) or sorted(order) != list(range(value.ndim)):
+        raise ValueError('Bench input view must be a complete axis permutation')
+    physical = value.permute(order)
+    inverse = tuple(order.index(axis) for axis in range(value.ndim))
+    restored = physical.permute(inverse)
+    if (not physical.is_contiguous() or physical.data_ptr() != value.data_ptr()
+            or physical.storage_offset() != value.storage_offset()
+            or physical.untyped_storage().nbytes() != value.untyped_storage().nbytes()
+            or tuple(restored.shape) != tuple(value.shape)
+            or tuple(restored.stride()) != tuple(value.stride())):
+        raise ValueError('Original Bench input does not admit the declared zero-copy dense permutation')
+    return physical
 
 
 @dataclass(frozen=True)
@@ -54,10 +114,11 @@ class BenchProblem:
                 return workload, raw
         raise ValueError("The selected workload ID is absent from the original Bench task")
 
-    def workload_document(self, uuid: str) -> dict:
+    def workload_document(self, uuid: str, *, input_views=None) -> dict:
         selected, raw = self.selected(uuid)
         definition = self.definition
-        tensors, scalars = {}, {}
+        tensors, scalars, views, original_shapes = {}, {}, {}, {}
+        requested_views = {} if input_views is None else input_views
         inputs, outputs = [], []
         for mode, specs, shapes in (
             ("input", definition.inputs, definition.get_input_shapes(selected.axes)),
@@ -67,18 +128,30 @@ class BenchProblem:
                 shape = shapes[name]
                 if shape is None:
                     value = raw.get("inputs", {}).get(name)
-                    if mode != "input" or not isinstance(value, dict) or value.get("type") != "scalar":
+                    if mode != "input" or not isinstance(value, dict) or value.get("type") not in {"scalar", "custom"}:
                         raise ValueError("Only original fixed scalar inputs may be specialized")
-                    scalars[name] = {"dtype": item.dtype.value, "value": value["value"]}
+                    scalar = value["value"] if value["type"] == "scalar" else factory_scalar(definition, name)
+                    scalars[name] = {"dtype": item.dtype.value, "value": scalar,
+                                     "binding": "literal_input" if value["type"] == "scalar" else "original_factory_literal"}
                     continue
                 if (not shape or any(type(n) is not int or n <= 0 for n in shape)
                         or item.dtype.value not in DTYPES or name in tensors):
                     raise ValueError("The original tensor ABI needs an explicit supported storage binding")
+                original_shapes[name] = list(shape)
+                if mode == 'input':
+                    order = requested_views.get(name, list(range(len(shape))))
+                    if (not isinstance(order, (list, tuple)) or any(type(n) is not int for n in order)
+                            or sorted(order) != list(range(len(shape)))):
+                        raise ValueError('Bench input view must be one complete axis permutation')
+                    views[name] = list(order)
+                    shape = tuple(shape[axis] for axis in order)
                 tensors[name] = {"shape": list(shape), "dtype": DTYPES[item.dtype.value],
                                  "layout": "contiguous_row_major"}
                 (inputs if mode == "input" else outputs).append(name)
         if not inputs or not outputs:
             raise ValueError("Bench tasks require explicit tensor inputs and outputs")
+        if set(requested_views) - set(inputs):
+            raise ValueError('Bench input views name a scalar, output or unknown tensor')
         seed = self.api.document("suite.json")["seed"]
         return {
             "schema_version": 1, "workload_id": f"c550-bench-{self.task_id.replace('/', '-')}-{uuid}",
@@ -97,6 +170,9 @@ class BenchProblem:
                 "original_input_specifications": raw["inputs"],
                 "ordered_original_inputs": list(definition.inputs),
                 "ordered_original_outputs": list(definition.outputs),
+                "original_tensor_shapes": original_shapes,
+                "input_views": views,
+                "input_view_contract": "zero_copy_dense_axis_permutation_before_native_submission",
                 "oracle_preparation": "original_factory_and_reference_on_leased_target",
                 "search_scope": "one_original_case_one_seed",
                 "final_acceptance": "original_all_16_workloads_10_rounds",
@@ -113,27 +189,52 @@ class BenchProblem:
                            "qualification": "single_original_case_search_only"},
         }
 
-    def prepare_on_target(self, uuid: str, *, runtime_library: str):
+    def original_inputs_on_target(self, uuid: str, *, runtime_library: str):
+        """Materialize the original inputs only after verifying their device lease."""
+        from open_cake_ir.evaluation.triton_metax import observe_local_metax
+        admission = observe_local_metax(TARGET, runtime_library=runtime_library)
+        from sol_execbench.core.bench.correctness import set_seed
+        from sol_execbench.core.bench.io import gen_inputs
+        selected, _ = self.selected(uuid)
+        reference = self.api.load_module(self.task_root / "reference.py", "cake_bench_reference")
+        custom = (getattr(reference, self.definition.custom_inputs_entrypoint)
+                  if self.definition.custom_inputs_entrypoint else None)
+        set_seed(self.api.document("suite.json")["seed"])
+        arguments = gen_inputs(self.definition, selected, "cuda:0", custom_inputs_fn=custom)
+        return arguments, reference, admission
+
+    def discover_input_views_on_target(self, uuid: str, *, runtime_library: str):
+        """Observe concrete input layouts for a later frozen Workload binding."""
+        arguments, _, admission = self.original_inputs_on_target(uuid, runtime_library=runtime_library)
+        import torch
+        views, metadata = {}, {}
+        for name, value in zip(self.definition.inputs, arguments, strict=True):
+            if not isinstance(value, torch.Tensor):
+                continue
+            order = (list(range(value.ndim)) if value.is_contiguous() else
+                     sorted(range(value.ndim), key=lambda axis: (-value.stride(axis), axis)))
+            physical_input_view(value, order)
+            views[name] = order
+            metadata[name] = {'shape': list(value.shape), 'strides': list(value.stride()),
+                              'dtype': str(value.dtype), 'physical_axes': order}
+        torch.cuda.synchronize(0)
+        return views, metadata, admission
+
+    def prepare_on_target(self, uuid: str, *, runtime_library: str, input_views=None):
         """Run the original factory/reference under an already acquired MACA lease.
 
         Return CPU tensors with their original storage dtype. No conversion to
         Python float lists or substitute CPU mathematical reference is allowed.
         Callers must keep this phase outside all timed candidate intervals.
         """
-        from open_cake_ir.evaluation.triton_metax import observe_local_metax
-        admission = observe_local_metax(TARGET, runtime_library=runtime_library)
+        arguments, reference, admission = self.original_inputs_on_target(uuid, runtime_library=runtime_library)
         import torch
-        from sol_execbench.core.bench.correctness import set_seed
-        from sol_execbench.core.bench.io import gen_inputs, normalize_outputs
+        from sol_execbench.core.bench.io import normalize_outputs
         from sol_execbench.core.data.dtypes import dtype_str_to_torch_dtype
 
-        selected, raw = self.selected(uuid)
-        reference = self.api.load_module(self.task_root / "reference.py", "cake_bench_reference")
-        custom = (getattr(reference, self.definition.custom_inputs_entrypoint)
-                  if self.definition.custom_inputs_entrypoint else None)
-        set_seed(self.api.document("suite.json")["seed"])
-        arguments = gen_inputs(self.definition, selected, "cuda:0", custom_inputs_fn=custom)
-        original = {name: value.detach().cpu().clone() for name, value
+        document = self.workload_document(uuid, input_views=input_views)
+        views = document['semantics']['input_views']
+        original = {name: physical_input_view(value, views[name]).detach().cpu().clone() for name, value
                     in zip(self.definition.inputs, arguments, strict=True)
                     if isinstance(value, torch.Tensor)}
         expected = reference.run(*self.api.cloned_inputs(arguments))
@@ -143,11 +244,11 @@ class BenchProblem:
             output_dtypes={name: dtype_str_to_torch_dtype(item.dtype)
                            for name, item in self.definition.outputs.items()})
         expected = {name: value.detach().cpu().clone() for name, value in expected.items()}
-        declared_scalars = self.workload_document(uuid)["semantics"]["fixed_scalar_inputs"]
+        declared_scalars = document["semantics"]["fixed_scalar_inputs"]
         for name, value in zip(self.definition.inputs, arguments, strict=True):
             if not isinstance(value, torch.Tensor) and value != declared_scalars[name]["value"]:
                 raise ValueError("Original input generation changed a specialized scalar value")
-        if any(not value.is_contiguous() for value in (*original.values(), *expected.values())):
+        if any(not value.is_contiguous() for value in original.values()):
             raise ValueError("Original Bench storage requires a separately qualified strided ABI")
         return original, expected, admission
 
@@ -161,6 +262,6 @@ class BenchProblem:
 def validate_document(document):
     binding = document["semantics"]["benchmark"]
     problem = BenchProblem.open(Path(binding["root"]), binding["task"])
-    expected = problem.workload_document(binding["workload_uuid"])
+    expected = problem.workload_document(binding["workload_uuid"], input_views=document['semantics']['input_views'])
     if json.dumps(document, sort_keys=True, allow_nan=False) != json.dumps(expected, sort_keys=True, allow_nan=False):
         raise ValueError("Bench Workload differs from its original ABI, scalar, oracle or tolerance")
