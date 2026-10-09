@@ -49,7 +49,7 @@ def integer_fp32(value):
     return float(sign * (high << shift))
 
 
-def run_source(emission, values):
+def run_source(emission, values, **inputs):
     int64, boolean = object(), object()
     def convert(tile, dtype):
         if dtype is _TL.float32:
@@ -61,8 +61,9 @@ def run_source(emission, values):
         return _Tile(tile.shape, data)
     output = [None] * len(values)
     with patch.object(_TL, 'int64', int64, create=True), \
-         patch.object(_TL, 'int1', boolean, create=True), patch.object(_Tile, 'to', convert):
-        _execute(emission, {'x':list(values), 'y':output})
+         patch.object(_TL, 'int1', boolean, create=True), patch.object(_Tile, 'to', convert), \
+         patch.object(_Tile, '__ge__', lambda tile,value: tile.binary(value, lambda a,b:a>=b), create=True):
+        _execute(emission, {'x':list(values), 'y':output, **inputs})
     return output
 
 
@@ -111,6 +112,23 @@ class DiscreteStorageCompiler(unittest.TestCase):
         text=source('int64', 'int32', 'lm.compare(values, 1152921504606846977, op="eq")')
         output=run_source(self.emission(text), [2**60, 2**60+1]*4)
         self.assertEqual(output,[0,1]*4)
+
+    def test_bool_select_and_indexed_int64_load_keep_discrete_domains(self):
+        text = source('bool', 'bool', 'lm.select(values, values, 0)')
+        flags = [False, True] * 4
+        self.assertEqual(run_source(self.emission(text), flags), flags)
+        text = source('int64').replace('y: cake.Tensor',
+            'indices: cake.Tensor((8,), "int64"), y: cake.Tensor')
+        text = text.replace('values = lm.load(x[block], id="load_x")',
+            'index = lm.load(indices[block])\n        values = lm.load(x[index], id="load_x")')
+        values = [2**60+i for i in range(8)]
+        indices = [7, 0, -1, 2**63-1, 1, 2, 5, 6]
+        self.assertEqual(run_source(self.emission(text), values, indices=indices),
+                         [values[7], values[0], 0, 0, values[1], values[2], values[5], values[6]])
+        text = text.replace('indices: cake.Tensor((8,), "int64")',
+                            'indices: cake.Tensor((8,), "bool")')
+        with self.assertRaisesRegex(frontend.FrontendError, 'gather indices'):
+            frontend.parse(text)
 
     def test_bool_does_not_acquire_arithmetic_or_integer_addresses(self):
         for expression in ('values + 1','lm.square(values)'):
