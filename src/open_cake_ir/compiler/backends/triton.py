@@ -331,8 +331,7 @@ def _multi_region_mma_operand(schedule: Schedule, operation, operand: str) -> bo
             if index.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}))
         if (origin.reads != (access.buffer,) + indices or len(origin.writes) != 1
                 or (source := schedule.buffer(access.buffer)) is None
-                or source.space is not MemorySpace.GLOBAL
-                ):
+                or source.space is not MemorySpace.GLOBAL):
             return False
     elif (origin.kind not in {OperationKind.ELEMENTWISE, OperationKind.REDUCE,
                              OperationKind.MMA, OperationKind.BROADCAST_IN_DIM,
