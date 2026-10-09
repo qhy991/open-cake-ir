@@ -1,6 +1,6 @@
 # Findings
 
-- [F-2026-10-09-010](2026-10-09-010-metax-complete-program-measurement.json) — complete MACA Program event and separate attribution adapters are software-verified; exact-target device qualification remains pending and the production evidence set stays empty.
+- [F-2026-10-09-010](2026-10-09-010-metax-complete-program-measurement.json) — complete MACA Program event and separate attribution adapters have a proposed exact-target availability update; source-relation review, real common-worker A/A and per-baseline readiness remain pending.
 - [F-2026-10-09-008](2026-10-09-008-local-evaluation-refusals.json) — preserve witnessed allocation and zero-dispatch candidate resource refusals as unmeasured Evaluation outcomes. The successor must keep budget accounting, independent replay, and incomplete attribution separate from qualification; frozen C1 failures remain sealed.
 
 - [F-2026-10-09-012](2026-10-09-012-metax-math-library-trig.json) — installed MACA sin/cos API and isolated native compilation confirmed; explicit software contracts implemented while real Target admission and original-domain device correctness remain pending.

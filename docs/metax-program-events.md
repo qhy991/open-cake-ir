@@ -1,10 +1,15 @@
 # MetaX complete Program event measurements
 
-This successor implements complete Program event capture and separate MCPTI
-attribution. **No physical target is qualified by this software change.**
-`evaluation/program.py::_MACA_PROGRAM_MEASUREMENT_EVIDENCE` remains empty.
-Production Ralph Runs still refuse ordered Program timing and attribution until
-a reviewed successor commit records device qualification for the exact target.
+This successor makes the existing complete Program event and MCPTI attribution
+adapters available for exact target `xcore1002`. The source proposal requires
+review of the retained component evidence and its implementation relation before
+adoption. The registry owns adapter availability, not per-baseline readiness.
+
+Formal authors in the controlled workflow still require an external
+`performance_qualified` result. That result requires a fresh common-evaluator
+A/A comparison and independent profiling on the frozen successor. `TaskLab`
+does not itself enforce a prior-A/A requirement. Do not invoke an author Run
+directly before the external readiness gate passes.
 
 ## Measured interval
 
@@ -67,9 +72,34 @@ must be bound through that lease's normal configuration.
 retains ten event values and their mean, verifies all stage calls, and closes the
 modules. Its `event-observation.json` is a device qualification observation. It
 is not a common Run receipt, an A/A result, or authorization to promote a kernel.
-Complete the fixed-baseline A/A and full worker qualification before populating
-the production evidence set. Record the precise successor commit and original
-device observations under the existing Finding workflow.
+Review complete component correctness, event and profile evidence to decide
+exact-target adapter availability in a successor source commit. Then use the
+existing `CommandBrokerSubmitter` and `BoundedBrokerEvaluator` to perform one
+confirmatory A/A with the same sealed Program on both arms and
+`evaluation_policy(workload, metax_mean10=True)`. Require the original
+correctness checks, measurement-quality checks and `close_null` classification
+at materiality 1.05. Ten event samples per arm remain the mean statistic;
+dispersion remains diagnostic. A failed qualification stays failed.
+
+After A/A passes, require one separate attribution Evaluation with a valid
+`MACA_PROGRAM_PROFILE`, all ordered stages, unchanged inputs, correct outputs
+and successful teardown. The controlled workflow may then mark that baseline
+`performance_qualified`. Repeat the baseline readiness gates for each actual
+Bench contract. An ordinary component fixture does not qualify Bench cases.
+Retain the exact successor and observations under the existing Finding workflow.
+
+## Retained component evidence and open gates
+
+The retained `solx_fib.attention` component observation covers four stages and
+five correctness input cases. It reports unchanged inputs, two five-sample event
+cohorts with fresh-output checks, and a separate four-stage MCPTI profile.
+The existing cohort and profile readers replay those records successfully.
+This is an ordinary repository task, not an original Bench result or an A/A pass.
+
+The component was recorded at `d9b92681`. Its implementation relation to this
+source proposal must be confirmed before adoption. Finding F-2026-10-09-010
+remains open. A real common-worker A/A, attribution and each Bench baseline's
+readiness remain pending; the adapter declaration does not assert their success.
 
 ## Scope and resource limits
 

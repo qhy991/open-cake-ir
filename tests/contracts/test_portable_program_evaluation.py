@@ -236,7 +236,8 @@ class PortableProgramEvaluation(unittest.TestCase):
                 load_torch_program(candidate, manifest, arguments, None, loader)
             loader.assert_not_called()
 
-    def test_unsupported_measurement_refuses_candidate_or_baseline_before_device_admission(self):
+    @patch('open_cake_ir.evaluation.program._MACA_PROGRAM_MEASUREMENT_EVIDENCE', frozenset())
+    def test_closed_measurement_admission_refuses_candidate_or_baseline_before_device_admission(self):
         for backend in BACKENDS:
             workload, program, candidate, _ = self.build(backend)
             _, children, _ = program_components(candidate)
@@ -325,7 +326,7 @@ class PortableProgramEvaluation(unittest.TestCase):
                 self.assertIsNone(result['receipt'])
                 self.assertEqual(result['counters']['module_loads'], 0)
                 self.assertEqual(result['failure_class'], 'ValueError')
-                self.assertIn('ordered Program timing', stderr.getvalue())
+                self.assertIn('Program timing', stderr.getvalue())
 
     def test_metal_composition_still_refuses_without_a_native_program_adapter(self):
         with self.assertRaisesRegex(ValueError, 'metal_binary_archive'):

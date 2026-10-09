@@ -4,7 +4,7 @@ These contracts do not qualify a physical MetaX target for performance Runs.
 """
 from contextlib import nullcontext
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -107,9 +107,37 @@ class ProgramEvents(unittest.TestCase):
         with patch.dict(sys.modules, torch=torch), self.assertRaisesRegex(ValueError, 'stage count'):
             timer.capture_loaded_cohort(loaded, sets, dry_run_iters=11, repeat_iters=5)
 
-    def test_implementation_does_not_imply_device_qualification(self):
-        with self.assertRaisesRegex(ValueError, 'not implemented|not qualified'):
-            admit_program_execution('xcore1002', timing=True, attribution=True)
+    def test_reviewed_adapter_admission_is_exact_and_is_separate_from_baseline_readiness(self):
+        admit_program_execution('xcore1002', timing=True, attribution=True)
+        from open_cake_ir.evaluation.platforms import platform_for
+        maca = platform_for('xcore1002')
+        with patch('open_cake_ir.evaluation.platforms.platform_for', return_value=maca):
+            with self.assertRaisesRegex(ValueError, 'not qualified for synthetic_maca'):
+                admit_program_execution('synthetic_maca', timing=True, attribution=True)
+        with self.assertRaisesRegex(ValueError, 'one dispatch'):
+            admit_program_execution('gfx938', timing=True)
+
+    def test_admitted_program_still_requires_the_event_policy_for_both_participants(self):
+        from open_cake_ir.evaluation.paired import (
+            PAIRED_MACA_EVENT_KIND, PAIRED_MACA_KIND, PAIRED_MACA_GATED_EVENT_KIND,
+            PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND)
+        for as_baseline in (False, True):
+            authority = SimpleNamespace(candidate=None if as_baseline else self.candidate,
+                baseline=self.candidate if as_baseline else None,
+                request={'purpose': 'confirmatory', 'evaluation_protocol': evaluation_policy(self.workload, metax_mean10=True)})
+            worker._admit_program_assay(authority, collect_timing=True)
+            for wrong in (PAIRED_MACA_KIND, PAIRED_MACA_GATED_EVENT_KIND,
+                          PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND, None):
+                authority.request['evaluation_protocol']['paired_timing']['kind'] = wrong
+                with self.subTest(baseline=as_baseline, policy=wrong), self.assertRaisesRegex(ValueError, 'complete default-stream event interval'):
+                    worker._admit_program_assay(authority, collect_timing=True)
+            authority.request['evaluation_protocol']['paired_timing']['kind'] = PAIRED_MACA_EVENT_KIND
+
+    def test_admitted_program_does_not_admit_an_aligned_timer_variant(self):
+        manifest, _, _ = program_runtime.program_components(self.candidate)
+        aligned = replace(manifest, aligned_stages=(manifest.program.stages[0].name,))
+        with self.assertRaisesRegex(ValueError, 'Program event'):
+            events.MacaProgramEventBenchmark(aligned, l2_cache_bytes=8388608)
 
     def execute_worker(self, *, profile=False, failed_profile=False):
         owner = self
@@ -154,7 +182,6 @@ class ProgramEvents(unittest.TestCase):
         purpose = 'attribution' if profile else 'search'
         inputs, expected = {'x': [1., 2., 3., 4.]}, {'y': [3., 4., 5., 6.]}
         with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, torch=torch), \
-             patch.object(program_runtime, '_MACA_PROGRAM_MEASUREMENT_EVIDENCE', frozenset({'xcore1002'})), \
              patch.object(worker, 'LoadedTorchTensorCandidate', Loaded), \
              patch.object(worker, 'materialize_evaluation_inputs', return_value=inputs), \
              patch.object(worker, 'reference_evaluation_outputs', return_value=expected), \
