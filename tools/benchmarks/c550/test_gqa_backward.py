@@ -158,7 +158,8 @@ class GQABackward(unittest.TestCase):
         program = gqa.program_for(1,128,128)
         abi = [TensorABI(name,program.tensors[name].shape,program.tensors[name].dtype.value,mode)
                for mode,names in [('input',program.inputs),('output',program.outputs)] for name in names]
-        semantics={'fixed_scalar_inputs': {'attention_dropout': {'dtype':'float32','value':.1}}}
+        semantics={'fixed_scalar_inputs': {'attention_dropout': {'dtype':'float32','value':.1,
+                                                                'binding':'original_factory_literal'}}}
         workload=SimpleNamespace(target='xcore1002',tensor_abi=lambda case:abi,document={'semantics':semantics})
         self.assertEqual(gqa.source_for_workload(workload,'primary'),gqa.source_for(1,128,128))
         semantics['fixed_scalar_inputs']={}
