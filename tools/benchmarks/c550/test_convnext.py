@@ -95,6 +95,8 @@ def execute(program, inputs):
         stack.enter_context(patch.object(_TL,'dot',staticmethod(dot_rounded)))
         stack.enter_context(patch.object(_TL,'rsqrt',staticmethod(lambda tile:_Tile(tile.shape,[fp32(1/math.sqrt(v)) if v else math.inf for v in tile.values])),create=True))
         stack.enter_context(patch.object(_TL,'exp',staticmethod(lambda tile:_Tile(tile.shape,[fp32(math.exp(v)) for v in tile.values]))))
+        stack.enter_context(patch.object(_Tile,'__floordiv__',lambda tile,x:tile.binary(x,lambda a,b:a//b),create=True))
+        stack.enter_context(patch.object(_Tile,'__mod__',lambda tile,x:tile.binary(x,lambda a,b:a%b),create=True))
         stack.enter_context(patch.object(_Tile,'__ge__',lambda tile,x:tile.binary(x,lambda a,b:a>=b),create=True))
         stack.enter_context(patch.object(_Tile,'to',lambda tile,dtype:_Tile(tile.shape,[fp32(v) if dtype is _TL.float32 else int(v) for v in tile.values])))
         for stage in program.stages:
