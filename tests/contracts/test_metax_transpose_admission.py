@@ -4,7 +4,7 @@ import struct
 import unittest
 
 from open_cake_ir.compiler import Compiler, Target, frontend
-from open_cake_ir.compiler.backends.triton import emit
+from open_cake_ir.compiler.backends.triton import emit, preflight
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.performance.work import work_bound
 from tests.contracts.test_register_transpose import source
@@ -81,12 +81,17 @@ class MetaxTransposeAdmission(unittest.TestCase):
 
     def test_fp8_keeps_both_its_type_and_maca_refusal(self):
         for rows, columns in SHAPES:
-            assessment = self.compiler.assess(document(rows, columns, 'fp8_e4m3'))
+            raw = document(rows, columns, 'fp8_e4m3')
+            assessment = self.compiler.assess(raw)
             codes = {f.code for f in assessment.findings if f.blocks_lowering}
             self.assertFalse(assessment.lowering_eligible)
             self.assertIn('VALUE_OPERATION_TYPE', codes)
-            self.assertIn('MACA_FP8_OPERATION_UNQUALIFIED', codes)
             self.assertNotIn('TARGET_OPERATION_UNSUPPORTED', codes)
+            # Invalid value typing stops Compiler.assess before backend preflight.
+            # Exercise the existing backend refusal separately, at its own boundary.
+            backend_codes = {f.code for f in preflight(Schedule.from_dict(raw), self.target)
+                             if f.blocks_lowering}
+            self.assertIn('MACA_FP8_OPERATION_UNQUALIFIED', backend_codes)
 
     def test_admission_does_not_open_another_target(self):
         raw = document(16, 32, 'fp32')
