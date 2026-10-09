@@ -62,6 +62,10 @@ merge to `main` can change Compiler semantics (ADR 0065).
 mechanism; its [method appendix](docs/OPTIMIZATION_TRANSFER_ABLATION.md) owns the planned E/P
 ablation. Executed study assignments and results remain owned by Study contracts and Evidence.
 
+[Evolve design](docs/evolve-design.md) proposes how to connect development Runs,
+Finding-driven maintenance and independent revision comparisons. It is a design proposal,
+not a new execution contract or evidence of measured co-evolution gains.
+
 | New information | Destination | Stable docs changed? |
 | --- | --- | --- |
 | Candidate or evaluation result | Run Evidence and Evaluation Receipt | No |
