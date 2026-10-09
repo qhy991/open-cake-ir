@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
+from hashlib import sha256
 import json
 from pathlib import Path
 import tempfile
@@ -9,7 +10,7 @@ from types import MappingProxyType
 import unittest
 from unittest.mock import patch
 
-from open_cake_ir.evaluation.core import _plain_json, _freeze_json
+from open_cake_ir.evaluation.core import EvaluationReceipt, _plain_json, _freeze_json
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks import evaluate as worker
 from tests.contracts import test_metax_paired as maca_fixtures
@@ -37,6 +38,35 @@ def detailed(function):
 
 
 class ImmutableEvaluationEvidence(unittest.TestCase):
+    def receipt_with_raw_diagnostics(self):
+        metrics = {'output_mismatches': 0, 'max_abs_error': .0625,
+                   'inputs_unchanged': True, 'original_bench_check': deepcopy(DETAIL)}
+        launch = canonical_json_bytes({'candidate_sha256': 'a'*64})
+        payloads = {'launch_receipt': launch, 'timing_samples': b'null',
+                    'correctness_output': canonical_json_bytes({'passed': True, 'metrics': metrics})}
+        return EvaluationReceipt('a'*64, 'b'*64, 'c'*64, 'confirmatory', 'primary', True,
+                                 metrics, 1, 0, sha256(launch).hexdigest(), None, payloads)
+
+    def test_receipt_reconstruction_compares_frozen_metrics_in_their_json_domain(self):
+        original = self.receipt_with_raw_diagnostics()
+        rebuilt = replace(original, correctness=original.correctness)
+        self.assertEqual(rebuilt.correctness, original.correctness)
+        self.assertEqual(rebuilt.artifact_payloads, original.artifact_payloads)
+
+    def test_receipt_wire_projection_still_rejects_nested_value_name_or_order_changes(self):
+        original = self.receipt_with_raw_diagnostics()
+        raw = json.loads(original.artifact_payloads['correctness_output'])
+        for change in (
+            lambda d: d['metrics']['original_bench_check']['outputs']['out']['extra']['coverage'].reverse(),
+            lambda d: d['metrics']['original_bench_check']['outputs']['out'].update(max_absolute_error=.5),
+            lambda d: d['metrics'].pop('original_bench_check'),
+            lambda d: d['metrics'].update(extra='added'),
+        ):
+            changed = deepcopy(raw); change(changed)
+            payloads = {**original.artifact_payloads, 'correctness_output': canonical_json_bytes(changed)}
+            with self.assertRaisesRegex(ValueError, 'correctness summary'):
+                replace(original, artifact_payloads=payloads)
+
     def maca(self):
         fixture = maca_fixtures.MacaPairedReceipts('runTest')
         fixture.setUp()
