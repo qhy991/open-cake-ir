@@ -5,6 +5,9 @@ Paths below are relative to `src/open_cake_ir/` unless they start with `tests/`,
 
 ## Branch and worktree routing
 
+Before starting task work, follow the [agent issue and pull request workflow](CONTRIBUTING.md#agent-issue-and-pull-request-workflow).
+That section owns issue dependencies, PR linkage, and the subagent handoff after merge.
+
 Follow [Development branches](docs/DEVELOPMENT_BRANCHES.md), the canonical owner of the
 maintained branches, task naming, shared-code routing, integration and synchronization.
 New work uses `task/<platform-or-core>-<subject>` without a `codex/` prefix and its own
