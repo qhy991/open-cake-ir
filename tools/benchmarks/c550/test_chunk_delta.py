@@ -1,4 +1,9 @@
-"""Small emitted arithmetic checks; original device tolerances remain separate."""
+"""Small emitted arithmetic checks; original device tolerances remain separate.
+
+The doubles model nominal FP32 arithmetic and explicit BF16 boundaries, not the
+native rsqrt/exp implementation. The retained CPU PyTorch comparison localizes a
+BF16 rsqrt difference; these controls make no CPU/GPU bit-equivalence claim.
+"""
 from contextlib import ExitStack
 from copy import deepcopy
 import importlib.util
