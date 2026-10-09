@@ -173,6 +173,7 @@ def source_for_workload(workload, case_id: str) -> str:
     if tuple((arg.name, tuple(arg.shape), arg.dtype, arg.mode) for arg in abi) != expected:
         raise ValueError('GQA backward original ordered tensor ABI differs')
     scalars = workload.document['semantics'].get('fixed_scalar_inputs')
-    if scalars != {'attention_dropout': {'dtype': 'float32', 'value': 0.1}}:
+    if scalars != {'attention_dropout': {'dtype': 'float32', 'value': 0.1,
+                                        'binding': 'original_factory_literal'}}:
         raise ValueError('GQA backward requires the checked custom-factory dropout binding')
     return source_for(batch, query, keys, attention_dropout=scalars['attention_dropout']['value'])
