@@ -45,7 +45,7 @@ class BoundCase:
 def _leaf(candidate, manifest, lowering, target):
     check_candidate_authority(candidate, candidate.artifact_payloads['mcfatbin'], 'mcfatbin', manifest)
     requirements = lowering.toolchain_requirements
-    if (candidate.target != TARGET or candidate.entry_point != lowering.route.entry_point
+    if (candidate.target != TARGET or candidate.entry_point != requirements['kernel_entry_point']
             or candidate.artifact_payloads.get('lowered_source') != lowering.source.encode()
             or list(manifest.grid) != list(requirements['grid'])
             or manifest.block != (requirements['compile_options']['num_warps'] * target.warp_size, 1, 1)

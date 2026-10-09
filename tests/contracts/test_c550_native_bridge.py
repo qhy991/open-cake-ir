@@ -82,7 +82,7 @@ def prepare(root,compiler,program):
             'fixed_baseline_bundle_path':str(folder/'baseline/candidate.json'),'fixed_baseline_candidate':identity,
             'fixed_baseline_selection':selection}))
         (folder/'workload.json').write_bytes(canonical_json_bytes(document));(folder/'starter.py').write_text(text)
-        (folder/'compiler-gate.json').write_bytes(canonical_json_bytes({'passed':True,'compiler_revision_id':compiler.check_corpus().compiler_revision_id}))
+        (folder/'compiler-gate.json').write_bytes(canonical_json_bytes({'passed':True,'compiler_revision_id':compiler._revision.revision_id}))
         index['cases'].append({'uuid':item.uuid,'prepared_baseline':str(folder/'prepared-baseline.json')})
     path=root/'locators.json';path.write_bytes(canonical_json_bytes(index));return problem,path
 
