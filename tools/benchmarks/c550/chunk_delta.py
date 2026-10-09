@@ -382,7 +382,9 @@ def source_for_workload(workload, case_id: str) -> str:
         raise ValueError('Chunk delta original ordered tensor ABI differs')
     scalars = workload.document['semantics'].get('fixed_scalar_inputs')
     if (not isinstance(scalars, dict) or set(scalars) != {'scale'}
-            or not isinstance(scalars['scale'], dict) or set(scalars['scale']) != {'dtype','value'}
-            or scalars['scale']['dtype'] != 'float32'):
+            or not isinstance(scalars['scale'], dict)
+            or set(scalars['scale']) != {'dtype','value','binding'}
+            or scalars['scale']['dtype'] != 'float32'
+            or scalars['scale']['binding'] != 'literal_input'):
         raise ValueError('Chunk delta requires the original scalar scale binding')
     return source_for(batch, sequence, scale=scalars['scale']['value'])

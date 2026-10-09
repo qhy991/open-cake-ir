@@ -13,6 +13,7 @@ correctness and runtime admission have not been established.
   BF16 `[B,16,S]`.
 - Scale is the original fixed scalar `0.08838834764831845`. It is checked by the
   Workload binding and original-call wrapper, with no extra scalar tensor.
+  Its provenance is `literal_input`, from the original Workload's scalar value.
 - Output is BF16 `[B,S,16,128]`. There is no public initial/final-state tensor.
 - Value head h reads query/key head `h % 4`, following the original repeated
   head sequence.
