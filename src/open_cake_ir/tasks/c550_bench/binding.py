@@ -81,6 +81,48 @@ def physical_input_view(value, order):
     return physical
 
 
+def validate_input_view_observation(problem, observation):
+    """Check complete original-case metadata before selecting a physical ABI."""
+    from open_cake_ir.evaluation.triton_metax import validate_maca_admission
+    if (observation.get('bench_commit') != BENCH_COMMIT or observation.get('status') != 'complete'
+            or observation.get('target') != TARGET or observation.get('task') != problem.task_id
+            or observation.get('scope') != 'original_input_factory_metadata_only'):
+        raise ValueError('Bench input-view observation identity or scope differs')
+    rows = observation.get('cases')
+    if not isinstance(rows, list) or [row.get('workload_uuid') for row in rows] != [item.uuid for item in problem.workloads]:
+        raise ValueError('Bench input-view observation must cover the 16 original cases in order')
+    result = {}
+    for row in rows:
+        selected, _ = problem.selected(row['workload_uuid'])
+        shapes = {name: tuple(shape) for name, shape in problem.definition.get_input_shapes(selected.axes).items()
+                  if shape is not None}
+        metadata, views = row.get('metadata'), row.get('input_views')
+        if (row.get('zero_copy_verified') is not True or not isinstance(metadata, dict)
+                or not isinstance(views, dict) or set(metadata) != set(shapes) or set(views) != set(shapes)):
+            raise ValueError('Bench input-view metadata must cover every original tensor')
+        admission = row.get('device_admission')
+        validate_maca_admission(admission, target_id=TARGET, job_id=observation.get('job_id'))
+        if admission['pci_bus_id'] != observation.get('expected_pci'):
+            raise ValueError('Bench input-view device differs from the physical lease')
+        for name, shape in shapes.items():
+            item, order = metadata[name], views[name]
+            if (item.get('shape') != list(shape)
+                    or item.get('dtype') != 'torch.' + problem.definition.inputs[name].dtype.value
+                    or item.get('physical_axes') != order or not isinstance(order, list)
+                    or any(type(axis) is not int for axis in order) or sorted(order) != list(range(len(shape)))):
+                raise ValueError('Bench input-view original shape, dtype or permutation differs')
+            strides = item.get('strides')
+            if not isinstance(strides, list) or len(strides) != len(shape) or any(type(n) is not int or n < 0 for n in strides):
+                raise ValueError('Bench input-view original strides differ')
+            step = 1
+            for axis in reversed(order):
+                if shape[axis] != 1 and strides[axis] != step:
+                    raise ValueError('Bench input-view metadata does not describe a dense permutation')
+                step *= shape[axis]
+        result[row['workload_uuid']] = views
+    return result
+
+
 @dataclass(frozen=True)
 class BenchProblem:
     root: Path

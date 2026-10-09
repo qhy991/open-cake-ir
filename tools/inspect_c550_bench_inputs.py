@@ -39,6 +39,8 @@ def main(argv=None):
         parser.error('input observations must remain outside the source checkout')
     report = {'source_commit': commit, 'bench_commit': BENCH_COMMIT, 'task': args.task,
               'target': TARGET, 'scope': 'original_input_factory_metadata_only',
+              'physical_device': args.physical_device, 'runtime_device': args.runtime_device,
+              'expected_pci': args.expected_pci,
               'candidate_kernel_calls': 0, 'factory_device_dispatches': 'not_collected',
               'performance': 'not_measured', 'cases': [], 'status': 'preparing'}
     with args.output.open('x') as stream:

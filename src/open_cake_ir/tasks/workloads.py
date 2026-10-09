@@ -195,17 +195,9 @@ def reference_evaluation_outputs(workload: WorkloadContract, case_id: str, input
             for name, value in reference_tensors(workload, case_id, inputs).items()}
 
 
-def requires_target_preparation(workload: WorkloadContract) -> bool:
-    return getattr(_tensor_math(workload), 'REQUIRES_TARGET_PREPARATION', False)
-
-
-def preserves_output_tensors(workload: WorkloadContract) -> bool:
-    return getattr(_tensor_math(workload), 'PRESERVE_OUTPUT_TENSORS', False)
-
-
 def materialize_evaluation_case(workload: WorkloadContract, case_id: str, *, admission=None):
     owner = _tensor_math(workload)
-    if requires_target_preparation(workload):
+    if workload.requires_target_preparation:
         if admission is None:
             raise ValueError('this task requires its original oracle on the leased target')
         return owner.prepare_evaluation_case(workload, case_id, admission=admission)

@@ -188,8 +188,7 @@ def _prepare_local_tensor_work(authority, kind):
             and authority.request['purpose'] != 'attribution'):
         from open_cake_ir.evaluation.metax_native_events import prepare_helper
         prepare_helper()  # Host compilation precedes the device lease.
-    from open_cake_ir.tasks.workloads import requires_target_preparation
-    if requires_target_preparation(authority.workload):
+    if authority.workload.requires_target_preparation:
         # The original Bench factory and reference require the actual target.
         # They run after its lease is observed and before candidate measurement.
         return authority
@@ -204,8 +203,7 @@ def _prepare_local_tensor_work(authority, kind):
 
 
 def _prepare_target_tensor_work(authority, admission):
-    from open_cake_ir.tasks.workloads import requires_target_preparation
-    if not requires_target_preparation(authority.workload):
+    if not authority.workload.requires_target_preparation:
         return authority
     if authority.prepared_cases is not None:
         raise ValueError('target oracle preparation cannot replace an existing prepared case')
@@ -218,8 +216,7 @@ def _prepare_target_tensor_work(authority, admission):
 
 
 def _tensor_snapshot_options(workload):
-    from open_cake_ir.tasks.workloads import preserves_output_tensors
-    return {'preserve_output_tensors': True} if preserves_output_tensors(workload) else {}
+    return {'preserve_output_tensors': True} if workload.preserve_output_tensors else {}
 
 
 def _load_authority(request_path: Path) -> _Authority:

@@ -35,6 +35,15 @@ def problem():
 
 
 class BenchBindingTest(unittest.TestCase):
+    def test_generic_workload_does_not_enter_target_oracle_or_registry_lookup(self):
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.tasks.evaluate import _prepare_target_tensor_work, _tensor_snapshot_options
+        generic = WorkloadContract({'workload_id': 'program-fixture',
+            'cases': [{'case_id': 'primary', 'shape': {'N': 1}, 'seed': 1, 'mode': 'fixture'}]})
+        authority = SimpleNamespace(workload=generic)
+        self.assertIs(_prepare_target_tensor_work(authority, None), authority)
+        self.assertEqual(_tensor_snapshot_options(generic), {})
+
     def test_custom_scalar_uses_original_named_return_and_rejects_dynamic_values(self):
         original = problem()
         original.definition.custom_inputs_entrypoint = 'get_inputs'

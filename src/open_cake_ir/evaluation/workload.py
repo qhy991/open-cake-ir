@@ -50,6 +50,9 @@ class TensorABI:
 class WorkloadContract:
     """Canonical operator semantics, cases and correctness authority."""
 
+    requires_target_preparation = False
+    preserve_output_tensors = False
+
     def __init__(self, document: Mapping[str, object], source_path: Path | None = None) -> None:
         self._document = json.loads(_canonical_json_bytes(document))
         self.source_path = source_path

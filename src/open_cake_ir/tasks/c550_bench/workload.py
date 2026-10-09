@@ -8,10 +8,6 @@ from pathlib import Path
 from open_cake_ir.evaluation.workload import WorkloadContract
 from .binding import BenchProblem, OPERATOR, validate_document
 
-REQUIRES_TARGET_PREPARATION = True
-PRESERVE_OUTPUT_TENSORS = True
-
-
 def _recorded_statistics(value):
     """Keep exceptional upstream statistics explicit in canonical JSON."""
     if isinstance(value, float) and not math.isfinite(value):
@@ -30,6 +26,9 @@ def problem_for(workload):
 
 
 class BenchWorkload(WorkloadContract):
+    requires_target_preparation = True
+    preserve_output_tensors = True
+
     def compare_output_values(self, expected, observed):
         problem, uuid = problem_for(self)
         check = problem.compare(uuid, expected, observed)

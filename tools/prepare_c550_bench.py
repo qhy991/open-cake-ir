@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT, BenchProblem
+from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT, BenchProblem, validate_input_view_observation
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
 from open_cake_ir.tasks.c550_bench.starters.rms_norm import source as rms_norm_source
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
@@ -42,14 +42,14 @@ def main(argv=None):
     observed_views = {}
     for path in args.input_views:
         observation = json.loads(path.read_text())
-        if (observation.get('bench_commit') != BENCH_COMMIT or observation.get('status') != 'complete'
-                or observation.get('target') != 'xcore1002'):
-            parser.error('input-view observation lacks complete original-target qualification')
-        for row in observation['cases']:
-            key = (observation['task'], row['workload_uuid'])
+        if observation.get('task') not in selected:
+            parser.error('input-view observation belongs to a task outside this preparation')
+        view_problem = first if observation['task'] == first.task_id else BenchProblem.open(args.bench_root, observation['task'])
+        for uuid, views in validate_input_view_observation(view_problem, observation).items():
+            key = (observation['task'], uuid)
             if key in observed_views:
                 parser.error('duplicate input-view observation')
-            observed_views[key] = row['input_views']
+            observed_views[key] = views
     args.output.mkdir(parents=True, exist_ok=False)
     summary = {'bench_commit': BENCH_COMMIT, 'status': 'prepared_not_launched',
                'search_owner': 'existing_TaskLab_Ralph', 'tasks': []}
@@ -70,6 +70,9 @@ def main(argv=None):
                 starter = rms_norm_source(BenchWorkload(document))
             elif task == 'L1/048_fused_gate_up_projection_with_swiglu':
                 from benchmarks.c550.gate_up import source_for_workload
+                starter = source_for_workload(BenchWorkload(document), 'primary')
+            elif task == 'L1/011_rotary_position_embedding':
+                from benchmarks.c550.rope import source_for_workload
                 starter = source_for_workload(BenchWorkload(document), 'primary')
             if starter is not None:
                 (case_root / 'starter.py').write_text(starter, encoding='utf-8')
