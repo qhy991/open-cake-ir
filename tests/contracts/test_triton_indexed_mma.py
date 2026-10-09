@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def indexed_source(target='xcore1002', *, batches=2, sequence=65, rows=17, columns=35,
-                   selected=(0, 1), cast=False, indices='scalar'):
+                   selected=(0, 1), cast=False, indices='scalar', outer_columns=False):
     heads = batches if indices == 'repeated' else 2
     prefix = (batches, heads) if indices in {'multiple', 'repeated'} else (batches,)
     left_shape, right_shape = (*prefix, sequence, rows), (*prefix, sequence, columns)
@@ -57,6 +57,16 @@ def candidate(lm, left: cake.Tensor({left_shape!r}, "bf16"), right: cake.Tensor(
 '''
     source += ('    with compute:\n        total = ' + ' + '.join(f'product_{i}' for i in range(len(selected)))
                + '\n        lm.store(output[m, n], total, id="store")\n')
+    if outer_columns:
+        source = source.replace('    n = lm.program(output, axis=1, dimension=1, tile=32)\n', '')
+        source = source.replace('        n_features = lm.coordinate(source="program_tile", name="n")\n', '')
+        boundary = source.index('    with compute:\n        batch_0')
+        body = source[boundary:]
+        source = source[:boundary] + (
+            f'    for n in lm.range(right, name="columns", dimension={len(prefix) + 1}, tile=32):\n'
+            '        with compute:\n'
+            '            n_features = lm.coordinate(source="loop_tile", name="n")\n'
+            + ''.join('    ' + line + '\n' for line in body.splitlines()))
     return source
 
 
@@ -143,6 +153,12 @@ class IndexedMMAProvenance(unittest.TestCase):
                 with self.subTest(target=target, indices=indices):
                     _, schedule = self.execute(target, sequence=33, rows=3, columns=7, indices=indices)
                     self.assertEqual(schedule.operation('left_0').reads, dependencies)
+
+    def test_outer_feature_index_is_available_to_each_inner_k_region(self):
+        for target in ('xcore1002', 'gfx938'):
+            with self.subTest(target=target):
+                self.execute(target, sequence=33, rows=3, columns=35,
+                             indices='multiple', outer_columns=True)
 
     def test_missing_reordered_or_unwritten_index_refuses_at_its_existing_owner(self):
         for mutation in ('missing', 'reordered', 'unwritten'):
