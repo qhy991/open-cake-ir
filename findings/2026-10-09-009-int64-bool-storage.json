@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-009",
+  "kind": "capacity",
+  "decision": "accepted",
+  "title": "Original C550 Bench inputs require explicit INT64 and BOOL storage",
+  "compiler_revision_id": "open-cake-ir@5bb474c6",
+  "executor_revision": "xcore1002@5bb474c6",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-2:/root/experiments/glm53-flame-chase-20260925/c550-bench-20261001",
+    "locators": [
+      ".data/benchmark/L1/011_rotary_position_embedding/definition.json: inputs.position_ids INT64",
+      ".data/benchmark/L1/001_attention_softmax_dropout_value_matmul_backward/definition.json: inputs.dropout_mask BOOL",
+      ".data/benchmark/L2/018_cu_seqlens_variable_length_vision_attention/definition.json: inputs.cu_seqlens INT64",
+      ".data/benchmark/L2/024_moe_expert_parallel_execution/definition.json: inputs.topk_indices INT64"
+    ],
+    "bench_commit": "ababa4c0656b89bdf0a9c60ef0d2e90e0aebb425",
+    "scope": "Original ABI audit and exact frozen C1 vocabulary. No failed GPU Run or device support is inferred."
+  },
+  "observation": "C1 DType, WorkloadContract.tensor_abi, TensorLaunchManifest and MACA launch dtype maps do not admit these original input types. NativeTritonEnvironment uses the same closed ABI. Casting inputs in a Torch wrapper would change the route and must not stand in for pure Cake support.",
+  "proposed_change": "Add explicit discrete storage, bounded indexing, matching comparisons, typed select, exact BOOL-to-INT32/FP32 and INT32-to-INT64 casts, and RNE INT64-to-FP32. Refuse INT64 narrowing and automatic BOOL arithmetic. Keep typing, byte counts, Triton emission, manifest, storage snapshots and MACA argument checks consistent.",
+  "promotion_disposition": "Shared software implementation only. Device capacity remains open until independent native compilation and device campaigns qualify generated INT64/BOOL operations; existing Runs retain C1. No performance claim.",
+  "implemented_in": ["f9125062", "ba3ab3bf"],
+  "verified_by": null,
+  "software_verification": {
+    "commit": "ba3ab3bf",
+    "tests": "194 contract tests: 192 passed, 1 skipped without CPU Torch, 1 existing native_triton_pairing custody setup failed with macOS EPERM. The run stopped; permissions were not changed and no retry repaired the environment.",
+    "corpus": "204/204 matched unchanged expectations",
+    "tests_path": "/tmp/cake-int64-bool-tests.log",
+    "corpus_path": "/tmp/cake-int64-bool-corpus.json",
+    "scope": "CPU typed source model, real parser/verifier/emission, metadata and driver contract fixtures only. Native compilation, GPU correctness and timing remain unverified."
+  }
+}

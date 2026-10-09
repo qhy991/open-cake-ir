@@ -602,7 +602,8 @@ class _Builder:
                 dtype = parameters["to"]
                 if first.dtype.value in {"int64", "bool"} or dtype in {"int64", "bool"}:
                     from .ir import DType
-                    if not cast_supported(first.dtype, DType(dtype)):
+                    target_dtype = next((value for value in DType if value.value == dtype), None)
+                    if target_dtype is None or not cast_supported(first.dtype, target_dtype):
                         self.fail(node, "this explicit storage conversion is unsupported",
                                   "CAST_DTYPE_UNSUPPORTED",
                                   canonical_path=f"operations[{len(self.document['operations'])}].parameters.to")

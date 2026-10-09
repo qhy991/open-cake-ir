@@ -3,6 +3,7 @@
 Source execution uses a CPU value model; it grants no native-device qualification.
 """
 from pathlib import Path
+import importlib.util
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -147,6 +148,8 @@ class DiscreteStorageCompiler(unittest.TestCase):
                 with self.assertRaises(frontend.FrontendError) as caught:
                     frontend.parse(source(src,dst,f'lm.cast(values,to="{dst}")'))
                 self.assertEqual(caught.exception.code, 'CAST_DTYPE_UNSUPPORTED')
+        with self.assertRaises(frontend.FrontendError):
+            frontend.parse(source('int64', 'fp32', 'lm.cast(values,to="invalid")'))
         doc=frontend.parse(source('int32','fp32','lm.cast(values,to="fp32")')).document
         next(b for b in doc['buffers'] if b['name']=='values')['dtype']='int64'
         next(b for b in doc['buffers'] if b['name']=='result')['dtype']='int32'
@@ -203,3 +206,35 @@ class DiscreteRuntimeABI(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'storage width'):
                 loaded.launch([fixture.argument(dtype=runtime,element_size=lambda:4)],tensor_contract=fixture.manifest)
             loaded.close()
+
+
+@unittest.skipUnless(importlib.util.find_spec('torch'), 'requires CPU Torch; no device execution')
+class DiscreteTorchStorage(unittest.TestCase):
+    def test_int64_and_bool_snapshots_do_not_convert_through_float64(self):
+        import torch
+        from open_cake_ir.evaluation.torch_tensor_inputs import check_cpu_tensor_inputs
+        for dtype, values in [('int64',[-2**63,2**53+1,2**60+1,2**63-1]),
+                              ('bool',[True,False,False,True])]:
+            loaded=object.__new__(LoadedTorchTensorCandidate)
+            loaded._native_inputs=None
+            loaded.manifest=SimpleNamespace(tensor_abi=(('x',(4,),dtype,'input'),('y',(4,),dtype,'output')))
+            tensor=torch.tensor(values,dtype=getattr(torch,dtype))
+            loaded.arguments=[tensor,tensor.clone()]
+            check_cpu_tensor_inputs(loaded.manifest,{'x':tensor})
+            outputs, after=loaded.snapshot()
+            self.assertEqual(outputs['y'],values)
+            self.assertEqual(after['x'],values)
+            self.assertTrue(_same_tensor_inputs({'x':values},after))
+            changed=tensor.clone()
+            changed[1] = 2**53 if dtype=='int64' else True
+            self.assertFalse(_same_tensor_inputs({'x':tensor},{'x':changed}))
+            with self.assertRaises(ValueError):
+                check_cpu_tensor_inputs(loaded.manifest,{'x':tensor.to(torch.float32)})
+
+    def test_cpu_torch_cast_agrees_at_int64_rounding_boundaries(self):
+        import torch
+        values=[2**24+1,2**24+3,-(2**24+1),2**62+2**38+1,-2**63,2**63-1]
+        expected=[float(2**24),float(2**24+4),-float(2**24),float(2**62+2**39),-float(2**63),float(2**63)]
+        self.assertEqual(torch.tensor(values,dtype=torch.int64).to(torch.float32).tolist(),expected)
+        self.assertEqual(torch.tensor([False,True]).to(torch.int32).tolist(),[0,1])
+        self.assertEqual(torch.tensor([False,True]).to(torch.float32).tolist(),[0.0,1.0])
