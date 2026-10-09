@@ -1,5 +1,6 @@
 """Run common worker output paths with real immutable receipts and CPU devices."""
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -11,8 +12,8 @@ from unittest.mock import patch
 from open_cake_ir.evaluation.core import _plain_json, _freeze_json
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks import evaluate as worker
-from tests.contracts.test_metax_paired import MacaPairedReceipts
-from tests.contracts.test_metax_program_events import ProgramEvents
+from tests.contracts import test_metax_paired as maca_fixtures
+from tests.contracts import test_metax_program_events as program_fixtures
 
 
 DETAIL = {'passed': True, 'outputs': {'out': {'passed': True, 'reason': 'upstream_numeric',
@@ -25,7 +26,9 @@ def detailed(function):
     def invoke(*args, **kwargs):
         receipt = function(*args, **kwargs)
         metrics = _plain_json(receipt.correctness)
-        metrics['original_bench_check'] = {**DETAIL, 'passed': receipt.correctness_passed}
+        detail = deepcopy(DETAIL)
+        detail['passed'] = detail['outputs']['out']['passed'] = receipt.correctness_passed
+        metrics['original_bench_check'] = detail
         payloads = dict(receipt.artifact_payloads)
         payloads['correctness_output'] = canonical_json_bytes(
             {'passed': receipt.correctness_passed, 'metrics': metrics})
@@ -35,7 +38,7 @@ def detailed(function):
 
 class ImmutableEvaluationEvidence(unittest.TestCase):
     def maca(self):
-        fixture = MacaPairedReceipts('runTest')
+        fixture = maca_fixtures.MacaPairedReceipts('runTest')
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         return fixture
@@ -84,9 +87,30 @@ class ImmutableEvaluationEvidence(unittest.TestCase):
         for row in records['correctness-output.json']['validation_cases']:
             self.assertEqual(row['metrics']['original_bench_check'], DETAIL)
 
+    def test_rejected_output_remains_rejected_with_its_complete_nested_record(self):
+        fixture = self.maca()
+        original = maca_fixtures.reference_outputs
+        def incorrect(*args, **kwargs):
+            values = original(*args, **kwargs)
+            next(iter(values.values()))[0] = 1e30
+            return values
+        with patch.object(maca_fixtures, 'reference_outputs', side_effect=incorrect), \
+             patch.object(worker, 'evaluate_tile_validation_case',
+                          side_effect=detailed(worker.evaluate_tile_validation_case)), self.captured_writes() as records:
+            receipt = fixture.execute()
+        self.assertFalse(receipt.correctness_passed)
+        self.assertIsNone(receipt.timing)
+        self.assertEqual(records['timing-samples.json']['not_measured'], 'correctness_rejected')
+        for role in ('candidate', 'baseline'):
+            for row in records['correctness-output.json']['participants'][role]['preflight']['launches']:
+                self.assertFalse(row['passed'])
+                self.assertFalse(row['metrics']['original_bench_check']['passed'])
+                self.assertEqual(row['metrics']['original_bench_check']['outputs']['out']['extra'],
+                                 DETAIL['outputs']['out']['extra'])
+
     def test_attribution_output_keeps_frozen_preflight_and_separate_profile(self):
-        ProgramEvents.setUpClass()
-        fixture = ProgramEvents('runTest')
+        program_fixtures.ProgramEvents.setUpClass()
+        fixture = program_fixtures.ProgramEvents('runTest')
         self.addCleanup(fixture.doCleanups)
         with patch.object(worker, 'evaluate_tile_workload', side_effect=detailed(worker.evaluate_tile_workload)), \
              self.captured_writes() as records:
@@ -114,8 +138,8 @@ class ImmutableEvaluationEvidence(unittest.TestCase):
 
     def test_failed_program_profile_retains_frozen_raw_activity_and_original_error(self):
         from open_cake_ir.evaluation import metax_program_profile
-        ProgramEvents.setUpClass()
-        fixture = ProgramEvents('runTest')
+        program_fixtures.ProgramEvents.setUpClass()
+        fixture = program_fixtures.ProgramEvents('runTest')
         self.addCleanup(fixture.doCleanups)
         original = metax_program_profile.capture_program_activity
         def capture(*args, **kwargs):
@@ -146,6 +170,25 @@ class ImmutableEvaluationEvidence(unittest.TestCase):
                 path = Path(directory)/'record.json'
                 with self.assertRaises((ValueError, TypeError)): worker._write_new(path, invalid)
                 self.assertFalse(path.exists())
+
+    def test_frozen_device_observation_preserves_allocation_and_closed_result_envelope(self):
+        allocation = {'job_id': 'gpuq-123456789abc', 'device': {'ordinal': 0}}
+        for envelope in (False, True):
+            record = {'job_id': allocation['job_id'], 'allocation_mode': 'local_serialized', 'details': DETAIL}
+            if envelope: record['counters'] = {'kernel_calls': 68}
+            with tempfile.TemporaryDirectory() as directory, patch.object(worker, '_BROKER_ALLOCATION', allocation):
+                plain, frozen = Path(directory)/'plain.json', Path(directory)/'frozen.json'
+                worker._write_new(plain, record)
+                worker._write_new(frozen, _freeze_json(record))
+                self.assertEqual(plain.read_bytes(), frozen.read_bytes())
+                observed = json.loads(frozen.read_bytes())
+                if envelope:
+                    self.assertNotIn('broker_allocation', observed)
+                    self.assertEqual(observed['allocation_mode'], 'local_serialized')
+                else:
+                    self.assertEqual(observed['broker_allocation'], allocation)
+                    self.assertEqual(observed['allocation_mode'], 'exclusive')
+                self.assertEqual(record['allocation_mode'], 'local_serialized')
 
 
 if __name__ == '__main__':
