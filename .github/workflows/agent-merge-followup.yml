@@ -1,0 +1,38 @@
+name: Agent merge follow-up
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main, metal, amd, dcu, nvidia, metax]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: agent-merge-followup-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  prompt:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post the subagent handoff
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const marker = '<!-- agent-merge-followup -->';
+            const params = { ...context.repo, issue_number: pr.number };
+            const comments = await github.paginate(github.rest.issues.listComments, params);
+            if (comments.some(comment => comment.user?.type === 'Bot' && comment.body?.includes(marker))) {
+              return;
+            }
+            const issue = (pr.body || '').match(/^Related issue:\s*#([1-9]\d*)\b/im);
+            const tracking = issue
+              ? `Tracking issue: https://github.com/${context.repo.owner}/${context.repo.repo}/issues/${issue[1]}`
+              : 'Read the tracking issue linked in this PR.';
+            await github.rest.issues.createComment({
+              ...params,
+              body: `${marker}\nPlease start using subagents to resolve the issues listed under Blocks.\n\n${tracking}\nReview its Blocks and Blocked by sections before delegating. If Blocks is None, report that no dependent issues remain.`,
+            });
