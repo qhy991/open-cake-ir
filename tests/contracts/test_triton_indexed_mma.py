@@ -154,11 +154,17 @@ class IndexedMMAProvenance(unittest.TestCase):
                     _, schedule = self.execute(target, sequence=33, rows=3, columns=7, indices=indices)
                     self.assertEqual(schedule.operation('left_0').reads, dependencies)
 
-    def test_outer_feature_index_is_available_to_each_inner_k_region(self):
+    def test_outer_feature_index_is_available_to_its_inner_k_region(self):
         for target in ('xcore1002', 'gfx938'):
             with self.subTest(target=target):
                 self.execute(target, sequence=33, rows=3, columns=35,
-                             indices='multiple', outer_columns=True)
+                             selected=(1,), indices='multiple', outer_columns=True)
+
+    def test_outer_loop_with_sibling_k_regions_still_exceeds_the_emitter_domain(self):
+        document = frontend.parse(indexed_source(indices='multiple', outer_columns=True)).document
+        assessment = self.compiler.assess(document)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertIn('TRITON_TILE_LOOP_COUNT', [f.code for f in assessment.findings])
 
     def test_missing_reordered_or_unwritten_index_refuses_at_its_existing_owner(self):
         for mutation in ('missing', 'reordered', 'unwritten'):
