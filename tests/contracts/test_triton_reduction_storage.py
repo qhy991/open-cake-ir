@@ -121,7 +121,7 @@ class TritonReductionStorageTest(unittest.TestCase):
                 document = _chain(producer, op=op, dtype=dtype, singleton=singleton)
                 emission = self.lower(document)
                 acc_dtype = "tl.int32" if dtype == "int32" else "tl.float32"
-                self.assertIn(f"tl.{op}(tl.reshape(rows, (1,)).to({acc_dtype}), axis=0)", emission.source)
+                self.assertIn(f"tl.{op}(tl.broadcast_to(rows, (1,)).to({acc_dtype}), axis=0)", emission.source)
                 load_only = producer in {"scalar_load", "block_load"}
                 values = [-16777219, -16777217] if dtype == "int32" else [-3.0, -7.0]
                 data = values if load_only else [values[0]] * 8 + [values[1]] * 8

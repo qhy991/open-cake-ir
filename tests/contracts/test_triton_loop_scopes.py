@@ -269,6 +269,8 @@ class _TL:
 
     @staticmethod
     def reshape(a, shape):
+        if not a.shape:
+            raise TypeError("reshape requires a block tensor; splat a scalar before reshaping")
         if _size(a.shape) != _size(shape):
             raise ValueError("reshape changes the number of values")
         return _Tile(shape, a.values)

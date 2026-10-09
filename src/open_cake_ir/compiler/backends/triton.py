@@ -1879,9 +1879,10 @@ class _TritonEmitter:
             template = template.replace("tl.float32", "tl.int32")
         # The IR's scalar shape is [1]. A prior reduction or scalar load may
         # produce a rank-zero Triton value, while a block load or loop state
-        # produces [1]. Normalize only this consumer's input; retain the declared
-        # fold and its dtype promotion rather than replacing it with arithmetic.
-        value = f"tl.reshape({source.name}, (1,))" if source.is_scalar else source.name
+        # produces [1]. Broadcast splats the scalar and preserves a [1] block;
+        # reshape requires a block in the admitted MACA Triton toolchain. Retain
+        # the declared fold and dtype promotion after normalizing this input.
+        value = f"tl.broadcast_to({source.name}, (1,))" if source.is_scalar else source.name
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(
             pad
