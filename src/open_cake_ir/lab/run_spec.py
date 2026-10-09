@@ -62,6 +62,8 @@ class RunSpecification:
         if 'compiler_revision' in authoring and authoring['compiler_revision'] != compiler:
             raise ValueError('authoring Compiler reference differs from the Run Compiler')
         validate_declarations({'author': authoring})
+        from .generated_source import generated_source_permission
+        generated_source_permission(authoring)
         validate_knowledge_access(document['knowledge'], environment_kind=authoring['environment_kind'])
         references = _object(document['reference_inputs'], 'run.reference_inputs')
         expected_references = {'baseline_schedule'} if authoring['environment_kind'] in {'native_triton', 'native_cute_dsl'} else set()

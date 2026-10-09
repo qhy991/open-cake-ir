@@ -684,6 +684,33 @@ class EvidenceStore:
             findings=tuple(findings),
         )
 
+    def replay_authority(self, run_id: str) -> Mapping[str, object]:
+        """Read the original Run authority without following links.
+
+        Like replay_events, this does not replace audit_run. The caller must check
+        that audit's integrity, custody and authority identity before using it.
+        """
+        if _RUN_ID.fullmatch(run_id) is None:
+            raise ValueError("Run ID is invalid")
+        root_fd = self._root_fd()
+        try:
+            runs_fd = self._dir(root_fd, "runs")
+            try:
+                run_fd = self._dir(runs_fd, run_id)
+                try:
+                    document = _parse_canonical_json(
+                        _read_regular_at(run_fd, "authority.json"), "authority.json")
+                    if (document.get('schema_version') != 2 or document.get('run_id') != run_id
+                        or not isinstance(document.get('authority'), Mapping)):
+                        raise ValueError('Run authority fields differ')
+                    return document['authority']
+                finally:
+                    os.close(run_fd)
+            finally:
+                os.close(runs_fd)
+        finally:
+            os.close(root_fd)
+
     def replay_events(self, run_id: str) -> tuple[Mapping[str, object], ...]:
         """Read a sealed Run's canonical ordered event records without mutating the store.
 

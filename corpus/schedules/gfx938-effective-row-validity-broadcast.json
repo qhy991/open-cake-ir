@@ -1,0 +1,390 @@
+{
+  "schema_version": 2,
+  "schedule_id": "qualify_validity_broadcast_3",
+  "target": "gfx938",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "a",
+      "shape": [
+        1,
+        3,
+        8
+      ],
+      "mode": "input",
+      "space": "global",
+      "dtype": "fp32"
+    },
+    {
+      "name": "b",
+      "shape": [
+        1,
+        8
+      ],
+      "mode": "input",
+      "space": "global",
+      "dtype": "fp32"
+    },
+    {
+      "name": "out",
+      "shape": [
+        1,
+        8
+      ],
+      "mode": "output",
+      "space": "global",
+      "dtype": "fp32"
+    },
+    {
+      "name": "at",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "bt",
+      "shape": [
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "bw",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "product",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "scratch",
+      "space": "register",
+      "dtype": "fp32"
+    },
+    {
+      "name": "index",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "valid",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "mask",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "clean",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "total",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "la",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "a"
+      ],
+      "writes": [
+        "at"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "lb",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "b"
+      ],
+      "writes": [
+        "bt"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "bb",
+      "kind": "broadcast_in_dim",
+      "role": "compute",
+      "reads": [
+        "bt"
+      ],
+      "writes": [
+        "bw"
+      ],
+      "depends_on": [
+        "lb"
+      ],
+      "parameters": {
+        "dimensions": [
+          1
+        ]
+      }
+    },
+    {
+      "id": "mul",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "at",
+        "bw"
+      ],
+      "writes": [
+        "product"
+      ],
+      "depends_on": [
+        "la",
+        "bb"
+      ],
+      "parameters": {
+        "op": "add"
+      }
+    },
+    {
+      "id": "coord",
+      "kind": "coordinate",
+      "role": "compute",
+      "reads": [],
+      "writes": [
+        "index"
+      ],
+      "parameters": {
+        "source": "program_tile",
+        "name": "rows"
+      }
+    },
+    {
+      "id": "cmp",
+      "kind": "compare",
+      "role": "compute",
+      "reads": [
+        "index"
+      ],
+      "writes": [
+        "valid"
+      ],
+      "depends_on": [
+        "coord"
+      ],
+      "parameters": {
+        "op": "lt",
+        "scalar": 3
+      }
+    },
+    {
+      "id": "wide",
+      "kind": "broadcast_in_dim",
+      "role": "compute",
+      "reads": [
+        "valid"
+      ],
+      "writes": [
+        "mask"
+      ],
+      "depends_on": [
+        "cmp"
+      ],
+      "parameters": {
+        "dimensions": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "neutral",
+      "kind": "select",
+      "role": "compute",
+      "reads": [
+        "mask",
+        "product"
+      ],
+      "writes": [
+        "clean"
+      ],
+      "depends_on": [
+        "wide",
+        "mul"
+      ],
+      "parameters": {
+        "false_value": 0
+      }
+    },
+    {
+      "id": "fold",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "clean"
+      ],
+      "writes": [
+        "total"
+      ],
+      "depends_on": [
+        "neutral"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 0,
+        "scope": "cta",
+        "across_loop": false
+      }
+    },
+    {
+      "id": "store",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "total"
+      ],
+      "writes": [
+        "out"
+      ],
+      "depends_on": [
+        "fold"
+      ],
+      "parameters": {
+        "coalesced": true
+      }
+    }
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "batch",
+        "axis": 1,
+        "buffer": "a",
+        "dimension": 0,
+        "tile": 1
+      },
+      {
+        "name": "rows",
+        "axis": 0,
+        "buffer": "a",
+        "dimension": 1,
+        "tile": 8
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "la",
+      "buffer": "a",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "rows"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ]
+    },
+    {
+      "operation": "lb",
+      "buffer": "b",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ]
+    },
+    {
+      "operation": "store",
+      "buffer": "out",
+      "boundary": "mask_tiled_axes",
+      "indices": [
+        {
+          "source": "program",
+          "name": "batch"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    "out"
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "qualify_validity_broadcast_3"
+  }
+}

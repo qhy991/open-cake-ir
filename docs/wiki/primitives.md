@@ -58,6 +58,8 @@
 | `exp2` | 以 2 为底的指数。硬件上通常比 `exp` 便宜，但**不是** `exp` 的改写：想用它，计划要自己把操作数乘以 `log2(e)`，并承担那一步的舍入 | `3 → 8` |
 | `reciprocal` | 倒数。与 `div` 的区别是它只需要一个操作数，归约结果只算一次倒数就能乘给整行 | `4 → 1/4` |
 | `relu` | 负数变零，非负数保留 | `[-2,3] → [0,3]` |
+| `sin` | FP32 sine with an explicit `ocml.sin.f32` contract; no fast hardware approximation. |
+| `cos` | FP32 cosine with an explicit `ocml.cos.f32` contract; no fast hardware approximation. |
 | `tanh` | 把数压向 −1 到 1 之间 | `0 → 0` |
 | `add` | 加 | `2+3 → 5` |
 | `sub` | 减 | `2−3 → −1` |
@@ -69,7 +71,8 @@
 | `fma` | 融合乘加 | `2×3+4 → 10` |
 
 浮点数能存的精度有限。FMA 对 `a×b+c` 只做一次最终舍入；先乘再加可能舍入两次，最后几位会不同。
-本项目的 FMA 明确要求三个同形状 FP32 寄存器输入和 `ptx.fma.rn.f32`，不允许用标量或广播字段省掉输入。
+本项目的 FMA 明确要求三个同形状 FP32 寄存器输入，以及目标声明的指令契约，不允许用标量或广播字段省掉输入。
+gfx938 使用 `ocml.fma.f32`；NVIDIA 使用 `ptx.fma.rn.f32`。契约不能跨目标借用。
 `tanh` 也要声明目标指令合同，不会自动把精确要求换成近似指令。
 
 例子：[FMA](../../corpus/schedules/fma-b8-smoke.json)、[嵌套 FMA](../../corpus/schedules/fma-chain-b8-smoke.json)、[ReLU](../../corpus/schedules/relu-b8-smoke.json)。
@@ -133,7 +136,11 @@
 ## scan
 
 **保留每一步的累计结果。** 前向求和把 `[2,5,1]` 变成 `[2,7,8]`；反向则是 `[8,6,1]`。
-当前扫描操作是 `sum`，方向用 `forward` 或 `reverse` 表示。
+扫描操作是 `sum` 或 `max`，方向用 `forward` 或 `reverse` 表示。
+`max` 目前只接受 INT32，在每个 CTA 内沿声明轴返回 inclusive prefix/suffix maximum；
+它不跨 CTA 累计，也不隐式将最大值扫描替换为求和。浮点 max scan 未声明 NaN 与 signed-zero 规则，因此拒绝。
+`sum` 的浮点输入以 FP32 累加；INT32 输入以 INT32 累加，溢出按模 (2^{32}) 回绕并解释为有符号整数，
+不经过浮点转换。这是寄存器常驻块的扫描，不隐式携带跨块前缀。
 
 扫描中的顺序和浮点舍入属于实际数值行为；不要用一个普通求和结果替代整列累计输出。
 例子：[前向累计](../../corpus/schedules/chunk-cumsum-b8-smoke.json)、[反向累计](../../corpus/schedules/chunk-cumsum-reverse-b8-smoke.json)。
@@ -181,3 +188,29 @@
 INT32 谓词非零时选择 true 值，否则选择 false 值。两个分支类型一致；
 false 分支可为有限常量，浮点结果另可声明 `negative_infinity`，用于注意力掩码。
 地址必须在解引用时独立检查边界，选择操作不能替代安全的 load。
+
+## broadcast_in_dim
+
+Replicate one register value into the result Buffer's declared shape without
+arithmetic, dtype conversion or memory effects. `parameters.dimensions` maps
+every source axis to a strictly increasing result axis; mapped extents must
+match or be one. Unmapped result axes replicate values. Canonical `[1]` values
+can be native scalar reductions or scalar loads. This explicit operation serves
+outer products and widened validity predicates; it does not silently propagate
+a load mask through later arithmetic. Target admission and backend support remain
+separate from the typed vocabulary.
+
+## transpose
+
+**交换一个二维寄存器值的行列轴。** 输入 `[M,N]` 得到 `[N,M]`，结果满足
+`result[j,i] = input[i,j]`。FP32、FP16、BF16、INT32 的类型与位值保持不变。
+Python 写法是 `lm.transpose(value)`；它不会修改全局内存的 stride，也不会转换精度。
+
+它让加载的 B[K,N] 值能显式转换为现有 MMA 合同要求的 B[N,K]。类型检查、循环累加轴
+与 argmin 候选域会跟随轴交换；地址与边界 mask 仍由各次 load/store 自己声明。
+当前声明范围为 gfx938 Triton。嵌套 MMA 对直接加载操作数的原有限制仍然保留。
+转置可能需要实际 lane 交换，零浮点运算不代表零成本。
+
+规则与边界见 [二维寄存器转置](../REGISTER_TRANSPOSE.md)，例子见
+[带尾块的转置](../../corpus/schedules/gfx938-register-transpose-tail.json) 和
+[转置 K 分块矩阵乘](../../corpus/schedules/gfx938-kn-transpose-mma-tail.json)。

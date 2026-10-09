@@ -41,7 +41,8 @@ class PairedTimingProtocol:
     pair_order: tuple[tuple[str, str], ...]
     samples_per_cohort: int
     route_calls_per_cohort: int
-    maximum_cv: float
+    # None explicitly retains dispersion as diagnostic-only for a mean policy.
+    maximum_cv: float | None
     materiality_ratio: float
     required_pair_wins: int
     # Dispatches encoded in each timed command buffer. One keeps the original
@@ -52,6 +53,7 @@ class PairedTimingProtocol:
     # the first survives the isolated samples a shared GPU produces, and this assay
     # already records that external GPU activity is not excluded. None keeps CV.
     maximum_relative_iqr: float | None = None
+    statistic: str = "median"
 
     def __post_init__(self) -> None:
         if (
@@ -60,11 +62,13 @@ class PairedTimingProtocol:
             or any(set(pair) != set(self.arms) for pair in self.pair_order)
             or self.samples_per_cohort <= 0
             or self.route_calls_per_cohort <= 0
-            or not math.isfinite(self.maximum_cv)
-            or not 0 <= self.maximum_cv < 1
+            or self.statistic not in {"median", "mean"}
+            or (self.maximum_cv is None and self.statistic != "mean")
+            or (self.maximum_cv is not None and (not math.isfinite(self.maximum_cv)
+                or not 0 <= self.maximum_cv < 1))
             or not math.isfinite(self.materiality_ratio)
             or self.materiality_ratio <= 1
-            or not 1 <= self.required_pair_wins <= len(self.pair_order)
+            or not (0 if self.statistic == "mean" else 1) <= self.required_pair_wins <= len(self.pair_order)
             or type(self.dispatches_per_sample) is not int
             or not 1 <= self.dispatches_per_sample <= 4096
             or self.maximum_relative_iqr is not None
@@ -85,6 +89,7 @@ class PairedTimingObservation:
     tied_pairs: int
     pooled_sample_counts: Mapping[str, int]
     pooled_medians_ms: Mapping[str, float]
+    pooled_means_ms: Mapping[str, float]
     speedup: float
     classification: str
 
@@ -142,7 +147,7 @@ def derive_paired_timing(
         arms = _object(measurement.get("arms"), f"measurements[{pair_index}].arms")
         if set(arms) != set(protocol.arms):
             raise ValueError(f"measurements[{pair_index}] arm set differs")
-        medians: dict[str, float] = {}
+        cohort_latencies: dict[str, float] = {}
         for position, arm in enumerate(expected_order):
             record = _object(arms.get(arm), f"measurements[{pair_index}].arms.{arm}")
             if record.get("position") != position:
@@ -158,21 +163,27 @@ def derive_paired_timing(
             if record.get("route_calls") != protocol.route_calls_per_cohort:
                 raise ValueError(f"measurements[{pair_index}] route calls differ")
             pooled[arm].extend(values)
-            medians[arm] = cast(float, summary["median_ms"])
-            if protocol.maximum_relative_iqr is None:
+            cohort_latencies[arm] = cast(float, summary[f"{protocol.statistic}_ms"])
+            if protocol.maximum_cv is None and protocol.maximum_relative_iqr is None:
+                stable = True  # Explicit diagnostic-only dispersion; raw samples still validated.
+            elif protocol.maximum_relative_iqr is None:
                 stable = cast(float, summary["cv"]) <= protocol.maximum_cv
             else:
                 stable = relative_iqr(values) <= protocol.maximum_relative_iqr
             measurement_quality_passed = measurement_quality_passed and stable
-        if medians[first_arm] < medians[second_arm]:
+        if cohort_latencies[first_arm] < cohort_latencies[second_arm]:
             pair_wins[first_arm] += 1
-        elif medians[second_arm] < medians[first_arm]:
+        elif cohort_latencies[second_arm] < cohort_latencies[first_arm]:
             pair_wins[second_arm] += 1
 
     pooled_medians = {
         arm: _canonical(statistics.median(samples)) for arm, samples in pooled.items()
     }
-    speedup = _canonical(pooled_medians[second_arm] / pooled_medians[first_arm])
+    pooled_means = {
+        arm: _canonical(statistics.mean(samples)) for arm, samples in pooled.items()
+    }
+    primary = pooled_means if protocol.statistic == "mean" else pooled_medians
+    speedup = _canonical(primary[second_arm] / primary[first_arm])
     if not measurement_quality_passed:
         classification = "measurement_quality_failed"
     elif pair_wins[first_arm] >= protocol.required_pair_wins and speedup >= protocol.materiality_ratio:
@@ -192,6 +203,31 @@ def derive_paired_timing(
             {arm: len(samples) for arm, samples in pooled.items()}
         ),
         pooled_medians_ms=MappingProxyType(pooled_medians),
+        pooled_means_ms=MappingProxyType(pooled_means),
         speedup=speedup,
         classification=classification,
     )
+
+
+def timing_statistic(timing: Mapping) -> str:
+    """Absent declaration is the retained median contract, never inferred from values."""
+    statistic = timing.get('statistic', 'median')
+    if statistic not in ('median', 'mean'):
+        raise ValueError('timing statistic differs')
+    return statistic
+
+
+def timing_latencies(timing: Mapping) -> Mapping:
+    """Primary per-participant latency; diagnostics never decide selection."""
+    value = timing.get(f'pooled_{timing_statistic(timing)}s_ms')
+    if not isinstance(value, Mapping):
+        raise ValueError('timing primary participant latencies missing')
+    return value
+
+
+def timing_latency_ms(timing: Mapping) -> float | None:
+    """Candidate primary latency, including the legacy unpaired median receipt."""
+    value = timing.get(f'pooled_{timing_statistic(timing)}_ms')
+    if (type(value) not in (float, int) or not math.isfinite(value) or value <= 0):
+        return None
+    return float(value)

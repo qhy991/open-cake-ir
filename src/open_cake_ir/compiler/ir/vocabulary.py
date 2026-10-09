@@ -72,6 +72,8 @@ class OperationKind(str, Enum):
     COORDINATE = "coordinate"
     COMPARE = "compare"
     SELECT = "select"
+    BROADCAST_IN_DIM = "broadcast_in_dim"
+    TRANSPOSE = "transpose"
     CAST = "cast"
     ELEMENTWISE = "elementwise"
     SCAN = "scan"
@@ -91,6 +93,7 @@ class ScanOp(str, Enum):
     """The associative operator a prefix scan accumulates with."""
 
     SUM = "sum"
+    MAX = "max"
 
 
 class ScanDirection(str, Enum):
@@ -186,6 +189,8 @@ class ElementwiseOp(str, Enum):
     RECIPROCAL = "reciprocal"
     RELU = "relu"
     TANH = "tanh"
+    SIN = "sin"
+    COS = "cos"
     ADD = "add"
     SUB = "sub"
     MUL = "mul"
@@ -208,6 +213,8 @@ class ElementwiseOp(str, Enum):
                 ElementwiseOp.RECIPROCAL,
                 ElementwiseOp.RELU,
                 ElementwiseOp.TANH,
+                ElementwiseOp.SIN,
+                ElementwiseOp.COS,
             )
             else 2
         )

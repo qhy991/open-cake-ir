@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-004",
+  "legacy_platform_ref": "metax@5f93bb6e",
+  "legacy_platform_id": "F-2026-09-27-001",
+  "date": "2026-09-27",
+  "kind": "bug",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@f76a5b7bd4373dd478d2e65a4ad0fcc9e73691e9",
+  "executor_revision": "xcore1002@f76a5b7bd4373dd478d2e65a4ad0fcc9e73691e9",
+  "title": "Native MACA launch requires two scratch pointer slots not visible in Triton 3.6 TTGIR",
+  "decision": "accepted",
+  "implemented_in": "875724d4a089d491fc901aa79ccc8f18ce73846c",
+  "verified_by": {
+    "source_commit": "875724d4a089d491fc901aa79ccc8f18ce73846c",
+    "CPU_old_bundle_refusal": "open-cake-ir-evidence/metax-native-abi-old-bundle-replay-20260927/result.json",
+    "device_job": "maca-1a6e9f748221",
+    "device_root": "open-cake-ir-evidence/metax-native-abi-request-875724d4/device-run/",
+    "independent_collection_check": "open-cake-ir-evidence/metax-native-abi-request-875724d4/device-verification.json",
+    "scope": "37/37 frozen NT v2 cases, 151552 output elements, zero mismatches and zero maximum absolute error, unchanged inputs; no timing or bitwise-output audit"
+  },
+  "evidence": {
+    "crash": "open-cake-ir-evidence/metax-fp8-nt-native-crash-20260927/result.json",
+    "extra_buffer_control": "open-cake-ir-evidence/metax-fp8-nt-extra-abi-20260927/c5502/stage.json",
+    "scratch_pointer_control": "open-cake-ir-evidence/metax-fp8-nt-scratch-abi-20260927/interpretation.json"
+  },
+  "observation": "Two broker-held sealed NT FP8 baseline attempts exit 139 at mcModuleLaunchKernel. TTGIR has three public pointers, but native ELF MetaX metadata contains five contiguous global_buffer slots; the installed Triton 3.6 launcher appends global_scratch and profile_scratch. A 24-byte extra-buffer control returns runtime status 1. Holding the same native ELF, tensors and launch shape fixed, a separate broker job maca-2bca8cb21b6c that appends two null scratch pointers returns status 0 and matches all 4096 primary outputs exactly with unchanged inputs. External vLLM activity was present; no timing was measured. This is a single-case ABI diagnostic, not all-case qualification. The retained Triton 3.1 native ELF declares only three global_buffer pointers.",
+  "proposed_change": "Inspect native ELF launcher pointer metadata at compilation/sealing and loader admission, retaining TTGIR as the public tensor ABI check. Refuse missing metadata, scalar/unsupported arguments, name/count disagreements and nonzero or unmodeled scratch requirements. Append only the sealed artifact-derived zero scratch pointers. Preserve old receipts and requalify all 37 Workload cases through the repaired exact Executor.",
+  "promotion_disposition": "ABI repair accepted after exact sealed all-case correctness replay; historical failures retained; no performance or new-instruction promotion.",
+  "verification_successor": {
+    "observation": "The repaired sealed native baseline completed the common worker all-case correctness path under exact C550-2 admission. Job maca-1a6e9f748221 loaded 37 native modules and issued 37 kernel calls, with zero compiler invocations and zero fallback calls. Every one of the 37 NT v2 Workload input distributions passed complete-output comparison and input immutability. The timing artifact is JSON null and timing sample count is zero. The bounded waiter submitted once after observing an empty device process table and an available shared lock. Allocation remains local_serialized with external activity not excluded. Original segfaults, extra-buffer status-1 control and single-case scratch control remain unchanged.",
+    "promotion_disposition": "Native launcher ABI repair accepted for the exact captured runtime and artifact boundary; no new FP8 instruction, broader shape admission, bitwise-output claim or performance qualification."
+  }
+}

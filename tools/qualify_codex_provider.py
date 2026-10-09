@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import os
 import sys
@@ -17,14 +18,17 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.evidence import EvidenceObject, EvidenceStore  # noqa: E402
 from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes  # noqa: E402
 from open_cake_ir.lab.pairing import comparison_arm
-from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, provision_codex_home
+from open_cake_ir.lab.author_home import (
+    ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, provision_codex_home, provision_user_home,
+)
+from open_cake_ir.lab.native_skills import NativeSkillPackage
+from open_cake_ir.lab.provider_documents import NATIVE_SKILL_QUALIFICATION_V1, expected_codex_disabled_features
 from open_cake_ir.lab.bindings import external_file
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
     PYTHON_CANDIDATE_BUNDLE_V1,
-    CODEX_DISABLED_FEATURES,
     resolve_codex_code_mode_host,
     CodexInvocationBuilder,
     CodexProviderAdapter,
@@ -279,6 +283,9 @@ def _validate_invocation_pair(
         or initial.provider_revision != resumed.provider_revision
         or initial.removed_environment != resumed.removed_environment
         or initial.codex_home != resumed.codex_home
+        or initial.user_home != resumed.user_home
+        or (initial.native_skill_package.reference if initial.native_skill_package is not None else None)
+        != (resumed.native_skill_package.reference if resumed.native_skill_package is not None else None)
         or initial.thread_id is not None
         or resumed.thread_id != thread_id
     ):
@@ -318,17 +325,8 @@ def _validate_workspace(
 
 
 def _invocation_document(invocation: ProviderInvocation) -> dict[str, object]:
-    document = {
-        "argv": list(invocation.argv),
-        "cwd": str(invocation.cwd),
-        "sandbox": invocation.sandbox,
-        "provider_revision": invocation.provider_revision,
-        "removed_environment": list(invocation.removed_environment),
-        "thread_id": invocation.thread_id,
-    }
-    if invocation.codex_home is not None:
-        document['codex_home'] = str(invocation.codex_home)
-    return document
+    from open_cake_ir.lab.provider_documents import invocation_document
+    return invocation_document(invocation)
 
 
 def _put_json(evidence: EvidenceStore, value: object) -> EvidenceObject:
@@ -405,9 +403,16 @@ def main() -> int:
         help="exact provider reasoning effort to qualify as a treatment factor",
     )
     parser.add_argument("--service-tier", default="default")
-    parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1,))
+    parser.add_argument('--native-skill-name', action='append', default=[],
+                        help='Exact native skill name to select in both qualification turns; repeat for multiple skills')
+    parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1))
+    parser.add_argument('--author-skill-package', type=Path,
+                        help='controlled native skill package; requires explicit names and retained two-turn input qualification')
     parser.add_argument('--auth-source', type=Path,
                         help='private external Codex credential for an isolated author home')
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    parser.add_argument('--claude-event-contract', choices=CLAUDE_EVENT_CONTRACTS, default=CLAUDE_EVENT_CONTRACT)
+    parser.add_argument('--claude-isolation-policy', choices=('linux_claude_workspace_v1',))
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
         "--maximum-candidates-per-turn",
@@ -427,6 +432,10 @@ def main() -> int:
         default=None,
     )
     args = parser.parse_args()
+    if args.author_skill_package is not None and args.author_home_policy is None:
+        args.author_home_policy = ISOLATED_SKILL_PACKAGE_V1
+    if (args.author_home_policy == ISOLATED_SKILL_PACKAGE_V1) != (args.author_skill_package is not None):
+        parser.error('isolated_skill_package_v1 requires --author-skill-package and no other author-home policy accepts it')
     if ((args.author_home_policy is None) != (args.auth_source is None)
         or args.author_home_policy is not None and args.harness != 'codex'):
         parser.error('isolated Codex author home requires its credential source and Codex harness')
@@ -435,6 +444,18 @@ def main() -> int:
     if aliases and args.harness != "claude-code":
         parser.error("response model aliases require Claude Code")
 
+    if args.claude_isolation_policy and args.harness != 'claude-code':
+        parser.error('Claude isolation requires the Claude harness')
+    from open_cake_ir.lab.native_skill_qualification import selection_instruction
+    if args.author_skill_package is not None:
+        try:
+            skill_instruction = selection_instruction(args.native_skill_name)
+        except ValueError as error:
+            parser.error(str(error))
+    elif args.native_skill_name:
+        parser.error('--native-skill-name requires --author-skill-package')
+    native_skill_package = (NativeSkillPackage.read(ROOT, args.author_skill_package)
+        if args.author_skill_package is not None else None)
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
     workspace = _new_path(args.workspace)
@@ -498,7 +519,7 @@ def main() -> int:
     qualification_arms = tuple(arms)
     if args.harness == "claude-code":
         disabled_features = ()
-        event_contract = CLAUDE_EVENT_CONTRACT
+        event_contract = args.claude_event_contract
         tool_instruction = ("Use Read for the task files and Write/Edit for candidate.py; only Read, Write, Edit, Glob and Grep are permitted."
                             if submission_contract == PYTHON_SOURCE_FILE_V1 else
                             "Use Read for the task files and Write/Edit for candidate-set.py; only Read, Write, Edit, Glob and Grep are permitted."
@@ -506,18 +527,18 @@ def main() -> int:
                             "Use Read for the task files and Write/Edit for candidate-set.json; only Read, Write, Edit, Glob and Grep are permitted.")
         receipt_scope = "live_two_turn_tool_rich_provider"
     elif args.feature_policy == "closed_research":
-        disabled_features = CODEX_DISABLED_FEATURES
         event_contract = "closed_file_change_v1"
         tool_instruction = "Do not invoke auxiliary tools."
         receipt_scope = "live_two_turn_current_provider"
     else:
-        disabled_features = ()
         event_contract = "tool_rich_candidate_v1"
         tool_instruction = (
             "First use the shell tool to run `pwd` without writing a file or "
             "invoking a network/GPU operation."
         )
         receipt_scope = "live_two_turn_tool_rich_provider"
+    if args.harness == 'codex':
+        disabled_features = expected_codex_disabled_features(event_contract, args.author_home_policy)
     if args.fixture_only:
         receipt_scope = "zero_gpu_contract_fixture_only"
     if (
@@ -549,6 +570,12 @@ def main() -> int:
                          + '-author-home'))
                     for arm in qualification_arms}
                    if args.author_home_policy is not None else {})
+    user_homes = ({arm: provision_user_home(
+                     workspace.with_name(workspace.name
+                         + (f'-{arm}' if len(qualification_arms) > 1 else '')
+                         + '-user-home'), native_skill_package)
+                   for arm in qualification_arms}
+                  if native_skill_package is not None else {})
     workspaces = {}
     for arm in qualification_arms:
         arm_workspace = workspace / arm
@@ -581,6 +608,9 @@ def main() -> int:
             reference_nonce, maximum_candidates_per_turn, event_contract,
             tool_instruction, python_source, submission_contract,
         )
+        if native_skill_package is not None:
+            package = replace(package, native_skill_package=native_skill_package,
+                              task_markdown=package.task_markdown + "\n" + skill_instruction)
         materialize_task_package(arm_workspace, package)
         task_packages[arm] = package
     task_bundle = {
@@ -626,6 +656,14 @@ def main() -> int:
     authority["submission_contract"] = submission_contract
     if args.author_home_policy is not None:
         authority['author_home_policy'] = args.author_home_policy
+    if native_skill_package is not None:
+        authority['native_skill_package'] = native_skill_package.reference
+        authority['native_skill_context'] = {
+            'kind': NATIVE_SKILL_QUALIFICATION_V1, 'executable': str(executable),
+            'output_schema': str(output_schema), 'selected_names': args.native_skill_name,
+            'arms': {arm: {'cwd': str(workspaces[arm]), 'user_home': str(user_homes[arm]),
+                           'codex_home': str(codex_homes[arm])} for arm in qualification_arms},
+        }
     if event_contract == "closed_file_change_v1":
         authority["web_search"] = "disabled"
     authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
@@ -659,15 +697,21 @@ def main() -> int:
             if args.harness == "claude-code":
                 builder = ClaudeInvocationBuilder(
                     **common_builder_args, cli_options=advertised_options(executable),
-                    response_aliases=aliases, submission_contract=submission_contract)
+                    response_aliases=aliases, submission_contract=submission_contract,
+                    event_contract=event_contract, isolation_policy=args.claude_isolation_policy)
             else:
                 builder = CodexInvocationBuilder(**common_builder_args,
                     code_mode_host=code_mode_host, service_tier=args.service_tier,
                     output_schema=output_schema, disabled_features=disabled_features,
                     event_contract=event_contract, submission_contract=submission_contract,
                     cwd_policy="independent_task_workspace", reference_visibility="workspace_task_files",
-                    author_home_policy=args.author_home_policy, codex_home=codex_homes.get(arm))
+                    author_home_policy=args.author_home_policy, codex_home=codex_homes.get(arm),
+                    user_home=user_homes.get(arm), native_skill_package=native_skill_package)
             configuration_sha256s.add(sha256(_canonical_json_bytes(builder.configuration)).hexdigest())
+            if args.claude_isolation_policy:
+                from open_cake_ir.lab.claude_isolation import probe_launcher
+                isolation = probe_launcher(executable, arm_workspace)
+                ledger.append('provider_read_isolation_observed', {'arm':arm, 'observation':isolation})
             initial_plan = _planned_turn(package, 1)
             verify_task_package(arm_workspace, package)
             initial_prompt, initial_projection = render_task_request(package, {"turn": 1})
@@ -690,6 +734,12 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            ledger.append('provider_qualification_turn_observed', {
+                'arm':arm, 'phase':'initial', 'provider_tokens':initial.provider_tokens,
+                'objects':[evidence.put(initial.raw_events,media_type='application/x-ndjson').reference('initial_provider_events'),
+                           evidence.put(initial.raw_submission,media_type='text/plain').reference('initial_submission'),
+                           *([evidence.put(initial.native_skill_input, media_type='application/json').reference(
+                               'initial_native_skill_input')] if initial.native_skill_input is not None else [])]})
             initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
@@ -733,6 +783,12 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
+            ledger.append('provider_qualification_turn_observed', {
+                'arm':arm, 'phase':'resumed', 'provider_tokens':resumed.provider_tokens,
+                'objects':[evidence.put(resumed.raw_events,media_type='application/x-ndjson').reference('resumed_provider_events'),
+                           evidence.put(resumed.raw_submission,media_type='text/plain').reference('resumed_submission'),
+                           *([evidence.put(resumed.native_skill_input, media_type='application/json').reference(
+                               'resumed_native_skill_input')] if resumed.native_skill_input is not None else [])]})
             resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
@@ -825,10 +881,17 @@ def main() -> int:
             usage_observed=True,
             qualified=True,
             scope=receipt_scope,
+            native_skill_input_contract=(NATIVE_SKILL_QUALIFICATION_V1
+                                         if native_skill_package is not None else None),
             system_skills_sha256=(next(iter(qualified_skills))
                                    if args.author_home_policy is not None else None),
         )
         objects = []
+        if native_skill_package is not None:
+            objects.append(evidence.put(native_skill_package.raw_bytes,
+                                        media_type='application/x-tar').reference('native_skill_package'))
+            objects.append(_put_json(evidence, observations[qualification_arms[0]]['builder'].remembered_system_skills)
+                           .reference('system_skills_snapshot'))
         arm_payloads: dict[str, object] = {}
         for arm, observation in observations.items():
             initial = observation["initial"]
@@ -836,6 +899,14 @@ def main() -> int:
             initial_invocation = observation["initial_invocation"]
             resumed_invocation = observation["resumed_invocation"]
             prefix = f"{arm}_"
+            for phase, observed_turn in (("initial", initial), ("resumed", resumed)):
+                if native_skill_package is not None:
+                    if observed_turn.native_skill_input is None:
+                        raise ValueError('qualification Turn lacks native skill input')
+                    objects.append(evidence.put(observed_turn.native_skill_input,
+                        media_type="application/json").reference(f"{prefix}{phase}_native_skill_input"))
+                elif observed_turn.native_skill_input is not None:
+                    raise ValueError('qualification has undeclared native skill input')
             objects.extend(
                 [
                     evidence.put(
@@ -917,6 +988,10 @@ def main() -> int:
             "objects": objects,
             "reference_bundle_sha256": reference_bundle_sha256,
         }
+        if native_skill_package is not None:
+            from open_cake_ir.lab.native_skill_qualification import reconstruct_qualification_inputs
+            reconstruct_qualification_inputs(evidence=evidence, run_id=args.run_id,
+                authority=authority, payload=observed_payload, receipt=receipt)
         ledger.append(
             "provider_qualification_observed",
             observed_payload,

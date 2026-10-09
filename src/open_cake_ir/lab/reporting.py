@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from open_cake_ir.evaluation.timing import timing_latency_ms
+
 import json
 import math
 import statistics
@@ -58,7 +60,7 @@ def _promoted_artifact(
         receipt_bytes = evidence.read_object(receipt_refs[0])
         receipt = _object(json.loads(receipt_bytes), "artifact promotion receipt")
         timing = receipt.get("timing")
-        latency = timing.get("pooled_median_ms") if isinstance(timing, Mapping) else None
+        latency = timing_latency_ms(timing) if isinstance(timing, Mapping) else None
         if (
             receipt.get("candidate_sha256") != candidate_sha256
             or receipt.get("correctness_passed") is not True
@@ -536,10 +538,11 @@ def threshold_view(
                     and type(receipt.get("kernel_calls")) is int and receipt["kernel_calls"] > 0
                     and receipt.get("fallback_calls") == 0
                     and timing is not None and timing.get("measurement_quality_passed") is True
-                    and timing["pooled_median_ms"] <= latency_threshold_ms):
+                    and timing_latency_ms(timing) is not None
+                    and timing_latency_ms(timing) <= latency_threshold_ms):
                     row.update(status="reached_by_fresh_confirmation", nominee_source_turn=payload["source_turn"],
                         provider_tokens=tokens, elapsed_wall_seconds=payload.get("elapsed_wall_seconds"),
-                        candidate_sha256=payload["candidate_sha256"], confirmed_latency_ms=timing["pooled_median_ms"])
+                        candidate_sha256=payload["candidate_sha256"], confirmed_latency_ms=timing_latency_ms(timing))
                     break
         rows.append(row)
     return {"audit": report, "scope": "descriptive_threshold_view", "latency_threshold_ms": latency_threshold_ms,

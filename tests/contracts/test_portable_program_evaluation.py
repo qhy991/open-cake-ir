@@ -52,8 +52,10 @@ class NativeCompiler:
                 f'{entries}\n    .kernarg_segment_size: {(count + 2) * 8}\n    .name: k\n...\n'
                 '\t.end_amdgpu_metadata\n').encode()
         else:
+            from tests.contracts.test_metax_binary import bundle, native_fixture
+            artifacts[route.binary_role] = bundle(native=native_fixture(count, requirements['kernel_entry_point']))[0]
             parameters = ', '.join(f'%arg{index}: !tt.ptr<f32> ' for index in range(count))
-            artifacts['ttgir'] = f'tt.func public @k({parameters}) attributes {{}}'.encode()
+            artifacts['ttgir'] = f'tt.func public @{requirements["kernel_entry_point"]}({parameters}) attributes {{}}'.encode()
         return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'],
             artifacts, requirements['compile_options']['num_warps'] * requirements['warp_size'],
             0, 'CPU fixture', route.code_object.value)

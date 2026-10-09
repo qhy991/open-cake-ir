@@ -1,4 +1,8 @@
-# open-cake-ir
+<p align="center">
+  <img src="docs/figures/open-cake-ir-mark.svg" width="112" alt="open-cake-ir：代码括号中的三层执行计划" />
+</p>
+
+<h1 align="center">open-cake-ir</h1>
 
 <p align="center"><strong>面向跨硬件优化经验复用的 Agent–Compiler 框架。</strong><br />
 An agent–compiler framework for reusable optimization mechanisms across hardware.</p>
@@ -23,18 +27,111 @@ Schedule / Program 编写执行计划；独立原生探索也可提供发现，�
 
 [中文阅读入口](docs/zh-CN/README.md) · [Wiki 阅读索引](docs/wiki/README.md) · [项目当前状态](reports/current/STATUS.md)
 
+## 独立 Bench 与 Compiler 演进
+
+Cake 的开发任务用于发现并修复 IR、Verifier、改写和 lowering 的不足；发布后的固定
+Compiler 由各硬件的独立 Bench 检验。共同流程见[开发与评测标准](docs/BENCHMARK_PROTOCOL.md)。
+
+| 分支 / 硬件 | 独立 Bench | 当前进步记录 |
+|---|---|---|
+| metax / C550 | [c550-bench](https://github.com/qhy991/c550-bench) | [单题正确性已有证据；Bench 性能尚未测](docs/results/metax/BENCHMARK_PROGRESS.md) |
+| metal / Apple M4 | [metal-bench](https://github.com/qhy991/metal-bench) | [软件验证通过；GPU 资格与性能待测](docs/results/metal/BENCHMARK_PROGRESS.md) |
+| dcu / gfx938 | [bw1100-bench](https://github.com/qhy991/bw1100-bench) | [正确性入口与开发 replay 已有证据；版本进步对照待测](docs/results/dcu/BENCHMARK_PROGRESS.md) |
+
+每轮进步绑定 Compiler 与 Bench 两个版本，在同任务、参考和测量口径下展示前后时间、
+正确性覆盖和失败。token 只记账。历史开发结果按原始协议保留，新的 Bench 成绩另行追加。
+
+<details>
+<summary>MetaX 历史开发实验与工程搜索（独立 Bench 成绩另见上表）</summary>
+
+## MetaX C550：关键实验与当前结论
+
+本分支维护 C550 的执行与验证。下面是**精选证据导览**，不合并不同基线、形状或计时协议的分数。
+历史实验保留原始源码和判定；近期运行使用 Claude Code 2.1.226 / GLM-5.3，精确目标为 `xcore1002`。
+
+| 实验 | 已得到的结论 | 证据与适用范围 |
+|---|---|---|
+| 80 次 E/P 经验／工具试点 | 全部终态；原预算口径 47/80 成功。按用户要求纳入 12 次超预算但确认有效的提升后，为 **59/80** | 单个 FP32 求差平方算子族、4 个固定形状；见下方四组明细。不能当成未见任务泛化或无限预算搜索 |
+| N 输出分块 | 显式 pass 生成的候选通过独立确认，固定案例 **3.33×** | `R128 K256 N32`，相对该任务固定基线；[Finding](findings/2026-10-03-003-squared-distance-output-tiling.json) |
+| 固定循环部分展开 | factor 2 在两形状确认约 **1.111× / 1.060×**；factor 4 反而变慢 | 有效机制需要目标选参，不能默认越展开越快；[Finding](findings/2026-10-04-005-metax-fixed-partial-unroll.json) |
+| N/K/展开联动改写 | 共享候选构造与守卫已合入；是否改善搜索仍需实测 | [PR 306](https://github.com/qhy991/open-cake-ir/pull/306)；不把软件通过写成设备收益 |
+| FP8 流式与有限输入分桶配方 | Cake K1 流式在固定 NT64 primary 上确认 **5.80×**；后续分桶／合并另有独立基线 | [流式与分桶证据](docs/metax-c550.md#显式-k1-流式-fp8-lowering)；是软件组合路线，不是原生 FP8 dot，分段加速比不连乘 |
+| 数值原语与完整计算 | FMA、舍入等有有界数值证据；GQA、MLA、FP8 MoE 有完整原始 case 正确性记录 | [数值与矩阵](docs/metax-c550.md#编译与执行) · [完整计算](docs/metax-c550.md#完整-gqamla-和-fp8-moe-的正确性)；正确性与 profiler 时间不等于端到端加速 |
+| 四卡并行资格 | 固定 N4 求差平方案例的 12 次串行 A/A、12 次并行 A/A、4 次 profile 通过 | 源码 `0c041d6d`，物理 GPU1–4；仅限这一案例和声明的本机锁范围，不代表整套任务面板通过 |
+| 短 kernel 与采集边界 | Softmax 等部分案例未通过原计时质量门；一个大形状 Run 因零宽 L2 重置时间戳停止 | [当前采集 Finding](findings/2026-10-06-006-mcpti-default-reset-zero-interval.json)；保留失败，不改 CV 门槛，不把无效测量记成加速 |
+
+<details>
+<summary>展开 80 次试点：四组结果、统计口径和原始证据</summary>
+
+E 是额外机制材料，P 是变换调用权。每组 20 Run；固定 K64 基线不是厂商最优库。
+
+| 组别 | 原预算内成功 | 不按预算排除的已确认提升 | 缺失 |
+|---|---:|---:|---:|
+| E0P0 | 14/20 | 18/20 | 2/20 |
+| E1P0 | 12/20 | 16/20 | 3/20 |
+| E0P1 | 8/20 | 12/20 | 8/20 |
+| E1P1 | 13/20 | 13/20 | 5/20 |
+
+两种口径共用既有独立确认，不重跑、不改数值或测量门。59 次提升之外，仍有 18 次缺失与 3 次未成功。
+相同材料下开放工具的差值从原口径的 +5 个百分点变为事后口径的 −15 个百分点。
+这批数据支持“能找到本机优化”，**尚不支持工具整体提高成功率**。
+四个形状已被协议先导探索，不能称为完全未见测试；未预注册置信区间。
+
+来源源码：`5b588ceca20ee33f9a8bec3304af64fc069477c0`。
+原始证据：`c550-2:/root/open-cake-experiments/c550-compaction-successor-20261002/`，
+冻结分配 `study-v1/`、原审计 `study-audit.json`。本机审查投影位于
+`c550-compaction-successor/final-analysis-20261004/` 的 `analysis-summary.json`、
+`performance-without-budget-exclusion.json` 与逐 Run 确认导出。
+本机串行测量未排除不遵守同一锁的外部活动。事后口径只移除预算排除，不模拟无限搜索。
+
+</details>
+
+### 2026-10-06 工程搜索复核
+
+本轮固定源码 [`0c041d6d`](https://github.com/qhy991/open-cake-ir/commit/0c041d6dbecf7529384de9410a7c64d82c00a9d3)，使用已验收的同任务基线。
+该源码属于独立验收分支，尚未合入当前 `metax`；[代码集成 PR 318](https://github.com/qhy991/open-cake-ir/pull/318) 与本页证据发布分别处理。以下为 2026-10-06 12:03（北京时间）收集的封存结果；
+它们独立于上面的 80 次历史试点。
+
+| Run / 物理卡 | 形状 R/K/N | 作者轮数 | 独立确认：候选 / 基线 | 状态 |
+|---|---|---:|---|---|
+| development-r1 / GPU1 | 128/512/64 | 42 | 8.448 / 8.192 µs，0.970× | 正常封存，无收益 |
+| large-r1 / GPU2 | 256/1024/64 | 9 | 无确认结果 | MCPTI 重置记录零宽，`broker_fault`，保留缺失 |
+| large-r2 / GPU3 | 256/1024/64 | 47 | 21.504 / 22.272 µs，1.036× | 正常封存；未达到原 1.05× 提升门槛 |
+| large-r3 / GPU4 | 256/1024/64 | 43 | 21.504 / 22.272 µs，1.036× | 正常封存；未达到原 1.05× 提升门槛 |
+
+三个完整 Run 的原审计均为 `protocol_adherence=adhered`，并记录搜索时间上限停止；
+原终点为 `no_qualified_candidate`。上表只描述已通过共同确认的计时，不能据此改判成功。
+本次配置相对较强 N4 起点只找到小幅变化，不能据此推定性能上限；它不推翻旧 K64 基线上的优化结果，
+也不构成不同 Compiler 版本的因果对照。
+
+**继续执行：**已在 GPU1 通过新的同基线 A/A，启动 `c550-distance-r256-k1024-n64-20261006-r4`。
+仍使用 Claude Code / GLM-5.3、三小时总预算（含 1080 秒确认预留）、相同 N4 起点与原数值／计时门。
+这是新的独立工程重复，不替换 large-r1，也不向作者提供前三次的搜索候选。
+记录位于下述近期根目录的 `continuation-20261006-r4/`；运行状态以其事件和确认报告为准。
+新 A/A 只支持这一次控制，不能消除已记录的偶发 MCPTI 缺口，因此暂不扩大新并行批次。
+
+四卡控制证据：`c550-2:/root/open-cake-runs-reviewed/c550-device-parallel-20261005/outputs/parallel-controls-namespace/`。
+近期工程 Run：`c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/`。
+新实验沿用[共同研究主题](docs/RESEARCH_AGENDA.md)与[数据采集／处理协议](docs/OPTIMIZATION_TRANSFER_ABLATION.md)。
+每项默认 3 小时，包含最终确认；工程重复不回填为 H1/H2 科学对照。
+
+</details>
+
 ## 快速导航
 
 | 你想做什么 | 直接入口 | 能看到什么 |
 |---|---|---|
 | 第一次了解或运行项目 | [快速开始](#快速开始) · [入门教程](docs/GETTING_STARTED.md) | 安装、无需 GPU 的检查与源码生成 |
-| 阅读或引用技术报告 | [技术报告](docs/README.md) · [完整中英文目录](docs/catalog.md) | 架构、IR、方法、结果章节与引用方式 |
+| 阅读或引用技术报告 | [PDF 正文](docs/open-cake-ir-technical-report.pdf) · [TeX 源码](docs/open-cake-ir-technical-report.tex) · [引用与配套专题](docs/README.md) | 设计、实例、方法、结果及其证据范围 |
 | 查看 FlashInfer 改写与外部实现差距 | [逐任务实验综述](docs/results/nvidia/FLASHINFER_STATUS.md) | starter 身份、配对性能、正确性、失败边与未完成项 |
 | 查看各硬件成果和使用方法 | [实验结果](#按硬件查看成果) · [硬件指南](#硬件指南) | 已收录观察、平台工具链和验收范围 |
 | 编写 Kernel、发起优化或改写已有实现 | [Python 前端](docs/zh-CN/PYTHON_FRONTEND.md) · [Lab 任务流程](docs/wiki/experiments.md) · [改写指南](docs/KERNEL_REPRODUCTION.md) | 输入格式、任务用途、参考材料、预算与评测 |
 | 修改实现或定位问题 | [源码结构](#源码与文档结构) · [系统架构](docs/ARCHITECTURE.md) · [开发流程](docs/DEVELOPMENT_BRANCHES.md) | 模块职责、扩展位置、分支与测试要求 |
 
-当前能力与版本见[生成状态页](reports/current/STATUS.md)；具体实验的结论以其绑定的源码、硬件、Workload 和计时协议为准。
+**报告与当前状态：**PDF 由仓库中的 TeX 编译，封面标注它所读的源码快照；
+[报告索引](docs/README.md)提供引用方式和持续维护的专题文档。当前实现见
+[生成状态页](reports/current/STATUS.md)。具体实验仍按各自绑定的源码、硬件、Workload
+和计时协议解释。
 
 ## 系统怎样工作
 
@@ -54,24 +151,23 @@ Compiler 可以独立使用，Research Lab 负责组织优化或受控研究。
 
 ## 快速开始
 
-需要 Python 3.10+，从源码安装：
+需要 Python 3.10+。下面先离线检查 Softmax，再生成可阅读的 Triton 源码；这些步骤不需要 GPU：
 
 ```bash
 git clone https://github.com/qhy991/open-cake-ir.git
 cd open-cake-ir
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
+CAKE_DEMO_DIR=$(mktemp -d)
+.venv/bin/open-cake-ir compiler assess --format text examples/python/softmax.py
+.venv/bin/open-cake-ir compiler lower --format text examples/python/softmax.py \
+  --output "$CAKE_DEMO_DIR/softmax.py"
 ```
 
-先检查 Python 编写的 FMA kernel，无需 GPU，也无需载入 Schedule JSON：
-
-```bash
-.venv/bin/python -m open_cake_ir.cli compiler assess --format text \
-  examples/python/fma.py
-```
-
-[完整入门教程](docs/GETTING_STARTED.md)继续介绍源码生成与反例检查。
-真实 GPU 构建和评测还需对应工具链与设备环境，按下面的硬件指南准备。
+检查结果中的“结构检查：通过”与“生成代码：允许”说明这份计划通过了当前软件门；
+生成文件在 `$CAKE_DEMO_DIR/softmax.py`。[技术报告的 Softmax 实例](docs/open-cake-ir-technical-report.pdf)
+逐项对照 Python Schedule 和生成的 Triton 代码。[完整入门教程](docs/GETTING_STARTED.md)
+从更小的 FMA 示例解释诊断。设备正确性和性能还需对应工具链与 GPU 环境，见下方硬件指南。
 
 <!-- hardware-results:start -->
 ## 按硬件查看成果
@@ -111,32 +207,25 @@ python3 -m venv .venv
 | Hygon DCU | [设计与运行路径](docs/dcu-gfx938-design.md) · [设备结果](docs/dcu-gfx938-results.md) |
 | MetaX C550 | [当前路径与验收范围](docs/metax-c550.md) |
 
-指南说明各自的接入与验证范围；MetaX 的入口在这里，发布数据尚未纳入上方四个平台的汇总表。
+指南说明各自的接入与验证范围。MetaX 的精选证据见本页前部；其数据尚未纳入上方四个平台的自动汇总表。
 
 ## 源码与文档结构
 
 | 位置 | 内容与入口 |
 |---|---|
-| [src/open_cake_ir/compiler/](src/open_cake_ir/compiler/) | IR、Verifier、后端、pass 与性能分析；[实现导读](docs/IR_GUIDE.md) |
-| [src/open_cake_ir/lab/](src/open_cake_ir/lab/) | Agent 与实验组织；[模块导航](src/open_cake_ir/lab/README.md) |
-| [src/open_cake_ir/evaluation/](src/open_cake_ir/evaluation/) · [src/open_cake_ir/evidence/](src/open_cake_ir/evidence/) | 公共评测、执行与证据存储；[职责地图](CONTEXT-MAP.md) |
-| [src/open_cake_ir/tasks/](src/open_cake_ir/tasks/) · [contracts/](contracts/) | 具体任务实现与语义契约；[任务目录](docs/wiki/workloads.md) |
-| [compiler/](compiler/) · [runtime/](runtime/) | 编译与执行配置；[硬件声明](compiler/targets/) · [主机环境](runtime/hosts/) |
-| [tools/](tools/) · [tests/](tests/) · [corpus/](corpus/) | CLI 工具、合同测试和编译器验证用例；[贡献说明](CONTRIBUTING.md) |
-| [docs/](docs/README.md) | 技术报告和使用文档；[完整目录](docs/catalog.md) · [概念与算子导读](docs/wiki/README.md) |
-| [findings/](findings/) · [reports/](reports/) | 问题与改进记录、报告与[生成的当前状态](reports/current/STATUS.md) |
-| [examples/](examples/) · [experiments/](experiments/) | 示例与实验输入；[FlashInfer 改写任务包](experiments/flashinfer_rewrites/README.md)，具体范围见各目录说明 |
-| [evidence/](evidence/README.md) · [inventory/](inventory/) · [migration/](migration/README.md) | 保留的证据、调查与迁移材料；[历史阅读索引](docs/catalog.md) |
-| [skills/](skills/) · [.github/](.github/) | 项目操作流程与 CI；[Agent 开发约定](AGENTS.md) |
+| [compiler/](src/open_cake_ir/compiler/) · [Target 文档](compiler/targets/) | IR、Verifier、后端和精确硬件声明；[IR 指南](docs/IR_GUIDE.md) |
+| [lab/](src/open_cake_ir/lab/) · [evaluation/](src/open_cake_ir/evaluation/) · [evidence/](src/open_cake_ir/evidence/) | 候选搜索、外部评测和运行证据；[职责地图](CONTEXT-MAP.md) |
+| [tasks/](src/open_cake_ir/tasks/) · [contracts/](contracts/) | Workload、oracle 和任务实现；[任务目录](docs/wiki/workloads.md) |
+| [examples/](examples/) · [corpus/](corpus/) · [tests/](tests/) | 可读示例、编译器语料和合同测试；[贡献说明](CONTRIBUTING.md) |
+| [docs/](docs/README.md) · [findings/](findings/) · [reports/](reports/) | 报告索引、问题记录与[当前状态](reports/current/STATUS.md)；[完整目录](docs/catalog.md) |
 
-README 提供快速入口；[报告首页](docs/README.md)组织章节与引用；[文档总目录](docs/catalog.md)收纳详细专题与历史材料。
-文档职责由 [Context map](CONTEXT-MAP.md)维护，新增内容按已有负责位置补充。
+更细的模块边界见 [Context map](CONTEXT-MAP.md)，平台操作与历史材料见[文档总目录](docs/catalog.md)，按主题阅读见[Wiki](docs/wiki/README.md)。
 
 ## 参与与引用
 
 - **参与开发：** [贡献说明](CONTRIBUTING.md) · [平台与分支维护](docs/DEVELOPMENT_BRANCHES.md) · [设计决策](docs/adr/README.md) · [研究路线](docs/ROADMAP.md)。
-- **引用报告：** [报告题名、作者、推荐引用与 BibTeX](docs/README.md#引用--citation) · [机器可读引用](CITATION.cff)。中英文文档共同构成本仓库的技术报告；引用具体章节使用提交永久链接，实验结果另注明其自身版本与测量范围。
+- **引用报告：** [PDF 正文](docs/open-cake-ir-technical-report.pdf) · [TeX 源码](docs/open-cake-ir-technical-report.tex) · [B300 MoE 案例](docs/WEAVE_CASE_STUDY.md) · [推荐引用与 BibTeX](docs/README.md#引用--citation) · [机器可读引用](CITATION.cff)。引用具体论点请记录所读提交；实验结果还需注明各自的源码版本与测量范围。
 - **问题与许可：** [安全问题](SECURITY.md) · [Apache-2.0](LICENSE) · [NOTICE](NOTICE) · [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 作者：秦海岩（Haiyan Qin），联系：<haiyanq@buaa.edu.cn>。
-本项目独立探索 [CAKE 论文](https://arxiv.org/abs/2608.12629v1)的部分思路，属于源码研究预览，并非官方实现。
+本项目是独立研究实现，不是 CAKE 论文的官方源码。

@@ -131,6 +131,7 @@ def _replay_candidates(
             manifest_parser=manifest_parser, compiler_factory=compiler_factory,
             authored_bytes=provider_candidate_bytes[(turn, candidate_sha256)] if provider_candidate_bytes is not None else None,
             workload_sha256=workload_sha256,
+            source_authority=lock.document['authoring'],
         )
 
     receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}
