@@ -5,6 +5,36 @@ Small, reproducible examples of missing expressibility, incorrect diagnostics, o
 errors are particularly useful. Describe the expected behavior, the program involved, and
 the target; attach only the evidence needed to reproduce the issue.
 
+## Agent issue and pull request workflow
+
+Before an agent edits files or runs task experiments, open a GitHub issue for the work.
+If a tracking issue already covers the task, use it and update its scope before starting.
+Describe the goal, scope, and acceptance evidence. Every tracking issue must include both
+dependency sections, even when the task has no dependencies:
+
+- `Blocks`: issues that cannot proceed until this issue is resolved.
+- `Blocked by`: issues that must be resolved before this issue can proceed.
+
+List issue numbers or links in each section. Write `None` when the section is empty.
+Keep both sections current as dependencies change, and record the inverse relation in
+each related issue. Use the [agent task template](.github/ISSUE_TEMPLATE/agent-task.yml).
+
+Create a focused task branch and a corresponding pull request under the branch guide.
+Include `Related issue: #<number>` in the PR body and add the PR link to the tracking issue.
+Use a closing keyword when the PR completes the issue; otherwise state what remains.
+Resolve the issues under `Blocked by` before beginning dependent implementation.
+
+After the PR merges, review the tracking issue's `Blocks` section and include this exact
+instruction in the agent's handoff response:
+
+> Please start using subagents to resolve the issues listed under Blocks.
+
+The [merge follow-up workflow](.github/workflows/agent-merge-followup.yml) also posts this
+instruction as a PR comment. The comment is a handoff prompt; the receiving agent starts
+the subagents. Start only tasks whose blockers are resolved, and give each subagent its
+own tracking issue, task worktree, and corresponding PR. If `Blocks` is `None`, report
+that no dependent issues remain.
+
 ## Development
 
 Start with the [branch and worktree guide](docs/DEVELOPMENT_BRANCHES.md): platform tasks
@@ -47,6 +77,15 @@ The AKA expressibility tools accept `--parent-validator /absolute/path/to/valida
 The selected validator is bound when a work root is created and cannot be replaced
 when continuing it. Contract tests use an explicit protocol fixture; passing them
 does not qualify a real parent kernel or establish custody.
+
+## Compiler development and Bench results
+
+Use [the independent Bench protocol](docs/BENCHMARK_PROTOCOL.md): repository tasks
+develop capabilities; fixed hardware Bench contracts evaluate a frozen Compiler.
+Preserve minimal reproductions and diagnosis ownership, then publish version-bound
+performance/coverage records through the platform branch and main. CPU or source
+checks do not establish hardware results. New engineering Runs record tokens without
+using a token budget.
 
 ## Propose a change
 

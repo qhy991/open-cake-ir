@@ -5,6 +5,9 @@ Paths below are relative to `src/open_cake_ir/` unless they start with `tests/`,
 
 ## Branch and worktree routing
 
+Before starting task work, follow the [agent issue and pull request workflow](CONTRIBUTING.md#agent-issue-and-pull-request-workflow).
+That section owns issue dependencies, PR linkage, and the subagent handoff after merge.
+
 Follow [Development branches](docs/DEVELOPMENT_BRANCHES.md), the canonical owner of the
 maintained branches, task naming, shared-code routing, integration and synchronization.
 New work uses `task/<platform-or-core>-<subject>` without a `codex/` prefix and its own
@@ -12,6 +15,28 @@ worktree. Inspect existing worktrees before editing; preserve other tasks' local
 and active checkouts. Merged task branches are removed from GitHub; archive tags retain historical
 work outside the maintained branches. A platform branch is a maintenance boundary,
 not a fork of the shared Compiler.
+
+## Shared research theme
+
+Follow [Shared research agenda](docs/RESEARCH_AGENDA.md) when planning new experiments
+on `main`, `nvidia`, `metal`, `amd`, `dcu`, or `metax`. It owns the common question,
+comparison axes, platform contributions and new-Run budget convention. Each plan names
+its hypothesis and evidence scope through existing Run/Study inputs; no new schema or
+parallel execution owner is introduced. Platform bring-up, local optimization, source
+experience effects and system-successor effects remain distinct. Preserve frozen Runs,
+reference access, historical results and each target's own qualification boundaries.
+
+## Compiler development and independent Bench evaluation
+
+Follow [Benchmark protocol](docs/BENCHMARK_PROTOCOL.md). Develop Cake capabilities with
+repository tasks and Findings, then evaluate a frozen Compiler using each hardware's
+independent Bench. Do not mutate Compiler, oracle or measurement during a frozen search.
+Each task retains minimal reproducers, own emitted-source evidence, negative results and
+diagnosis ownership; a Compiler defect is not a mandatory finding. Version progress and
+Cake-versus-native authoring are different comparisons. Platform README progress links
+retain Bench/Compiler commits, coverage, matching references and measurement scope.
+For new engineering Runs token use is accounting only, with no total/per-turn token
+cap or token-based acceptance; preserve time/tool/device bounds and historical policies.
 
 ## GPU resource discipline
 

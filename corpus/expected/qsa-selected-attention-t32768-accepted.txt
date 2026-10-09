@@ -106,6 +106,8 @@ def _cake_qsa_selected_attention_t32768_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_qsa_selected_attention_t32768 = _cake_qsa_selected_attention_t32768_kernel[(32768, 4, 1)]
+
 def cake_qsa_selected_attention_t32768(q, k, v, token_indices, out=None):
     for tensor, shape, dtype in (
         (q, (32768, 32, 128), torch.bfloat16),
@@ -123,11 +125,12 @@ def cake_qsa_selected_attention_t32768(q, k, v, token_indices, out=None):
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((32768, 32, 128), dtype=torch.bfloat16, device=q.device)
-    if tuple(out.shape) != (32768, 32, 128) or out.dtype != torch.bfloat16:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != q.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
-    _cake_qsa_selected_attention_t32768_kernel[(32768, 4, 1)](
+    else:
+        if tuple(out.shape) != (32768, 32, 128) or out.dtype != torch.bfloat16:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != q.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
+    _cake_launch_cake_qsa_selected_attention_t32768(
         q,
         k,
         v,

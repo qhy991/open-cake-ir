@@ -1,7 +1,7 @@
 """Fresh Codex author state, separate from task files and other Runs.
 
-This controls CLI skills and persistent session state. It is not a filesystem read
-jail: clean-start still needs its independent provider read-isolation qualification.
+This controls declared files and persistent session state. It does not prove all
+native discovery inputs, and is not a filesystem read jail.
 """
 from __future__ import annotations
 
@@ -13,6 +13,99 @@ from pathlib import Path
 from open_cake_ir.serialization import canonical_json_bytes
 
 ISOLATED_AUTH_ONLY_V1 = 'isolated_auth_only_v1'
+ISOLATED_SKILL_PACKAGE_V1 = 'isolated_skill_package_v1'
+CODEX_HOME_POLICIES = frozenset({ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1})
+
+
+def provision_user_home(destination: Path, package) -> Path:
+    """Project the complete frozen material into one fresh private HOME."""
+    from .native_skills import NativeSkillPackage
+    if not isinstance(package, NativeSkillPackage):
+        raise ValueError('private user home requires its frozen native skill package')
+    destination = Path(destination)
+    if (not destination.is_absolute() or '..' in destination.parts
+        or destination.exists() or destination.is_symlink()
+        or destination.parent.resolve(strict=True) != destination.parent):
+        raise ValueError('private user home must be a new canonical directory')
+    destination.mkdir(mode=0o700)
+    agents = destination/'.agents'
+    agents.mkdir(mode=0o700)
+    for name in sorted(package.directories, key=lambda item: (item.count('/'), item)):
+        (agents/name).mkdir(mode=0o700)
+    for item in package.files:
+        path = agents/item.path
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                             0o500 if item.executable else 0o400)
+        try:
+            offset = 0
+            while offset < len(item.payload):
+                offset += os.write(descriptor, item.payload[offset:])
+        finally:
+            os.close(descriptor)
+    # These are newly created projection files, not a repair of existing custody.
+    for name in sorted(package.directories, key=lambda item: item.count('/'), reverse=True):
+        (agents/name).chmod(0o500)
+    agents.chmod(0o500)
+    return verify_user_home(destination, package)
+
+
+def verify_user_home(home: Path, package) -> Path:
+    """Check this owned projection; make no claim about ancestor/admin/plugin roots."""
+    from .native_skills import NativeSkillPackage
+    if not isinstance(package, NativeSkillPackage):
+        raise ValueError('private user home lacks its frozen native skill package')
+    home = Path(home)
+    info = home.lstat()
+    if (not home.is_absolute() or home.resolve(strict=True) != home
+        or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+        or info.st_mode & 0o077):
+        raise ValueError('private user home custody differs')
+    agents = home/'.agents'
+    expected_directories = {'.', *package.directories}
+    expected_files = {item.path: item for item in package.files}
+    seen_directories, seen_files, pending = set(), set(), [agents]
+    while pending:
+        directory = pending.pop()
+        info = directory.lstat()
+        name = directory.relative_to(agents).as_posix()
+        if (name not in expected_directories or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o500):
+            raise ValueError('native skill projection directory differs')
+        seen_directories.add(name)
+        for path in directory.iterdir():
+            info = path.lstat()
+            name = path.relative_to(agents).as_posix()
+            if stat.S_ISDIR(info.st_mode):
+                pending.append(path)
+                continue
+            item = expected_files.get(name)
+            if (item is None or not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                or info.st_nlink != 1 or info.st_size != len(item.payload)
+                or stat.S_IMODE(info.st_mode) != (0o500 if item.executable else 0o400)):
+                raise ValueError('native skill projection file differs')
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+            try:
+                before = os.fstat(descriptor)
+                payload, offset = bytearray(), 0
+                while offset < len(item.payload):
+                    chunk = os.read(descriptor, min(len(item.payload) - offset, 1024 * 1024))
+                    if not chunk:
+                        break
+                    payload.extend(chunk)
+                    offset += len(chunk)
+                identity = lambda value: (value.st_dev, value.st_ino, value.st_size,
+                                          value.st_mtime_ns, value.st_ctime_ns, value.st_mode)
+                if (bytes(payload) != item.payload or os.read(descriptor, 1)
+                    or identity(before) != identity(info)
+                    or identity(before) != identity(os.fstat(descriptor))
+                    or identity(before) != identity(path.lstat())):
+                    raise ValueError('native skill projection changed')
+            finally:
+                os.close(descriptor)
+            seen_files.add(name)
+    if seen_files != set(expected_files) or seen_directories != expected_directories:
+        raise ValueError('native skill projection is incomplete')
+    return home
 
 
 def _regular_private(path: Path, *, maximum_bytes: int) -> bytes:

@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Mapping
 
 from .provider_documents import (CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
-                                 PYTHON_CANDIDATE_BUNDLE_V1, CODEX_DISABLED_FEATURES)
-from .author_home import ISOLATED_AUTH_ONLY_V1
+                                 PYTHON_CANDIDATE_BUNDLE_V1, expected_codex_disabled_features)
+from .author_home import CODEX_HOME_POLICIES, ISOLATED_SKILL_PACKAGE_V1
 from ._documents import _canonical_json_bytes
 from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema, response_model_aliases
 
@@ -73,7 +73,8 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
         return {**{name: provider[name] for name in fields if name != 'submission_contract'},
                 "submission_contract": submission_contract}
     optional_contract = ({'submission_contract'} if 'submission_contract' in provider else set()) | (
-        {'author_home_policy'} if 'author_home_policy' in provider else set())
+        {'author_home_policy'} if 'author_home_policy' in provider else set()) | (
+        {'native_skill_package'} if 'native_skill_package' in provider else set())
     authority_fields = _AUTHORITY | ({'system_skills_sha256'} if 'system_skills_sha256' in provider else set())
     system_skills = provider.get('system_skills_sha256')
     if system_skills is not None and (
@@ -81,8 +82,14 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
         or any(char not in '0123456789abcdef' for char in system_skills)):
         raise ValueError('Study Contract system skills identity differs')
     if ('author_home_policy' in provider
-        and provider['author_home_policy'] != ISOLATED_AUTH_ONLY_V1):
+        and provider['author_home_policy'] not in CODEX_HOME_POLICIES):
         raise ValueError('Study Contract author home policy differs')
+    if ((provider.get('author_home_policy') == ISOLATED_SKILL_PACKAGE_V1)
+        != ('native_skill_package' in provider)):
+        raise ValueError('native skill package and author home policy differ')
+    if 'native_skill_package' in provider:
+        from .native_skills import validate_skill_reference
+        validate_skill_reference(provider['native_skill_package'])
     if harness != "codex" or frozenset(provider) not in {
         frozenset(authority_fields | _CODEX | {"web_search"} | optional_contract),
         frozenset(authority_fields | _CODEX | {"event_contract"} | optional_contract),
@@ -91,7 +98,8 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
     defaults = provider.get("event_contract") == "tool_rich_candidate_v1"
     expected_event = "tool_rich_candidate_v1" if defaults else "closed_file_change_v1"
     if (provider.get("service_tier") != "default" or provider.get("sandbox") != "workspace-write"
-            or provider.get("disabled_features") != ([] if defaults else list(CODEX_DISABLED_FEATURES))
+            or provider.get("disabled_features") != list(expected_codex_disabled_features(
+                expected_event, provider.get('author_home_policy')))
             or provider.get("event_contract", "closed_file_change_v1") != expected_event
             or (not defaults and provider.get("web_search") != "disabled")):
         raise ValueError("Study Contract provider configuration differs")
@@ -110,6 +118,10 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
     configuration["submission_contract"] = submission_contract
     if 'author_home_policy' in provider:
         configuration['author_home_policy'] = provider['author_home_policy']
+    if 'native_skill_package' in provider:
+        # Same qualification-reuse boundary as output_schema: project the existing
+        # raw-reference identity, excluding each Run's material location.
+        configuration['native_skill_package_sha256'] = provider['native_skill_package']['sha256']
     for field in ("web_search", "event_contract"):
         if field in provider:
             configuration[field] = provider[field]

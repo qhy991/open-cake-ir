@@ -66,7 +66,7 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
     for flag, value in (("--gpu-run", args.gpu_run), ("--broker-socket", args.broker_socket)):
         if value is not None:
             command.extend((flag, str(value)))
-    for field in ("agents_md", "kernelctl", "infra_socket", "local_device", "local_queue_seconds"):
+    for field in ("agents_md", "kernelctl", "infra_socket", "local_device", "local_queue_seconds", "local_lock_scope", "local_runtime_device", "local_expected_pci"):
         value = getattr(args, field, None)
         if value is not None:
             command.extend(("--" + field.replace("_", "-"), str(value)))
@@ -137,6 +137,9 @@ def main(argv=None) -> int:
     parser.add_argument("--kernelctl", type=Path)
     parser.add_argument("--infra-socket", type=Path)
     parser.add_argument('--local-device', type=int)
+    parser.add_argument('--local-lock-scope', choices=('user', 'device'), default='user')
+    parser.add_argument('--local-runtime-device', type=int)
+    parser.add_argument('--local-expected-pci')
     parser.add_argument('--local-queue-seconds', type=float, default=0)
     parser.add_argument("--provider-executable", type=Path)
     parser.add_argument("--provider-revision")

@@ -7,7 +7,10 @@ The manager reads TASK.md/AGENTS.md; every cell uses the existing frozen Lab loo
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import inspect
+import math
 from pathlib import Path
 import re
 import shlex
@@ -21,6 +24,8 @@ from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.tasks.devices import BACKENDS
 from open_cake_ir.tasks.workloads import create_task
 from open_cake_ir.tasks.catalog import task_entry
+from open_cake_ir.lab.native_skills import MAX_ARCHIVE_BYTES, NativeSkillPackage
+from open_cake_ir.lab.native_skill_qualification import selection_instruction
 
 POLICY = ROOT / "contracts/scaffolds/kernel-reproduction/AGENTS.md"
 
@@ -41,10 +46,22 @@ def absolute(value):
     return value
 
 
+def validate_references(references):
+    if not isinstance(references, list) or not references:
+        raise ValueError("reproduction requires explicit reference files")
+    for ref in references:
+        object_fields(ref, {"path", "source"})
+        absolute(ref["path"])
+        if not isinstance(ref["source"], str) or not ref["source"].strip():
+            raise ValueError("reference provenance is required")
+
+
 def validate(config):
-    object_fields(config, {"schema_version", "objective", "provider", "budget", "references", "cells"})
-    if type(config["schema_version"]) is not int or config["schema_version"] != 1:
-        raise ValueError("experiment schema_version must be 1")
+    version = config.get("schema_version") if isinstance(config, dict) else None
+    if type(version) is not int or version not in {1, 2}:
+        raise ValueError("experiment schema_version must be 1 or 2")
+    fields = {"schema_version", "objective", "provider", "budget", "cells"}
+    object_fields(config, fields | ({"references"} if version == 1 else set()))
     if not isinstance(config["objective"], str) or not config["objective"].strip():
         raise ValueError("experiment objective is required")
     provider = config["provider"]
@@ -57,22 +74,54 @@ def validate(config):
         if provider['harness'] != 'claude-code':
             raise ValueError('response model aliases require the Claude provider')
         response_model_aliases(provider['model'], provider['response_model_aliases'])
-    object_fields(config["budget"], {"turns", "wall_seconds"}, {"token_budget"})
-    if any(type(v) is not int or v <= 0 for k, v in config["budget"].items()
-           if not (k == "token_budget" and v is None)):
+    budget = config["budget"]
+    optional_budget = {"token_budget"}
+    if version == 2:
+        optional_budget |= {"max_candidates", "searches_per_turn", "max_compilations", "confirmation_seconds"}
+    object_fields(budget, {"turns", "wall_seconds"}, optional_budget)
+    if any(type(v) is not int or v <= 0 for k, v in budget.items()
+           if k != "confirmation_seconds" and not (k == "token_budget" and v is None)):
         raise ValueError("positive per-cell budgets are required")
-    if not isinstance(config["references"], list) or not config["references"]:
-        raise ValueError("reproduction requires explicit reference files")
-    for ref in config["references"]:
-        object_fields(ref, {"path", "source"})
-        absolute(ref["path"])
-        if not isinstance(ref["source"], str) or not ref["source"].strip():
-            raise ValueError("reference provenance is required")
+    if "confirmation_seconds" in budget:
+        value = budget["confirmation_seconds"]
+        try:
+            finite = type(value) in (int, float) and math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite or not 0 < value < budget["wall_seconds"]:
+            raise ValueError("confirmation_seconds must be positive, finite and below wall_seconds")
+    if ("max_candidates" in budget and "searches_per_turn" in budget
+            and budget["searches_per_turn"] > budget["max_candidates"]):
+        raise ValueError("searches_per_turn must fit max_candidates")
+    # Absent controls remain absent. The node's launch_task/task_run_inputs owns
+    # defaults and validates their resolved budget before stack admission.
+    if version == 1:
+        validate_references(config["references"])
     if not isinstance(config["cells"], list) or not config["cells"]:
         raise ValueError("at least one exact target cell is required")
     ids, destinations = set(), set()
     for cell in config["cells"]:
-        object_fields(cell, {"id", "task", "backend", "rows", "columns", "node"}, {"depth", "fixed_baseline_bundle", "pointer_alignment"})
+        required = {"id", "task", "backend", "rows", "columns", "node"}
+        optional = {"depth", "fixed_baseline_bundle", "pointer_alignment"}
+        if version == 2:
+            required.add("references")
+            optional.add("agents_md")
+            optional.add('generated_source_feedback')
+            optional.update(('author_skill_package', 'native_skill_names'))
+        object_fields(cell, required, optional)
+        if version == 2:
+            validate_references(cell["references"])
+            if "agents_md" in cell:
+                absolute(cell["agents_md"])
+            if 'generated_source_feedback' in cell and type(cell['generated_source_feedback']) is not bool:
+                raise ValueError('cell generated_source_feedback must be an explicit boolean')
+            if ('author_skill_package' in cell) != ('native_skill_names' in cell):
+                raise ValueError('cell skill package and explicit native names must be declared together')
+            if 'author_skill_package' in cell:
+                selection_instruction(cell['native_skill_names'])
+                absolute(cell['author_skill_package'])
+                if provider['harness'] != 'codex':
+                    raise ValueError('native author skill packages require the Codex provider')
         if 'pointer_alignment' in cell:
             value = cell['pointer_alignment']
             if type(value) is not int or value <= 0 or value & (value - 1):
@@ -121,21 +170,17 @@ def validate(config):
         destinations.add(destination)
 
 
-def prepare(config_path: Path, output: Path) -> None:
-    config = json.loads(config_path.read_bytes())
-    validate(config)
-    output = output.absolute()
-    if output != output.resolve() or any((p / ".git").exists() for p in (output, *output.parents)):
-        raise ValueError("experiment workspace must be canonical and outside source")
-    commit = checkout_commit(ROOT)
-    policy = POLICY.read_text(encoding="utf-8")
+def read_materials(references):
     materials = []
-    for ref in config["references"]:
+    for ref in references:
         source = Path(ref["path"])
         if source.is_symlink() or not source.is_file():
             raise ValueError("reference must be an explicit regular UTF-8 file")
         materials.append((ref, source.read_text(encoding="utf-8")))
-    output.mkdir(parents=True, exist_ok=False)
+    return materials
+
+
+def write_authoring_inputs(output: Path, policy: str, materials) -> None:
     write(output / "AGENTS.md", policy)
     references = output / "references"
     references.mkdir()
@@ -147,11 +192,69 @@ def prepare(config_path: Path, output: Path) -> None:
         scaffold += "\n" + json.dumps({"source": ref["source"], "original_path": ref["path"],
                                       "content": content}, ensure_ascii=False) + "\n"
     write(output / "scaffold.md", scaffold)
+
+
+def prepare(config_path: Path, output: Path) -> None:
+    config = json.loads(config_path.read_bytes())
+    validate(config)
+    output = output.absolute()
+    if output != output.resolve() or any((p / ".git").exists() for p in (output, *output.parents)):
+        raise ValueError("experiment workspace must be canonical and outside source")
+    commit = checkout_commit(ROOT)
+    policy = POLICY.read_text(encoding="utf-8")
+    # Read every selected input before creating the experiment. Execution later
+    # reads these snapshots, never a mutable reference or policy source path.
+    cell_inputs = {}
+    skill_packages = {}
+    if config["schema_version"] == 1:
+        materials = read_materials(config["references"])
+    else:
+        for cell in config["cells"]:
+            cell_policy = policy
+            if "agents_md" in cell:
+                source = Path(cell["agents_md"])
+                if source.is_symlink() or not source.is_file():
+                    raise ValueError("cell agents_md must be an explicit regular UTF-8 file")
+                cell_policy = source.read_text(encoding="utf-8")
+                if not cell_policy.strip():
+                    raise ValueError("cell agents_md must contain authoring instructions")
+            cell_inputs[cell["id"]] = (cell_policy, read_materials(cell["references"]))
+            if 'author_skill_package' in cell:
+                skill_packages[cell['id']] = NativeSkillPackage.read(ROOT, cell['author_skill_package'])
+    output.mkdir(parents=True, exist_ok=False)
+    if config["schema_version"] == 1:
+        write_authoring_inputs(output, policy, materials)
+    else:
+        write(output / "AGENTS.md", policy)
+        (output / "cells").mkdir()
+        for cell in config["cells"]:
+            cell_output = output / "cells" / cell["id"]
+            cell_output.mkdir()
+            write_authoring_inputs(cell_output, *cell_inputs[cell["id"]])
+            if cell['id'] in skill_packages:
+                with (cell_output/'author-skills.tar').open('xb') as stream:
+                    stream.write(skill_packages[cell['id']].raw_bytes)
+            write(cell_output / "TASK.md", "# Task management input\n\n"
+                + "This is a prepared cell, not a frozen author Run or a permission grant. "
+                + "Read AGENTS.md and this cell's references/. The launcher delivers only this "
+                + "cell's scaffold.md through the existing Lab task-package boundary.\n\n"
+                + config["objective"] + "\n\nCell configuration:\n"
+                + json.dumps(cell, indent=2, ensure_ascii=False)
+                + "\n\nProvider and budget (shared experiment input):\n"
+                + json.dumps({"provider": config["provider"], "budget": config["budget"]},
+                             indent=2, ensure_ascii=False)
+                + "\n\nSource commit: " + commit + "\n")
     write(output / "experiment.json", json.dumps({**config, "source_commit": commit}, indent=2, ensure_ascii=False) + "\n")
     rows = [f"- `{c['id']}`: {c['task']} / {BACKENDS[c['backend']]['target']} / {c['node']['transport']}" for c in config["cells"]]
+    if config["schema_version"] == 2:
+        rows = [row + f" — [task inputs](cells/{cell['id']}/TASK.md)"
+                for row, cell in zip(rows, config["cells"])]
+    material_scope = ("Use references/ and scaffold.md to recover mechanisms. "
+                      if config["schema_version"] == 1 else
+                      "Each cells/<id>/ directory owns its references and scaffold; there is no shared material fallback. ")
     write(output / "TASK.md", "# Kernel reproduction experiment\n\n" + config["objective"]
         + "\n\nRead AGENTS.md. You are the experiment-management Agent outside frozen Runs. "
-        "Use references/ and scaffold.md to recover mechanisms. Prepare or verify the external "
+        + material_scope + "Prepare or verify the external "
         "reference measurement before claiming reproduction; the registered starter is not that reference. "
         "Run each explicitly configured cell through tools/kernel_experiment.py run --workspace "
         + str(output) + " --cell CELL_ID from the pinned source checkout. "
@@ -164,7 +267,10 @@ def prepare(config_path: Path, output: Path) -> None:
 
 # Executed on the explicitly selected node. It creates an isolated checkout at
 # the pinned commit, never edits a shared source tree or chooses a GPU itself.
-_NODE = '''import json, os, pathlib, subprocess, sys
+# Embed the same small pure selection validator: the destination has no checkout
+# to import before transport admission, and must not maintain another name parser.
+_NODE = '''import base64, json, os, pathlib, re, subprocess, sys
+__NATIVE_SKILL_SELECTION_VALIDATOR__
 p = json.load(sys.stdin)
 n = p["cell"]["node"]
 w = pathlib.Path(n["workspace"])
@@ -172,13 +278,35 @@ if not w.is_absolute() or w != w.resolve() or w.exists() or w.is_symlink():
     raise ValueError("new absolute workspace required")
 if any((x / ".git").exists() for x in w.parents):
     raise ValueError("experiment outputs must be outside source")
+if ("author_skill_package" in p["cell"]) != ("author_skill_package" in p):
+    raise ValueError("selected cell skill-package transport differs")
+if ("author_skill_package" in p["cell"]) != ("native_skill_names" in p["cell"]):
+    raise ValueError("selected cell skill names and package differ")
+if "native_skill_names" in p["cell"]:
+    selection_instruction(p["cell"]["native_skill_names"])
+skill_bytes = None
+skill_limit = __AUTHOR_SKILL_ARCHIVE_LIMIT__
+if "author_skill_package" in p:
+    encoded = p["author_skill_package"]
+    if not isinstance(encoded, str) or len(encoded) > 4 * ((skill_limit + 2) // 3):
+        raise ValueError("transported skill package exceeds its bound")
+    skill_bytes = base64.b64decode(encoded, validate=True)
+    if not 0 < len(skill_bytes) <= skill_limit:
+        raise ValueError("transported skill package size differs")
 inputs = w.with_name(w.name + "-inputs")
 source = w.with_name(w.name + "-source")
 inputs.mkdir(parents=True, exist_ok=False)
 (inputs / "AGENTS.md").write_text(p["scaffold"], encoding="utf-8")
+if skill_bytes is not None:
+    with (inputs / "author-skills.tar").open("xb") as stream:
+        stream.write(skill_bytes)
 subprocess.run(["git", "-C", n["project_root"], "worktree", "add", "--detach", str(source), p["source_commit"]], check=True)
 args = [n["python"], str(source / "tools/launch_task.py"), "--workspace", str(w),
         "--kernelctl", n["kernelctl"], "--infra-socket", n["socket"], "--agents-md", str(inputs / "AGENTS.md")]
+if skill_bytes is not None:
+    args += ["--author-skill-package", str(inputs / "author-skills.tar")]
+    for name in p["cell"]["native_skill_names"]:
+        args += ["--native-skill-name", name]
 if "provider_executable" in n:
     args += ["--provider-executable", n["provider_executable"]]
 for field in ("qualification", "qualification_anchor"):
@@ -194,6 +322,8 @@ for group in (p["provider"], p["budget"]):
                 args += ["--response-model-alias", alias]
         elif value is not None:
             args += ["--" + name.replace("_", "-"), str(value)]
+if p["cell"].get("generated_source_feedback"):
+    args += ["--generated-source-feedback"]
 environment = dict(os.environ)
 if "codex_home" in n:
     home = pathlib.Path(n["codex_home"])
@@ -204,7 +334,8 @@ if "http_proxy" in n:
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
         environment[name] = n["http_proxy"]
 sys.exit(subprocess.run(args, cwd=source, env=environment).returncode)
-'''
+'''.replace('__AUTHOR_SKILL_ARCHIVE_LIMIT__', str(MAX_ARCHIVE_BYTES)).replace(
+    '__NATIVE_SKILL_SELECTION_VALIDATOR__', inspect.getsource(selection_instruction))
 
 
 def run_cell(workspace: Path, cell_id: str) -> int:
@@ -218,10 +349,19 @@ def run_cell(workspace: Path, cell_id: str) -> int:
         raise ValueError("unknown experiment cell")
     cell = cells[0]
     node = cell["node"]
+    scaffold_path = (workspace / "scaffold.md" if config["schema_version"] == 1 else
+                     workspace / "cells" / cell_id / "scaffold.md")
+    scaffold = scaffold_path.read_text(encoding="utf-8")
+    # Prepared cells own their material. Never reopen the original source path or
+    # fall back to a root/sibling package, including before an attempted transport.
+    skill_package = (NativeSkillPackage.read(ROOT, workspace/'cells'/cell_id/'author-skills.tar')
+                     if 'author_skill_package' in cell else None)
     attempt = workspace / "launches" / cell_id
     attempt.mkdir(parents=True, exist_ok=False)
     payload = {"cell": cell, "source_commit": commit, "provider": config["provider"],
-               "budget": config["budget"], "scaffold": (workspace / "scaffold.md").read_text(encoding="utf-8")}
+               "budget": config["budget"], "scaffold": scaffold}
+    if skill_package is not None:
+        payload['author_skill_package'] = base64.b64encode(skill_package.raw_bytes).decode('ascii')
     command = [node["python"], "-c", _NODE]
     if node["transport"] == "ssh":
         command = ["ssh", "-x", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", node["host"], shlex.join(command)]

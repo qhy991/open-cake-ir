@@ -26,6 +26,24 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TaskLaunchTests(unittest.TestCase):
+    def test_explicit_claude_successor_binds_before_execution_without_changing_default(self):
+        from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACT, CLAUDE_RESTRICTED_EVENT_CONTRACT
+        original = launch_task.task_run_inputs
+        for selected in (None, CLAUDE_RESTRICTED_EVENT_CONTRACT):
+            captured = []
+            def inputs(*args, **kwargs):
+                value = original(*args, **kwargs)
+                captured.append(value)
+                return value
+            args = self.args() + ([] if selected is None else ['--claude-event-contract', selected])
+            with patch.object(launch_task, '_provider_executable', return_value=Path('/fixture/provider')), \
+                 patch.object(launch_task, 'task_run_inputs', side_effect=inputs), \
+                 patch.object(launch_task, '_admit_stack', side_effect=RuntimeError('stop before execution')):
+                with self.assertRaisesRegex(RuntimeError, 'stop before execution'):
+                    launch_task.main(args)
+            self.assertEqual(captured[0]['authoring']['provider']['event_contract'], selected or CLAUDE_EVENT_CONTRACT)
+            self.workspace = self.directory / 'next-contract'
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -768,14 +786,20 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(runtime["provider"]["workspace_root"], str(self.workspace/"actors"))
         self.assertEqual(runtime["toolchain"], {"output_root":str(self.workspace/"builds")})
         self.assertEqual(runtime["broker"]["command"], ["/unit-test/python", "-I", str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py"),
-                         "open_cake_ir.evaluation.local_broker", "--kind", "metal",
-                         "--worker-module", "open_cake_ir.tasks.evaluate"])
+                         "open_cake_ir.tasks.evaluate", "--local-kind", "metal"])
         self.assertFalse((self.workspace/'study.json').exists())
         self.assertFalse((self.workspace/'campaign-lock.json').exists())
         self.assertFalse((self.workspace/'execution-bindings.json').exists())
         self.assertTrue((self.workspace/'run.json').exists())
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.
         with self.assertRaises(FileExistsError): launch_task._new_workspace(self.workspace)
+
+    def test_metal_cli_default_freezes_mean30_policy(self):
+        self._wiring(preflight_only=True)
+        document = json.loads((self.workspace/'run.json').read_text())
+        assay = paired_protocol(document['evaluation_protocol'])
+        self.assertEqual((assay.statistic, assay.samples_per_cohort, len(assay.pair_order)), ('mean',15,2))
+        self.assertIsNone(assay.maximum_relative_iqr)
 
     def test_launcher_freezes_the_exact_task_incumbent_as_the_next_baseline(self):
         self._wiring(incumbent="present")

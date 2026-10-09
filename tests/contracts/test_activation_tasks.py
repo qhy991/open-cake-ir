@@ -464,11 +464,14 @@ class ActivationTaskTests(unittest.TestCase):
                             self.assertNotIn("tl.sum", lowering.source)
                         lowered.setdefault(route, []).append(
                             (dict(lowering.toolchain_requirements), lowering.source))
-                # Two devices on one route differ only in the Target they commit to and
-                # in the frozen identity the emitted header records.
+                # Compare kernel and host contract while admitting the separately
+                # tested HCU pointer-extent argument adapter.
                 def anonymize(text):
                     for backend in activation.BACKENDS:
                         text = text.replace(backend, "<backend>")
+                    if route == 'triton':
+                        from tests.contracts.test_triton_host_output_ownership import native_pointer_source
+                        return native_pointer_source(text)
                     return "\n".join(line for line in text.splitlines()
                                       if not line.startswith("# schedule_sha256="))
                 for route, emitted in lowered.items():

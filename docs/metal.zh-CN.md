@@ -1,5 +1,9 @@
 # 通过 TaskLab 运行 Apple Metal 任务
 
+New Metal CLI runs default to the [30-sample arithmetic-mean protocol](METAL_MEAN30_GLM.md):
+30 samples per arm, 64 dispatches per sample, no CV/IQR veto. Use
+`--metal-timing legacy` for the older assay described below.
+
 Compiler 支持精确目标 `Apple M1 Pro` / `apple_gpu_family7`、`Apple M2` /
 `apple_gpu_family8` 和 `Apple M4` / `apple_gpu_family9`，任务入口均已接入，参数分别为
 `--backend metal-m1-pro`、`--backend metal-m2` 和 `--backend metal-m4`。一个 backend 只对应一个精确目标和一个已认定设备名；

@@ -23,17 +23,18 @@ from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
-from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
+from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1, verify_auth_source
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.incumbents import TaskIncumbentRegistry, admit_baseline_selection
 from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
 from open_cake_ir.lab.providers import ProviderQualificationReceipt
+from open_cake_ir.lab.native_skill_qualification import selection_instruction, verify_qualification_evidence
 from open_cake_ir.tasks.compose import execute_run_from_config
 from open_cake_ir.tasks.preparation import prepare_task_run
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
-from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, task_run_inputs, _ROUTE_CALLS_PER_COHORT
+from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, task_run_inputs
 from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort_payload
 from open_cake_ir.tasks.aka_v3.workload import LAUNCHABLE_TASKS as AKA_TASKS
 from open_cake_ir.tasks.metax_fp8_gemm import TASK as METAX_FP8_GEMM_TASK
@@ -326,7 +327,8 @@ def _admit_allocator(runtime) -> None:
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
                     kernelctl=None, infra_socket=None, auth_source=None,
-                    local_device=None, local_queue_seconds=0):
+                    local_device=None, local_queue_seconds=0, local_lock_scope="user",
+                    local_runtime_device=None, local_expected_pci=None):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -335,7 +337,7 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     refused every DCU launch for lacking a CUDA cluster allocator it has no use for.
     """
     from open_cake_ir.evaluation.source_bootstrap import module_command
-    if (local_device is not None or local_queue_seconds != 0) and (allocation != 'local_broker' or kernelctl is not None):
+    if (local_device is not None or local_queue_seconds != 0 or local_lock_scope != "user" or local_runtime_device is not None or local_expected_pci is not None) and (allocation != 'local_broker' or kernelctl is not None):
         raise ValueError('local device selection and queue require the local broker allocation')
     python = executor.document["host_environment"]["python"]["invocation_path"]
     if kernelctl is not None:
@@ -363,15 +365,22 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             raise ValueError(
                 "the local_broker allocation requires the local job kind the target's "
                 "execution platform declares")
-        if route == "triton":
+        if route in {"triton", "metal"}:
             # Task-owned CPU inputs/oracles precede the broker's device phase.
             command = module_command(python, "open_cake_ir.tasks.evaluate", "--local-kind", local_kind)
         else:
             command = module_command(python, "open_cake_ir.evaluation.local_broker",
                                      "--kind", local_kind,
                                      "--worker-module", "open_cake_ir.tasks.evaluate")
-        from open_cake_ir.evaluation.local_broker import _selection_environment
+        from open_cake_ir.evaluation.local_broker import _selection_environment, validate_namespace_mapping
         _selection_environment(local_kind, local_device)
+        if local_lock_scope not in {'user', 'device'} or (local_lock_scope == 'device' and local_device is None):
+            raise ValueError('device lock scope requires an explicit local device')
+        if local_lock_scope != 'user':
+            command.extend(('--local-lock-scope', local_lock_scope))
+        validate_namespace_mapping(local_kind, local_device, local_lock_scope, local_runtime_device, local_expected_pci)
+        if local_runtime_device is not None or local_expected_pci is not None:
+            command.extend(('--local-runtime-device', str(local_runtime_device), '--local-expected-pci', local_expected_pci))
         if local_device is not None:
             command.extend(('--local-device', str(local_device)))
         if local_queue_seconds != 0:
@@ -424,7 +433,7 @@ def _admit_local_allocator(runtime, executor, target, workspace):
         'open_cake_ir.evaluation.local_broker', '--kind', 'maca', '--probe-target', target,
         '--runtime-library', host['runtime_library'], '--output', str(output))
     wait = 0.0
-    for flag in ('--local-device', '--local-queue-seconds'):
+    for flag in ('--local-device', '--local-queue-seconds', '--local-lock-scope', '--local-runtime-device', '--local-expected-pci'):
         if flag in broker['command']:
             value = broker['command'][broker['command'].index(flag) + 1]
             command.extend((flag, value))
@@ -465,9 +474,17 @@ def _prepare_baseline(root, workspace, compiler, executor, host, workload, autho
 
 
 def _qualify(root, workspace, args, executable, source_path):
+    names = getattr(args, "native_skill_name", [])
+    if getattr(args, "author_skill_package", None) is not None:
+        selection_instruction(names)
+    elif names:
+        raise ValueError("native skill names require their explicit package")
     if args.qualification is not None:
         receipt_path = external_file(root, str(args.qualification), "provider qualification")
         anchor_path = external_file(root, str(args.qualification_anchor), "provider qualification anchor")
+        if getattr(args, "author_skill_package", None) is not None:
+            verify_qualification_evidence(qualification=ProviderQualificationReceipt.load(receipt_path),
+                anchor=json.loads(anchor_path.read_bytes()), requested_names=names)
         return receipt_path, anchor_path
     version = subprocess.run([str(executable), "--version"], check=True, capture_output=True, text=True, timeout=30)
     if not version.stdout.strip():
@@ -487,10 +504,18 @@ def _qualify(root, workspace, args, executable, source_path):
                     PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
                     else PYTHON_CANDIDATE_BUNDLE_V1))
     if args.harness == 'codex':
-        command.extend(('--author-home-policy', ISOLATED_AUTH_ONLY_V1,
+        skill_package = getattr(args, 'author_skill_package', None)
+        command.extend(('--author-home-policy',
+                        ISOLATED_SKILL_PACKAGE_V1 if skill_package is not None else ISOLATED_AUTH_ONLY_V1,
                         '--auth-source', str(args.auth_source)))
+        if skill_package is not None:
+            command.extend(('--author-skill-package', str(skill_package)))
+            for name in names:
+                command.extend(('--native-skill-name', name))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
+    if getattr(args, 'claude_event_contract', None) is not None:
+        command.extend(('--claude-event-contract', args.claude_event_contract))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
     _write(workspace / "qualification.stdout", completed.stdout.encode())
     _write(workspace / "qualification.stderr", completed.stderr.encode())
@@ -539,20 +564,34 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
+    parser.add_argument('--metal-timing', choices=('mean30', 'legacy'),
+                        help='Metal default: 30 batched samples per arm, arithmetic mean; legacy retains median/IQR assay')
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    parser.add_argument('--claude-event-contract', choices=CLAUDE_EVENT_CONTRACTS,
+                        help='explicit Claude transport successor; default preserves v4')
     parser.add_argument("--response-model-alias", action="append", default=[],
                         help="explicit additional assistant-response model name for Claude; request/init/usage model stays exact")
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--native-skill-name', action='append', default=[],
+                        help='exact native skill name to verify in both qualification turns; repeat for multiple skills')
+    parser.add_argument('--author-skill-package', type=Path,
+                        help='controlled native skill package for a private Codex HOME; live discovery and delivery remain unqualified')
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
                         default='known_kernel_reproduction',
                         help='clean_start is reserved until provider read isolation is qualified')
+    parser.add_argument('--generated-source-feedback', action='store_true',
+                        help='deliver bounded own-candidate Compiler source from sealed searches; known-kernel authoring only')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument('--local-device', type=int, help='physical device ordinal selected by the existing local broker')
+    parser.add_argument('--local-lock-scope', choices=('user', 'device'), default='user')
+    parser.add_argument('--local-runtime-device', type=int)
+    parser.add_argument('--local-expected-pci')
     parser.add_argument('--local-queue-seconds', type=float, default=0, help='bounded wait for the existing local lock; no lease held while waiting')
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
@@ -602,6 +641,21 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if args.native_skill_name:
+        if args.author_skill_package is None:
+            parser.error('--native-skill-name requires --author-skill-package')
+        try:
+            selection_instruction(args.native_skill_name)
+        except ValueError as error:
+            parser.error(str(error))
+    if args.author_skill_package is not None:
+        if args.harness != 'codex' or args.reference_access != 'known_kernel_reproduction':
+            parser.error('--author-skill-package requires Codex known-kernel authoring')
+        if not args.baseline_only:
+            try:
+                selection_instruction(args.native_skill_name)
+            except ValueError as error:
+                parser.error(str(error))
     if args.local_device is not None and args.local_device < 0:
         parser.error('--local-device must be nonnegative')
     if args.local_queue_seconds < 0 or not math.isfinite(args.local_queue_seconds):
@@ -645,9 +699,11 @@ def main(argv=None) -> int:
     # F-2026-09-10-002: the Metal observer refuses an oversized snapshot cohort before it
     # dispatches anything, so a shape that exceeds the bound dies at the first evaluation
     # with the campaign's authoring tokens already spent. Check the same arithmetic here.
-    if route == "metal":
-        admit_cohort_payload(workload, args.case,
-                             _ROUTE_CALLS_PER_COHORT)
+    if args.metal_timing is not None and route != 'metal':
+        raise ValueError('--metal-timing requires a Metal backend')
+    metal_mean30 = route == 'metal' and args.metal_timing != 'legacy'
+    if metal_mean30 and (args.maximum_cv is not None or args.required_pair_wins is not None):
+        raise ValueError('mean30 retains dispersion/pair wins as diagnostics; use --metal-timing legacy for these gates')
     authoring_source_path = source_path
     inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
@@ -656,7 +712,12 @@ def main(argv=None) -> int:
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
-        source_file=args.source_file)
+        source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
+        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30,
+        claude_event_contract=args.claude_event_contract)
+    if route == 'metal':
+        admit_cohort_payload(workload, args.case,
+            inputs['evaluation_protocol']['paired_timing']['route_calls_per_cohort'])
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     if args.harness != 'codex' and args.auth_source is not None:
         raise ValueError('--auth-source applies only to the Codex harness')
@@ -674,7 +735,8 @@ def main(argv=None) -> int:
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
                                kernelctl=args.kernelctl, infra_socket=args.infra_socket,
                                auth_source=auth_source, local_device=args.local_device,
-                               local_queue_seconds=args.local_queue_seconds))
+                               local_queue_seconds=args.local_queue_seconds, local_lock_scope=args.local_lock_scope,
+                               local_runtime_device=args.local_runtime_device, local_expected_pci=args.local_expected_pci))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for
