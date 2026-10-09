@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-013",
+  "kind": "bug",
+  "decision": "accepted",
+  "title": "Triton multi-region MMA wrongly rejects typed indexed-load operands",
+  "compiler_revision_id": "open-cake-ir@ae25ec5b393c0aa8529e6657ed2f94d4b5cdcddf",
+  "executor_revision": "xcore1002@ae25ec5b393c0aa8529e6657ed2f94d4b5cdcddf",
+  "backend": "triton",
+  "target": "xcore1002",
+  "tracking_issue": "https://github.com/qhy991/open-cake-ir/issues/435",
+  "pull_request": "https://github.com/qhy991/open-cake-ir/pull/436",
+  "evidence": {
+    "root": "indexed-mma-provenance-20261009",
+    "locators": [
+      "unrolled.py",
+      "unrolled-result.json",
+      "nested.py",
+      "nested-result.json",
+      "source-assessment-before.json",
+      "red-cpu.log"
+    ],
+    "scope": "CPU source assessment. The B=2, S=65 unrolled Schedule has two proven sequence K carries but is refused by TRITON_NESTED_MMA_OPERAND. The separately nested batch/sequence source remains a non-K escape. The Executor id identifies the same frozen source; no host or GPU admission was performed for this Finding. Evidence files are retained privately under this logical artifact id."
+  },
+  "observation": "The existing AccessMap owns a LOAD global source and first-use-ordered unique BUFFER/SCALAR_BUFFER address dependencies. The multi-region MMA preflight assumed one LOAD read and rejected legal indexed load/cast/transpose chains even though the common Schedule analysis already proved their K axes. Dropping the index read would violate ACCESS_INDEX_BUFFER_READS; it is not a valid repair.",
+  "proposed_change": "Read the unique LOAD AccessMap, require its global source followed by every canonical address dependency, and keep unique writes, typed cast/transpose provenance, producer order, scope and carry checks unchanged. Do not widen the existing loop-nesting domain.",
+  "promotion_disposition": "A shared Triton admission bug repair is implemented and CPU-verified for exact xcore1002 and gfx938 source routes. No IR primitive, transform pass, target capability or performance claim is added. Independent source review found no blocking issue; integration remains a separate action. Native compilation, device correctness and full original Bench acceptance remain separate.",
+  "principles_review": {
+    "P1_P3": "Keep existing Python, Schedule and AccessMap forms; no new syntax or representation.",
+    "P2": "Preserve every explicit index dependency and the emitted address calculations.",
+    "P4_P5_P7": "Consume existing typed LOAD/cast/transpose provenance and common index/order/scope rules; no IR or analysis data model changes.",
+    "P6": "Replay the retained source, execute emitted CPU matrices and negative controls, and retain unchanged Corpus expectations.",
+    "P8": "This establishes software emission and matrix semantics only. It does not qualify a hardware implementation or numerical precision."
+  },
+  "implemented_in": "3d50eb7c",
+  "verified_by": {
+    "commit": "b5926f79",
+    "tests": "Eight focused contracts pass at b5926f79, including fourteen emitted CPU matrices across xcore1002 and gfx938. Fifty adjacent multi-region, loop, multi-MMA and K-range contracts pass at 468643f6. Production source is unchanged from 53d1991b through b5926f79; later commits correct and extend test fixtures only.",
+    "regression_before_fix": "ae25ec5b: eleven positive subcases fail specifically at TRITON_NESTED_MMA_OPERAND; dependency/order and non-K escape controls pass.",
+    "logs": [
+      "red-cpu.log",
+      "focused-cpu.log",
+      "neighbor-cpu.log"
+    ],
+    "original_replay": "468643f6: unmodified unrolled.py, plus exact gfx938 retargeting, each produces 1024 correct CPU outputs with unchanged inputs and one write per output. Both nested versions retain BUFFER_ESCAPES_LOOP. See original-replay.json.",
+    "corpus": "204 cases match unchanged expectations at 53d1991b; apple_gpu_family7 and apple_gpu_family9 remain reported unexamined. corpus.json.",
+    "preserved_failures": "Earlier fixture and CPU-tool limitations remain retained. They were corrected under existing rules in separate test commits; no Compiler rule or Corpus expectation was weakened.",
+    "scope": "Source/CPU only. No native compiler, GPU, provider or formal Run was executed.",
+    "independent_review": "b5926f79: no blocking finding; an additional unrelated LOAD data dependency is refused by both common access verification and backend preflight. Retained as independent-review.md."
+  }
+}

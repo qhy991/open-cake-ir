@@ -323,10 +323,15 @@ def _multi_region_mma_operand(schedule: Schedule, operation, operand: str) -> bo
     origin = chain[0]
     active = schedule.enclosing_loops(operation)
     if origin.kind is OperationKind.LOAD:
-        if (len(origin.reads) != 1 or len(origin.writes) != 1
-                or (source := schedule.buffer(origin.reads[0])) is None
-                or source.space is not MemorySpace.GLOBAL
-                or schedule.access_map(origin.op_id, source.name) is None):
+        accesses = [access for access in schedule.access_maps if access.operation == origin.op_id]
+        if len(accesses) != 1:
+            return False
+        access = accesses[0]
+        indices = tuple(dict.fromkeys(index.name for index in access.indices
+            if index.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}))
+        if (origin.reads != (access.buffer,) + indices or len(origin.writes) != 1
+                or (source := schedule.buffer(access.buffer)) is None
+                or source.space is not MemorySpace.GLOBAL):
             return False
     elif (origin.kind not in {OperationKind.ELEMENTWISE, OperationKind.REDUCE,
                              OperationKind.MMA, OperationKind.BROADCAST_IN_DIM,

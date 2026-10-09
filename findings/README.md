@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-09-013](2026-10-09-013-triton-indexed-mma-provenance.json) — shared Triton multi-region MMA keeps typed indexed-load address dependencies; source/CPU replay passes while native and original Bench qualification remain separate.
+
 - [F-2026-10-09-010](2026-10-09-010-metax-complete-program-measurement.json) — complete MACA Program event and separate attribution adapters have reviewed exact-target component support; real common-worker A/A and per-baseline readiness remain pending.
 - [F-2026-10-09-008](2026-10-09-008-local-evaluation-refusals.json) — preserve witnessed allocation and zero-dispatch candidate resource refusals as unmeasured Evaluation outcomes. The successor must keep budget accounting, independent replay, and incomplete attribution separate from qualification; frozen C1 failures remain sealed.
 
