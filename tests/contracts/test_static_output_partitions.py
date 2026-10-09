@@ -59,12 +59,18 @@ class StaticOutputPartitions(unittest.TestCase):
         self.assertTrue(result.lowering_eligible, result.findings)
 
     def test_two_static_dimensions_prove_rectangular_union(self):
-        document = self.document()
-        for buffer in document["buffers"]:
-            buffer["shape"].append(4)
-        for access in document["access_maps"]:
-            access["indices"].append(dict(source="dimension", dimension=2))
+        source = partition_source().replace('(8, 16)', '(8, 16, 16)')
+        source = source[:source.index('        left =')]
+        for index, (a, b) in enumerate(((':8', ':8'), (':8', '8:'), ('8:', ':8'), ('8:', '8:'))):
+            source += f'        v{index} = lm.load(x[row, {a}, {b}], id="load_{index}")\n'
+            source += f'        lm.store(out[row, {a}, {b}], v{index}, id="store_{index}")\n'
+        document = frontend.parse(source).document
         self.assertIsNone(partition_refusal(Schedule.from_dict(document), "out"))
+        # Removing one rectangle must leave a hole, despite coverage on each
+        # dimension separately. Axis projections alone are not a union proof.
+        document["operations"] = [op for op in document["operations"] if op["id"] != "store_3"]
+        document["access_maps"] = [a for a in document["access_maps"] if a["operation"] != "store_3"]
+        self.refusal(document, "OUTPUT_PARTITION_COVERAGE", "192 of 256")
 
     def test_overlap_is_refused_by_partition_proof(self):
         document = self.document()
