@@ -11,6 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
+from open_cake_ir.lab.bindings import external_file
 from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT, BenchProblem, validate_input_view_observation, validate_oracle_numerics
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
 from open_cake_ir.tasks.c550_bench.starters.rms_norm import source as rms_norm_source
@@ -45,7 +46,8 @@ def main(argv=None):
     parser.add_argument('--input-views', type=Path, action='append', default=[],
                         help='retained original-factory dense-view observations')
     args = parser.parse_args(argv)
-    oracle_numerics = validate_oracle_numerics(json.loads(args.oracle_numerics.read_text()))
+    numerics_path = external_file(ROOT, str(args.oracle_numerics), 'oracle numerics observation')
+    oracle_numerics = validate_oracle_numerics(json.loads(numerics_path.read_text()))
     # The original suite owns its task list. A pinned problem opening verifies
     # the source before any private task data are imported.
     first = BenchProblem.open(args.bench_root, 'L1/069_rms_norm')
@@ -68,7 +70,7 @@ def main(argv=None):
             observed_views[key] = views
     args.output.mkdir(parents=True, exist_ok=False)
     summary = {'bench_commit': BENCH_COMMIT, 'status': 'prepared_not_launched',
-               'search_owner': 'existing_TaskLab_Ralph', 'oracle_numerics_observation': str(args.oracle_numerics.resolve()),
+               'search_owner': 'existing_TaskLab_Ralph', 'oracle_numerics_observation': str(numerics_path),
                'oracle_numerics': oracle_numerics, 'tasks': []}
     write_new(args.output / 'preparation.json', summary)
     for task in selected:

@@ -156,7 +156,7 @@ class OracleNumerics(unittest.TestCase):
         original = problem()
         original.api.document = lambda name: {'seed': 200, 'tasks': [{'id': 'fixture'}]}
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             observation = root / 'oracle-numerics.json'
             observation.write_text(json.dumps(policy()))
             output = root / 'prepared'
@@ -169,6 +169,24 @@ class OracleNumerics(unittest.TestCase):
             self.assertEqual(len(cases), 16)
             for path in cases:
                 self.assertEqual(json.loads(path.read_text())['semantics']['oracle_numerics'], policy())
+
+
+    def test_observation_path_refuses_source_trees_links_and_relative_paths_before_preparation(self):
+        from tools import prepare_c550_bench as entry
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            observation = root / 'observation.json'
+            observation.write_text(json.dumps(policy()))
+            link = root / 'link.json'; link.symlink_to(observation)
+            checkout = root / 'another-checkout'; checkout.mkdir(); (checkout / '.git').mkdir()
+            tracked = checkout / 'observation.json'; tracked.write_text(observation.read_text())
+            for path in (link, tracked, Path('relative.json')):
+                with self.subTest(path=path), patch.object(entry.BenchProblem, 'open') as opened:
+                    with self.assertRaisesRegex(ValueError, 'external|source worktrees'):
+                        entry.main(['--bench-root', str(root), '--output', str(root / 'unused'),
+                            '--oracle-numerics', str(path)])
+                    opened.assert_not_called()
+            self.assertFalse((root / 'unused').exists())
 
     def test_actual_torch_precision_drift_is_read_only(self):
         try:
