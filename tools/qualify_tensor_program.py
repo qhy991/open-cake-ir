@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import sys
 import traceback
+import statistics
 from hashlib import sha256
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +89,68 @@ def profile_program(candidate, workload, protocol, admission, prepared, host):
         raise RunProtocolFault('harness_fault', str(error), artifact_payloads=retained) from error
 
 
+def observe_program_events(candidate, workload, protocol, admission, prepared):
+    """Observe ten full-Program event samples without admitting an optimization Run.
+
+    This device gate exercises the same adapter, fresh-output checks and teardown
+    as the worker. It publishes observations, not a common paired timing receipt.
+    A reviewed qualification decision is still required for production admission.
+    """
+    from open_cake_ir.compiler.target import declared_target
+    from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate
+    from open_cake_ir.evaluation.metax_event_benchmark import MacaProgramEventBenchmark, validate_cohort
+    from open_cake_ir.evaluation.program import program_components
+    from open_cake_ir.lab.faults import RunProtocolFault
+    from open_cake_ir.tasks.evaluate import _fresh_tile_cohort
+    manifest, _, _ = program_components(candidate)
+    if protocol.case_id != manifest.case_id:
+        raise ValueError('Program event qualification uses the sealed primary case')
+    retained = {}
+    loaded = None
+    timer = None
+    records = []
+    try:
+        preflight = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared)
+        retained.update({'preflight_' + role: payload for role, payload in preflight.artifact_payloads.items()})
+        if not preflight.correctness_passed:
+            raise ValueError('Program event qualification requires a passing original oracle preflight')
+        expected = {name: value.reshape(-1).tolist() for name, value in prepared.expected.items()}
+        loaded = LoadedTorchTensorCandidate(candidate, manifest, prepared.inputs, admission)
+        timer = MacaProgramEventBenchmark(manifest,
+                                         l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes)
+        for index in range(2):
+            samples, check = _fresh_tile_cohort(loaded, timer, workload, prepared.inputs, expected,
+                                               samples_per_cohort=5, route_calls_per_cohort=16)
+            row = {'cohort': index, 'native_activity': timer.last_activity,
+                   'samples_ms': samples, 'output_check': check}
+            records.append(row)
+            validate_cohort(row, manifest, sample_count=5)
+            if not check['passed']:
+                raise ValueError('Program event sample output failed the original oracle')
+        if loaded.loaded.launch_calls != 32 * manifest.kernels_per_call:
+            raise ValueError('Program event qualification stage count differs')
+        resources = loaded.loaded.resources
+        loaded.close()
+        if not loaded.loaded.closed:
+            raise ValueError('Program event qualification modules remain open')
+        values = [sample for row in records for sample in row['samples_ms']]
+        return {'kind': 'maca_program_event_qualification_observation_v1',
+            'candidate': candidate_identity(candidate), 'case_id': protocol.case_id,
+            'sample_count': len(values), 'mean_ms': statistics.mean(values),
+            'cohorts': records, 'resources': resources, 'module_unloaded': True,
+            'native_kernel_calls': 33 * manifest.kernels_per_call,
+            'scope': 'device qualification observation; not a Run endpoint or A/A qualification'}
+    except Exception as error:
+        retained.update(getattr(error, 'artifact_payloads', {}))
+        retained['program_event_observation'] = canonical_json_bytes({
+            'completed_cohorts': records,
+            'active_cohort': timer.last_activity if timer is not None else None})
+        raise RunProtocolFault('harness_fault', str(error), artifact_payloads=retained) from error
+    finally:
+        if loaded is not None and not loaded.loaded.closed:
+            loaded.close()
+
+
 def _admit_captured_host(executor):
     if executor.document['host_environment'].get('kind') == 'hip':
         return executor.admit_hip_host()
@@ -143,8 +206,8 @@ def evaluate(args, result):
     platform = platform_for(workload.target)
     if platform.code_object not in {CodeObject.HSACO, CodeObject.MCFATBIN}:
         raise ValueError('this local tensor qualification command implements HIP and MACA allocation adapters')
-    if args.command == 'profile' and platform.code_object is not CodeObject.MCFATBIN:
-        raise ValueError('this Program profile source implements only MACA attribution')
+    if args.command in {'profile', 'events'} and platform.code_object is not CodeObject.MCFATBIN:
+        raise ValueError('this Program profile/event source implements only MACA')
     protocol = EvaluationProtocol('tensor-program-correctness', 'confirmatory', workload.canonical_sha256,
                                   args.case, 'none')
     result.update(phase='cpu_preparation', target=workload.target, workload_id=workload.workload_id, case_id=args.case)
@@ -161,6 +224,13 @@ def evaluate(args, result):
     elif platform.code_object is CodeObject.MCFATBIN:
         from open_cake_ir.evaluation.triton_metax import observe_local_metax
         admission = observe_local_metax(workload.target, runtime_library=host['runtime_library'])
+    if args.command == 'events':
+        observation = observe_program_events(candidate, workload, protocol, admission, prepared)
+        write(args.output / 'event-observation.json', observation)
+        result.update(phase='device_complete', passed=True, scope=observation['scope'],
+                      timing_samples=observation['sample_count'], mean_ms=observation['mean_ms'],
+                      native_kernel_calls=observation['native_kernel_calls'])
+        return
     receipt = (profile_program(candidate, workload, protocol, admission, prepared, host)
                if args.command == 'profile' else
                evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared))
@@ -184,10 +254,11 @@ def main():
     builder.add_argument('--program', type=Path, required=True)
     runner = sub.add_parser('evaluate')
     profiler = sub.add_parser('profile')
-    for command in (runner, profiler):
+    event_timer = sub.add_parser('events')
+    for command in (runner, profiler, event_timer):
         command.add_argument('--built', type=Path, required=True)
         command.add_argument('--case', required=True)
-    for command in (builder, runner, profiler):
+    for command in (builder, runner, profiler, event_timer):
         command.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output = args.output.resolve()
