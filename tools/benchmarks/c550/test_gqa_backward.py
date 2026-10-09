@@ -115,10 +115,18 @@ class GQABackward(unittest.TestCase):
     def test_complete_emitted_program_matches_independent_grouped_backward(self):
         source, inputs = self.fixture()
         program = parse_program(source).program
-        observed, traces = execute(program, inputs)
-        expected = reference(inputs, heads=4, kv_heads=2)
-        for name in expected: np.testing.assert_array_equal(observed[name], expected[name])
-        self.assertTrue(all(set(trace.stores.values()) == {1} for trace in traces))
+        rounded_uniform = deepcopy(inputs)
+        rounded_uniform['attn_weights'] = bf16(np.full((1,4,3,3), 1./3, dtype=np.float32))
+        rounded_uniform['attn_weights_dropped'] = bf16(
+            rounded_uniform['attn_weights'] * rounded_uniform['dropout_mask'] / np.float32(.9))
+        self.assertNotEqual(float(rounded_uniform['attn_weights'][0,0,0].sum()), 1.)
+        for values in (inputs, rounded_uniform):
+            observed, traces = execute(program, values)
+            expected = reference(values, heads=4, kv_heads=2)
+            for name in expected: np.testing.assert_array_equal(observed[name], expected[name])
+            self.assertTrue(all(set(trace.stores.values()) == {1} for trace in traces))
+            # Dropout zeroes its own gradient, not the softmax-coupled score gradient.
+            self.assertTrue(np.any(observed['grad_attn_scores'][~values['dropout_mask']] != 0))
 
     def test_wrong_dropout_or_group_mapping_changes_the_original_gradient(self):
         source, inputs = self.fixture()
