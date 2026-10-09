@@ -24,7 +24,8 @@
     "reduce",
     "scan",
     "select",
-    "store"
+    "store",
+    "transpose"
   ],
   "warp_size": 64,
   "resource_limits": {
@@ -38,6 +39,7 @@
   },
   "instruction_contracts": [
     "ocml.cos.f32",
+    "ocml.fma.f32",
     "ocml.sin.f32",
     "ocml.tanh.f32",
     "triton.atomic_add.i32.relaxed.gpu",
@@ -124,6 +126,11 @@
       "kind": "device_observation",
       "source": "BW1100 successor Compiler component qualification, DTK image3ad0ae7, Triton3.6.0/Torch2.11.0",
       "locator": "/data3/testuser01/experiments/bw1100-compiler-trig-scan-qualification-20261006/bench/campaign/results/component-summary.json and component-isa.json, 2026-10-06, HCU2: explicit ocml.sin.f32/ocml.cos.f32 each match external Torch FP32 and BF16 outputs on8,388,620 finite arguments; no hardware v_sin_f32/v_cos_f32 emitted. Resident INT32 max scan forward/reverse each match CPU maximum-accumulate on17,408 signed integers; this is component capacity, not full RoPE/sort performance."
+    },
+    {
+      "kind": "device_observation",
+      "source": "DTK OCML FP32 FMA and clean Cake generated-source qualification,2026-10-07",
+      "locator": "/data3/testuser01/experiments/bw1100-fma-contract-probe-20261007/run/results/generated-eb816734-r1:12288 component words match the exact binary32 RN oracle with quiet-NaN classification, including nested producer rounding, signed zero, subnormals, overflow and cancellation. Default options preserve denorms; actual v_fma_f32/v_fmac_f32_e32 instructions and independent nested v_mul_f32_e32 are retained. Fifteen cases of three original Tasks pass; a deliberately incorrect SwiGLU formula is still rejected. Component/source capacity only, not performance."
     }
   ]
 }

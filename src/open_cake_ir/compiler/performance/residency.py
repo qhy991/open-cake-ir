@@ -348,7 +348,10 @@ def residency_upper_bound(
             )
         )
 
-    if compiled_resources is not None:
+    # CUDA's per-SM register arithmetic is not a model of AMDGPU bank/wave
+    # allocation. Keep HSACO VGPR counts visible, without deriving a CTA bound
+    # that can report zero for a successfully compiled/runnable HCU kernel.
+    if compiled_resources is not None and compiled_resources.code_object == "cubin":
         registers = compiled_resources.registers_per_thread * threads
         bounds.append(ResidencyBound(
             "registers", registers, facts.registers_per_multiprocessor,

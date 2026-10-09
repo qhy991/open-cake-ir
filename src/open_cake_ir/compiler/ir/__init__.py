@@ -79,7 +79,7 @@ from .mapping import (
 )
 
 from .operations import (
-    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters,
+    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters, TransposeParameters,
     AtomicRmwParameters,
     CastParameters,
     CopyAtom,
