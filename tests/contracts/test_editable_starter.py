@@ -145,7 +145,8 @@ class EditableQualification(unittest.TestCase):
         self.observed = next(event['payload'] for event in self.evidence.replay_events(self.run_id)
                              if event['kind'] == 'provider_qualification_observed')
         self.receipt = ProviderQualificationReceipt.load(self.fixture.root / 'receipt.json')
-        self.provider = {key: self.authority[key] for key in ('model', 'reasoning_effort', 'event_contract')}
+        self.provider = {key: self.authority[key] for key in ('model', 'reasoning_effort', 'event_contract',
+                         'removed_environment', 'submission_contract')}
         self.refs = {item['role']: item for item in self.observed['objects']}
 
     def validate(self, authority=None, read_object=None):
@@ -222,6 +223,85 @@ class EditableQualification(unittest.TestCase):
         self.assertEqual(set(result[0]), {1, 2})
         with self.assertRaisesRegex(ReplayRefusal, "not a Write"):
             _replay_provider_turns(**{**kwargs, 'expected_task_package': replace(package, initial_candidate_source=None)})
+
+
+class IsolatedInvocationBinding(unittest.TestCase):
+    """Reconstruct actual builder output without a CLI call or live receipt."""
+    def setUp(self):
+        from tests.contracts.test_claude_provider import ClaudeProviderContracts, SESSION
+        from open_cake_ir.lab import claude
+        from open_cake_ir.lab.provider_documents import invocation_document
+        from tools import qualify_codex_provider as qualifier
+        self.fixture = ClaudeProviderContracts()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.builder = self.fixture.builder(event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT,
+            submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, isolation_policy='linux_claude_workspace_v1',
+            cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--autocompact', '--input-format'})
+        self.provider = dict(self.builder.configuration)
+        self.receipt = ProviderQualificationReceipt(provider_revision=self.builder.provider_revision,
+            executable_sha256=sha256(self.fixture.executable.read_bytes()).hexdigest(),
+            configuration_sha256=sha256(canonical_json_bytes(self.provider)).hexdigest(),
+            initial_and_resume_equivalent=True, file_lifecycle_observed=True,
+            usage_observed=True, qualified=True, scope='zero_gpu_contract_fixture_only')
+        self.package = qualifier._qualification_package('isolated-edit-open_cake', 'open_cake',
+            self.fixture.workspace / 'candidate-set.py', 'fixture-reference', 1,
+            self.provider['event_contract'], 'Use only Read, Write and Edit.', PROGRAM,
+            PYTHON_CANDIDATE_BUNDLE_V1, editable_starter=True)
+        self.authority = {key: self.provider[key] for key in ('model', 'reasoning_effort',
+            'event_contract', 'removed_environment', 'submission_contract')}
+        self.authority.update(harness='claude-code', arms=['open_cake'],
+            turns=['initial_seed_update', 'same_thread_resume_update'], gpu_execution_authorized=False,
+            provider_revision=self.receipt.provider_revision, executable_sha256=self.receipt.executable_sha256)
+        self.objects = {'qualification_receipt': canonical_json_bytes(self.receipt.document),
+            'qualification_reference': canonical_json_bytes({'open_cake': {
+                'task_markdown': self.package.task_markdown, 'agents_markdown': self.package.agents_markdown}})}
+        self.raw_prompts = {}
+        for number, phase in ((1, 'initial'), (2, 'resumed')):
+            prefix = 'open_cake_' + phase + '_'
+            plan = qualifier._planned_turn(self.package, number)
+            prompt, projection = render_task_request(self.package, {'turn': number})
+            invocation = self.builder.build(prompt, thread_id=None if number == 1 else SESSION)
+            self.raw_prompts[phase] = prompt
+            self.assertNotEqual(prompt, invocation.argv[-1])
+            events = self.fixture.events()
+            tool = events[1]['message']['content'][0]
+            tool.update(name='Edit', input={'file_path': str(self.fixture.workspace / 'candidate-set.py'),
+                'old_string': f'qualification_edit_{number - 1}', 'new_string': f'qualification_edit_{number}'})
+            events[3]['message']['content'][0]['text'] = canonical_json_bytes(plan['terminal_message']).decode()
+            events[-1]['structured_output'] = plan['terminal_message']
+            self.objects.update({prefix + 'source_file': plan['submission'].encode(),
+                prefix + 'provider_events': self.fixture.raw(events), prefix + 'task_projection': projection,
+                prefix + 'invocation': canonical_json_bytes(invocation_document(invocation))})
+        self.payload = {'objects': [{'role': role} for role in self.objects]}
+
+    def validate(self):
+        from open_cake_ir.lab.admission import validate_editable_starter_observation
+        validate_editable_starter_observation(authority=self.authority, payload=self.payload,
+            read_object=lambda ref: self.objects[ref['role']], provider=self.provider, qualification=self.receipt)
+
+    def test_v8_isolated_initial_and_resume_use_the_actual_guarded_invocations(self):
+        self.validate()
+
+    def test_prompt_guards_and_exact_permissions_cannot_be_substituted(self):
+        role = 'open_cake_initial_invocation'
+        original = self.objects[role]
+        for mutation in ('prefix', 'raw_prompt', 'wider_tools', 'context_window'):
+            with self.subTest(mutation=mutation):
+                document = json.loads(original)
+                argv = document['argv']
+                if mutation == 'prefix':
+                    argv[-1] = 'Unqualified instructions\n' + argv[-1]
+                elif mutation == 'raw_prompt':
+                    argv[-1] = self.raw_prompts['initial']
+                elif mutation == 'wider_tools':
+                    argv[argv.index('--allowedTools') + 1] = 'Read,Write,Edit,Bash'
+                else:
+                    argv[argv.index('--autocompact') + 1] = '1M'
+                self.objects[role] = canonical_json_bytes(document)
+                with self.assertRaisesRegex(ValueError, 'logical invocation|frozen task'):
+                    self.validate()
+        self.objects[role] = original
 
 
 if __name__ == '__main__':
