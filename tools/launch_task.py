@@ -562,7 +562,12 @@ def _run_exit_code(report) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=TASKS, required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--task", choices=TASKS)
+    selection.add_argument("--workload-file", type=Path,
+                           help="external Workload from a registered task owner; requires --starter-file")
+    parser.add_argument("--starter-file", type=Path,
+                        help="complete Python starter for the external Workload's exact ABI")
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
     parser.add_argument('--metal-timing', choices=('mean30', 'legacy'),
                         help='Metal default: 30 batched samples per arm, arithmetic mean; legacy retains median/IQR assay')
@@ -643,6 +648,15 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
+    if (args.workload_file is None) != (args.starter_file is None):
+        parser.error('--workload-file and --starter-file must be supplied together')
+    if args.workload_file is not None:
+        if any(value is not None for value in (args.rows, args.columns, args.depth)):
+            parser.error('external Workload dimensions are fixed; omit --rows/--columns/--depth')
+        if args.reference_access != 'known_kernel_reproduction':
+            parser.error('a complete external starter requires known-kernel reference access')
+        if args.starter_file.suffix != '.py':
+            parser.error('external Cake starter must be Python source')
     if args.native_skill_name:
         if args.author_skill_package is None:
             parser.error('--native-skill-name requires --author-skill-package')
@@ -680,9 +694,17 @@ def main(argv=None) -> int:
     if args.reference_access == 'clean_start':
         raise ValueError('clean-start provider read isolation is not qualified; refusing launch')
     workspace = _new_workspace(args.workspace)
-    rows, columns = _default_shape(args.task, args.rows, args.columns)
-    document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
-                                   depth=args.depth, case_id=args.case)
+    if args.workload_file is not None:
+        original_workload = load_workload(args.workload_file.resolve(strict=True))
+        document = original_workload.document
+        from open_cake_ir.tasks.devices import backend_for_target
+        if backend_for_target(original_workload.target) != args.backend:
+            raise ValueError('external Workload target differs from the requested backend')
+        source = args.starter_file.resolve(strict=True).read_text(encoding='utf-8')
+    else:
+        rows, columns = _default_shape(args.task, args.rows, args.columns)
+        document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
+                                       depth=args.depth, case_id=args.case)
     if args.metax_timing in {'native-mean10-events', 'torch-reset-mean10-events', 'gated-mean10-events'}:
         from open_cake_ir.tasks.metax_authoring import native_event_starter
         from open_cake_ir.evaluation.workload import WorkloadContract
