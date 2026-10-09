@@ -55,8 +55,9 @@ def _layernorm(b, c, p, epsilon):
         _tensor('layernorm_weight', (c,)), _tensor('layernorm_bias', (c,)),
         _tensor('normalized', (b,p,c), True)]) + f'''    pixel = lm.program(normalized, axis=0, dimension=1, tile=1)
     batch = lm.program(normalized, axis=1, dimension=0, tile=1)
+    channel = lm.program(normalized, axis=2, dimension=2, tile={1 << (c-1).bit_length()})
     with compute:
-        channels = lm.coordinate(source="range", start=0, extent={1 << (c-1).bit_length()}, id="channels")
+        channels = lm.coordinate(source="program_tile", name="channel", id="channels")
         values = lm.load(convolved[batch, pixel, channels], id="values")
         total = lm.reduce(values, op="sum", axis=0, scope="cta", across_loop=False, id="total")
         mean = total / {float(c)!r}
@@ -70,7 +71,7 @@ def _layernorm(b, c, p, epsilon):
         weight = lm.load(layernorm_weight[channels], id="weight")
         bias = lm.load(layernorm_bias[channels], id="bias")
         result = centered * inverse * weight + bias
-        lm.store(normalized[batch, pixel, channels], result, id="store_normalized")
+        lm.store(normalized[batch, pixel, channel], result, id="store_normalized")
 '''
 
 
