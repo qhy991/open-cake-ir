@@ -15,13 +15,15 @@
       "16eb2421:tests/contracts/test_metax_program_events.py::ProgramEvents",
       "5bb474c6:src/open_cake_ir/evaluation/program.py::admit_program_execution",
       "5bb474c6:src/open_cake_ir/lab/environments.py::OpenCakeEnvironment._build_program",
-      "/tmp/cake-bench-abi-design-20261009.md"
+      "/tmp/cake-bench-abi-design-20261009.md",
+      "attention-component-summary.json: retained four-stage component correctness, event and separate profile observation",
+      "component-source-boundary.json: reviewed d9b92681 to 6b3f3ff3 relevant implementation relation"
     ],
     "scope": "A CPU-built two-stage Program and source audit establish an Executor measurement gap. They do not establish a native hardware limitation or provide device qualification. No existing Run was edited or repeated."
   },
   "observation": "C1 can construct and seal an ordered MCFATBIN Program for independent correctness checks, but an optimization environment refuses its timing and attribution because the admitted instruments cover one dispatch. A single-kernel success does not qualify the complete Program interval. NativeTritonEnvironment is also single-kernel and cannot serve as an implicit multi-stage escape route.",
   "proposed_change": "Keep the existing Program and Ralph owners. Admit exact-target event and attribution adapters after reviewed complete-Program device component evidence and its source relation. Then require a fresh common-worker fixed-baseline A/A and separate attribution through the existing external performance_qualified gate before controlled author submission. Preserve default-stream event mean10, fresh-output checks, stage-call accounting and aligned-variant refusal.",
-  "promotion_disposition": "Adapter availability is proposed for exact xcore1002 based on retained four-stage solx_fib.attention component correctness across five input cases, two five-sample event cohorts and independent full-Program MCPTI profiling. Existing readers replay those records. The component-source relation and this source admission decision still require review before adoption. Real common-worker A/A and per-baseline external performance_qualified readiness remain pending. TaskLab has no intrinsic prior-A/A invariant. The Finding remains open; no Compiler optimization or Bench performance claim is promoted.",
+  "promotion_disposition": "Adapter availability is reviewed for exact xcore1002 based on retained four-stage solx_fib.attention component correctness across five input cases, two five-sample event cohorts and independent full-Program MCPTI profiling. Existing readers replay those records. The relevant Evaluation, worker, measurement policy, Lab build/runtime and qualification-tool source has no changes between component d9b92681 and base 6b3f3ff3; this is not whole-source or host equivalence. The availability source change is 49c867d6. Real common-worker A/A and per-baseline external performance_qualified readiness remain pending. TaskLab has no intrinsic prior-A/A invariant. The Finding remains open; no Compiler optimization or Bench performance claim is promoted.",
   "principles_review": {
     "scope": "Executor and measurement change; no IR primitive, syntax, semantics, typing rule, analysis or hardware fact changes.",
     "P1_P3_P4_P5_P7": "Existing Schedule/Program construction and analyses remain unchanged.",

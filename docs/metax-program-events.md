@@ -1,9 +1,9 @@
 # MetaX complete Program event measurements
 
 This successor makes the existing complete Program event and MCPTI attribution
-adapters available for exact target `xcore1002`. The source proposal requires
-review of the retained component evidence and its implementation relation before
-adoption. The registry owns adapter availability, not per-baseline readiness.
+adapters available for exact target `xcore1002` after review of retained component
+evidence and its implementation relation. The registry owns adapter availability,
+not per-baseline readiness.
 
 Formal authors in the controlled workflow still require an external
 `performance_qualified` result. That result requires a fresh common-evaluator
@@ -96,10 +96,13 @@ cohorts with fresh-output checks, and a separate four-stage MCPTI profile.
 The existing cohort and profile readers replay those records successfully.
 This is an ordinary repository task, not an original Bench result or an A/A pass.
 
-The component was recorded at `d9b92681`. Its implementation relation to this
-source proposal must be confirmed before adoption. Finding F-2026-10-09-010
-remains open. A real common-worker A/A, attribution and each Bench baseline's
-readiness remain pending; the adapter declaration does not assert their success.
+The component was recorded at `d9b92681`. The reviewed source relation to
+`6b3f3ff3` has no changes in Evaluation, the common worker, Program evaluation,
+measurement policy, Lab build/runtime or the qualification tool. This establishes
+the relevant component implementation relation, not whole-source or host identity.
+Finding F-2026-10-09-010 remains open. A real common-worker A/A, attribution and
+each Bench baseline's readiness remain pending; the adapter declaration does not
+assert their success.
 
 ## Scope and resource limits
 
