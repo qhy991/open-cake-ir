@@ -199,6 +199,6 @@ def document_role(name: str, access: str) -> str:
     if name in {"python-example.py", "candidate-baseline.triton.json", "candidate-baseline.cute.json", "paired-triton-authoring.md", "paired-cute-authoring.md"}:
         return "target_implementation"
     if name in {"schedule.schema.json", "schedule-authoring.md", "python-frontend.md",
-                "cuda-launch-abi.json", "candidate.schema.json"}:
+                "cuda-launch-abi.json", "candidate.schema.json", "program-starter.md"}:
         return "authoring_api"
     raise ValueError(f"unclassified task reference slot {name!r}")

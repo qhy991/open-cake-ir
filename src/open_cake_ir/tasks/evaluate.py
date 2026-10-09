@@ -188,6 +188,10 @@ def _prepare_local_tensor_work(authority, kind):
             and authority.request['purpose'] != 'attribution'):
         from open_cake_ir.evaluation.metax_native_events import prepare_helper
         prepare_helper()  # Host compilation precedes the device lease.
+    if authority.workload.requires_target_preparation:
+        # The original Bench factory and reference require the actual target.
+        # They run after its lease is observed and before candidate measurement.
+        return authority
     cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
              and not isinstance(authority.manifest, MetalTensorLaunchManifest)
              else validation_case_ids(policy) if 'validation_case_ids' in policy
@@ -196,6 +200,23 @@ def _prepare_local_tensor_work(authority, kind):
     # original task creates both inputs and references once per required case.
     prepared = {case: PreparedTensorCase(authority.workload, case) for case in cases}
     return replace(authority, prepared_cases=MappingProxyType(prepared))
+
+
+def _prepare_target_tensor_work(authority, admission):
+    if not authority.workload.requires_target_preparation:
+        return authority
+    if authority.prepared_cases is not None:
+        raise ValueError('target oracle preparation cannot replace an existing prepared case')
+    policy = authority.request['evaluation_protocol']
+    cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
+             else validation_case_ids(policy) if 'validation_case_ids' in policy
+             else (authority.case_id,))
+    prepared = {case: PreparedTensorCase(authority.workload, case, admission=admission) for case in cases}
+    return replace(authority, prepared_cases=MappingProxyType(prepared))
+
+
+def _tensor_snapshot_options(workload):
+    return {'preserve_output_tensors': True} if workload.preserve_output_tensors else {}
 
 
 def _load_authority(request_path: Path) -> _Authority:
@@ -296,6 +317,11 @@ def _admit_program_assay(authority, *, collect_timing):
         if candidate is not None and candidate.is_program:
             admit_program_execution(candidate.target, timing=collect_timing,
                                     attribution=authority.request['purpose'] == 'attribution')
+            if collect_timing and platform_for(candidate.target).code_object is CodeObject.MCFATBIN:
+                from open_cake_ir.evaluation.paired import PAIRED_MACA_EVENT_KIND
+                timing = authority.request['evaluation_protocol'].get('paired_timing', {})
+                if timing.get('kind') != PAIRED_MACA_EVENT_KIND:
+                    raise ValueError('MACA Program timing requires its complete default-stream event interval')
 
 
 def _execution_platform(authority: _Authority) -> CodeObject:
@@ -397,6 +423,8 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
             check['output_mismatches'] += observation['output_mismatches']
             check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
             check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
+            if 'original_bench_check' in observation:
+                check.setdefault('original_bench_checks', []).append(observation['original_bench_check'])
         return samples, check
     finally:
         release = getattr(loaded, 'release_argument_sets', None)
@@ -416,6 +444,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     baseline's dispatches to the candidate's kernel name, and the assay would have refused
     -- correctly, and one layer too late to say why.
     """
+    from open_cake_ir.evaluation.metax_failures import MetaxLaunchResourceError
     evaluation = authority.request['evaluation_protocol']
     protocol = paired_protocol(evaluation)
     all_cases = 'validation_case_ids' in evaluation
@@ -452,10 +481,11 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
         metrics['max_abs_error'] = max(metrics['max_abs_error'], values['max_abs_error'])
         metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and values['inputs_unchanged']
     def correctness(role, phase):
-        nonlocal correctness_calls
+        nonlocal correctness_calls, active_position
         launches = []
         combined = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
         for case_id in cases:
+            active_position = {'arm': role, 'phase': phase, 'input_case_id': case_id}
             correctness_protocol = EvaluationProtocol('workload-tensor-worker-correctness',
                 authority.request['purpose'], authority.workload.canonical_sha256, case_id, 'none')
             evaluate = evaluate_tile_validation_case if all_cases else evaluate_tile_workload
@@ -476,7 +506,8 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     try:
         for role in protocol.arms:
             for case_id in cases:
-                loaded[(role, case_id)] = LoadedTorchTensorCandidate(candidates[role], manifests[role], input_cases[case_id], admission)
+                loaded[(role, case_id)] = LoadedTorchTensorCandidate(candidates[role], manifests[role], input_cases[case_id], admission,
+                    **_tensor_snapshot_options(authority.workload))
                 counters['module_loads'] += loaded[(role, case_id)].module_count
             correctness(role, 'preflight')
             counters['preflight_calls'] += len(cases)
@@ -545,6 +576,11 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'artifacts': {'correctness_output': 'correctness-output.json',
                           'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
     except Exception as error:
+        if isinstance(error, MetaxLaunchResourceError) and hasattr(error, 'launch_resource'):
+            observation = {**error.launch_resource, **(active_position or {}),
+                'job_id': admission.broker_job_id, 'purpose': authority.request['purpose'],
+                'teardown_completed': False}
+            error.artifact_payloads['launch_resource'] = _canonical_json_bytes(observation)
         # Retain the failed native cohort before module teardown and before the
         # common broker discards its temporary worker directory. A diagnostic
         # snapshot is not a receipt and cannot qualify timing or correctness.
@@ -572,6 +608,10 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             except BaseException as error:
                 if cleanup_error is None:
                     cleanup_error = error
+        if isinstance(pending_error, MetaxLaunchResourceError) and hasattr(pending_error, 'launch_resource'):
+            observation = json.loads(pending_error.artifact_payloads['launch_resource'])
+            observation['teardown_completed'] = cleanup_error is None
+            pending_error.artifact_payloads['launch_resource'] = _canonical_json_bytes(observation)
         if cleanup_error is not None:
             if pending_error is not None:
                 raise pending_error from cleanup_error
@@ -591,7 +631,8 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
     for case_id in cases:
         authority.manifest.check_validation_case(authority.workload, case_id)
         inputs = _inputs_for(authority, case_id)
-        loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
+        loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission,
+            **_tensor_snapshot_options(authority.workload))
         counters["module_loads"] += loaded.module_count
         try:
             protocol = EvaluationProtocol("workload-tensor-worker-correctness", authority.request["purpose"],
@@ -658,7 +699,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             and "validation_case_ids" in authority.request["evaluation_protocol"]):
         return _evaluate_untimed_validation_cases(authority, result, admission)
     inputs = _inputs_for(authority, authority.case_id)
-    loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
+    loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission,
+        **_tensor_snapshot_options(authority.workload))
     counters = result['counters']
     counters['module_loads'] = loaded.module_count
     # Attribution's child supplies correctness; the parent adds the profiler assay.
@@ -668,6 +710,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     cohorts = []
     non_target = []
     timed_checks = []
+    closed = False
+    profile_raw = None
     try:
         preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded,
                 **_correctness_preparation(authority, authority.case_id))
@@ -750,6 +794,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             instrumented = loaded.fresh_argument_sets(1)[0]
             raw = profile_source(lambda: loaded.launch(instrumented),
                                  authority.manifest.kernel_name)
+            profile_raw = raw
             observed, after = loaded.snapshot(instrumented)
             expected = _reference_for(authority, authority.case_id, inputs)
             correct, instrumented_metrics = compare_tile_outputs(
@@ -762,6 +807,18 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             metrics['output_mismatches'] += instrumented_metrics['output_mismatches']
             metrics['max_abs_error'] = max(metrics['max_abs_error'], instrumented_metrics['max_abs_error'])
             metrics['inputs_unchanged'] &= instrumented_metrics['inputs_unchanged']
+            if authority.candidate.is_program:
+                from open_cake_ir.evaluation.program import program_components
+                _, children, _ = program_components(authority.candidate)
+                launch_document['stage_candidates'] = {
+                    name: candidate_identity(child) for name, child in children.items()}
+                # A Program profile promises complete module teardown. Do it before
+                # publishing either the profile or its receipt, retaining failures.
+                loaded.close()
+                closed = True
+                launch_document['module_unloaded'] = loaded.loaded.closed
+                if not loaded.loaded.closed:
+                    raise ValueError('MACA Program modules remain open after attribution')
             profile_path = authority.request_root / 'profile.json'
             _write_new(profile_path, {
                 'kind': profile_format.kind,
@@ -790,10 +847,17 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         # the raw launch artifact retain the separate preflight and timing work.
         result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
             'kernel_calls': authority.manifest.kernels_per_call, 'fallback_calls': 0, 'timing': timing, 'artifacts': artifacts}
+    except BaseException as error:
+        if authority.candidate.is_program and profile_raw is not None:
+            retained = dict(getattr(error, 'artifact_payloads', {}))
+            retained['program_activity'] = _canonical_json_bytes(profile_raw)
+            error.artifact_payloads = retained
+        raise
     finally:
         counters['kernel_calls'] = loaded.loaded.launch_calls
         counters['timing_samples'] = sum(len(s) for s in cohorts)
-        loaded.close()
+        if not closed:
+            loaded.close()
 
 
 def _evaluate_metal_candidate(authority, result):
@@ -1040,7 +1104,18 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
     elif admission.runtime_library != host["runtime_library"]:
         raise ValueError("MACA device admission refers to another runtime library")
     result.update(job_id=admission.broker_job_id, mode=job_mode(admission.broker_job_id), admitted=True)
+    authority = _prepare_target_tensor_work(authority, admission)
     if authority.request['purpose'] == 'attribution':
+        if authority.candidate.is_program:
+            from open_cake_ir.evaluation.metax_program_profile import (
+                capture_program_activity, MACA_PROGRAM_PROFILE,
+            )
+            _evaluate_tile_candidate(authority, result, None, admission, False,
+                route_calls_per_cohort=None, profile_format=MACA_PROGRAM_PROFILE,
+                profile_source=lambda launch, name: capture_program_activity(launch,
+                    candidate=authority.candidate, admission=admission,
+                    activity_library=host['activity_library']))
+            return
         _evaluate_tile_candidate(authority, result, None, admission, False,
             route_calls_per_cohort=None, profile_format=MACA_PROFILE,
             profile_source=lambda launch, name: collect_maca_activity(launch, name,
@@ -1051,13 +1126,13 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
             raise ValueError('MACA timing requires the declared paired baseline')
         from open_cake_ir.evaluation.paired import MACA_EVENT_KINDS, PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND, PAIRED_MACA_GATED_EVENT_KIND
         if authority.request['evaluation_protocol']['paired_timing']['kind'] in MACA_EVENT_KINDS:
-            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark, MacaTorchResetEventBenchmark, MacaGatedEventBenchmark
+            from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark, MacaTorchResetEventBenchmark, MacaGatedEventBenchmark, MacaProgramEventBenchmark
             assay = (MacaGatedEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
                      == PAIRED_MACA_GATED_EVENT_KIND else MacaTorchResetEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
                      == PAIRED_MACA_TORCH_EVENT_KIND else MacaNativeEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
                      == PAIRED_MACA_NATIVE_EVENT_KIND else MacaEventBenchmark)
             _evaluate_paired_tile(authority, result,
-                lambda role, manifest: assay(manifest,
+                lambda role, manifest: (MacaProgramEventBenchmark if isinstance(manifest, ProgramLaunchManifest) else assay)(manifest,
                     l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
         else:
             _evaluate_paired_tile(authority, result,

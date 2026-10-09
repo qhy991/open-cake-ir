@@ -33,8 +33,8 @@ def declared_barrier_mechanisms(target: Target) -> frozenset[BarrierMechanism]:
     )
 
 
-def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
-    """Prove the first direct, single-writer ordinary store to caller-owned state."""
+def _verify_store_ownership(schedule: Schedule, out: _Collector) -> None:
+    """Check declared state ownership and direct non-loop output write collisions."""
 
     category = FindingCategory.PROGRAM_SAFETY
     buffers = {buffer.name: buffer for buffer in schedule.buffers}
@@ -43,13 +43,44 @@ def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
     for operation_index, operation in enumerate(schedule.operations):
         if operation.kind is not OperationKind.STORE or not operation.writes:
             continue
-        state = buffers.get(operation.writes[0])
-        if state is None or state.mode is not BufferMode.STATE:
+        destination = buffers.get(operation.writes[0])
+        if destination is None or destination.mode not in {BufferMode.STATE, BufferMode.OUTPUT}:
             continue
         path = f"operations[{operation_index}]"
-        access = schedule.access_map(operation.op_id, state.name)
+        access = schedule.access_map(operation.op_id, destination.name)
         if access is None:
             # The generic AccessMap rule owns this malformed edge.
+            continue
+        if destination.mode is BufferMode.OUTPUT:
+            # A direct output address that omits a non-singleton program axis is
+            # identical for distinct programs along that axis. Input-anchored
+            # program coordinates are valid; unlike state, the output need not
+            # own the axis. Indirect coordinates, persistent walks and TileLoop
+            # ownership remain with their existing analyses.
+            mapping = schedule.program_map
+            if (mapping is None or mapping.persistent
+                    or operation.op_id in loop_bodies
+                    or len(access.indices) != len(destination.shape)
+                    or any(component.source not in {
+                        AccessIndexKind.PROGRAM, AccessIndexKind.PROGRAM_TILE,
+                        AccessIndexKind.DIMENSION,
+                    } for component in access.indices)):
+                continue
+            used_axes = access.program_axes
+            for axis in mapping.axes:
+                anchor = buffers.get(axis.buffer)
+                if (axis.name in used_axes or anchor is None
+                        or axis.dimension >= len(anchor.shape)
+                        or axis.tile_count(anchor.shape[axis.dimension]) <= 1):
+                    continue
+                out.add(
+                    "OUTPUT_STORE_PROGRAM_AXIS_COLLISION",
+                    path,
+                    f"ordinary output store to {destination.name!r} omits program axis "
+                    f"{axis.name!r}; distinct programs along that axis write the "
+                    "same output coordinates",
+                    category,
+                )
             continue
         if schedule.program_map is None:
             out.add(
@@ -67,8 +98,8 @@ def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
 
-        used_axes: list[str] = []
-        if len(access.indices) != len(state.shape):
+        used_axes = access.program_axes
+        if len(access.indices) != len(destination.shape):
             # The generic rank rule localizes the malformed AccessMap.
             continue
         for dimension, component in enumerate(access.indices):
@@ -83,13 +114,12 @@ def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
                 if axis is None:
                     # The generic AccessMap rule owns an unknown axis.
                     continue
-                used_axes.append(axis.name)
-                if axis.buffer != state.name or axis.dimension != dimension:
+                if axis.buffer != destination.name or axis.dimension != dimension:
                     out.add(
                         "STATE_STORE_PROGRAM_OWNER",
                         component_path,
                         f"program axis {axis.name!r} is owned by {axis.buffer!r} "
-                        f"dimension {axis.dimension}, not state {state.name!r} "
+                        f"dimension {axis.dimension}, not state {destination.name!r} "
                         f"dimension {dimension}",
                         category,
                     )
@@ -150,7 +180,7 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
     barriers = {barrier.name: barrier for barrier in schedule.barriers}
     active = {operation.role for operation in schedule.operations}
 
-    _verify_state_store_ownership(schedule, out)
+    _verify_store_ownership(schedule, out)
 
     # Acyclicity alone does not put dependencies before their consumers. This
     # also covers ordering edges that name no read/write buffer. Unknown and
@@ -338,49 +368,49 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
     # producer's store visible to the consumer's load except a barrier handshake. A
     # schedule that expresses a cross-role producer/consumer edge with `depends_on`
     # alone compiles, runs, and yields nondeterministic garbage.
-    writer_of: dict[str, Operation] = {}
+    writers_of: dict[str, list[Operation]] = {}
     for operation in schedule.operations:
         for name in operation.writes:
-            writer_of[name] = operation
+            writers_of.setdefault(name, []).append(operation)
     order = {operation.op_id: index for index, operation in enumerate(schedule.operations)}
     for index, operation in enumerate(schedule.operations):
         for name in operation.reads:
-            producer = writer_of.get(name)
-            if producer is None or producer.op_id == operation.op_id:
-                continue
-            if producer.role == operation.role:
-                # Same role: program order is real ordering. It must still run forwards.
-                if order.get(producer.op_id, -1) > index:
-                    buffer = buffers.get(name)
-                    if (
-                        buffer is not None
-                        and buffer.mode is BufferMode.STATE
-                        and producer.kind is OperationKind.STORE
-                    ):
-                        # State exists before the Schedule. A same-role load may read that
-                        # initial value before the one admitted ordinary update.
-                        continue
-                    out.add(
-                        "OP_READ_BEFORE_WRITE",
-                        f"operations[{index}].reads",
-                        f"operation {operation.op_id!r} reads {name!r} before its "
-                        f"producer {producer.op_id!r} executes",
-                        category,
-                    )
-                continue
-            if set(operation.waits) & set(producer.signals):
-                continue
-            declared = (
-                f"; {operation.op_id!r} declares depends_on {producer.op_id!r}, which "
-                "orders operations inside one role but does not synchronize warps"
-                if producer.op_id in operation.depends_on
-                else ""
-            )
-            out.add(
-                "OP_CROSS_ROLE_RACE",
-                f"operations[{index}].reads",
-                f"operation {operation.op_id!r} (role {operation.role!r}) reads "
-                f"{name!r} written by {producer.op_id!r} (role {producer.role!r}) with "
-                f"no barrier both sides use{declared}",
-                category,
-            )
+            for producer in writers_of.get(name, ()):
+                if producer.op_id == operation.op_id:
+                    continue
+                if producer.role == operation.role:
+                    # Same role: program order is real ordering. It must still run forwards.
+                    if order.get(producer.op_id, -1) > index:
+                        buffer = buffers.get(name)
+                        if (
+                            buffer is not None
+                            and buffer.mode is BufferMode.STATE
+                            and producer.kind is OperationKind.STORE
+                        ):
+                            # State exists before the Schedule. A same-role load may read that
+                            # initial value before the one admitted ordinary update.
+                            continue
+                        out.add(
+                            "OP_READ_BEFORE_WRITE",
+                            f"operations[{index}].reads",
+                            f"operation {operation.op_id!r} reads {name!r} before its "
+                            f"producer {producer.op_id!r} executes",
+                            category,
+                        )
+                    continue
+                if set(operation.waits) & set(producer.signals):
+                    continue
+                declared = (
+                    f"; {operation.op_id!r} declares depends_on {producer.op_id!r}, which "
+                    "orders operations inside one role but does not synchronize warps"
+                    if producer.op_id in operation.depends_on
+                    else ""
+                )
+                out.add(
+                    "OP_CROSS_ROLE_RACE",
+                    f"operations[{index}].reads",
+                    f"operation {operation.op_id!r} (role {operation.role!r}) reads "
+                    f"{name!r} written by {producer.op_id!r} (role {producer.role!r}) with "
+                    f"no barrier both sides use{declared}",
+                    category,
+                )

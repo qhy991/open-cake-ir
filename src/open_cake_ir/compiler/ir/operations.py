@@ -67,6 +67,20 @@ def elementwise_result_dtype(operands: Iterable[DType], op: ElementwiseOp | None
     return None
 
 
+def cast_supported(source: DType, target: DType) -> bool:
+    """Explicit storage conversions; integer-to-FP32 rounds nearest, ties to even.
+
+    BOOL converts exactly to zero or one. INT32-to-INT64 is exact. INT64-to-FP32
+    may lose integer precision but stays finite across the signed 64-bit domain.
+    Integer narrowing and numeric-to-BOOL have no implicit conversion rule.
+    """
+    floating = ELEMENTWISE_FLOAT_DTYPES | {DType.FP8_E4M3}
+    return (source in floating and target in floating
+            or source in {DType.INT32, DType.INT64, DType.BOOL} and target is DType.FP32
+            or source is DType.INT32 and target is DType.INT64
+            or source is DType.BOOL and target is DType.INT32)
+
+
 @dataclass(frozen=True)
 class LoadParameters:
     movement: LoadMovement
@@ -421,6 +435,11 @@ class SelectParameters:
 
 
 @dataclass(frozen=True)
+class TransposeParameters:
+    """Rank-two register-value axis swap; no storage or dtype conversion."""
+
+
+@dataclass(frozen=True)
 class BroadcastInDimParameters:
     """Source-axis positions in the declared result; shape has one buffer owner."""
 
@@ -438,7 +457,7 @@ class FenceProxyParameters:
 
 
 OperationParameters = Union[
-    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters,
+    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters, TransposeParameters,
     LoadParameters,
     MmaParameters,
     EpilogueParameters,
@@ -482,6 +501,9 @@ def _operation_parameters(
         if "scalar" in obj and type(scalar) not in {int, float}:
             raise ScheduleParseError(f"{context}.scalar must be a number")
         return CompareParameters(obj["op"], scalar)
+    if kind is OperationKind.TRANSPOSE:
+        _strict_object(value, required=set(), context=context)
+        return TransposeParameters()
     if kind is OperationKind.BROADCAST_IN_DIM:
         obj = _strict_object(value, required={"dimensions"}, context=context)
         values = _object_list(obj["dimensions"], f"{context}.dimensions", allow_empty=False)

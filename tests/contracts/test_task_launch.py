@@ -26,6 +26,24 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TaskLaunchTests(unittest.TestCase):
+    def test_explicit_claude_successor_binds_before_execution_without_changing_default(self):
+        from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACT, CLAUDE_RESTRICTED_EVENT_CONTRACT
+        original = launch_task.task_run_inputs
+        for selected in (None, CLAUDE_RESTRICTED_EVENT_CONTRACT):
+            captured = []
+            def inputs(*args, **kwargs):
+                value = original(*args, **kwargs)
+                captured.append(value)
+                return value
+            args = self.args() + ([] if selected is None else ['--claude-event-contract', selected])
+            with patch.object(launch_task, '_provider_executable', return_value=Path('/fixture/provider')), \
+                 patch.object(launch_task, 'task_run_inputs', side_effect=inputs), \
+                 patch.object(launch_task, '_admit_stack', side_effect=RuntimeError('stop before execution')):
+                with self.assertRaisesRegex(RuntimeError, 'stop before execution'):
+                    launch_task.main(args)
+            self.assertEqual(captured[0]['authoring']['provider']['event_contract'], selected or CLAUDE_EVENT_CONTRACT)
+            self.workspace = self.directory / 'next-contract'
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
