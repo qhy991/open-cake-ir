@@ -54,8 +54,19 @@ there is no new operation, layout model or analysis rule.
 P6: real-Target source controls, closed-Target counterexamples, declared-contract
 snapshots and the existing Corpus Gate run at a fixed successor commit.
 
-The Corpus has no C550 sin/cos case. Its unreached-contract report must include
-the two new declarations; no case is added to improve a count. No Corpus
-expectation is refreshed. Software gate results and independent review will be
-recorded after execution. This task runs no GPU or provider work and does not
-merge the inherited experiment stack into a maintained branch.
+The Corpus has no C550 sin/cos case. Its unreached-contract report includes the
+two new declarations: C550's count changes from five to seven, and the total
+across Targets changes from 17 to 19. No case is added to improve a count and no
+Corpus expectation is refreshed.
+
+At implementation `b999889d`, all 204 existing Corpus cases matched their
+unchanged expectations. All 71 distinct focused CPU tests have passing records.
+The initial system interpreter could not import the NumPy-dependent module;
+a separate bundled interpreter lacked JSON Schema. Both failures remain
+retained, and neither environment was repaired. The seven missing tests then
+passed with the already installed project interpreter in a new fixed worktree;
+the other 64 had already passed. This task runs no GPU or provider work and does
+not merge the inherited experiment stack into a maintained branch.
+
+Independent source review of `b999889d` passed. F-2026-10-09-012 records the
+prior software stage separately from this two-contract admission.

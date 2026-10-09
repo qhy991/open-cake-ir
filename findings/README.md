@@ -7,7 +7,7 @@
 - [F-2026-10-09-010](2026-10-09-010-metax-complete-program-measurement.json) — complete MACA Program event and separate attribution adapters have reviewed exact-target component support; real common-worker A/A and per-baseline readiness remain pending.
 - [F-2026-10-09-008](2026-10-09-008-local-evaluation-refusals.json) — preserve witnessed allocation and zero-dispatch candidate resource refusals as unmeasured Evaluation outcomes. The successor must keep budget accounting, independent replay, and incomplete attribution separate from qualification; frozen C1 failures remain sealed.
 
-- [F-2026-10-09-012](2026-10-09-012-metax-math-library-trig.json) — installed MACA sin/cos API and isolated native compilation confirmed; explicit software contracts implemented while real Target admission and original-domain device correctness remain pending.
+- [F-2026-10-09-012](2026-10-09-012-metax-math-library-trig.json) — exact xcore1002 sin/cos library routes admitted after bounded component checks and original RoPE 16×10 correctness; earlier failures, uncovered domains and absence of performance evidence remain explicit.
 
 - [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
 - [F-2026-10-09-007](2026-10-09-007-claude-input-validation-recovery.json) — opt-in v8 distinguishes a native Write input-validation failure from a completed write. Retained-stream replay preserves the later candidate, compaction and usage; C1 remains frozen and fresh provider qualification is still required.

@@ -201,8 +201,8 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
                         "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
                         "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
         })
-        # gfx1151 and xcore1002 retain their device evidence but have no tanh
-        # Corpus case. Preserve both explicit gaps without manufacturing cases.
+        # gfx1151 has no tanh Corpus case. C550 sin/cos/tanh retain bounded
+        # device evidence without Corpus cases. Report those gaps honestly.
         self.assertEqual(sum(len(v) for v in unreached.values()), 19)
         for target in ("gfx938", "sm_100a"):
             self.assertNotIn(target, unreached)
