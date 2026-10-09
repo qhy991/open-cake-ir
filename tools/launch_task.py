@@ -477,7 +477,7 @@ def _prepare_baseline(root, workspace, compiler, executor, host, workload, autho
     return bundle
 
 
-def _qualify(root, workspace, args, executable, source_path):
+def _qualify(root, workspace, args, executable, source_path, *, authoring=None):
     names = getattr(args, "native_skill_name", [])
     if getattr(args, "author_skill_package", None) is not None:
         selection_instruction(names)
@@ -507,6 +507,9 @@ def _qualify(root, workspace, args, executable, source_path):
     command.extend(('--submission-contract',
                     PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
                     else PYTHON_CANDIDATE_BUNDLE_V1))
+    from open_cake_ir.lab.task_package import TaskPackage
+    if authoring is not None and TaskPackage.permits_editable_starter(authoring):
+        command.append('--editable-starter')
     if args.harness == 'codex':
         skill_package = getattr(args, 'author_skill_package', None)
         command.extend(('--author-home-policy',
@@ -884,7 +887,8 @@ def main(argv=None) -> int:
         print(baseline_path)
         return 0
     _admit_local_allocator(runtime, executor, workload.target, workspace)
-    receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)
+    receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path,
+                                       authoring=inputs['authoring'])
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":
         raise ValueError("task execution requires an actual live artifact-optimization provider qualification")
