@@ -55,8 +55,11 @@ def candidate(lm, left: cake.Tensor({left_shape!r}, "bf16"), right: cake.Tensor(
             b_{region} = lm.transpose({right}, id="b_{region}")
             product_{region} = lm.mma(a_{region}, b_{region}, instruction={{"contract": "{contract}"}}, tile_shape=(16, 32, 32), id="dot_{region}")
 '''
-    source += ('    with compute:\n        total = ' + ' + '.join(f'product_{i}' for i in range(len(selected)))
-               + '\n        lm.store(output[m, n], total, id="store")\n')
+    source += '    with compute:\n'
+    if len(selected) > 1:
+        source += '        total = ' + ' + '.join(f'product_{i}' for i in range(len(selected))) + '\n'
+    result = 'total' if len(selected) > 1 else 'product_0'
+    source += f'        lm.store(output[m, n], {result}, id="store")\n'
     if outer_columns:
         source = source.replace('    n = lm.program(output, axis=1, dimension=1, tile=32)\n', '')
         source = source.replace('        n_features = lm.coordinate(source="program_tile", name="n")\n', '')
