@@ -89,7 +89,8 @@ def validate_input_view_observation(problem, observation):
             or observation.get('scope') != 'original_input_factory_metadata_only'):
         raise ValueError('Bench input-view observation identity or scope differs')
     rows = observation.get('cases')
-    if not isinstance(rows, list) or [row.get('workload_uuid') for row in rows] != [item.uuid for item in problem.workloads]:
+    if (not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows)
+            or [row.get('workload_uuid') for row in rows] != [item.uuid for item in problem.workloads]):
         raise ValueError('Bench input-view observation must cover the 16 original cases in order')
     result = {}
     for row in rows:
@@ -106,7 +107,8 @@ def validate_input_view_observation(problem, observation):
             raise ValueError('Bench input-view device differs from the physical lease')
         for name, shape in shapes.items():
             item, order = metadata[name], views[name]
-            if (item.get('shape') != list(shape)
+            if (not isinstance(item, dict) or not isinstance(item.get('shape'), list)
+                    or any(type(n) is not int for n in item['shape']) or item['shape'] != list(shape)
                     or item.get('dtype') != 'torch.' + problem.definition.inputs[name].dtype.value
                     or item.get('physical_axes') != order or not isinstance(order, list)
                     or any(type(axis) is not int for axis in order) or sorted(order) != list(range(len(shape)))):

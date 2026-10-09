@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from open_cake_ir.tasks.c550_bench.binding import BenchProblem, factory_scalar, validate_document
+from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT, BenchProblem, factory_scalar, validate_document, validate_input_view_observation
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
 from open_cake_ir.evaluation.core import compare_tile_output_values
@@ -35,6 +35,44 @@ def problem():
 
 
 class BenchBindingTest(unittest.TestCase):
+    def test_view_observation_requires_complete_original_cases_and_actual_identity(self):
+        from open_cake_ir.compiler.target import declared_target
+        original = problem()
+        target = declared_target('xcore1002')
+        job, pci = 'maca-123456abcdef', '0000:d7:00'
+        observation = {'bench_commit': BENCH_COMMIT, 'task': original.task_id,
+            'target': 'xcore1002', 'status': 'complete', 'scope': 'original_input_factory_metadata_only',
+            'job_id': job, 'expected_pci': pci, 'cases': []}
+        for row in original.workloads:
+            observation['cases'].append({'workload_uuid': row.uuid, 'zero_copy_verified': True,
+                'device_admission': {'broker_job_id': job, 'target': 'xcore1002', 'device_arch': 'xcore1002',
+                    'device_name': target.device_names[0], 'warp_size': target.warp_size,
+                    'pci_bus_id': pci, 'runtime_library': '/opt/maca/lib/libmcruntime.so', 'gpu_uuid': None},
+                'input_views': {'positions': [0], 'mask': [0]},
+                'metadata': {name: {'shape': [row.axes['N']], 'strides': [1],
+                    'dtype': 'torch.' + dtype, 'physical_axes': [0]}
+                    for name, dtype in [('positions', 'int64'), ('mask', 'bool')]}})
+        self.assertEqual(len(validate_input_view_observation(original, observation)), 16)
+        mutations = [
+            lambda x: x['cases'].pop(),
+            lambda x: x['cases'].reverse(),
+            lambda x: x['cases'][1].update(workload_uuid=x['cases'][0]['workload_uuid']),
+            lambda x: x.update(target='other'),
+            lambda x: x['cases'][0]['device_admission'].update(broker_job_id='maca-abcdef123456'),
+            lambda x: x['cases'][0]['device_admission'].update(pci_bus_id='0000:c2:00'),
+            lambda x: x['cases'][0].update(zero_copy_verified=False),
+            lambda x: x['cases'][0]['metadata']['positions'].update(dtype='torch.int32'),
+            lambda x: x['cases'][0]['metadata']['positions'].update(shape=[2]),
+            lambda x: x['cases'][0]['metadata']['positions'].update(shape=[True]),
+            lambda x: x['cases'][0]['input_views'].update(positions=[0, 0]),
+            lambda x: x['cases'][1]['metadata']['positions'].update(strides=[2]),
+        ]
+        for mutate in mutations:
+            changed = copy.deepcopy(observation)
+            mutate(changed)
+            with self.assertRaises(ValueError):
+                validate_input_view_observation(original, changed)
+
     def test_generic_workload_does_not_enter_target_oracle_or_registry_lookup(self):
         from open_cake_ir.evaluation.workload import WorkloadContract
         from open_cake_ir.tasks.evaluate import _prepare_target_tensor_work, _tensor_snapshot_options
