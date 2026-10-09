@@ -36,7 +36,7 @@ def _depthwise(b, c, h, w):
             source += f'''        y_{suffix} = y + {i-3}
         x_{suffix} = x_index + {j-3}
         input_{suffix} = lm.load(x[batch, channel, y_{suffix}, x_{suffix}], id="input_{suffix}")
-        weight_{suffix} = lm.load(dwconv_weight[channel, 0, {i}, {j}], id="weight_{suffix}")
+        weight_{suffix} = lm.load(dwconv_weight[channel, 0:1, {i}:{i+1}, {j}:{j+1}], id="weight_{suffix}")
         product_{suffix} = input_{suffix} * weight_{suffix}
 '''
             value = f'product_{suffix}'
@@ -156,8 +156,8 @@ def _projection(b, c, p):
         with compute:
             values = lm.load(activated[batch, pixel, feature], id="values")
             norm = lm.load(response_norm[batch, feature], id="norm")
-            weight = lm.load(grn_weight[0, 0, 0, feature], id="weight")
-            bias = lm.load(grn_bias[0, 0, 0, feature], id="bias")
+            weight = lm.load(grn_weight[0:1, 0:1, 0:1, feature], id="weight")
+            bias = lm.load(grn_bias[0:1, 0:1, 0:1, feature], id="bias")
             scaled = values * lm.broadcast(norm, axis=1)
             weighted = scaled * lm.broadcast(weight, axis=1)
             shifted = weighted + lm.broadcast(bias, axis=1)
@@ -232,9 +232,9 @@ def source_for_workload(workload, case_id='primary'):
     if tuple((a.name,tuple(a.shape),a.dtype,a.mode) for a in abi) != tuple(
             (name,shape,'fp32','output' if name=='output' else 'input') for name,shape in expected):
         raise ValueError('ConvNext original ordered tensor ABI differs')
-    scalars=workload.case_scalars(case_id)
-    if set(scalars) != {'eps','layer_norm_eps'} or any(
-        set(value) != {'dtype','value','binding'} or value['dtype'] != 'float32'
+    scalars=workload.document['semantics'].get('fixed_scalar_inputs')
+    if not isinstance(scalars,dict) or set(scalars) != {'eps','layer_norm_eps'} or any(
+        not isinstance(value,dict) or set(value) != {'dtype','value','binding'} or value['dtype'] != 'float32'
         or value['binding'] not in {'literal_input','original_factory_literal'} for value in scalars.values()):
         raise ValueError('ConvNext requires the original scalar bindings')
     return source_for(b,c,h,w,eps=scalars['eps']['value'],layer_norm_eps=scalars['layer_norm_eps']['value'])
