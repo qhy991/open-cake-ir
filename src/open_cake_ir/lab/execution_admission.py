@@ -35,7 +35,7 @@ def campaign_provider_bindings(lock, project_root):
                              required_live_provider_qualification_scope(lock.claim_scope)},
             require_native_pair=native_backend(comparison_arm(arms)) is not None,
             evaluation_protocol=lock.document['evaluation_protocol'],
-            required_environment_kinds=(arm['environment_kind'],))
+            required_environment_kinds=(arm['environment_kind'],), authoring=arm)
         result[name] = (provider, qualification)
     return result
 

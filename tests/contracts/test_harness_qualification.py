@@ -83,8 +83,8 @@ class HarnessQualificationTests(unittest.TestCase):
             if resumed and {failure!r} == 'session':
                 session = 'fedcba98-7654-3210-fedc-ba9876543210'
             path = Path(plan['candidate_path'])
-            assert path.parent == Path.cwd() and path.exists() == resumed
             entry = plan['turns'][turn-1]
+            assert path.parent == Path.cwd() and path.exists() == (entry['change'] == 'update')
             path.write_text(entry['submission'] if isinstance(entry['submission'], str)
                             else json.dumps(entry['submission']))
             if {failure!r} == 'task':
@@ -94,7 +94,7 @@ class HarnessQualificationTests(unittest.TestCase):
             events = [
               {{'type':'system','subtype':'init','session_id':session,'model':model}},
               {{'type':'assistant','session_id':session,'message':{{'model':model,'content':[
-                 {{'type':'tool_use','id':'write1','name':'Edit' if resumed else 'Write',
+                 {{'type':'tool_use','id':'write1','name':'Edit' if entry['change'] == 'update' else 'Write',
                    'input':{{'file_path':str(path)}}}}]}}}},
               {{'type':'user','session_id':session,'message':{{'content':[
                  {{'type':'tool_result','tool_use_id':'write1','is_error':False,'content':'written'}}]}}}},

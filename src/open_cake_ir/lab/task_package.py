@@ -249,7 +249,7 @@ def _document_sections(documents: Mapping[str, bytes], *, access: str) -> str:
 
 @dataclass(frozen=True)
 class TaskPackage:
-    """The complete two-file Agent surface for one Run."""
+    """Immutable task material and its optional initial editable candidate."""
 
     run_id: str
     arm: str
@@ -257,6 +257,31 @@ class TaskPackage:
     agents_markdown: str
     environment_kind: str = "open_cake"
     native_skill_package: NativeSkillPackage | None = None
+    initial_candidate_source: str | None = None
+
+    def __post_init__(self):
+        if self.initial_candidate_source is not None and (
+                not self.initial_candidate_source.strip()
+                or self.initial_candidate_source not in self.task_markdown):
+            raise ValueError('editable candidate seed must remain in immutable task material')
+
+    @staticmethod
+    def permits_editable_starter(authoring: Mapping) -> bool:
+        provider = authoring.get('provider', {})
+        return (authoring.get('reference_access') == 'known_kernel_reproduction'
+                and authoring.get('environment_kind') == 'open_cake'
+                and authoring.get('input_format') == 'python_source_v1'
+                and provider.get('harness') == 'claude-code'
+                and provider.get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1)
+
+    def initial_workspace_files(self) -> Mapping[str, bytes]:
+        files = {'TASK.md': self.task_markdown.encode(), 'AGENTS.md': self.agents_markdown.encode()}
+        if self.initial_candidate_source is not None:
+            files['candidate-set.py'] = self.initial_candidate_source.encode()
+        return files
+
+    def candidate_change(self, turn: int) -> str:
+        return 'add' if turn == 1 and self.initial_candidate_source is None else 'update'
 
     @property
     def task_sha256(self) -> str:
@@ -358,6 +383,8 @@ def render_task_package(
         native_skill_package = NativeSkillPackage.load(project_root, skill_reference)
     documents = build_run_reference_documents(project_root, lock, authority,
         workload_contract=workload_contract, prepare_schedule=prepare_schedule)
+    initial_candidate = (documents['schedule-starter.py'].decode('utf-8')
+                         if TaskPackage.permits_editable_starter(authority) else None)
     budget = _object(resolved["budget"], "resolved_inputs.budget")
     evaluation = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
     execution = _object(lock.document["execution"], "execution")
@@ -397,6 +424,12 @@ and generates the internal candidate transport. Do not write a Schedule JSON,
     elif source_bundle:
         if authority['environment_kind'] != 'open_cake' or authority.get('input_format') != 'python_source_v1':
             raise ValueError('Python candidate-bundle task requires Cake Python')
+        lifecycle = ('The workspace already contains an editable copy of the authorized complete '
+                     'schedule-starter.py in candidate-set.py. Edit that file from the first Turn. '
+                     'Later Turns preserve and update your current file; the Lab never resets it to '
+                     'the starter. The original reference below remains immutable.'
+                     if initial_candidate is not None else
+                     'The first Turn adds the file; later Turns update it.')
         candidate_section = f'''## Candidate output
 
 Write one UTF-8 `candidate-set.py` file. Import the Cake frontend once, then define
@@ -407,7 +440,7 @@ static literal arguments. A multi-stage proposal uses `cake.program(...)` with
 ordered `cake.stage(...)` bindings; referenced stage functions count as that one
 Program candidate. The Lab reads this file without executing it and seals
 the ordered candidates. Submit between one and {budget['maximum_candidates_per_turn']}
-proposals per Turn. The first Turn adds the file; later Turns update it. Do not
+proposals per Turn. {lifecycle} Do not
 write a Schedule JSON or `candidate-set.json` envelope.
 
 For a transform, copy a `parent` and its exact stage name from the StateCard's
@@ -601,23 +634,21 @@ write surface, reference access, tool permissions, budget, or acceptance authori
 
 {_document_sections({'scaffold.md': documents['scaffold.md']}, access=reference_access(authority, 'arm'))}
 """
-    return TaskPackage(run_id, arm, task, agents, authority["environment_kind"], native_skill_package)
+    return TaskPackage(run_id, arm, task, agents, authority["environment_kind"], native_skill_package,
+                       initial_candidate)
 
 
 def materialize_task_package(workspace: str | Path, package: TaskPackage) -> None:
-    """Create the only two read-only task files in one new Agent workspace."""
+    """Create immutable task files and an optional editable seed in a new workspace."""
 
     root = Path(workspace).resolve(strict=True)
     if any(root.iterdir()):
         raise ValueError("Ralph task workspace must be empty before materialization")
-    for name, payload in (
-        ("TASK.md", package.task_markdown),
-        ("AGENTS.md", package.agents_markdown),
-    ):
+    for name, encoded in package.initial_workspace_files().items():
         path = root / name
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o444)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                             0o600 if name == 'candidate-set.py' else 0o444)
         try:
-            encoded = payload.encode("utf-8")
             if os.write(descriptor, encoded) != len(encoded):
                 raise OSError(f"short write for {name}")
         finally:

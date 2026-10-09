@@ -606,6 +606,21 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(anchor,self.workspace/'provider-anchor.json')
         self.assertFalse(receipt.exists())  # The process was mocked, so no capability was manufactured.
 
+    def test_known_python_bundle_qualification_requests_initial_edit_evidence(self):
+        self.workspace.mkdir()
+        args = SimpleNamespace(qualification=None,harness='claude-code',model='exact-test-model',effort='high',
+            provider_revision=None,max_candidates=1,wall_seconds=900,response_model_alias=[])
+        source = self.workspace / 'starter.py'
+        source.write_text('# CPU command-binding fixture\n')
+        authoring = {'environment_kind':'open_cake', 'reference_access':'known_kernel_reproduction',
+            'input_format':'python_source_v1', 'provider':{'harness':'claude-code',
+                'submission_contract':'python_candidate_bundle_v1'}}
+        with patch.object(launch_task.subprocess, 'run', side_effect=(
+                SimpleNamespace(stdout='Claude fixture',returncode=0),
+                SimpleNamespace(stdout='',stderr='',returncode=0))) as process:
+            launch_task._qualify(ROOT,self.workspace,args,Path('/unit-test/claude'),source,authoring=authoring)
+        self.assertIn('--editable-starter', process.call_args_list[1].args[0])
+
     def _wiring(self, preflight_error=None, *, fixture_receipt=False, preflight_only=False, report=None, expected_exit=0,
                 backend="metal-m1-pro", baseline_only=False, baseline_error=None, extra_args=(), incumbent=False,
                 prepared_selection=None, selection_error=None):
