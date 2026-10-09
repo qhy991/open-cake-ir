@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 from hashlib import sha256
+from pathlib import Path
 from typing import Mapping, cast
 
 from open_cake_ir.compiler.target import Target
@@ -64,13 +65,110 @@ def validate_provider(*, open_cake, policy, project_root, study):
             expected_provider_configuration=configuration,
             admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
             require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol,
-            required_environment_kinds=(arm['environment_kind'],))
+            required_environment_kinds=(arm['environment_kind'],), authoring=arm)
     return claim_scope
+
+
+def validate_editable_starter_observation(*, authority, payload, read_object, provider, qualification):
+    """Reconstruct the existing qualification plan, exact sources and native Edit events."""
+    from .claude import parse_claude_turn_events
+    from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+    from .task_package import TaskPackage, render_task_request
+    if (authority.get('harness') != 'claude-code' or authority.get('arms') != ['open_cake']
+            or authority.get('submission_contract') != PYTHON_CANDIDATE_BUNDLE_V1
+            or authority.get('turns') != ['initial_seed_update', 'same_thread_resume_update']
+            or authority.get('gpu_execution_authorized') is not False
+            or authority.get('provider_revision') != qualification.provider_revision
+            or any(authority.get(key) != provider.get(key) for key in ('model', 'reasoning_effort', 'event_contract'))):
+        raise ValueError('editable starter qualification has no declared initial-Edit/resume-Edit lifecycle')
+    references = payload.get('objects', [])
+    def raw(role):
+        matches = [item for item in references if item.get('role') == role]
+        if len(matches) != 1:
+            raise ValueError('editable starter qualification is missing unique ' + role)
+        return read_object(matches[0])
+    if json.loads(raw('qualification_receipt')) != dict(qualification.document):
+        raise ValueError('editable starter qualification receipt differs from its observed record')
+    documents = json.loads(raw('qualification_reference'))
+    if set(documents) != {'open_cake'} or set(documents['open_cake']) != {'task_markdown', 'agents_markdown'}:
+        raise ValueError('editable starter qualification reference material differs')
+    task, agents = (documents['open_cake'][key] for key in ('task_markdown', 'agents_markdown'))
+    plans = [line.removeprefix('QUALIFICATION_PLAN_JSON=') for line in task.splitlines()
+             if line.startswith('QUALIFICATION_PLAN_JSON=')]
+    if len(plans) != 1:
+        raise ValueError('editable starter qualification has no unique frozen plan')
+    plan = json.loads(plans[0])
+    turns = plan.get('turns', [])
+    if (len(turns) != 2 or [(item.get('turn'), item.get('change')) for item in turns] != [(1, 'update'), (2, 'update')]
+            or not all(isinstance(item.get('submission'), str) for item in turns)
+            or turns[0]['submission'] == turns[1]['submission']):
+        raise ValueError('editable starter qualification plan must update distinct complete sources twice')
+    thread, initial_invocation = None, None
+    for number, phase in ((1, 'initial'), (2, 'resumed')):
+        prefix = 'open_cake_' + phase + '_'
+        item = turns[number - 1]
+        if raw(prefix + 'source_file') != item['submission'].encode():
+            raise ValueError('editable starter qualification submitted source differs from its plan')
+        parsed = parse_claude_turn_events(raw(prefix + 'provider_events'),
+            expected_terminal_message=_canonical_json_bytes(item['terminal_message']).decode(),
+            event_contract=provider['event_contract'], response_aliases=provider.get('response_model_aliases', ()),
+            candidate_filename='candidate-set.py')
+        if (parsed.write_tools != ('Edit',) or parsed.candidate_path != plan['candidate_path']
+                or parsed.reported_models[0] != provider['model'] or parsed.provider_tokens <= 0
+                or thread is not None and parsed.thread_id != thread):
+            raise ValueError('editable starter qualification lacks successful same-thread native Edits')
+        thread = parsed.thread_id
+        projection = json.loads(raw(prefix + 'task_projection'))
+        package = TaskPackage(projection['run_id'], 'open_cake', task, agents)
+        prompt, expected_projection = render_task_request(package, {'turn': number})
+        invocation = json.loads(raw(prefix + 'invocation'))
+        argv = invocation.get('argv', [])
+        if (raw(prefix + 'task_projection') != expected_projection or len(argv) < 2 or argv[-2:] != ['--', prompt]
+                or str(Path(invocation['cwd']) / 'candidate-set.py') != plan['candidate_path']
+                or invocation.get('provider_revision') != qualification.provider_revision
+                or invocation.get('sandbox') != 'none'):
+            raise ValueError('editable starter qualification invocation differs from its frozen task')
+        if number == 1:
+            if invocation.get('thread_id') is not None or '--resume' in argv:
+                raise ValueError('editable starter qualification initial invocation was already resumed')
+            initial_invocation = invocation
+        elif (invocation.get('thread_id') != thread or argv[-4:-2] != ['--resume', thread]
+                or initial_invocation['argv'][:-2] != argv[:-4]
+                or any(initial_invocation.get(key) != invocation.get(key) for key in
+                       ('cwd', 'sandbox', 'provider_revision', 'removed_environment'))):
+            raise ValueError('editable starter qualification resumed invocation differs')
+
+
+def require_editable_starter_qualification(qualification, anchor, provider):
+    """Require anchored live observations; old receipt booleans cannot grant this path."""
+    from open_cake_ir.evidence import EvidenceStore
+    if (qualification.scope != 'live_two_turn_tool_rich_provider'
+            or anchor.get('kind') != 'provider_qualification_evidence_anchor'
+            or anchor.get('qualification_receipt_sha256') != qualification.canonical_sha256):
+        raise ValueError('editable starter requires its live anchored qualification')
+    evidence = EvidenceStore.open(anchor['evidence_root'])
+    audit = evidence.audit_run(anchor['run_id'])
+    endpoint = audit.endpoint
+    if (not audit.archive_integrity or not audit.filesystem_custody_verified
+            or audit.authority_sha256 != anchor.get('authority_sha256')
+            or audit.terminal_seal_sha256 != anchor.get('terminal_seal_sha256')
+            or audit.protocol_adherence != 'adhered' or audit.endpoint_observation != 'qualified'
+            or not isinstance(endpoint, dict) or endpoint.get('add_observed') is not False
+            or endpoint.get('qualification_receipt_sha256') != qualification.canonical_sha256
+            or any(endpoint.get(key) is not True for key in ('update_observed', 'thread_continuity_observed',
+                'candidate_changed', 'usage_observed', 'reference_visibility_observed'))):
+        raise ValueError('editable starter initial-Edit/resume-Edit qualification is unverified')
+    events = evidence.replay_events(audit.run_id)
+    observations = [event['payload'] for event in events if event['kind'] == 'provider_qualification_observed']
+    if len(observations) != 1 or any(event['kind'] == 'provider_qualification_failed' for event in events):
+        raise ValueError('editable starter qualification must retain one successful observation')
+    validate_editable_starter_observation(authority=evidence.replay_authority(audit.run_id),
+        payload=observations[0], read_object=evidence.read_object, provider=provider, qualification=qualification)
 
 
 def validate_provider_binding(*, provider, project_root, expected_provider_configuration,
                               admitted_scopes, require_native_pair=False, evaluation_protocol=None,
-                              required_environment_kinds=()):
+                              required_environment_kinds=(), authoring=None):
     """Check provider receipt, retained qualification evidence and delivered schema."""
     provider_revision = _name(provider.get('revision'), 'provider.revision')
     if provider_harness(provider) == 'responses':
@@ -226,6 +324,11 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
         if not probes:
             raise ValueError('Claude isolation qualification lacks its actual OS probe')
         for observation in probes: validate_probe_observation(observation)
+    from .task_package import TaskPackage
+    if authoring is not None and TaskPackage.permits_editable_starter(authoring):
+        if qualification.scope == 'zero_gpu_contract_fixture_only':
+            raise ValueError('editable starter requires live initial-Edit and resume-Edit qualification')
+        require_editable_starter_qualification(qualification, anchor, provider)
     for field in (("output_schema",) if provider_harness(provider) == "codex" else ()):
         reference = _object(provider.get(field), f"study.arms.provider.{field}")
         if set(reference) != {"path", "sha256"}:
@@ -593,5 +696,5 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
     qualification = validate_provider_binding(provider=provider, project_root=project_root,
         expected_provider_configuration=configuration,
         admitted_scopes={'zero_gpu_contract_fixture_only', scope},
-        required_environment_kinds=(specification.environment_kind,))
+        required_environment_kinds=(specification.environment_kind,), authoring=authoring)
     return workload, qualification

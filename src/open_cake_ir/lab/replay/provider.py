@@ -278,7 +278,7 @@ def _replay_provider_turns(
                 run_id=audit.run_id, arm=arm, expected_turn=expected_turn,
                 prior_cumulative=prior_cumulative, location=location)
         expected_terminal = _expected_terminal_message(arm, expected_turn, event_contract)
-        expected_change = "add" if expected_turn == 1 else "update"
+        expected_change = expected_task_package.candidate_change(expected_turn)
         if event_contract == 'responses_messages_v1':
             from types import SimpleNamespace
             from ..message_provider import validate_exchange, usage

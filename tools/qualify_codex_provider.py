@@ -144,6 +144,32 @@ def _expected_submission(
     }
 
 
+def _editable_qualification_submission(source, turn, reference_nonce):
+    """Change one declared candidate name, preserving the rest of a complete source."""
+    import ast
+    tree = ast.parse(source)
+    programs = [node.value for node in tree.body if isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute)
+                and isinstance(node.value.func.value, ast.Name) and node.value.func.value.id == 'cake'
+                and node.value.func.attr == 'program']
+    if programs:
+        if len(programs) != 1:
+            raise ValueError('editable qualification needs exactly one Program')
+        call, field = programs[0], 'program_id'
+    else:
+        schedules = [decorator for node in tree.body if isinstance(node, ast.FunctionDef)
+                     for decorator in node.decorator_list if isinstance(decorator, ast.Call)
+                     and isinstance(decorator.func, ast.Attribute) and decorator.func.attr == 'schedule']
+        if len(schedules) != 1:
+            raise ValueError('editable qualification needs exactly one Schedule or Program')
+        call, field = schedules[0], 'name'
+    key = next((item for item in call.keywords if item.arg == field), None)
+    if key is None or not isinstance(key.value, ast.Constant) or not isinstance(key.value.value, str):
+        raise ValueError('editable qualification requires a static candidate name')
+    key.value = ast.Constant(f'qualification_edit_{turn}')
+    return f'# qualification reference {reference_nonce}\n' + ast.unparse(tree) + '\n'
+
+
 def _qualification_package(
     run_id: str,
     arm: str,
@@ -154,14 +180,20 @@ def _qualification_package(
     tool_instruction: str,
     python_source: str | None = None,
     submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
+    editable_starter: bool = False,
 ) -> TaskPackage:
+    if editable_starter and (arm != 'open_cake' or python_source is None
+                            or submission_contract != PYTHON_CANDIDATE_BUNDLE_V1):
+        raise ValueError('editable qualification requires a complete Cake Python bundle source')
+    seed = _editable_qualification_submission(python_source, 0, reference_nonce) if editable_starter else None
+    package = TaskPackage(run_id, arm, seed or '', '', arm, initial_candidate_source=seed)
     plan = {
         "candidate_path": str(candidate.absolute()),
         "turns": [
             {
                 "turn": turn,
-                "change": "add" if turn == 1 else "update",
-                "submission": _expected_submission(
+                "change": package.candidate_change(turn),
+                "submission": _editable_qualification_submission(python_source, turn, reference_nonce) if editable_starter else _expected_submission(
                     arm, turn, reference_nonce, maximum_candidates_per_turn, python_source,
                     submission_contract
                 ),
@@ -186,7 +218,7 @@ def _qualification_package(
     )
     task = (
         "# TASK.md — provider qualification\n\n"
-        f"Prove two-Turn `{arm}` {'Python source-file' if source_file else 'candidate-set'} add/update behavior.\n\n"
+        f"Prove two-Turn `{arm}` {'Python source-file' if source_file else 'candidate-set'} {'existing-file Edit/Edit' if editable_starter else 'add/update'} behavior.\n\n"
         "Use only the plan entry whose turn equals the controller StateCard turn. "
         "Write that entry's complete submission to candidate_path with its declared "
         "file change, then return its terminal_message as JSON. Do not execute "
@@ -194,13 +226,17 @@ def _qualification_package(
         f"{submission_rules}"
         "QUALIFICATION_PLAN_JSON=" + _canonical_json_bytes(plan).decode() + "\n"
     )
+    if seed is not None:
+        task += ('\nThe candidate file already contains this authorized source. Use Edit for both turns; '
+                 'do not rewrite the complete file. Preserve every other byte.\n\n'
+                 '## Frozen initial candidate\n\n```python\n' + seed + '```\n')
     agents = (
         "# AGENTS.md — provider qualification\n\n"
         f"Follow the complete TASK.md plan. Write only {candidate_name}. Keep "
         "TASK.md and AGENTS.md unchanged. Do not use a GPU or network.\n"
         + tool_instruction + "\n"
     )
-    return TaskPackage(run_id, arm, task, agents, arm)
+    return replace(package, task_markdown=task, agents_markdown=agents)
 
 
 def _planned_turn(package: TaskPackage, turn: int) -> dict[str, object]:
@@ -390,6 +426,8 @@ def main() -> int:
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--fixture-only", action="store_true", help="never issue a live qualification for executable test doubles")
     parser.add_argument("--python-source", type=Path, help="Workload Python starter required for single-arm artifact qualification")
+    parser.add_argument('--editable-starter', action='store_true',
+                        help='qualify initial Edit and resumed Edit of a complete pre-materialized Cake source')
     parser.add_argument('--submission-contract', choices=(CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
                                                           PYTHON_CANDIDATE_BUNDLE_V1),
                         default=CANDIDATE_SET_ENVELOPE_V1)
@@ -524,6 +562,9 @@ def main() -> int:
         if not python_source.strip():
             raise ValueError("qualification Python source is empty")
         compile(python_source, str(args.python_source), "exec")
+    if args.editable_starter and (args.harness != 'claude-code' or not single_arm
+            or submission_contract != PYTHON_CANDIDATE_BUNDLE_V1 or python_source is None):
+        raise ValueError('editable starter qualification requires Claude and one complete Python bundle source')
     qualification_arms = tuple(arms)
     if args.harness == "claude-code":
         disabled_features = ()
@@ -615,6 +656,7 @@ def main() -> int:
                 'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else 'candidate-set.json'),
             reference_nonce, maximum_candidates_per_turn, event_contract,
             tool_instruction, python_source, submission_contract,
+            editable_starter=args.editable_starter,
         )
         if native_skill_package is not None:
             package = replace(package, native_skill_package=native_skill_package,
@@ -654,7 +696,7 @@ def main() -> int:
         "cwd_policy": "same_new_task_workspace",
         "reference_visibility": "workspace_task_files",
         "agent_interface": TASK_AGENTS_RALPH_V1,
-        "turns": ["initial_add", "same_thread_resume_update"],
+        "turns": ["initial_seed_update" if args.editable_starter else "initial_add", "same_thread_resume_update"],
         "gpu_execution_authorized": False,
     }
     if aliases:
@@ -722,6 +764,9 @@ def main() -> int:
                 ledger.append('provider_read_isolation_observed', {'arm':arm, 'observation':isolation})
             initial_plan = _planned_turn(package, 1)
             verify_task_package(arm_workspace, package)
+            for name, payload in package.initial_workspace_files().items():
+                if (arm_workspace / name).is_symlink() or (arm_workspace / name).read_bytes() != payload:
+                    raise ValueError('qualification initial workspace differs from its task package')
             initial_prompt, initial_projection = render_task_request(package, {"turn": 1})
             initial_invocation = builder.build(
                 initial_prompt,
@@ -801,6 +846,13 @@ def main() -> int:
                                'resumed_native_skill_input')] if resumed.native_skill_input is not None else [])]})
             resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model,
                 event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
+            if args.editable_starter:
+                for observed in (initial, resumed):
+                    parsed = parse_claude_turn_events(observed.raw_events,
+                        expected_terminal_message=observed.terminal_message, event_contract=event_contract,
+                        response_aliases=aliases, candidate_filename=candidate.name)
+                    if parsed.write_tools != ('Edit',):
+                        raise ValueError('editable starter qualification requires one successful Edit in each turn')
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
@@ -1008,7 +1060,7 @@ def main() -> int:
         )
         endpoint = {
             "qualification_receipt_sha256": receipt.canonical_sha256,
-            "add_observed": True,
+            "add_observed": not args.editable_starter,
             "update_observed": True,
             "thread_continuity_observed": True,
             "usage_observed": True,

@@ -259,15 +259,17 @@ class QualifiedRunProvider:
         if package.arm != request.arm or package.environment_kind != request.environment_kind:
             raise ValueError('Ralph request arm differs from the task package')
         if request.turn == 1:
-            expected_initial_entries = (
-                {workspace / "TASK.md", workspace / "AGENTS.md"}
-            )
+            expected_initial_entries = {workspace / name for name in package.initial_workspace_files()}
             if (
                 request.thread_id is not None
                 or not workspace.is_dir()
                 or set(workspace.iterdir()) != expected_initial_entries
             ):
                 raise ValueError("initial provider Turn requires one empty workspace")
+            for name, payload in package.initial_workspace_files().items():
+                path = workspace / name
+                if path.is_symlink() or not path.is_file() or path.read_bytes() != payload:
+                    raise ValueError('initial provider material differs from the authorized task package')
         elif request.thread_id is None:
             raise ValueError("resumed provider Turn requires the existing thread")
         if self._submission_contract == PYTHON_SOURCE_FILE_V1 and (
@@ -277,7 +279,7 @@ class QualifiedRunProvider:
             'candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1 else
             'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
             'candidate-set.json')
-        expected_change = "add" if request.turn == 1 else "update"
+        expected_change = package.candidate_change(request.turn)
         if (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()
         ):
