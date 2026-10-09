@@ -31,6 +31,7 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 class ClaudeProviderContracts(unittest.TestCase):
     def test_v7_large_prompt_uses_stdin_and_preserves_exact_rules_and_resume(self):
         builder=self.builder(event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT,
+                             cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format','--autocompact'},
                              isolation_policy='linux_claude_workspace_v1')
         prompt='公开历史\n'*40000
         for session in (None,SESSION):
