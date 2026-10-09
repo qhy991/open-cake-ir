@@ -365,6 +365,8 @@ class BenchProblem:
     def compare(self, uuid: str, expected, observed) -> dict:
         """Delegate the verdict and all error metrics to the original comparator."""
         selected, _ = self.selected(uuid)
+        expected = dict(expected) if isinstance(expected, Mapping) else expected
+        observed = dict(observed) if isinstance(observed, Mapping) else observed
         return self.api.compare_outputs(observed, expected, self.definition,
                                         selected.tolerance, selected.axes)
 

@@ -1,7 +1,7 @@
 """Original Bench authority, budget conservation and lease-before-oracle checks."""
 import copy
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -41,6 +41,27 @@ def problem():
 
 
 class BenchBindingTest(unittest.TestCase):
+    def test_original_comparator_receives_shallow_named_outputs_and_unchanged_sequences(self):
+        original = problem()
+        wanted, actual = object(), object()
+        expected, observed = MappingProxyType({'out': wanted}), MappingProxyType({'out': actual})
+        calls = []
+        original.api.compare_outputs = lambda *args: calls.append(args) or {'passed': True}
+        original.compare('original-0', expected, observed)
+        converted_actual, converted_expected, definition, tolerance, axes = calls.pop()
+        self.assertIs(type(converted_actual), dict)
+        self.assertIs(type(converted_expected), dict)
+        self.assertIs(converted_actual['out'], actual)
+        self.assertIs(converted_expected['out'], wanted)
+        self.assertIs(definition, original.definition)
+        self.assertIs(tolerance, original.workloads[0].tolerance)
+        self.assertIs(axes, original.workloads[0].axes)
+        self.assertIsInstance(expected, MappingProxyType)
+        sequence = (actual,)
+        original.compare('original-0', wanted, sequence)
+        self.assertIs(calls[0][0], sequence)
+        self.assertIs(calls[0][1], wanted)
+
     def test_view_observation_requires_complete_original_cases_and_actual_identity(self):
         from open_cake_ir.compiler.target import declared_target
         original = problem()
