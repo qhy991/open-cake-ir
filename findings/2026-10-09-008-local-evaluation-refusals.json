@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-008",
+  "kind": "protocol",
+  "decision": "accepted",
+  "title": "Keep allocation and witnessed candidate resource refusals outside protocol failures",
+  "compiler_revision_id": "open-cake-ir@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "executor_revision": "xcore1002@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-1 and c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006",
+    "locators": [
+      "c550-1 c1-development-20261009/dispatch/runs/gelu_tanh_backward/run-evidence/runs/c550-c1-20261009-c550-1-gelu_tanh_backward/events/000000000051.json: admitted=false maca_broker_busy, all counters zero, stdout and stderr empty; live reader instead reports broker job observation coverage differs",
+      "c550-2 c1-parallel32-20261009/full-device-runs/runs/fib_fused_add_rmsnorm_h4096/run-evidence/runs/c550-c1-parallel32-20261009-c550-2-fib_fused_add_rmsnorm_h4096/events/000000000034.json: same allocation refusal during attribution",
+      "c550-2 c1-development-20261009/dispatch/runs/residual_rmsnorm/run-evidence/runs/c550-c1-20261009-c550-2-residual_rmsnorm/events/000000000243.json and preceding evaluation_attempt_completed: candidate search preflight status32, zero target calls, completed teardown, local_bytes16320 and SDK request16KB above observed host limit4KB"
+    ],
+    "local_snapshot": "cake-compiler-lessons-20261009/audit-evidence/heartbeat-20261009-0702"
+  },
+  "observation": "Each controller stopped new submissions after one terminal broker_fault. Two refusals happened before any device work and cannot provide an accepted-job line. The third has complete typed candidate resource evidence but no EvaluationReceipt. The earlier sibling-isolation predicate additionally compared byte metadata with a truncated integer-KB rendering and rejected16320 versus16KB. Frozen C1 results remain faults.",
+  "proposed_change": "Add a typed EvaluationRefusal and a versioned evaluation_refused event, independent of EvaluationReceipt. Preserve one retained attempt and the original Ralph evaluation and time budgets. Deliver allocation or candidate-resource feedback to the next turn without automatic retry. A missing attribution cannot qualify that turn for nomination. Reconstruct refusals from raw attempts in independent replay. Unknown errors, partial dispatch, missing cleanup, wrong candidate/target/case and terminal confirmation refusals remain hard faults.",
+  "promotion_disposition": "Lab and Evaluation protocol evolution only. No IR, lowering, Workload, oracle, timer, GPU limit or compiler-performance promotion. The provider remains v7. Existing receipt and failed-worker schemas remain readable, while the new refusal has its own schema_version. Preserve every live and sealed C1 Run. CPU verification must include the two real failure forms, a continuing Run, author feedback, independent replay and negative cases before successor use.",
+  "implemented_in": null,
+  "verified_by": null
+}

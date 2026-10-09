@@ -10,6 +10,7 @@ from open_cake_ir.evaluation.core import _plain_json
 
 from .selection import _receipt_latency_ms, _receipt_qualifies
 from .diagnoses import validate_findings_feedback
+from open_cake_ir.evaluation.refusals import EvaluationRefusal
 
 _MAX_EVALUATIONS = 12
 _MAX_REJECTIONS = 8
@@ -41,9 +42,9 @@ def diagnostic_observation(diagnostics):
 
 
 def evaluated_observation(turn, receipt, attribution=None, *, diagnostics=None):
-    qualified = _receipt_qualifies(receipt)
+    qualified = _receipt_qualifies(receipt) and not isinstance(attribution, EvaluationRefusal)
     row = {'turn': turn, 'candidate_sha256': receipt.candidate_sha256,
-           'event_kind': 'candidate_evaluated', 'purpose': 'search',
+           'event_kind': 'evaluation_refused' if isinstance(receipt, EvaluationRefusal) else 'candidate_evaluated', 'purpose': 'search',
            'candidate_disposition': receipt.candidate_disposition,
            'measurement_quality': receipt.measurement_quality,
            'search_qualified': qualified,
@@ -53,6 +54,8 @@ def evaluated_observation(turn, receipt, attribution=None, *, diagnostics=None):
         for key in ('classification', 'speedup', 'statistic', 'pooled_means_ms', 'pooled_medians_ms') if key in timing}
         if qualified and timing is not None else None)
     row['profile'] = profile_observation(attribution)
+    if isinstance(receipt, EvaluationRefusal):
+        row['evaluation_refusal'] = receipt.document
     row['diagnostics'] = diagnostic_observation(diagnostics if diagnostics is not None else
         {'findings': [], 'omitted_findings': 0, 'text_truncated': False})
     return row

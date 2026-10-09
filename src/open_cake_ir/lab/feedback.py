@@ -10,6 +10,7 @@ from .diagnoses import rejected_peer_feedback
 from .selection import _matched_search_plan, _receipt_latency_ms, _receipt_qualifies
 from ._policies import _ATTRIBUTION_EVALUATION
 from .generated_source import candidate_source_feedback
+from open_cake_ir.evaluation.refusals import EvaluationRefusal
 
 
 def baseline_comparison_feedback(specification, timing):
@@ -33,10 +34,14 @@ def evaluated_feedback(receipt, attribution, diagnostics, specification):
         'correctness_passed': receipt.correctness_passed,
         'candidate_disposition': receipt.candidate_disposition,
         'measurement_quality': receipt.measurement_quality,
-        'search_qualified': _receipt_qualifies(receipt),
+        'search_qualified': _receipt_qualifies(receipt) and not isinstance(attribution, EvaluationRefusal),
         'search_latency_ms': _receipt_latency_ms(receipt),
         **diagnostics,
     }
+    if isinstance(receipt, EvaluationRefusal):
+        result['evaluation_refusal'] = receipt.document
+    if isinstance(attribution, EvaluationRefusal):
+        result['attribution_refusal'] = attribution.document
     if isinstance(receipt.timing, Mapping):
         result['baseline_comparison'] = baseline_comparison_feedback(specification, receipt.timing)
     if 'attribution_evaluation' in protocol:
@@ -86,7 +91,7 @@ def derive_turn_feedback(*, turn, candidates, filter_rows, selected, receipts, a
             attribution = attributions.get(candidate)
             if receipt.candidate_sha256 != candidate or (attribution is not None and attribution.candidate_sha256 != candidate):
                 raise ValueError('feedback receipt belongs to another candidate')
-            row.update(status='evaluated', **evaluated_feedback(
+            row.update(status='evaluation_refused' if isinstance(receipt, EvaluationRefusal) else 'evaluated', **evaluated_feedback(
                 receipt, attribution, filtered['diagnostics'], specification))
         elif filtered['disposition'] == 'rejected':
             row.update(status='build_rejected', **rejections[candidate])

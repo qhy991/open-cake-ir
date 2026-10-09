@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-09-008](2026-10-09-008-local-evaluation-refusals.json) — preserve witnessed allocation and zero-dispatch candidate resource refusals as unmeasured Evaluation outcomes. The successor must keep budget accounting, independent replay, and incomplete attribution separate from qualification; frozen C1 failures remain sealed.
+
 
 - [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
 

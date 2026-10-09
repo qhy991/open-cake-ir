@@ -12,7 +12,7 @@ def replay_elapsed_clock(events):
     previous = 0.
     for event in events:
         kind,payload = event['kind'],event['payload']
-        if kind in {'candidate_evaluated','compilation_started','compilation_completed'}:
+        if kind in {'candidate_evaluated','evaluation_refused','compilation_started','compilation_completed'}:
             value = payload.get('elapsed_wall_seconds')
         elif kind == 'search_completed':
             state = payload.get('state')
@@ -67,7 +67,7 @@ def replay_evaluation_invocations(events, *, receipts, budget, protocol):
             if active is not None and (payload.get("stage") != "evaluation" or payload.get(active_origin_field) != active[0]):
                 raise ValueError("in-flight Evaluation differs from its terminal fault")
             continue
-        if active is not None and kind not in {"evaluation_attempt_completed", "candidate_evaluated"}:
+        if active is not None and kind not in {"evaluation_attempt_completed", "candidate_evaluated", "evaluation_refused"}:
             raise ValueError("Evaluation invocation was interrupted without a fault")
         if search_closed and kind not in {'candidate_nominated', 'evaluation_attempt_started',
                 'evaluation_attempt_completed', 'candidate_evaluated', 'checkpoints_projected', 'run_terminal'}:
@@ -84,7 +84,7 @@ def replay_evaluation_invocations(events, *, receipts, budget, protocol):
             filters[payload["turn"]] = payload
         elif kind == "candidate_selected":
             selections[payload["turn"]] = payload
-        elif kind in {"evaluation_attempt_started", "evaluation_attempt_completed", "candidate_evaluated"}:
+        elif kind in {"evaluation_attempt_started", "evaluation_attempt_completed", "candidate_evaluated", "evaluation_refused"}:
             turn, purpose, candidate = evaluation_origin(payload), payload.get("purpose"), payload.get("candidate_sha256")
             origin_field = "source_turn" if "source_turn" in payload else "turn"
             if (type(turn) is not int or turn <= 0 or purpose not in counts
