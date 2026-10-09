@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'src'),str(ROOT/'tools')]
 
 from benchmarks.c550 import native_bridge
-from open_cake_ir.tasks.c550_bench.binding import BenchProblem, BENCH_COMMIT, TARGET
+from open_cake_ir.tasks.c550_bench.binding import BenchProblem, BENCH_COMMIT, TARGET, require_oracle_numerics
 from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.lab.bindings import external_file
 
@@ -37,6 +37,8 @@ def evaluate_original(problem,cases,output,*,physical_device,runtime_device,expe
     job=admit_local_job('maca',device=physical_device,runtime_device=runtime_device,
         expected_pci=expected_pci,lock_scope='device',queue_seconds=300)
     admission=observe_local_metax(TARGET,runtime_library=host['runtime_library'])
+    numerics=cases[0].workload.document['semantics']['oracle_numerics']
+    require_oracle_numerics(numerics,phase='native Bench after device observation')
     trace=output/'native-calls.jsonl'
     trace.touch(exist_ok=False)
     rows=[]
@@ -47,12 +49,23 @@ def evaluate_original(problem,cases,output,*,physical_device,runtime_device,expe
     adapter=output/'candidate.py'
     adapter.write_text('from benchmarks.c550.native_bridge import run\n')
     native_bridge._ACTIVE=native_bridge.NativeBench(cases,10,admission,record)
+    failure=None
     try:
+        require_oracle_numerics(numerics,phase='native Bench before original check_problem')
         report=problem.api.check_problem(problem.api.task_record(problem.task_id),device='cuda:0',
             candidate_path=adapter,symbol='run',reference_selfcheck=False,workload_scope='all',
             rounds=10,output=output/'original-bench.json',seed=suite['seed'],threads=4)
+    except BaseException as error:
+        failure=error
     finally:
         native_bridge._ACTIVE=None
+        try:
+            require_oracle_numerics(numerics,phase='native Bench after original check_problem')
+        except BaseException as drift:
+            from open_cake_ir.evaluation.loaders import LifecycleError
+            failure=LifecycleError(failure,drift) if failure is not None else drift
+    if failure is not None:
+        raise failure
     expected=[(case.uuid,round_index) for case in cases for round_index in range(10)]
     native_ok=([(row['uuid'],row['round']) for row in rows]==expected
         and all(row['kernel_calls']==row['expected_stage_calls'] and row['module_closed'] is True

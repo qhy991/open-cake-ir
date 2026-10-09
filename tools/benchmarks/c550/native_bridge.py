@@ -17,7 +17,8 @@ from open_cake_ir.lab.python_reference import parse_skeleton
 from open_cake_ir.lab.workload_binding import bind_program_workload, bind_schedule_workload
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks.c550_bench.binding import (
-    BENCH_COMMIT, TARGET, physical_input_view, validate_input_view_observation)
+    BENCH_COMMIT, TARGET, physical_input_view, validate_input_view_observation,
+    validate_oracle_numerics, require_oracle_numerics)
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -68,7 +69,8 @@ def bind_case(problem, uuid, prepared_path, compiler, views):
     workspace = prepared_path.parent
     gate = json.loads(_file(workspace, 'compiler-gate.json', 'compiler gate').read_text())
     saved = json.loads(_file(workspace, 'workload.json', 'baseline Workload').read_text())
-    expected = problem.workload_document(uuid, input_views=views)
+    numerics = validate_oracle_numerics(saved.get('semantics', {}).get('oracle_numerics'))
+    expected = problem.workload_document(uuid, input_views=views, oracle_numerics=numerics)
     if saved != expected:
         raise ValueError('prepared baseline differs from the original Workload or qualified views')
     workload = BenchWorkload(saved)
@@ -140,6 +142,9 @@ def bind_all(problem, index_path, *, input_views=None, compiler=None):
         if qualified and views != qualified[row['uuid']]:
             raise ValueError('prepared input views differ from the qualified original observation')
         cases.append(bind_case(problem, row['uuid'], path, compiler, qualified.get(row['uuid'])))
+    policies = [case.workload.document['semantics']['oracle_numerics'] for case in cases]
+    if any(policy != policies[0] for policy in policies):
+        raise ValueError('one original Bench loop cannot switch oracle numeric policies')
     return tuple(cases)
 
 
@@ -183,6 +188,7 @@ class NativeBench:
         calls = 0
         outputs = []
         try:
+            require_oracle_numerics(semantics.get('oracle_numerics'), phase='native Bench callback after original reference')
             if len(original) != len(names):
                 raise ValueError('original Bench input count differs')
             values = dict(zip(names, original, strict=True))

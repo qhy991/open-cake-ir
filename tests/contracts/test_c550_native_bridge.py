@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import replace
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import sys
@@ -23,6 +24,10 @@ from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
 from tests.contracts.test_portable_program_evaluation import NativeCompiler
+
+POLICY={'float32_matmul_precision':'highest','allow_tf32':False,
+        'allow_fp16_reduced_precision_reduction':True,'allow_bf16_reduced_precision_reduction':True,
+        'initialization':{'TORCH_ALLOW_TF32_CUBLAS_OVERRIDE':os.environ.get('TORCH_ALLOW_TF32_CUBLAS_OVERRIDE')}}
 
 
 def source(program=False):
@@ -45,14 +50,15 @@ def {name}(lm, {read}: cake.Tensor((2,4), "fp32"), {write}: cake.Tensor((2,4), "
 class Problem:
     task_id='L1/bridge_fixture'
     workloads=tuple(SimpleNamespace(uuid=f'case-{i:02d}') for i in range(16))
-    def workload_document(self,uuid,*,input_views=None):
+    def workload_document(self,uuid,*,input_views=None,oracle_numerics=POLICY):
         return {'schema_version':1,'workload_id':uuid,'revision':'1','state':'frozen','operator':'bridge_fixture',
             'provenance':[],'cases':[{'case_id':'primary','shape':{'R':2,'C':4},'seed':0,'mode':'fixture'}],
             'tensors':{n:{'shape':['R','C'],'dtype':'fp32','layout':'contiguous_row_major'} for n in ('x','out')},
             'semantics':{'target':'xcore1002','candidate_abi':{'inputs':['x'],'outputs':['out']},
                 'ordered_original_inputs':['x','alpha'],'ordered_original_outputs':['out'],
                 'original_tensor_shapes':{'x':[2,4],'out':[2,4]},'input_views':{'x':[0,1]} if input_views is None else input_views,
-                'fixed_scalar_inputs':{'alpha':{'dtype':'float32','value':2.,'binding':'literal_input'}}},
+                'fixed_scalar_inputs':{'alpha':{'dtype':'float32','value':2.,'binding':'literal_input'}},
+                'oracle_numerics':deepcopy(oracle_numerics)},
             'oracle':{'kind':'CPU fixture'},'validation':{'primary_case':'primary','all_cases_required':True,
                 'comparison':'elementwise_atol_rtol','atol':0.,'rtol':0.}}
 
@@ -156,6 +162,9 @@ class Kernels:
 
 
 class NativeBridgeContracts(unittest.TestCase):
+    def setUp(self):
+        observer=patch('open_cake_ir.tasks.c550_bench.binding.observe_oracle_numerics',return_value=deepcopy(POLICY))
+        self.observer=observer.start();self.addCleanup(observer.stop)
     @classmethod
     def setUpClass(cls):
         import open_cake_ir.compiler
@@ -204,6 +213,16 @@ class NativeBridgeContracts(unittest.TestCase):
             self.assertFalse(kernels.children);self.assertEqual(len(torch.allocations),1)
             self.assertIsNotNone(trace[0]['error'])
 
+    def test_numeric_drift_refuses_before_candidate_storage_or_module_allocation(self):
+        torch=Torch();kernels=Kernels();trace=[]
+        value=torch.full((2,4),1.,dtype='fp32',device='cuda:0')
+        self.observer.return_value={**POLICY,'float32_matmul_precision':'high'}
+        adapter=bridge.NativeBench(self.fixtures[False][2],10,object(),trace.append,torch_module=torch,loader=kernels.load)
+        with self.assertRaisesRegex(ValueError,'numeric.*callback'):
+            adapter.run(value,2.)
+        self.assertEqual(len(torch.allocations),1);self.assertFalse(kernels.children)
+        self.assertIsNotNone(trace[0]['error'])
+
     def test_original_noncontiguous_input_uses_the_checked_view_without_copy(self):
         case=self.fixtures[False][2][0];document=case.workload.document
         document['semantics']['input_views']['x']=[1,0]
@@ -233,7 +252,7 @@ class NativeBridgeContracts(unittest.TestCase):
 
     def test_missing_case_changed_source_gate_view_and_payload_refuse_during_cpu_binding(self):
         problem,path,_=self.fixtures[False];index=json.loads(path.read_text())
-        for mutation in ('missing','source','gate','view','payload','escape'):
+        for mutation in ('missing','source','gate','view','payload','escape','old_numerics'):
             with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as temporary:
                 import shutil
                 folder=Path(temporary).resolve()/ 'copy';shutil.copytree(path.parent,folder)
@@ -252,6 +271,9 @@ class NativeBridgeContracts(unittest.TestCase):
                     (last/'workload.json').write_bytes(canonical_json_bytes(document))
                 elif mutation=='payload':
                     p=last/'baseline/mcfatbin.bin';p.write_bytes(p.read_bytes()+b'changed')
+                elif mutation=='old_numerics':
+                    document=json.loads((last/'workload.json').read_text());document['semantics'].pop('oracle_numerics')
+                    (last/'workload.json').write_bytes(canonical_json_bytes(document))
                 else:
                     p=last/'baseline/mcfatbin.bin';p.unlink();p.symlink_to(path.parent/index['cases'][0]['uuid']/'baseline/mcfatbin.bin')
                 (folder/'locators.json').write_bytes(canonical_json_bytes(copied))
