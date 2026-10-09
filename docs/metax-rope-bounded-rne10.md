@@ -37,9 +37,11 @@ angles = positions * frequency_rne10
 
 The external B2/S131 candidate parsed, passed real Compiler assessment and lowered at fixed public source 06be782e. The emitted source retains both explicit casts. The production Target is unchanged; no MMA or TF32 instruction contract is used.
 
-## Proposed source scope and remaining gates
+## Implementation and remaining gates
 
-If approved, change the original RoPE starter and its focused contracts in a successor commit. Bind the unchanged original factory and HIGH numerical policy, finite frequency domain and original position bound. Preserve original frequency scaling, shape, scalar, output ordering and final BF16 conversion. A loose FP32 ABI alone does not establish these value bounds.
+Source `02423b3f` implements the starter and its focused contracts. `source_for_workload` requires the fixed original task, Bench commit, HIGH policy, scalar and position bound, then delegates the complete factory/reference binding to the existing original Bench document validator. It uses `source_for_rne10`; `source_for` retains the former IEEE expression as a negative control. Original frequency scaling, shape, scalar, output ordering and final BF16 conversion are preserved. A loose FP32 ABI alone does not establish these value bounds.
+
+At that fixed source, eight CPU contracts passed with no skips, including actual emitted arithmetic and complete BF16 outputs, 153,596 rounding-domain controls, domain counterexamples, and original-owner refusals. Independent source review passed. This is software verification; the native/device successor is tracked in #445.
 
 No IR, Compiler primitive, general TF32 conversion rule or Target admission is needed for this specialized expression. A new fixed native build and device comparison must establish that MACA performs the intended FP16 cast and does not remove or alter it. Then the complete original RoPE oracle must pass all 16 shapes and 10 inputs per shape. The CPU proof does not replace these gates.
 
