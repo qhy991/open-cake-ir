@@ -15,13 +15,15 @@
       "16eb2421:tests/contracts/test_metax_program_events.py::ProgramEvents",
       "5bb474c6:src/open_cake_ir/evaluation/program.py::admit_program_execution",
       "5bb474c6:src/open_cake_ir/lab/environments.py::OpenCakeEnvironment._build_program",
-      "/tmp/cake-bench-abi-design-20261009.md"
+      "/tmp/cake-bench-abi-design-20261009.md",
+      "attention-component-summary.json: retained four-stage component correctness, event and separate profile observation",
+      "component-source-boundary.json: reviewed d9b92681 to 6b3f3ff3 relevant implementation relation"
     ],
     "scope": "A CPU-built two-stage Program and source audit establish an Executor measurement gap. They do not establish a native hardware limitation or provide device qualification. No existing Run was edited or repeated."
   },
   "observation": "C1 can construct and seal an ordered MCFATBIN Program for independent correctness checks, but an optimization environment refuses its timing and attribution because the admitted instruments cover one dispatch. A single-kernel success does not qualify the complete Program interval. NativeTritonEnvironment is also single-kernel and cannot serve as an implicit multi-stage escape route.",
-  "proposed_change": "Keep the existing Program and Ralph owners. Add complete default-stream Program event capture with fresh-output checks, explicit stage-call counts and separately collected full-Program MCPTI attribution. Qualify the actual device path and fixed-baseline A/A before adding an exact target to the production measurement evidence set.",
-  "promotion_disposition": "Software adapters and CPU replay are implemented; device admission remains withheld. The evidence set is empty. The standalone events command records qualification observations only and cannot publish a Run endpoint, A/A pass, or kernel promotion. No Compiler optimization is promoted from this finding.",
+  "proposed_change": "Keep the existing Program and Ralph owners. Admit exact-target event and attribution adapters after reviewed complete-Program device component evidence and its source relation. Then require a fresh common-worker fixed-baseline A/A and separate attribution through the existing external performance_qualified gate before controlled author submission. Preserve default-stream event mean10, fresh-output checks, stage-call accounting and aligned-variant refusal.",
+  "promotion_disposition": "Adapter availability is reviewed for exact xcore1002 based on retained four-stage solx_fib.attention component correctness across five input cases, two five-sample event cohorts and independent full-Program MCPTI profiling. Existing readers replay those records. The relevant Evaluation, worker, measurement policy, Lab build/runtime and qualification-tool source has no changes between component d9b92681 and base 6b3f3ff3; this is not whole-source or host equivalence. The availability source change is 49c867d6. Real common-worker A/A and per-baseline external performance_qualified readiness remain pending. TaskLab has no intrinsic prior-A/A invariant. The Finding remains open; no Compiler optimization or Bench performance claim is promoted. Independent focused source review through 4708b7a1 found no blocker. Fixed Linux successor ba3ec42e passed the four remaining CPU contracts and seven directly affected Program event contracts, with no GPU/provider execution.",
   "principles_review": {
     "scope": "Executor and measurement change; no IR primitive, syntax, semantics, typing rule, analysis or hardware fact changes.",
     "P1_P3_P4_P5_P7": "Existing Schedule/Program construction and analyses remain unchanged.",
@@ -32,10 +34,10 @@
   "verified_by": {
     "commit": "2b2dde583769d29440d0e82cacab5f3bab08acae",
     "regression_before_fix": "16eb2421: the new complete event and missing-stage contracts fail because the Program event adapter is absent; the existing production refusal still holds.",
-    "tests": "52 tests at 2b2dde58: 49 passed and 3 existing CPU-Torch-dependent tests skipped because Torch is absent on this Mac. All five new contracts pass, including real ordered-loader calculations and common paired/attribution worker receipts.",
+    "tests": "52 tests at 2b2dde58: 49 passed and 3 existing CPU-Torch-dependent tests skipped because Torch is absent on this Mac. All five new contracts pass, including real ordered-loader calculations and common paired/attribution worker receipts. Availability change 49c867d6: 76 Mac tests ran with 72 passes, three missing-CPU-Torch skips and one retained EvidenceStore dir_fd EPERM error. Separate fixed Linux successor ba3ec42e includes public 4708b7a1 and passes all eleven selected tests with no skips/errors: the four unverified Mac tests and seven Program event contracts. This is incremental verification across the named sources, not one all-green suite.",
     "test_log": "/tmp/cake-metax-program-events-cpu-2b2dde58.log",
-    "corpus": "204 cases match unchanged expectations at 9be33b11. The subsequent change only restores exact-target qualifier diagnostic wording.",
+    "corpus": "204 cases match unchanged expectations at 9be33b11. The subsequent change only restores exact-target qualifier diagnostic wording. The availability change also matches all 204 unchanged Corpus cases at 49c867d6.",
     "corpus_log": "/tmp/cake-metax-program-events-corpus-9be33b11.log",
-    "scope": "Software verification only. Original-device complete Program event, attribution, fixed A/A and full successor qualification are pending; this capacity finding is not closed."
+    "scope": "Software verification only. Original-device complete Program event, attribution, fixed A/A and full successor qualification are pending; this capacity finding is not closed. Exact xcore1002 adapter availability has independent source review and the incremental CPU verification above. Retained device component evidence and the reviewed relevant d9b92681-to-6b3f3ff3 implementation relation support that declaration; real common-worker A/A and each baseline readiness remain pending."
   }
 }

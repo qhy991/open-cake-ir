@@ -1,10 +1,15 @@
 # MetaX complete Program event measurements
 
-This successor implements complete Program event capture and separate MCPTI
-attribution. **No physical target is qualified by this software change.**
-`evaluation/program.py::_MACA_PROGRAM_MEASUREMENT_EVIDENCE` remains empty.
-Production Ralph Runs still refuse ordered Program timing and attribution until
-a reviewed successor commit records device qualification for the exact target.
+This successor makes the existing complete Program event and MCPTI attribution
+adapters available for exact target `xcore1002` after review of retained component
+evidence and its implementation relation. The registry owns adapter availability,
+not per-baseline readiness.
+
+Formal authors in the controlled workflow still require an external
+`performance_qualified` result. That result requires a fresh common-evaluator
+A/A comparison and independent profiling on the frozen successor. `TaskLab`
+does not itself enforce a prior-A/A requirement. Do not invoke an author Run
+directly before the external readiness gate passes.
 
 ## Measured interval
 
@@ -67,9 +72,53 @@ must be bound through that lease's normal configuration.
 retains ten event values and their mean, verifies all stage calls, and closes the
 modules. Its `event-observation.json` is a device qualification observation. It
 is not a common Run receipt, an A/A result, or authorization to promote a kernel.
-Complete the fixed-baseline A/A and full worker qualification before populating
-the production evidence set. Record the precise successor commit and original
-device observations under the existing Finding workflow.
+Review complete component correctness, event and profile evidence to decide
+exact-target adapter availability in a successor source commit. Then use the
+existing `CommandBrokerSubmitter` and `BoundedBrokerEvaluator` to perform one
+confirmatory A/A with the same sealed Program on both arms and
+`evaluation_policy(workload, metax_mean10=True)`. Require the original
+correctness checks, measurement-quality checks and `close_null` classification
+at materiality 1.05. Ten event samples per arm remain the mean statistic;
+dispersion remains diagnostic. A failed qualification stays failed.
+
+After A/A passes, require one separate attribution Evaluation with a valid
+`MACA_PROGRAM_PROFILE`, all ordered stages, unchanged inputs, correct outputs
+and successful teardown. The controlled workflow may then mark that baseline
+`performance_qualified`. Repeat the baseline readiness gates for each actual
+Bench contract. An ordinary component fixture does not qualify Bench cases.
+Retain the exact successor and observations under the existing Finding workflow.
+
+## Retained component evidence and open gates
+
+The retained `solx_fib.attention` component observation covers four stages and
+five correctness input cases. It reports unchanged inputs, two five-sample event
+cohorts with fresh-output checks, and a separate four-stage MCPTI profile.
+The existing cohort and profile readers replay those records successfully.
+This is an ordinary repository task, not an original Bench result or an A/A pass.
+
+The component was recorded at `d9b92681`. The reviewed source relation to
+`6b3f3ff3` has no changes in Evaluation, the common worker, Program evaluation,
+measurement policy, Lab build/runtime or the qualification tool. This establishes
+the relevant component implementation relation, not whole-source or host identity.
+Finding F-2026-10-09-010 remains open. A real common-worker A/A, attribution and
+each Bench baseline's readiness remain pending; the adapter declaration does not
+assert their success.
+
+## Source verification
+
+The availability change is `49c867d6`; independent review of the focused change
+through `4708b7a1` found no blocking issue. At fixed `49c867d6`, the existing
+Corpus Gate matched all 204 cases without refreshing expectations. The related
+Mac CPU suite ran 76 tests: 72 passed, three skipped because CPU Torch was absent,
+and one existing EvidenceStore directory operation failed with `EPERM`. That
+result remains recorded.
+
+A separate fixed Linux successor `ba3ec42e`, which includes public `4708b7a1`,
+passed all eleven selected tests with no skips or errors. It covers the four
+unverified Mac tests and seven directly affected Program event contracts. This
+includes the real CPU worker and receipt path with the production availability
+entry, without patching the entry open. These are source and CPU checks; no new
+GPU, common A/A, provider or author Run result is claimed here.
 
 ## Scope and resource limits
 

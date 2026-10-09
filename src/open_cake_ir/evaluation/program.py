@@ -18,9 +18,11 @@ from .launch_manifest import WorkloadTensorManifest
 
 PROGRAM_ROLES = frozenset({'launch_manifest', 'program_bundle'})
 
-# Device qualification must cover the complete event/profile Run path before a
-# reviewed successor commit adds an exact target. CPU contracts do not add it.
-_MACA_PROGRAM_MEASUREMENT_EVIDENCE = frozenset()
+# Reviewed complete-Program device components admit these exact adapters.
+# Author Runs in the controlled workflow still require the external baseline
+# readiness gate: common-evaluator A/A and independent attribution. TaskLab does
+# not enforce a prior-A/A invariant itself. See F-2026-10-09-010.
+_MACA_PROGRAM_MEASUREMENT_EVIDENCE = frozenset({'xcore1002'})
 
 
 def program_tensor_abi(program):
@@ -51,8 +53,8 @@ def admit_program_execution(target, *, timing=False, attribution=False):
     """Admit execution separately from a complete Program's measurement coverage.
 
     HIP and MACA module drivers share ordered execution. The MACA Program event
-    and attribution adapters need their own device qualification; single-dispatch
-    or standalone correctness evidence does not admit the full Run path.
+    and attribution adapters need complete-Program device evidence. This check
+    admits an adapter; it does not qualify a baseline or authorize an author Run.
     """
     from open_cake_ir.compiler.target import CodeObject
     from .platforms import platform_for

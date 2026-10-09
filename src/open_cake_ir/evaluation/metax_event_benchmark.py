@@ -97,8 +97,8 @@ class MacaEventBenchmark:
 class MacaProgramEventBenchmark(MacaEventBenchmark):
     """One interval covers all ordered stages; allocation precedes every interval.
 
-    The implementation can be exercised by device qualification tools. Production
-    Run admission remains with ``admit_program_execution`` and its evidence set.
+    ``admit_program_execution`` owns exact-target adapter availability. Baseline
+    readiness remains with the controlled workflow's external qualification gate.
     """
 
     def __init__(self, manifest, *, l2_cache_bytes):
