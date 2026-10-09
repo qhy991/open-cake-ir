@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-09-006](2026-10-09-006-triton-singleton-splat.json) — MACA scalar reshape fails during native compilation; singleton inputs use a splat before the declared reduction. Device verification remains separate.
+
 - [F-2026-10-09-003](2026-10-09-003-triton-reduction-storage-and-scalar.json) — Triton reduction storage admission and logical singleton rank consistency; successor software verification is recorded in the Finding.
 
 - [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.
