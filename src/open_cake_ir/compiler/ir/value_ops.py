@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from .vocabulary import DType, MemorySpace, OperationKind
 
-VALUE_KINDS = frozenset({OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT, OperationKind.BROADCAST_IN_DIM})
+VALUE_KINDS = frozenset({OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT, OperationKind.BROADCAST_IN_DIM, OperationKind.TRANSPOSE})
 NUMERIC = frozenset({DType.INT32, DType.FP32, DType.FP16, DType.BF16})
 
 
@@ -44,6 +44,12 @@ def result_type(schedule, operation):
     reads = [schedule.buffer(name) for name in operation.reads]
     if any(buffer is None or buffer.space is not MemorySpace.REGISTER for buffer in reads):
         raise ValueError('value inputs must name declared register buffers')
+    if operation.kind is OperationKind.TRANSPOSE:
+        if len(reads) != 1 or len(reads[0].shape) != 2:
+            raise ValueError('transpose reads exactly one rank-two register value')
+        if reads[0].dtype not in NUMERIC:
+            raise ValueError('transpose supports FP32, FP16, BF16 and INT32 without conversion')
+        return reads[0].dtype, tuple(reversed(reads[0].shape))
     if operation.kind is OperationKind.BROADCAST_IN_DIM:
         if len(reads) != 1:
             raise ValueError('broadcast_in_dim reads one register value')

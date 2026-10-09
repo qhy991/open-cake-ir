@@ -44,7 +44,7 @@ class CompiledResourceTests(unittest.TestCase):
         cls.binary = b"\x7fELF-resource-contract-fixture"
         cls.resources = CompiledResources(
             source_sha256=cls.lowering.source_sha256,
-            cubin_sha256=sha256(cls.binary).hexdigest(),
+            binary_sha256=sha256(cls.binary).hexdigest(),
             target="sm_100a", entry_point="_cake_gemm_bias_b1_smoke_kernel",
             threads_per_cta=128, registers_per_thread=128,
             static_shared_bytes=1024, dynamic_shared_bytes=32784,

@@ -136,14 +136,27 @@ Two counts do not map one-to-one, and neither is reshaped to look as though they
 `.sgpr_count` is per wavefront, not per thread, so it is not folded into the per-thread
 register number. `.private_segment_fixed_size` is one per-lane scratch allocation
 covering what CUDA reports separately as LOCAL and STACK; the whole figure is reported as
-local bytes and the stack figure is zero because it is not observable here, not because
-no stack frame exists.
+local bytes and the separate stack figure is `null`: the metadata does not observe it.
+Unknown stack storage must not be reported as zero.
 
 Static LDS is a related trap, and the same one AGENTS.md records for
 `gemm-bias-b1-smoke`: the lowered rmsnorm reports `.group_segment_fixed_size` 0 while
 `metadata.shared` is 512, because the shared memory is allocated dynamically at launch. A
 residency report reading only the static directive would say "unconstrained" and mean
 "not looked at", so the inspector carries both and `shared_bytes` sums them.
+
+The portable report path now selects `kernel.hsaco` by the observation's code object.
+HSACO allocation uses schema v2 with `binary_sha256`; existing CUDA schema-v1 reports
+and the public `cubin_sha256` constructor keyword remain readable at their compatibility
+boundary. `tools/report_schedule_profile.py --compile-to` uses the existing AMDGCN
+inspector without `--cuobjdump`, and `--compiled-report` replays the retained report into
+`Compiler.profile` and the existing `project_feedback.py compiler` consumer without GPU
+imports. Output contains allocation facts and target-declared residency upper bounds;
+it contains no NCU estimates, measured occupancy, dynamic spill traffic or calibrated
+latency. HSACO VGPR counts remain observations only: register-bank and wave-allocation semantics
+are not modeled, so they do not create a register-based CTA bound. Thread and shared-memory
+bounds continue to use their own declared capacities.
+
 
 ### What the target admits
 

@@ -176,7 +176,10 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    reference_access: str = 'known_kernel_reproduction',
                    lowering_route=None, source_file: bool = False,
                    generated_source_feedback: bool = False,
-                   native_skill_package: Path | None = None, metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False, metax_torch_mean10: bool = False, metax_gated_mean10: bool = False) -> dict:
+                   native_skill_package: Path | None = None, metal_mean30: bool = False,
+                   metax_mean10: bool = False, metax_native_mean10: bool = False,
+                   metax_torch_mean10: bool = False, metax_gated_mean10: bool = False,
+                   claude_event_contract: str | None = None) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -191,6 +194,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         raise ValueError('generated source feedback requires explicit known-kernel authoring')
     if harness not in {"codex", "claude-code"} or any(not isinstance(v, str) or not v.strip() or v != v.strip() for v in (model, effort)):
         raise ValueError("exact harness, model and effort are required")
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    if claude_event_contract is not None and (harness != 'claude-code' or claude_event_contract not in CLAUDE_EVENT_CONTRACTS):
+        raise ValueError('Claude event contract requires the exact Claude harness and supported protocol')
     skill_package_reference = None
     if native_skill_package is not None:
         if harness != 'codex' or reference_access != 'known_kernel_reproduction':
@@ -260,7 +266,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         provider["response_model_aliases"] = list(response_model_aliases(model, response_aliases))
     if harness == "claude-code":
         provider.update(harness=harness, permission_mode="acceptEdits", sandbox="none", safe_mode=True,
-                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
+                        tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=claude_event_contract or CLAUDE_EVENT_CONTRACT,
+                        terminal_schema=terminal_schema())
     else:
         from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, ISOLATED_SKILL_PACKAGE_V1
         from open_cake_ir.lab.provider_documents import expected_codex_disabled_features

@@ -168,12 +168,10 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(
             set(result.artifact_payloads), {"toolchain_stdout", "toolchain_stderr"}
         )
-        # And this feedback, not a hand-built copy of it, is what the router reads. Every
-        # gate admitted this candidate and the toolchain refused it, which is a contract
-        # the pre-compile model does not cover rather than a bad Schedule.
-        from open_cake_ir.lab.routing import VERIFIER, route_rejection
+        # The frozen authoring arm establishes who authored the rejected source.
+        from open_cake_ir.lab.routing import CANDIDATE, route_rejection
 
-        self.assertEqual(route_rejection(result.feedback).destination, VERIFIER)
+        self.assertEqual(route_rejection(result.feedback, arm="direct_cuda").destination, CANDIDATE)
 
     def test_environment_cannot_replace_the_sealed_submission(self) -> None:
         with self.assertRaisesRegex(ValueError, "replaced"):

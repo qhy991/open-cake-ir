@@ -421,6 +421,11 @@ class SelectParameters:
 
 
 @dataclass(frozen=True)
+class TransposeParameters:
+    """Rank-two register-value axis swap; no storage or dtype conversion."""
+
+
+@dataclass(frozen=True)
 class BroadcastInDimParameters:
     """Source-axis positions in the declared result; shape has one buffer owner."""
 
@@ -438,7 +443,7 @@ class FenceProxyParameters:
 
 
 OperationParameters = Union[
-    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters,
+    CoordinateParameters, CompareParameters, SelectParameters, BroadcastInDimParameters, TransposeParameters,
     LoadParameters,
     MmaParameters,
     EpilogueParameters,
@@ -482,6 +487,9 @@ def _operation_parameters(
         if "scalar" in obj and type(scalar) not in {int, float}:
             raise ScheduleParseError(f"{context}.scalar must be a number")
         return CompareParameters(obj["op"], scalar)
+    if kind is OperationKind.TRANSPOSE:
+        _strict_object(value, required=set(), context=context)
+        return TransposeParameters()
     if kind is OperationKind.BROADCAST_IN_DIM:
         obj = _strict_object(value, required={"dimensions"}, context=context)
         values = _object_list(obj["dimensions"], f"{context}.dimensions", allow_empty=False)
