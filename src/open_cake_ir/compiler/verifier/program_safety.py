@@ -368,49 +368,49 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
     # producer's store visible to the consumer's load except a barrier handshake. A
     # schedule that expresses a cross-role producer/consumer edge with `depends_on`
     # alone compiles, runs, and yields nondeterministic garbage.
-    writer_of: dict[str, Operation] = {}
+    writers_of: dict[str, list[Operation]] = {}
     for operation in schedule.operations:
         for name in operation.writes:
-            writer_of[name] = operation
+            writers_of.setdefault(name, []).append(operation)
     order = {operation.op_id: index for index, operation in enumerate(schedule.operations)}
     for index, operation in enumerate(schedule.operations):
         for name in operation.reads:
-            producer = writer_of.get(name)
-            if producer is None or producer.op_id == operation.op_id:
-                continue
-            if producer.role == operation.role:
-                # Same role: program order is real ordering. It must still run forwards.
-                if order.get(producer.op_id, -1) > index:
-                    buffer = buffers.get(name)
-                    if (
-                        buffer is not None
-                        and buffer.mode is BufferMode.STATE
-                        and producer.kind is OperationKind.STORE
-                    ):
-                        # State exists before the Schedule. A same-role load may read that
-                        # initial value before the one admitted ordinary update.
-                        continue
-                    out.add(
-                        "OP_READ_BEFORE_WRITE",
-                        f"operations[{index}].reads",
-                        f"operation {operation.op_id!r} reads {name!r} before its "
-                        f"producer {producer.op_id!r} executes",
-                        category,
-                    )
-                continue
-            if set(operation.waits) & set(producer.signals):
-                continue
-            declared = (
-                f"; {operation.op_id!r} declares depends_on {producer.op_id!r}, which "
-                "orders operations inside one role but does not synchronize warps"
-                if producer.op_id in operation.depends_on
-                else ""
-            )
-            out.add(
-                "OP_CROSS_ROLE_RACE",
-                f"operations[{index}].reads",
-                f"operation {operation.op_id!r} (role {operation.role!r}) reads "
-                f"{name!r} written by {producer.op_id!r} (role {producer.role!r}) with "
-                f"no barrier both sides use{declared}",
-                category,
-            )
+            for producer in writers_of.get(name, ()):
+                if producer.op_id == operation.op_id:
+                    continue
+                if producer.role == operation.role:
+                    # Same role: program order is real ordering. It must still run forwards.
+                    if order.get(producer.op_id, -1) > index:
+                        buffer = buffers.get(name)
+                        if (
+                            buffer is not None
+                            and buffer.mode is BufferMode.STATE
+                            and producer.kind is OperationKind.STORE
+                        ):
+                            # State exists before the Schedule. A same-role load may read that
+                            # initial value before the one admitted ordinary update.
+                            continue
+                        out.add(
+                            "OP_READ_BEFORE_WRITE",
+                            f"operations[{index}].reads",
+                            f"operation {operation.op_id!r} reads {name!r} before its "
+                            f"producer {producer.op_id!r} executes",
+                            category,
+                        )
+                    continue
+                if set(operation.waits) & set(producer.signals):
+                    continue
+                declared = (
+                    f"; {operation.op_id!r} declares depends_on {producer.op_id!r}, which "
+                    "orders operations inside one role but does not synchronize warps"
+                    if producer.op_id in operation.depends_on
+                    else ""
+                )
+                out.add(
+                    "OP_CROSS_ROLE_RACE",
+                    f"operations[{index}].reads",
+                    f"operation {operation.op_id!r} (role {operation.role!r}) reads "
+                    f"{name!r} written by {producer.op_id!r} (role {producer.role!r}) with "
+                    f"no barrier both sides use{declared}",
+                    category,
+                )
