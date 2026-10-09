@@ -26,6 +26,7 @@ def _depthwise(b, c, h, w):
     batch = lm.program(convolved, axis=2, dimension=0, tile=1)
     with compute:
         position = lm.coordinate(source="program", name="pixel", id="position")
+        zero = position * 0
         y = position // {w}
         x_index = position % {w}
 '''
@@ -35,8 +36,10 @@ def _depthwise(b, c, h, w):
             suffix = f'{i}_{j}'
             source += f'''        y_{suffix} = y + {i-3}
         x_{suffix} = x_index + {j-3}
-        input_{suffix} = lm.load(x[batch, channel, y_{suffix}, x_{suffix}], id="input_{suffix}")
-        weight_{suffix} = lm.load(dwconv_weight[channel, 0:1, {i}:{i+1}, {j}:{j+1}], id="weight_{suffix}")
+        input_{suffix} = lm.load(x[batch, channel, lm.scalar_index(y_{suffix}), lm.scalar_index(x_{suffix})], id="input_{suffix}")
+        kernel_y_{suffix} = zero + {i}
+        kernel_x_{suffix} = zero + {j}
+        weight_{suffix} = lm.load(dwconv_weight[channel, lm.scalar_index(zero), lm.scalar_index(kernel_y_{suffix}), lm.scalar_index(kernel_x_{suffix})], id="weight_{suffix}")
         product_{suffix} = input_{suffix} * weight_{suffix}
 '''
             value = f'product_{suffix}'
@@ -153,12 +156,15 @@ def _projection(b, c, p):
         _tensor('projected',(b,p,c),True)]) + f'''    pixel = lm.program(projected, axis=0, dimension=1, tile=16)
     channel = lm.program(projected, axis=1, dimension=2, tile=32)
     batch = lm.program(projected, axis=2, dimension=0, tile=1)
+    with compute:
+        batch_index = lm.coordinate(source="program", name="batch", id="batch_index")
+        zero = batch_index * 0
     for feature in lm.range(activated, name="features", dimension=2, tile=32, num_stages=1, loop_unroll_factor=1):
         with compute:
             values = lm.load(activated[batch, pixel, feature], id="values")
             norm = lm.load(response_norm[batch, feature], id="norm")
-            weight = lm.load(grn_weight[0:1, 0:1, 0:1, feature], id="weight")
-            bias = lm.load(grn_bias[0:1, 0:1, 0:1, feature], id="bias")
+            weight = lm.load(grn_weight[lm.scalar_index(zero), lm.scalar_index(zero), lm.scalar_index(zero), feature], id="weight")
+            bias = lm.load(grn_bias[lm.scalar_index(zero), lm.scalar_index(zero), lm.scalar_index(zero), feature], id="bias")
             scaled = values * lm.broadcast(norm, axis=1)
             weighted = scaled * lm.broadcast(weight, axis=1)
             shifted = weighted + lm.broadcast(bias, axis=1)
@@ -179,7 +185,7 @@ def _output(b, c, h, w):
         y = lm.coordinate(source="program", name="row", id="y")
         x_index = lm.coordinate(source="program", name="column", id="x_index")
         pixel = y * {w} + x_index
-        values = lm.load(projected[batch, pixel, :], id="values")
+        values = lm.load(projected[batch, lm.scalar_index(pixel), :], id="values")
         bias = lm.load(pwconv2_bias[:], id="bias")
         with_bias = values + bias
         original = lm.load(x[batch, :, row, column], id="original")
