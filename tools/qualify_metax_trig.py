@@ -76,15 +76,22 @@ def run(output, native):
             if any(item.blocks_lowering for item in findings):
                 raise ValueError('The synthetic math-contract probe has a blocking software finding')
             lowered = emit(schedule, probe)
-            kernel = project_triton_kernel(lowered.source.encode(), lowered.toolchain)
+            # A raw emitter owns route facts; Compiler.lower normally binds these
+            # three public compile fields. This probe does not call production
+            # lowering because its Target intentionally remains unqualified.
+            requirements = {'source_language': 'python', 'compiler': 'triton',
+                            'target': real.target_id, **lowered.toolchain}
+            from open_cake_ir.compiler.toolchain import triton_route
+            triton_route(requirements)
+            kernel = project_triton_kernel(lowered.source.encode(), requirements)
             (directory / 'kernel.triton.py').write_bytes(kernel)
-            (directory / 'requirements.json').write_text(json.dumps(lowered.toolchain, indent=2))
+            (directory / 'requirements.json').write_text(json.dumps(requirements, indent=2))
             row = {'source_projected': True, 'production_refusal': [f.code for f in production.findings if f.blocks_lowering],
                    'native_compiled': False}
             result['operations'][op] = row
             if isolated is not None:
                 try:
-                    built = isolated.compile(kernel, lowered.toolchain)
+                    built = isolated.compile(kernel, requirements)
                 except Exception as error:
                     for name, data in getattr(error, 'artifact_payloads', {}).items():
                         if isinstance(name, str) and name.isidentifier() and isinstance(data, bytes):

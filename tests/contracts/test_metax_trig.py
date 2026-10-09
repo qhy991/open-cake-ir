@@ -1,6 +1,9 @@
 """MACA math lowering is separate from exact-target device qualification."""
 from dataclasses import replace
 from pathlib import Path
+import importlib.util
+import json
+import tempfile
 import unittest
 
 from open_cake_ir.compiler import Compiler, frontend
@@ -73,6 +76,24 @@ class MetaxTrig(unittest.TestCase):
         for code_object in ('cubin', None):
             with self.assertRaises(ValueError):
                 validate_triton_kernel(native.encode(), {**req, 'code_object': code_object})
+
+    def test_qualification_binds_complete_compile_fields_before_native_build(self):
+        from open_cake_ir.compiler.toolchain import triton_route
+        spec = importlib.util.spec_from_file_location('qualify_metax_trig', ROOT / 'tools/qualify_metax_trig.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'new'
+            result = module.run(output, False)
+            self.assertTrue(result['passed'], result)
+            self.assertFalse(result['target_admission_changed'])
+            for op in ('sin', 'cos'):
+                requirements = json.loads((output / op / 'requirements.json').read_text())
+                self.assertEqual(requirements['compiler'], 'triton')
+                self.assertEqual(requirements['source_language'], 'python')
+                self.assertEqual(requirements['target'], 'xcore1002')
+                self.assertEqual(triton_route(requirements).gpu_backend, 'maca')
+                self.assertFalse(result['operations'][op]['native_compiled'])
 
 
 if __name__ == '__main__':
