@@ -600,7 +600,7 @@ class _Builder:
                     self.fail(node, "lm.cast requires to=...", "SCHEDULE_STRUCTURE",
                               canonical_path=f"operations[{len(self.document['operations'])}].parameters")
                 dtype = parameters["to"]
-                if first.dtype.value in {"int64", "bool"} or dtype in {"int64", "bool"}:
+                if first.dtype.value in {"int64", "bool"} or dtype in ("int64", "bool"):
                     from .ir import DType
                     target_dtype = next((value for value in DType if value.value == dtype), None)
                     if target_dtype is None or not cast_supported(first.dtype, target_dtype):

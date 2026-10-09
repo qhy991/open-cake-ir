@@ -148,8 +148,10 @@ class DiscreteStorageCompiler(unittest.TestCase):
                 with self.assertRaises(frontend.FrontendError) as caught:
                     frontend.parse(source(src,dst,f'lm.cast(values,to="{dst}")'))
                 self.assertEqual(caught.exception.code, 'CAST_DTYPE_UNSUPPORTED')
-        with self.assertRaises(frontend.FrontendError):
-            frontend.parse(source('int64', 'fp32', 'lm.cast(values,to="invalid")'))
+        for src in ('int64', 'fp32'):
+            for destination in ('"invalid"', '["fp32"]'):
+                with self.assertRaises(frontend.FrontendError):
+                    frontend.parse(source(src, 'fp32', f'lm.cast(values,to={destination})'))
         doc=frontend.parse(source('int32','fp32','lm.cast(values,to="fp32")')).document
         next(b for b in doc['buffers'] if b['name']=='values')['dtype']='int64'
         next(b for b in doc['buffers'] if b['name']=='result')['dtype']='int32'
