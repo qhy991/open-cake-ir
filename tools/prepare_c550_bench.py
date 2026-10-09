@@ -24,6 +24,7 @@ STARTER_MODULES = {
     'L2/018_cu_seqlens_variable_length_vision_attention': 'varlen_attention',
     'L2/024_moe_expert_parallel_execution': 'expert_execution',
     'L2/035_convnextv2_block_with_grn': 'convnext',
+    'L2/060_chunk_gated_delta_rule_linear_attention': 'chunk_delta',
 }
 
 
