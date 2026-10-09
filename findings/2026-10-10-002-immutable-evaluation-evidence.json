@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "id": "F-2026-10-10-002",
+  "kind": "protocol",
+  "decision": "accepted",
+  "title": "Immutable Evaluation diagnostics fail at JSON writing and raw-summary comparison boundaries",
+  "compiler_revision_id": "open-cake-ir@affdd3951fafdb0436384170a33e90c7ff9396c9",
+  "executor_revision": "xcore1002@affdd3951fafdb0436384170a33e90c7ff9396c9",
+  "backend": "triton",
+  "target": "xcore1002",
+  "tracking_issue": "https://github.com/qhy991/open-cake-ir/issues/450",
+  "pull_request": "https://github.com/qhy991/open-cake-ir/pull/451",
+  "evidence": {
+    "root": "c550-rms-successor-20261010-001",
+    "locators": [
+      "gpu-001/rms-aa-successor-all16-001/case-00/confirmatory/attempt-0-evaluator_result.artifact",
+      "gpu-001/rms-aa-successor-all16-001/case-00/confirmatory/attempt-0-stderr.artifact",
+      "gpu-001/rms-aa-successor-all16-001/case-00/confirmatory/logical-attempt.json",
+      "gpu-001/aa-summary.json"
+    ],
+    "software_mirror": "c550-bench-ralph-20261009/immutable-evidence-contracts-20261010",
+    "scope": "One retained common A/A failure and CPU reproductions. The failed job counted samples but produced no accepted receipt or retained raw sample values. No speed, A/A classification or performance qualification is inferred from counters."
+  },
+  "observation": "Job maca-bf2a5f7c1235 completed 68 native calls, 2 module loads, 2 preflight calls and counted 20 timing samples, then failed with TypeError: Object of type mappingproxy is not JSON serializable. The first case remained failed, fifteen cases were not submitted, and no attribution ran. EvaluationReceipt recursively freezes nested diagnostics; worker and standalone profile producers carried them across shallow dict copies into ordinary JSON encoding. CPU composition then exposed a second boundary: raw JSON arrays were compared to frozen tuples without the existing JSON projection, so reconstructing an otherwise identical receipt could reject itself.",
+  "proposed_change": "Reuse evaluation.core._plain_json at the common worker writer before provenance insertion, at the two existing failed-activity payload encoders, at standalone Program profile payload encoding, and on both sides of the receipt/raw-correctness comparison. Keep immutable records, complete diagnostics, CanonicalJSON, oracle and measurement rules unchanged. Do not add a second projection owner or journal.",
+  "implemented_in": "693b54ad987cd3d5ebaec8e6a6204c98d47aed84",
+  "promotion_disposition": "A shared Evaluation protocol repair. No Compiler primitive, Target capability, numerical change, latency result or device qualification is promoted. The separate MetaX aggregate contract repair is F-2026-10-10-003; the integrated attribution test requires both ticks. The original failed A/A is not redrawn.",
+  "verified_by": {
+    "commit": "5753b23f503306c7478ec50c3190fe1e21621e14",
+    "regression_before_fix": "b5b910fc reproduces mappingproxy TypeError in paired, untimed, attribution and failed-activity paths. 50895cf6 reproduces rejection when a receipt is reconstructed from its own immutable correctness; nested wire tampering stays rejected.",
+    "tests": "The integrated fixed source passes 45 CPU contracts: twelve immutable-evidence controls, four separate MetaX aggregate controls and twenty-nine adjacent worker/serialization/profile-handoff contracts. Complete nested values, names and order survive; mutation is refused. Allocation provenance treats frozen and plain observations equally while keeping the closed worker envelope unchanged. Unknown values, non-string keys, NaN and infinity are refused. Existing valid canonical bytes are unchanged.",
+    "boundary_audit": "Paired correctness still owns a strict three-scalar aggregate and needs no recursive change. Paired timing already uses its existing recursive canonical projection; frozen receipt reconstruction passes. Pre-freeze task JSON producers were examined without evidence of the same defect and were not mechanically rewritten.",
+    "scope": "Source and CPU only. Linux CPU and final independent review are recorded in the follow-up verification entry. No new GPU, provider or A/A is authorized by this Finding."
+  }
+}
