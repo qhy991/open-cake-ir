@@ -22,6 +22,7 @@ from ..ir.operations import elementwise_result_dtype, ELEMENTWISE_FLOAT_DTYPES a
 from ..diagnostics import FindingCategory
 from ._collector import _Collector
 from .hardware_conformance import _BLOCK_SCALE_MMA_CONTRACT
+from .output_partitions import partition_refusal
 
 
 def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
@@ -674,12 +675,15 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
         if len(ops) > 1:
-            out.add(
-                "BUFFER_MULTIPLE_WRITERS",
-                f"buffers[{schedule.buffers.index(buffer)}]",
-                f"buffer {name!r} is written by {', '.join(sorted(ops))}",
-                category,
-            )
+            refusal = partition_refusal(schedule, name)
+            if refusal is not None:
+                code, reason = refusal
+                out.add(
+                    code,
+                    f"buffers[{schedule.buffers.index(buffer)}]",
+                    f"buffer {name!r} is written by {', '.join(sorted(ops))}; {reason}",
+                    category,
+                )
     for name, ops in sorted(readers.items()):
         buffer = buffers[name]
         if buffer.mode is BufferMode.SCRATCH and name not in writers:
