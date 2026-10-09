@@ -11,7 +11,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT, BenchProblem, validate_input_view_observation
+from open_cake_ir.lab.bindings import external_file
+from open_cake_ir.tasks.c550_bench.binding import BENCH_COMMIT, BenchProblem, validate_input_view_observation, validate_oracle_numerics
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
 from open_cake_ir.tasks.c550_bench.starters.rms_norm import source as rms_norm_source
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
@@ -39,10 +40,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bench-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--oracle-numerics', type=Path, required=True,
+                        help='retained JSON observation of the original oracle matrix policy')
     parser.add_argument('--task', action='append', help='original suite task ID; default is all ten')
     parser.add_argument('--input-views', type=Path, action='append', default=[],
                         help='retained original-factory dense-view observations')
     args = parser.parse_args(argv)
+    numerics_path = external_file(ROOT, str(args.oracle_numerics), 'oracle numerics observation')
+    oracle_numerics = validate_oracle_numerics(json.loads(numerics_path.read_text()))
     # The original suite owns its task list. A pinned problem opening verifies
     # the source before any private task data are imported.
     first = BenchProblem.open(args.bench_root, 'L1/069_rms_norm')
@@ -65,7 +70,8 @@ def main(argv=None):
             observed_views[key] = views
     args.output.mkdir(parents=True, exist_ok=False)
     summary = {'bench_commit': BENCH_COMMIT, 'status': 'prepared_not_launched',
-               'search_owner': 'existing_TaskLab_Ralph', 'tasks': []}
+               'search_owner': 'existing_TaskLab_Ralph', 'oracle_numerics_observation': str(numerics_path),
+               'oracle_numerics': oracle_numerics, 'tasks': []}
     write_new(args.output / 'preparation.json', summary)
     for task in selected:
         problem = first if task == first.task_id else BenchProblem.open(args.bench_root, task)
@@ -75,7 +81,7 @@ def main(argv=None):
         for index, row in enumerate(plan['cases']):
             case_root = directory / f'case-{index:02d}'
             case_root.mkdir()
-            document = problem.workload_document(row['workload_uuid'],
+            document = problem.workload_document(row['workload_uuid'], oracle_numerics=oracle_numerics,
                 input_views=observed_views.get((task, row['workload_uuid'])))
             write_new(case_root / 'workload.json', document)
             starter = None
