@@ -17,9 +17,15 @@ ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler/targets/sm_100a.json")
 
 
+def _seed(*args, **kwargs):
+    document = _scalar_store(*args, **kwargs)
+    document.pop("residency", None)
+    return document
+
+
 def _chain(producer="resident", *, op="sum", dtype="fp32", singleton=False,
            in_loop=False, carried=False, broadcast=False):
-    document = _scalar_store(producer, op=op, singleton=singleton)
+    document = _seed(producer, op=op, singleton=singleton)
     result_dtype = "int32" if dtype == "int32" else "fp32"
     load_only = producer in {"scalar_load", "block_load"}
     for buffer in document["buffers"]:
@@ -65,7 +71,7 @@ class TritonReductionStorageTest(unittest.TestCase):
         return emit(Schedule.from_dict(document), target)
 
     def test_global_reduce_is_a_pointer_storage_refusal(self):
-        document = _scalar_store("resident")
+        document = _seed("resident")
         document["operations"] = document["operations"][1:]
         fold = document["operations"][0]
         fold.update(reads=["x"], depends_on=[])
@@ -89,7 +95,7 @@ class TritonReductionStorageTest(unittest.TestCase):
     def test_each_nonregister_reduce_edge_is_refused_by_its_own_rule(self):
         for edge, space in itertools.product(("reads", "writes"), ("shared", "tensor", "global")):
             with self.subTest(edge=edge, space=space):
-                document = _scalar_store("resident")
+                document = _seed("resident")
                 fold = document["operations"][1]
                 name = fold[edge][0]
                 buffer = next(b for b in document["buffers"] if b["name"] == name)
@@ -148,7 +154,7 @@ class TritonReductionStorageTest(unittest.TestCase):
 
     def test_nonsingleton_reduction_still_folds_the_declared_axis(self):
         for op in ("sum", "max"):
-            document = _scalar_store("resident", op=op, singleton=True)
+            document = _seed("resident", op=op, singleton=True)
             emission = self.lower(document)
             self.assertIn(f"rows = tl.{op}(tile.to(tl.float32), axis=1)", emission.source)
             self.assertNotIn("tl.reshape", emission.source)
