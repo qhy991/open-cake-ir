@@ -18,6 +18,10 @@ from .launch_manifest import WorkloadTensorManifest
 
 PROGRAM_ROLES = frozenset({'launch_manifest', 'program_bundle'})
 
+# Device qualification must cover the complete event/profile Run path before a
+# reviewed successor commit adds an exact target. CPU contracts do not add it.
+_MACA_PROGRAM_MEASUREMENT_EVIDENCE = frozenset()
+
 
 def program_tensor_abi(program):
     return tuple((name, program.tensors[name].shape, program.tensors[name].dtype.value, mode)
@@ -46,15 +50,20 @@ def single_kernel_lowering(lowered):
 def admit_program_execution(target, *, timing=False, attribution=False):
     """Admit execution separately from a complete Program's measurement coverage.
 
-    HIP and MACA module drivers share ordered execution, but the optimization Run
-    instruments still describe one dispatch. Standalone MACA Program attribution
-    has its own source; it does not grant admission to the Run's measurement loop.
+    HIP and MACA module drivers share ordered execution. The MACA Program event
+    and attribution adapters need their own device qualification; single-dispatch
+    or standalone correctness evidence does not admit the full Run path.
     """
     from open_cake_ir.compiler.target import CodeObject
     from .platforms import platform_for
     code_object = platform_for(target).code_object
     if code_object not in {CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN}:
         raise ValueError(f'ordered Program execution is not implemented for {code_object.value}')
+    if code_object is CodeObject.MCFATBIN and (timing or attribution):
+        if target not in _MACA_PROGRAM_MEASUREMENT_EVIDENCE:
+            purpose = 'attribution' if attribution else 'timing'
+            raise ValueError(f'ordered Program {purpose} is not qualified for {target}')
+        return
     if code_object is not CodeObject.CUBIN and (timing or attribution):
         purpose = 'attribution' if attribution else 'timing'
         raise ValueError(f'ordered Program {purpose} is not implemented for {code_object.value}; '

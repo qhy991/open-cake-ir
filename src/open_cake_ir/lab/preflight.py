@@ -20,7 +20,7 @@ from .pairing import native_backend, native_baseline
 from .selection import _EMPIRICAL_SELECTION
 from .task_package import TaskPackage, render_task_package
 
-from .python_reference import read_skeleton
+from .python_reference import read_skeleton, skeleton_route, lower_skeleton
 from .reference_access import validate_reference_handoff
 
 
@@ -130,13 +130,13 @@ def preflight(
         )
         observed_skeleton_sha256 = sha256(_canonical_json_bytes(skeleton_document)).hexdigest()
         if (
-            skeleton_document.get("lowering") != open_cake.get("lowering_route")
+            skeleton_route(skeleton_document) != open_cake.get("lowering_route")
             or expected_skeleton_sha256 != observed_skeleton_sha256
         ):
             raise differs(
                 "Study Contract Schedule skeleton bytes or lowering route differ",
                 expected={"canonical_sha256": expected_skeleton_sha256, "lowering": open_cake.get("lowering_route")},
-                observed={"canonical_sha256": observed_skeleton_sha256, "lowering": skeleton_document.get("lowering")},
+                observed={"canonical_sha256": observed_skeleton_sha256, "lowering": skeleton_route(skeleton_document)},
             )
     if comparison is not None:
         _digest(direct_cuda.get("toolchain_sha256"), "study.arms.direct_cuda.toolchain_sha256")
@@ -177,10 +177,9 @@ def preflight(
         case_id = str(evaluation_protocol["case_id"])
         baseline = prepare_schedule(skeleton_document, workload, case_id, open_cake)
         baseline_compiler = Compiler.load(project_root, project_root / compiler_relative)
-        assessment = baseline_compiler.assess(baseline)
-        if not assessment.lowering_eligible:
-            raise ValueError("paired optimization baseline is not lowerable")
-        baseline_lowering = baseline_compiler.lower(assessment)
+        if policy is not None and 'program_id' in baseline:
+            raise ValueError('native comparison does not support a Program starter')
+        baseline_lowering = lower_skeleton(baseline_compiler, baseline)
         if policy is not None:
             native_baseline(baseline_lowering)
 

@@ -71,7 +71,8 @@
 | `fma` | 融合乘加 | `2×3+4 → 10` |
 
 浮点数能存的精度有限。FMA 对 `a×b+c` 只做一次最终舍入；先乘再加可能舍入两次，最后几位会不同。
-本项目的 FMA 明确要求三个同形状 FP32 寄存器输入和 `ptx.fma.rn.f32`，不允许用标量或广播字段省掉输入。
+本项目的 FMA 明确要求三个同形状 FP32 寄存器输入，以及目标声明的指令契约，不允许用标量或广播字段省掉输入。
+gfx938 使用 `ocml.fma.f32`；NVIDIA 使用 `ptx.fma.rn.f32`。契约不能跨目标借用。
 `tanh` 也要声明目标指令合同，不会自动把精确要求换成近似指令。
 
 例子：[FMA](../../corpus/schedules/fma-b8-smoke.json)、[嵌套 FMA](../../corpus/schedules/fma-chain-b8-smoke.json)、[ReLU](../../corpus/schedules/relu-b8-smoke.json)。
@@ -198,3 +199,18 @@ can be native scalar reductions or scalar loads. This explicit operation serves
 outer products and widened validity predicates; it does not silently propagate
 a load mask through later arithmetic. Target admission and backend support remain
 separate from the typed vocabulary.
+
+## transpose
+
+**交换一个二维寄存器值的行列轴。** 输入 `[M,N]` 得到 `[N,M]`，结果满足
+`result[j,i] = input[i,j]`。FP32、FP16、BF16、INT32 的类型与位值保持不变。
+Python 写法是 `lm.transpose(value)`；它不会修改全局内存的 stride，也不会转换精度。
+
+它让加载的 B[K,N] 值能显式转换为现有 MMA 合同要求的 B[N,K]。类型检查、循环累加轴
+与 argmin 候选域会跟随轴交换；地址与边界 mask 仍由各次 load/store 自己声明。
+当前声明范围为 gfx938 Triton。嵌套 MMA 对直接加载操作数的原有限制仍然保留。
+转置可能需要实际 lane 交换，零浮点运算不代表零成本。
+
+规则与边界见 [二维寄存器转置](../REGISTER_TRANSPOSE.md)，例子见
+[带尾块的转置](../../corpus/schedules/gfx938-register-transpose-tail.json) 和
+[转置 K 分块矩阵乘](../../corpus/schedules/gfx938-kn-transpose-mma-tail.json)。

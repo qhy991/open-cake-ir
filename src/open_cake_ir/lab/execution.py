@@ -20,6 +20,7 @@ from ._policies import (
 )
 from .archive import _arm_artifact_roles, _archive_provider_turn, _candidate_artifact_media_type
 from .evaluation_writer import EvaluationWriter
+from open_cake_ir.evaluation.refusals import EvaluationRefusal
 from .execution_admission import validate_execution_bindings, validate_run_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
 from .diagnoses import rejected_peer_feedback
@@ -57,8 +58,8 @@ class _SearchedCandidate:
     submission: CandidateSubmission
     environment_result: EnvironmentResult
     launchable: LaunchableCandidate
-    receipt: EvaluationReceipt
-    attribution: EvaluationReceipt | None
+    receipt: EvaluationReceipt | EvaluationRefusal
+    attribution: EvaluationReceipt | EvaluationRefusal | None
 
 from .pairing import matched_run_arms
 from open_cake_ir.evaluation.paired import paired_protocol
@@ -519,6 +520,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                                 "search_materiality_ratio", math.inf
                             )
                         ),
+                        unavailable_profiles=frozenset(item.launchable.candidate_sha256
+                            for item in searched if isinstance(item.attribution, EvaluationRefusal)),
                     )
                 )
                 if cost_diagnosis is not None:
