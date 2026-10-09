@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-09-007](2026-10-09-007-claude-input-validation-recovery.json) — opt-in v8 distinguishes a native Write input-validation failure from a completed write. Retained-stream replay preserves the later candidate, compaction and usage; C1 remains frozen and fresh provider qualification is still required.
+
 - [F-2026-10-09-001](2026-10-09-001-claude-prompt-transport.json) — v7 sends full prompts through supervised stdin and reserves context room with100k native compaction. Preserve original E2BIG/context-limit failures; live qualification and large UTF8 transport tests retained.
 
 - [F-2026-10-08-002](2026-10-08-002-c550-local-fault-scope.json) — bounded MACA shared-layout assertion classification and coherent author-delivery timeout isolation. Same-runtime baseline/rejected-input CPU controls pass; original failures stay sealed and no hardware tile range is inferred.

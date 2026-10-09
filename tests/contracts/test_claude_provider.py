@@ -87,6 +87,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         original = self.malformed_input_events()
         cases = [original[:3] + original[5:],
                  [original[0], *original[3:5], *original[1:3], *original[5:]]]
+        cases.append([original[0], original[3], *original[1:3], original[4], *original[5:]])
         failed = copy.deepcopy(original)
         failed[4]['message']['content'][0]['is_error'] = True
         cases.append(failed)
@@ -105,6 +106,24 @@ class ClaudeProviderContracts(unittest.TestCase):
         bad_terminal[-1]['structured_output']['candidate_written'] = False
         with self.assertRaises(ValueError):
             self.normalize(self.raw(bad_terminal), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+
+    def test_v8_cannot_reuse_v7_qualification(self):
+        from hashlib import sha256
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        from open_cake_ir.lab.task_package import TaskPackage
+        args = dict(cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format', '--autocompact'},
+                    isolation_policy='linux_claude_workspace_v1')
+        previous = self.builder(event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT, **args)
+        receipt = ProviderQualificationReceipt(provider_revision=previous.provider_revision,
+            executable_sha256=sha256(self.executable.read_bytes()).hexdigest(),
+            configuration_sha256=sha256(canonical_json_bytes(previous.configuration)).hexdigest(),
+            initial_and_resume_equivalent=True, file_lifecycle_observed=True, usage_observed=True,
+            qualified=True, scope='live_two_turn_tool_rich_provider')
+        with self.assertRaisesRegex(ValueError, 'configuration differs from provider qualification'):
+            ClaudeRunProvider(qualification=receipt,
+                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT, **args)},
+                task_packages={'open_cake-1': TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')})
 
     def test_v8_requires_stdin_compaction_and_isolation_before_execution(self):
         options = set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format', '--autocompact'}

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-007",
+  "kind": "protocol",
+  "decision": "proposed",
+  "title": "Native Write input validation recovery is mistaken for a successful outside write",
+  "compiler_revision_id": "open-cake-ir@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "executor_revision": "xcore1002@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "host": "c550-2",
+    "root": "/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/c1-development-20261009/dispatch/runs/rmsnorm_input_gradient/run-evidence",
+    "run_id": "c550-c1-20261009-c550-2-rmsnorm_input_gradient",
+    "event_sequence": 29,
+    "event_path": "/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/c1-development-20261009/dispatch/runs/rmsnorm_input_gradient/run-evidence/runs/c550-c1-20261009-c550-2-rmsnorm_input_gradient/events/000000000029.json",
+    "provider_stdout_path": "/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/c1-development-20261009/dispatch/runs/rmsnorm_input_gradient/run-evidence/objects/sha256/9b/9b633b67f1f34ee0aa31be26869b19fab1339fc23613f9d8addcfd12d495c269",
+    "tool_use_ids": [
+      "toolu_fb9bb853096a4cd6bd4d18e0",
+      "toolu_d53e25fb54b745649c05985e"
+    ]
+  },
+  "observation": "At Turn 3, Claude emitted a Write with only the native __unparsedToolInput marker. Its matching tool_result reported InputValidationError because the input could not be parsed as JSON. Claude then completed a Write to the exact candidate path and produced the expected structured terminal. The v7 adapter checked the missing file_path before considering the native failed completion, so it raised Claude write is outside the candidate envelope. This event does not show a successful outside write or an environment failure.",
+  "proposed_change": "Opt-in claude_stream_candidate_v8 retains v7 stdin transport, 100k compaction, workspace isolation and exact-file permissions. For Write only, admit a marker containing exactly a nonempty raw string and positive integer len, paired with the same tool id and the native InputValidationError message including its matching length and raw preview. Record the tool as error_recovered, never as a witnessed write. Require a subsequent successful candidate Write/Edit and the existing terminal lifecycle. Missing completions, generic failures, successful malformed calls, extra marker fields and explicit outside paths remain fatal.",
+  "promotion_disposition": "Lab provider parser successor. Frozen C1 source, Run evidence and outcome remain unchanged. No failed Run is reclassified or restarted. Fresh initial/resume provider qualification is required before a v8 Run; a v7 receipt cannot qualify it.",
+  "implemented_in": "ec35a563",
+  "verified_by": {
+    "cpu_commit": "ec35a563",
+    "retained_stream_replay": "The unmodified 16551-event stream refuses under v7 and parses under v8. The result retains one successful Write, the failed Write activity, both native compaction lifecycles and 277382 reported tokens. Source stream remains outside the checkout.",
+    "contracts": "At ec35a563, 78 Claude provider contracts and 2 isolation contracts passed. The broader provider*.py run completed 100 tests with 20 failures and 15 errors, including WriterCustody os.mkdir(dir_fd) PermissionError under the local sandbox. That verification stopped without changing the custody environment. Broader acceptance remains unverified.",
+    "native_qualification": "Not attempted. No new provider or GPU calls."
+  }
+}
