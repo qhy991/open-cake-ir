@@ -15,7 +15,7 @@ from open_cake_ir.evaluation import metax_event_benchmark as events
 from open_cake_ir.evaluation.program import admit_program_execution
 from tests.contracts.test_native_program_tensors import build
 from tests.contracts.test_ordered_launch_plan import document
-from tests.contracts.test_program_evaluation import ProgramEvaluationTests, workload_for
+from tests.contracts import test_program_evaluation as program_fixtures
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -28,11 +28,11 @@ class ProgramEvents(unittest.TestCase):
         for stage in value['stages']:
             stage['schedule']['target'] = 'xcore1002'
         cls.program = Program.from_dict(value)
-        cls.workload = workload_for(cls.program)
+        cls.workload = program_fixtures.workload_for(cls.program)
         cls.candidate = build(cls.program, cls.workload, Compiler.load(ROOT))
 
     def fixture(self, *, omit=False):
-        native, manifest, tensor, calls, children = ProgramEvaluationTests().loaded(self.candidate)
+        native, manifest, tensor, calls, children = program_fixtures.ProgramEvaluationTests().loaded(self.candidate)
         native._stream = 0  # The fixture kernel has no real device stream.
         sets = []
         for _ in range(16):
