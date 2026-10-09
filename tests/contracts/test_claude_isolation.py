@@ -29,7 +29,7 @@ class ClaudeIsolationTests(unittest.TestCase):
             self.assertNotIn(config['credential_source'],argv)
             shim=argv[argv.index('-c')+1]
             compile(shim,'shim','exec')
-            self.assertIn('rstrip("\\n")',shim)
+            self.assertIn('rstrip(b"\\n")',shim)
             import subprocess
             workspace=root/'qualification'/'arm';workspace.mkdir(parents=True)
             with patch('sys.argv',['launcher','--cake-isolation-probe']), patch('pathlib.Path.cwd',return_value=workspace), patch('subprocess.run',return_value=subprocess.CompletedProcess([],0)):

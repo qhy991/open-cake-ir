@@ -248,8 +248,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         from open_cake_ir.lab.claude import response_model_aliases
         provider["response_model_aliases"] = list(response_model_aliases(model, response_aliases))
     if harness == "claude-code":
-        from open_cake_ir.lab.claude import CLAUDE_EXACT_FILE_EVENT_CONTRACT
-        provider.update(harness=harness, permission_mode=('default' if claude_event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT else 'acceptEdits'), sandbox="none", safe_mode=True,
+        from open_cake_ir.lab.claude import CLAUDE_FILE_CONTRACTS
+        provider.update(harness=harness, permission_mode=('default' if claude_event_contract in CLAUDE_FILE_CONTRACTS else 'acceptEdits'), sandbox="none", safe_mode=True,
                         tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=claude_event_contract or CLAUDE_EVENT_CONTRACT,
                         terminal_schema=terminal_schema())
     else:

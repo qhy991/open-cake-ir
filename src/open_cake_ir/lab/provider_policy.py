@@ -63,8 +63,8 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
         response_model_aliases(provider["model"], aliases)
         if "response_model_aliases" in provider and (not isinstance(aliases, list) or not aliases):
             raise ValueError("Claude response aliases must be a nonempty explicit list")
-        from .claude import CLAUDE_EXACT_FILE_EVENT_CONTRACT
-        exact = provider.get('event_contract') == CLAUDE_EXACT_FILE_EVENT_CONTRACT
+        from .claude import CLAUDE_FILE_CONTRACTS
+        exact = provider.get('event_contract') in CLAUDE_FILE_CONTRACTS
         if exact and provider.get('isolation_policy') != CLAUDE_WORKSPACE_V1:
             raise ValueError('Claude exact-file contract requires OS workspace isolation')
         if (set(provider) != _AUTHORITY | fields

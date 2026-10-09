@@ -29,6 +29,24 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    def test_v7_large_prompt_uses_stdin_and_preserves_exact_rules_and_resume(self):
+        builder=self.builder(event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT,
+                             isolation_policy='linux_claude_workspace_v1')
+        prompt='公开历史\n'*40000
+        for session in (None,SESSION):
+            invocation=builder.build(prompt,thread_id=session)
+            with patch('open_cake_ir.lab.claude.run_supervised',
+                       return_value=subprocess.CompletedProcess([],0,self.raw(),b'')) as process:
+                turn=ClaudeProviderAdapter().execute(invocation,candidate_path=self.candidate,
+                    expected_change='add' if session is None else 'update',
+                    expected_terminal_message=TERMINAL,event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT)
+            self.assertEqual(turn.raw_events,self.raw())
+            self.assertEqual(process.call_args.kwargs['input_bytes'],invocation.argv[-1].encode())
+            argv=process.call_args.args[0]
+            self.assertNotIn(invocation.argv[-1],argv)
+            self.assertIn('--input-format',argv)
+            self.assertEqual('--resume' in argv,session is not None)
+            self.assertIn(claude.exact_file_tools(self.workspace,self.candidate.name),argv)
     def exact_file_events(self):
         events = self.recovered_restricted_events()
         notice = events[2]
