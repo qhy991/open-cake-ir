@@ -677,8 +677,10 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
                 result = self.compiler.assess(document)
                 self.assertFalse(result.lowering_eligible)
                 findings = [f for f in result.findings if f.blocks_lowering]
-                self.assertEqual([(f.code, f.path) for f in findings],
-                                 [("STORE_ACCESS_SHAPE_MISMATCH", "operations[4].reads[0]")])
+                expected = [("STORE_ACCESS_SHAPE_MISMATCH", "operations[4].reads[0]")]
+                if component_index == 0:
+                    expected.append(("OUTPUT_STORE_PROGRAM_AXIS_COLLISION", "operations[4]"))
+                self.assertEqual([(f.code, f.path) for f in findings], expected)
                 self.assertFalse(result.accepted)
                 with self.assertRaisesRegex(CompilerError, "STORE_ACCESS_SHAPE_MISMATCH"):
                     self.compiler.lower(result)
@@ -697,12 +699,12 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         document["access_maps"][1]["indices"][0]["name"] = "other"
         result = self.compiler.assess(document)
         self.assertFalse(result.lowering_eligible)
-        ownership = [f for f in result.findings if f.code == "METAL_STORE_OWNERSHIP"]
-        self.assertEqual([f.path for f in ownership], ["access_maps[2].indices"])
+        ownership = [f for f in result.findings if f.code == "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"]
+        self.assertEqual([f.path for f in ownership], ["operations[4]"])
         self.assertIn("other", ownership[0].message)
-        with self.assertRaisesRegex(CompilerError, "METAL_STORE_OWNERSHIP"):
+        with self.assertRaisesRegex(CompilerError, "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"):
             self.compiler.lower(result)
-        with self.assertRaisesRegex(metal.EmitError, "does not own varying program axes"):
+        with self.assertRaisesRegex(metal.EmitError, "omits program axis"):
             metal.emit(Schedule.from_dict(document), self.target)
 
         # An omitted extent-one coordinate creates no second threadgroup writer.
@@ -711,7 +713,19 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         actual = self.execute_body(document, {"x": x, "y": y})["out"]
         self.assertEqual(actual, [float((value + y[index % 37]) * 2) for index, value in enumerate(x)])
 
-    def test_existing_single_writer_rule_covers_cross_operation_ownership(self):
+    def test_disjoint_output_partitions_execute_every_element_once(self):
+        source = make_source().replace(
+            'lm.store(out[row,:], result, coalesced=False, id="store")',
+            'left = lm.load(x[row,:16], id="left")\n'
+            '        right = lm.load(x[row,16:], id="right")\n'
+            '        lm.store(out[row,:16], left, coalesced=False, id="store_left")\n'
+            '        lm.store(out[row,16:], right, coalesced=False, id="store_right")')
+        document = frontend.parse(source).document
+        values = [float(index) for index in range(111)]
+        result = self.execute_body(document, {"x": values, "y": [0.0] * 111})
+        self.assertEqual(result["out"], values)
+
+    def test_partition_proof_refuses_overlapping_output_stores(self):
         document = make_document()
         second = dict(document["operations"][-1], id="second_store", depends_on=["store"])
         document["operations"].append(second)
@@ -719,7 +733,7 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         result = self.compiler.assess(document)
         self.assertFalse(result.accepted)
         self.assertFalse(result.lowering_eligible)
-        self.assertIn("BUFFER_MULTIPLE_WRITERS", [f.code for f in result.findings])
+        self.assertIn("OUTPUT_PARTITION_OVERLAP", [f.code for f in result.findings])
         with self.assertRaises(CompilerError):
             self.compiler.lower(result)
         with self.assertRaises(metal.EmitError):

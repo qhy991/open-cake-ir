@@ -414,9 +414,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             access = s.access_map(op.op_id, dst.name)
             check(access is not None, 'NATIVE_ACCESS_REQUIRED', path,
                   'every global store requires an explicit AccessMap')
-            if access is not None and s.program_map is not None:
-                owned = {component.name for component in access.indices
-                         if component.source in (AccessIndexKind.PROGRAM,AccessIndexKind.PROGRAM_TILE)}
+            # Shared verification owns direct non-loop output coordinates.
+            # The native loop emitter still owns its additional loop-store domain.
+            if access is not None and s.program_map is not None and _scope(s, op) is not None:
+                owned = set(access.program_axes)
                 missing = [axis.name for axis in s.program_map.axes
                            if (owner := s.buffer(axis.buffer)) is not None
                            and axis.dimension < len(owner.shape)

@@ -5,7 +5,7 @@ bytes, preserving FP8 storage and avoiding expansion into Python float objects.
 """
 from types import MappingProxyType
 
-from .core import _MODULE_LOADERS, _TORCH_DTYPE_NAMES, load_torch_program
+from .core import _MODULE_LOADERS, _TORCH_DTYPE_NAMES, _output_poison, load_torch_program
 from .platforms import platform_for
 
 
@@ -44,7 +44,7 @@ class LoadedTorchTensorInputs:
             else:
                 # These tensor-oracle tasks have bounded outputs or IEEE NaN/Inf.
                 # A finite poison cannot masquerade as their required NaN/Inf.
-                poison = -(2**31) if dtype == 'int32' else torch.finfo(torch_dtype).max
+                poison = _output_poison(dtype, finite=True)
                 value = torch.full(shape, poison, dtype=torch_dtype, device='cuda:0')
             self.arguments.append(value)
         for (name, _, _, mode), value in zip(manifest.tensor_abi, self.arguments, strict=True):

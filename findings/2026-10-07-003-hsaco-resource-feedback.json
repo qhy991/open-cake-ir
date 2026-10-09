@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "id": "F-2026-10-07-003",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "HSACO allocation inspection cannot reach the portable profile consumer",
+  "executor_revision": "external-bw1100-development-adapter@574a6a147eea6998a52c2e102244797dd1705e68",
+  "compiler_revision_id": "open-cake-ir@d0d0acabf1ac1710745152efd88f5f82e221ac49",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "root": "/data3/testuser01/experiments/bw1100-main55-development-20261006/runs/rmsnorm",
+    "locators": [
+      "campaign/profile/starter-basic/report.csv",
+      "campaign/profile/rows128-basic/report.csv",
+      "campaign/HANDOFF.md"
+    ],
+    "source_locators": [
+      "src/open_cake_ir/compiler/toolchain.py:inspect_amdgcn_resources",
+      "src/open_cake_ir/compiler/performance/compiled_resources.py:load_compiled_resources",
+      "tools/report_schedule_profile.py:main"
+    ]
+  },
+  "observation": "The existing AMDGCN inspector reads physical VGPR/private/LDS counts, but portable report replay assumes kernel.cubin, the collection CLI requires cuobjdump, and non-CUBIN profiles reject compiled observations. The actual DTK replay has fixed LDS0 and launch dynamic LDS8192 for a large tile; these are distinct and must both remain visible. The initial duplicate-static-LDS hypothesis was rejected by that replay. Separate AMDGPU stack storage is not observed. Actual 192-VGPR/1024-thread HCU output also makes the CUDA per-SM register formula return zero CTAs. HSACO register-bank/wave allocation is not modeled; retain allocation observations but abstain from that bound.",
+  "proposed_change": "Connect existing HSACO inspection to code-object-bound portable reports and the existing profile/author-feedback CLI. Preserve CUDA v1 report replay, use generic binary identity for HSACO, retain fixed and launch-dynamic LDS separately, and report unobserved stack as null. Keep NCU metrics, dynamic spill traffic and calibrated latency claims absent. Keep HSACO register counts diagnostic-only until a target-owned physical allocation model exists.",
+  "promotion_disposition": "In development. Require retained-source offline compile/replay on the actual DTK toolchain, affected contracts, full Corpus and independent review. No performance or achieved-occupancy claim."
+}

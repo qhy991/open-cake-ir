@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-006",
+  "kind": "bug",
+  "decision": "accepted",
+  "title": "Scalar reduction inputs require splatting before a Triton fold",
+  "compiler_revision_id": "open-cake-ir@3f6be196d532dda7331505ff445e176dcd57f78b",
+  "executor_revision": "xcore1002@3f6be196d532dda7331505ff445e176dcd57f78b",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/c1-component-validation-20261009",
+    "locators": [
+      "component-attempt-001/cosine_register_singleton/build.json",
+      "singleton-native-probe-002/result.json"
+    ],
+    "scope": "CPU isolated native compilation. The component batch stopped before GPU allocation. singleton-native-probe-001 retained a source-projection refusal and did not test the scalar operation."
+  },
+  "observation": "The all-register Cosine control reached MACA Triton reshape with a rank-zero value. semantic.reshape reads input.type.numel, but scalar dtype has no numel. A strict CPU execution double reproduces this for 16 producer/op/dtype subcases. In isolated native probes both sum and max fail with reshape and compile with broadcast_to. MACA broadcast_impl_shape splats a scalar and preserves an already matching [1] block.",
+  "proposed_change": "Normalize a logical [1] reduction input with broadcast_to(value, (1,)), then retain the declared sum/max and accumulator cast. Keep register-storage admission and all non-singleton reductions unchanged. Make the CPU execution double reject scalar reshape so this actual toolchain boundary remains covered.",
+  "promotion_disposition": "Promote the scalar-to-block normalization to shared Triton lowering. No IR vocabulary, arithmetic rewrite, target fact or new backend capability is introduced. Device numerical and performance validation remain separate.",
+  "principles_review": {
+    "P1_P3": "No author syntax or alternate canonical IR form is added.",
+    "P2_P8": "The emitted splat is explicit and follows the observed toolchain scalar/block contract.",
+    "P4_P5_P7": "Existing typing, placement admission and reduction analyses are retained.",
+    "P6": "Affected reduction/emitter contracts and unchanged full Corpus expectations gate this change."
+  },
+  "implemented_in": "ec98dc2fe0188cff021232e4363b6742a419d7a9",
+  "verified_by": {
+    "commit": "ec98dc2fe0188cff021232e4363b6742a419d7a9",
+    "regression_before_fix": "cac86ee0: test_chained_register_reductions_keep_values_for_scalar_and_block_producers fails in 16 subcases after the execution double refuses scalar reshape.",
+    "tests": "84 passed: test_triton_reduction_storage, test_triton_loop_scopes, test_emit_triton, test_triton_sequential_regions, test_triton_multi_mma",
+    "corpus": "204 cases match unchanged expectations.",
+    "native_probe": "singleton-native-probe-002 compares identical source and requirements from 3f6be196 with only singleton reshape versus broadcast_to. sum and max reshape fail; sum and max broadcast_to compile to mcfatbin in the existing isolated CPU compiler.",
+    "scope": "Successor CPU regression and Corpus pass; minimal native compile confirms the operation choice. Full retained-Cosine device qualification and performance remain pending in the platform successor."
+  }
+}

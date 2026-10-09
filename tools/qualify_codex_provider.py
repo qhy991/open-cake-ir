@@ -234,11 +234,19 @@ def _validate_invocation(
     executable: Path,
     workspace: Path,
     harness: str = "codex",
+    event_contract: str | None = None,
+    submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
 ) -> None:
     if harness == "claude-code":
         tools = ",".join(CLAUDE_AUTHORING_TOOLS)
         expected_options = {"--permission-mode": "acceptEdits", "--tools": tools, "--allowedTools": tools,
                             "--output-format": "stream-json", "--json-schema": _canonical_json_bytes(terminal_schema()).decode()}
+        from open_cake_ir.lab.claude import CLAUDE_FILE_CONTRACTS, exact_file_tools
+        if event_contract in CLAUDE_FILE_CONTRACTS:
+            filename = ('candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                        'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else 'candidate-set.json')
+            expected_options.update({'--permission-mode':'default',
+                                     '--allowedTools':exact_file_tools(workspace,filename)})
         if (invocation.cwd != workspace or invocation.sandbox != "none"
                 or invocation.argv[:2] != (str(executable), "-p")
                 or invocation.argv.count("--safe-mode") != 1
@@ -410,7 +418,8 @@ def main() -> int:
                         help='controlled native skill package; requires explicit names and retained two-turn input qualification')
     parser.add_argument('--auth-source', type=Path,
                         help='private external Codex credential for an isolated author home')
-    parser.add_argument('--claude-event-contract', choices=('claude_stream_candidate_v3','claude_stream_candidate_v4'), default=CLAUDE_EVENT_CONTRACT)
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    parser.add_argument('--claude-event-contract', choices=CLAUDE_EVENT_CONTRACTS, default=CLAUDE_EVENT_CONTRACT)
     parser.add_argument('--claude-isolation-policy', choices=('linux_claude_workspace_v1',))
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
@@ -722,6 +731,7 @@ def main() -> int:
                 initial_invocation,
                 executable=executable,
                 workspace=arm_workspace, harness=args.harness,
+                event_contract=event_contract, submission_contract=submission_contract,
             )
             initial = adapter.execute(
                 initial_invocation,
@@ -766,6 +776,7 @@ def main() -> int:
                 resumed_invocation,
                 executable=executable,
                 workspace=arm_workspace, harness=args.harness,
+                event_contract=event_contract, submission_contract=submission_contract,
             )
             _validate_invocation_pair(
                 initial_invocation,

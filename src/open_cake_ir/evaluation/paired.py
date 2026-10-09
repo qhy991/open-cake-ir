@@ -496,8 +496,13 @@ def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
         manifest, children, _ = program_components(candidate)
         profile = json.loads(receipt.artifact_payloads['profile'])
         expected = [(stage.name, children[stage.name].entry_point) for stage in manifest.program.stages]
-        if (profile.get('kind') != 'ncu_program_attribution'
-            or [(row['stage'], row['kernel_name']) for row in profile['stages']] != expected):
+        if platform_for(candidate.target).code_object is CodeObject.MCFATBIN:
+            from .metax_program_profile import KIND
+            kind, stages = KIND, profile.get('summary', {}).get('stages', [])
+        else:
+            kind, stages = 'ncu_program_attribution', profile.get('stages', [])
+        if (profile.get('kind') != kind
+            or [(row['stage'], row['kernel_name']) for row in stages] != expected):
             raise ValueError('Program attribution differs from its complete stage sequence')
     if receipt.purpose == 'attribution' or paired_protocol(evaluation) is None:
         return

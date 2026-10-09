@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-001",
+  "kind": "protocol",
+  "decision": "implemented_bounded",
+  "title": "Long resumed projections exceed argv or provider context limits",
+  "compiler_revision_id": "open-cake-ir@a50523e3",
+  "executor_revision": "xcore1002@a50523e3",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-1 and c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006",
+    "locators": [
+      "fault-successor-development-20261008/dispatch-v2/runs/aka_residual_layernorm/run-evidence: Turn39 E2BIG; Turn38 reference projection129646bytes",
+      "fault-successor-development-20261008/dispatch/runs/aka_row_gather/run-evidence: event275 native compacting then invalid_request Prompt is too long",
+      "provider-stdin-20261009/receipt.json",
+      "native-large-stdin-20261009-v2/provider-stdout.jsonl",
+      "native-large-stdin-20261009-v2/result.json"
+    ]
+  },
+  "observation": "The complete task projection was passed as one process argument. Linux refused its growth with Errno7 before provider startup. Separately Row Gather attempted native compaction and returned Prompt is too long; that is not the OS argument limit. Prior modelUsage aggregates multiple calls and cannot identify one request's token count.",
+  "proposed_change": "Opt-in v7 keeps exact-file permissions and unchanged task projection bytes, moves the actual prompt to supervised stdin through the isolated credential shim, and pins native compaction at100k to reserve room for the next projection. Legacy protocols retain argv transport. New wrappers need fresh initial/resume qualification. Earlier compaction is a bounded mitigation, not proof against every future context overflow.",
+  "promotion_disposition": "Lab transport/context policy. No Compiler semantics, old Run reclassification or automatic failed-Run retry.",
+  "implemented_in": ["f91cc4a5","ca102962","4035c4e3"],
+  "verified_by": {
+    "software": "106 focused contracts; integrated4e5dd777 passes249 relevant contracts with1 skip and201 unchanged Corpus cases. Real supervisor and shim preserve large UTF8 bytes and timeout behavior.",
+    "independent_review": "Read-only review found no blocking issue; added CLI input-format capability preflight.",
+    "native": "C550 GLM-5.3 high initial/resume qualification passed. Native160313-byte prompt returned the exact structured terminal and an AST-equal source retaining the tail marker. The probe's stronger byte-copy assertion failed on one omitted trailing blank line and remains recorded as failed; no transport failure or exact-copy success is inferred from that assertion."
+  }
+}
