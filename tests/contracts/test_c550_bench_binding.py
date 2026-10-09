@@ -12,6 +12,12 @@ from open_cake_ir.evaluation.core import compare_tile_output_values
 from open_cake_ir.serialization import canonical_json_bytes
 
 
+ORACLE_NUMERICS = {'float32_matmul_precision': 'high', 'allow_tf32': True,
+    'allow_fp16_reduced_precision_reduction': True,
+    'allow_bf16_reduced_precision_reduction': True,
+    'initialization': {'TORCH_ALLOW_TF32_CUBLAS_OVERRIDE': '1'}}
+
+
 def problem():
     def tensor(dtype):
         return SimpleNamespace(dtype=SimpleNamespace(value=dtype))
@@ -87,7 +93,7 @@ class BenchBindingTest(unittest.TestCase):
         original.definition.custom_inputs_entrypoint = 'get_inputs'
         original.definition.reference = "def get_inputs():\n    scale = 0.1\n    return {'positions': None, 'mask': None, 'scale': scale}\n"
         original.raw_workloads[7]['inputs']['scale'] = {'type': 'custom'}
-        document = original.workload_document('original-7')
+        document = original.workload_document('original-7', oracle_numerics=ORACLE_NUMERICS)
         self.assertEqual(document['semantics']['fixed_scalar_inputs']['scale']['value'], .1)
         original.definition.reference = "def get_inputs():\n    return {'scale': 1.0}\n"
         self.assertEqual(factory_scalar(original.definition, 'scale'), 1.)
@@ -102,21 +108,21 @@ class BenchBindingTest(unittest.TestCase):
     def test_input_permutation_is_explicit_in_candidate_shape_and_original_shape_survives(self):
         original = problem()
         original.definition.get_input_shapes = lambda axes: {'positions': (2, 3, 4), 'mask': (24,), 'scale': None}
-        document = original.workload_document('original-7', input_views={'positions': [1, 0, 2]})
+        document = original.workload_document('original-7', oracle_numerics=ORACLE_NUMERICS, input_views={'positions': [1, 0, 2]})
         self.assertEqual(document['tensors']['positions']['shape'], [3, 2, 4])
         self.assertEqual(document['semantics']['original_tensor_shapes']['positions'], [2, 3, 4])
         with patch.object(BenchProblem, 'open', return_value=original):
             validate_document(document)
         for order in ([0, 0, 1], [0, 1], [True, 0, 2]):
             with self.assertRaises(ValueError):
-                original.workload_document('original-7', input_views={'positions': order})
+                original.workload_document('original-7', oracle_numerics=ORACLE_NUMERICS, input_views={'positions': order})
 
     def test_rejected_nonfinite_statistics_do_not_become_serialization_faults(self):
         import json
         for statistic, encoded in [(float('inf'), 'Infinity'), (float('-inf'), '-Infinity'), (float('nan'), 'NaN')]:
             check = {"passed": False, "outputs": {"out": {"passed": False, "max_absolute_error": statistic}}}
             original = SimpleNamespace(compare=lambda *args: check)
-            workload = BenchWorkload(problem().workload_document("original-7"))
+            workload = BenchWorkload(problem().workload_document("original-7", oracle_numerics=ORACLE_NUMERICS))
             with patch("open_cake_ir.tasks.c550_bench.workload.problem_for", return_value=(original, "original-7")):
                 passed, metrics = compare_tile_output_values(workload, {}, {})
             retained = json.loads(canonical_json_bytes(metrics))
@@ -132,7 +138,7 @@ class BenchBindingTest(unittest.TestCase):
         ]
         for change in changes:
             original = problem()
-            document = copy.deepcopy(original.workload_document('original-7'))
+            document = copy.deepcopy(original.workload_document('original-7', oracle_numerics=ORACLE_NUMERICS))
             change(original)
             with patch.object(BenchProblem, 'open', return_value=original):
                 with self.assertRaisesRegex(ValueError, 'original ABI, scalar, oracle or tolerance'):
@@ -149,7 +155,7 @@ class BenchBindingTest(unittest.TestCase):
             calls.append((uuid, wanted, actual))
             return check
         original = SimpleNamespace(compare=compare)
-        workload = BenchWorkload(problem().workload_document("original-7"))
+        workload = BenchWorkload(problem().workload_document("original-7", oracle_numerics=ORACLE_NUMERICS))
         with patch("open_cake_ir.tasks.c550_bench.workload.problem_for", return_value=(original, "original-7")):
             passed, metrics = compare_tile_output_values(workload, expected, observed)
         self.assertTrue(passed)
@@ -160,7 +166,7 @@ class BenchBindingTest(unittest.TestCase):
 
     def test_original_non_numeric_output_refusal_remains_rejected(self):
         original = SimpleNamespace(compare=lambda *args: {"passed": False, "reason": "output_names", "outputs": {}})
-        workload = BenchWorkload(problem().workload_document("original-7"))
+        workload = BenchWorkload(problem().workload_document("original-7", oracle_numerics=ORACLE_NUMERICS))
         with patch("open_cake_ir.tasks.c550_bench.workload.problem_for", return_value=(original, "original-7")):
             passed, metrics = compare_tile_output_values(workload, {}, {})
         self.assertFalse(passed)
@@ -168,7 +174,7 @@ class BenchBindingTest(unittest.TestCase):
         self.assertEqual(metrics["original_bench_check"]["reason"], "output_names")
 
     def test_preserves_original_integer_mask_scalar_and_effective_tolerance(self):
-        document = problem().workload_document("original-7")
+        document = problem().workload_document("original-7", oracle_numerics=ORACLE_NUMERICS)
         self.assertEqual(document["tensors"]["positions"]["dtype"], "int64")
         self.assertEqual(document["tensors"]["mask"]["dtype"], "bool")
         self.assertEqual(document["tensors"]["out"]["shape"], [8])
@@ -188,7 +194,7 @@ class BenchBindingTest(unittest.TestCase):
             lambda doc: doc["semantics"]["original_input_specifications"]["scale"].update(value=.25),
         ]
         with patch.object(BenchProblem, "open", return_value=original):
-            document = original.workload_document("original-7")
+            document = original.workload_document("original-7", oracle_numerics=ORACLE_NUMERICS)
             validate_document(document)
             for mutate in mutations:
                 changed = copy.deepcopy(document)
@@ -199,7 +205,7 @@ class BenchBindingTest(unittest.TestCase):
     def test_no_lease_refuses_before_importing_torch_or_running_the_original_factory(self):
         with patch.dict("os.environ", {}, clear=True):
             with self.assertRaisesRegex(ValueError, "local maca broker admission is missing"):
-                problem().prepare_on_target("original-0", runtime_library="/not-loaded/libmcruntime.so")
+                problem().prepare_on_target("original-0", runtime_library="/not-loaded/libmcruntime.so", oracle_numerics=ORACLE_NUMERICS)
 
     def test_all_original_cases_share_three_hours_including_final_confirmation(self):
         plan = case_budget_plan(problem())
