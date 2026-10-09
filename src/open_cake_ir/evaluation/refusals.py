@@ -88,6 +88,13 @@ def refusal_from_attempts(attempts, *, candidate, case_id, purpose):
     item = attempts[0]
     if item.receipt is not None:
         return None
+    try:
+        result = json.loads(item.artifact_payloads['evaluator_result'])
+        if (any(result.get(name) != getattr(item, name) for name in ('job_id', 'mode', 'admitted', 'error'))
+                or any(result.get('counters', {}).get(name) != getattr(item, name) for name in _COUNTERS)):
+            return None
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
     return refusal_from_artifacts(item.artifact_payloads, candidate=candidate,
         case_id=case_id, purpose=purpose, job_id=item.job_id)
 

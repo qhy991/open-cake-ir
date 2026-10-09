@@ -37,17 +37,21 @@ def is_local_launch_resource_failure(result, diagnostic, stdout, stderr):
     if (not isinstance(counters, dict) or not isinstance(resources, dict)
             or any(type(value) is not int or value < 0 for value in counters.values())
             or result.get('failure_class') != 'MetaxLaunchResourceError'
+            or result.get('schema_version') != 2
+            or set(result.get('failure_artifacts', {})) != {'launch_resource'}
             or result.get('error') != 'evaluator_failed' or result.get('receipt') is not None
             or result.get('admitted') is not True or result.get('mode') != 'local_serialized'
             or result.get('counters', {}).get('kernel_calls') != 0
             or result.get('counters', {}).get('timing_samples') != 0
             or result.get('counters', {}).get('compiler_invocations') != 0
             or result.get('counters', {}).get('fallback_calls') != 0
+            or result.get('counters', {}).get('preflight_calls') != 0
             or diagnostic.get('kind') != 'maca_launch_resource_failure_v1'
             or diagnostic.get('operation') != 'mcModuleLaunchKernel'
             or diagnostic.get('status') != 32
             or diagnostic.get('status_name') != 'mcErrorMemoryValueTooLarge'
             or diagnostic.get('completed_target_calls') != 0
+            or type(diagnostic.get('completed_target_calls')) is not int
             or diagnostic.get('purpose') != 'search' or diagnostic.get('arm') != 'candidate'
             or diagnostic.get('phase') != 'preflight'
             or diagnostic.get('teardown_completed') is not True
