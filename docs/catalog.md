@@ -44,6 +44,7 @@ Original paths and dated conclusions stay intact. Reading companions do not crea
 
 | 查找内容 / Topic | 文档与数据入口 / References |
 |---|---|
+| 十次均值计时：新开发协议与迁移边界 | [经同意的后继设计（待验收）](MEAN10_TIMING.md) |
 | 各平台已发布观察、失败与历史结果 | [完整硬件汇总](RESULTS.md) · [交互目录（下载后打开）](results/index.html) · [发布维护流程](RESULTS_MAINTENANCE.md) |
 | FlashInfer 改写、starter 与外部实现的差距 | [逐任务实验综述及 English summary](results/nvidia/FLASHINFER_STATUS.md) · [改写任务包](../experiments/flashinfer_rewrites/README.md) |
 | CAKE 参考机制与本地实现边界 | [NVIDIA CAKE 对照](NVIDIA_CAKE_REPRODUCTION.md) · [已有 Kernel 改写](KERNEL_REPRODUCTION.md) |
