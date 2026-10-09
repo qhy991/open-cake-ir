@@ -1,6 +1,5 @@
 # Findings
 
-- [F-2026-10-09-003](2026-10-09-003-triton-reduction-storage-and-scalar.json) — latest-main CPU replay accepts a global-pointer reduction and shared-output reduction without faithful placement; independent register singleton chaining also exposes rank inconsistency. Proposed shared Compiler repair, no new GPU or performance evidence.
 
 - [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
 
@@ -56,6 +55,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 ## Index
 
 - F-2026-10-06-008 — unprofiled MACA event mean10 rejects short-task identical-artifact controls at the declared 5% A/A boundary; bounded contraction controls pass. Retain all samples and task-scoped acceptance; no global measurement-reliability or Compiler promotion.
+- [F-2026-10-09-003](2026-10-09-003-triton-reduction-storage-and-scalar.json) — Triton reduction storage admission and logical singleton rank consistency; successor software verification is recorded in the Finding.
+
 - [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.
 
 - [F-2026-10-07-007](2026-10-07-007-hcu-frozen-pointer-range.json) — reuse a checked contiguous HCU ABI to supply pointer extent without caching addresses; host-only pilot and Compiler qualification remain distinct.

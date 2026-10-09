@@ -32,9 +32,10 @@ an output-axis loop does not become a contraction merely because a tile was tran
 
 The proposed gfx938 Target admits this value operation; other Targets remain unchanged.
 Triton emits `tl.trans(value)` without a cast, outside or inside already-supported loops.
-The existing nested-MMA slice still requires directly loaded operands and refuses cast
-or transposed operands. This work does not widen that separate emission domain, change
-FP32 to TF32, or promise MMAC selection for shapes such as M=1.
+The [multi-region MMA slice](MULTI_REGION_MMA.md) follows unique typed load/cast/transpose
+chains and admits available computed values invariant across every active MMA loop.
+It retains explicit refusals for varying arithmetic and unfinalized region values.
+This does not change FP32 to TF32 or promise MMAC selection for shapes such as M=1.
 
 ## Acceptance scope
 

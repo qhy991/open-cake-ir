@@ -445,7 +445,7 @@ class GeneratedSourceTests(unittest.TestCase):
                 evaluator = Evaluator(protocol, sha256(canonical_json_bytes(protocol)).hexdigest(),
                     workload.canonical_sha256, compiler_revision_reference=document['compiler_revision'])
                 evaluator.observed = {}
-                evidence = EvidenceStore.create(Path(temporary)/'evidence')
+                evidence = EvidenceStore.create(Path(temporary).resolve()/'evidence')
                 _execute_run(specification, project_root=ROOT, evidence=evidence, clock=lambda: 0.0,
                     provider=provider, environment=environment, evaluator=evaluator)
                 events = evidence.replay_events('source-loop')

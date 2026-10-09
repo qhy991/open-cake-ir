@@ -2716,6 +2716,46 @@
         "schedule_sha256": "e7d1ce08d35d5680b61324c55bfa1d760dd13b0a5dd8e5eb7a240d825ed32d25",
         "lowering_source_sha256": "a3e16263c157b6dcbfd06346b5ddd8d725b16f9bad34c5bd534d7a5aa0baf627"
       }
+    },
+    {
+      "case_id": "gfx938-multi-region-attention-tail",
+      "schedule": "corpus/schedules/gfx938-multi-region-attention-tail.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "6279c23deaee49ee630d14aac94c15e7eabce971c99bf213ed415e5a5bb0e7a2",
+        "lowering_source_sha256": "4057b92296a5fd0a27ccfae0e07385ba1ec2f15efa6cb8490e764bae7aa31de1"
+      }
+    },
+    {
+      "case_id": "gfx938-nested-cast-transpose-mma-tail",
+      "schedule": "corpus/schedules/gfx938-nested-cast-transpose-mma-tail.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "e20142ee8c693d895ea11856e99a8d4bf3f023e177e586a6622c1036ef448b39",
+        "lowering_source_sha256": "baedb40a3489d9c9afc726bf7908aacab8df8147561f546183574ecfc786cff4"
+      }
+    },
+    {
+      "case_id": "gfx938-multi-region-varying-mma-operand",
+      "schedule": "corpus/schedules/gfx938-multi-region-varying-mma-operand.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "TRITON_NESTED_MMA_OPERAND"
+        ],
+        "schedule_sha256": "ba8dfb37fa0dd561865cf2a599dcfd840c7830ba2ae84329b94371212df208b1",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

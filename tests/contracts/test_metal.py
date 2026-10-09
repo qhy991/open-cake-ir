@@ -713,7 +713,19 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         actual = self.execute_body(document, {"x": x, "y": y})["out"]
         self.assertEqual(actual, [float((value + y[index % 37]) * 2) for index, value in enumerate(x)])
 
-    def test_existing_single_writer_rule_covers_cross_operation_ownership(self):
+    def test_disjoint_output_partitions_execute_every_element_once(self):
+        source = make_source().replace(
+            'lm.store(out[row,:], result, coalesced=False, id="store")',
+            'left = lm.load(x[row,:16], id="left")\n'
+            '        right = lm.load(x[row,16:], id="right")\n'
+            '        lm.store(out[row,:16], left, coalesced=False, id="store_left")\n'
+            '        lm.store(out[row,16:], right, coalesced=False, id="store_right")')
+        document = frontend.parse(source).document
+        values = [float(index) for index in range(111)]
+        result = self.execute_body(document, {"x": values, "y": [0.0] * 111})
+        self.assertEqual(result["out"], values)
+
+    def test_partition_proof_refuses_overlapping_output_stores(self):
         document = make_document()
         second = dict(document["operations"][-1], id="second_store", depends_on=["store"])
         document["operations"].append(second)
@@ -721,7 +733,7 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         result = self.compiler.assess(document)
         self.assertFalse(result.accepted)
         self.assertFalse(result.lowering_eligible)
-        self.assertIn("BUFFER_MULTIPLE_WRITERS", [f.code for f in result.findings])
+        self.assertIn("OUTPUT_PARTITION_OVERLAP", [f.code for f in result.findings])
         with self.assertRaises(CompilerError):
             self.compiler.lower(result)
         with self.assertRaises(metal.EmitError):

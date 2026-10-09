@@ -760,6 +760,19 @@ class _Builder:
             if key in options:
                 self.document[key] = options.pop(key)
                 self.mark(key, decorator)
+        if "program_map" in options:
+            mapping = options.pop("program_map")
+            keyword = next(item for item in decorator.keywords if item.arg == "program_map")
+            if not isinstance(mapping, dict):
+                self.fail(keyword.value, "program_map must be a dictionary of map options")
+            if "axes" in mapping:
+                self.fail(keyword.value, "lm.program declarations own program_map.axes")
+            # Axes remain single-assignment declarations in the body. All other fields
+            # go directly to ProgramMap's existing structural and semantic checks.
+            self.document["program_map"] = dict(axes=[], **mapping)
+            self.mark("program_map", keyword.value)
+            for key, value in zip(keyword.value.keys, keyword.value.values):
+                self.mark(f"program_map.{self.literal(key)}", value)
         if options:
             self.fail(decorator, f"unknown schedule options: {', '.join(options)}")
         args = function.args

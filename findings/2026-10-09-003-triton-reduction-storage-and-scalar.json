@@ -3,7 +3,7 @@
   "date": "2026-10-09",
   "id": "F-2026-10-09-003",
   "kind": "bug",
-  "decision": "proposed",
+  "decision": "accepted",
   "title": "Triton reduction admission loses storage commitments and singleton result rank",
   "compiler_revision_id": "open-cake-ir@1b5cca1b",
   "executor_revision": "xcore1002@1b5cca1b",
@@ -21,7 +21,14 @@
   },
   "observation": "Both retained candidates still report accepted and lowering_eligible at latest reviewed main. LayerNorm reduces the ABI global Buffer directly and emits tl.sum(x.to(float32),axis=0), leaving x a pointer; original toolchain refused pointer conversion. Cosine declares shared singleton reduce outputs but emits plain scalar assignments with no shared access; the next reduce emits axis0 on rank0. An independent all-register singleton double-reduce control reproduces the rank inconsistency without shared storage.",
   "proposed_change": "Add localized reduction source/result storage admission at the owning backend unless declared placement is implemented faithfully. Independently make logical singleton result shape consistent across producers/consumers. Test global input,shared result,shared input and legal register chaining separately; do not hide storage loss behind a scalar reshape or impose one backend restriction on every target.",
-  "promotion_disposition": "Compiler correctness and performance-transparency repair lead. No performance gain, new IR primitive or wider hardware capability is established. Implementation and analyses must be reviewed together in a shared core successor.",
-  "implemented_in": null,
-  "verified_by": null
+  "promotion_disposition": "Promoted to shared Triton preflight and lowering. Reduction reads and writes require register values because this emitter does not realize reduction memory effects. Logical [1] consumers normalize rank with a size-preserving reshape before the original sum/max and dtype promotion. IR vocabulary, declared arithmetic, reduction tree, and other backend policies are unchanged. No performance gain or wider hardware capability is established.",
+  "implemented_in": "da978efa10dcb3dd969335a645cc78310e9aca94",
+  "verified_by": {
+    "commit": "261bbbb2a7042983c13beea514b0634b1d64f25a",
+    "tests": "84 passed: test_triton_reduction_storage, test_triton_loop_scopes, test_emit_triton, test_triton_sequential_regions, test_triton_multi_mma",
+    "corpus": "204/204 unchanged expectations; 115 lowerable source snapshots checked",
+    "replay": "/tmp/cake-reduction-storage-replay.json",
+    "observed": "Original LayerNorm now receives TRITON_REDUCE_STORAGE on operations[3].reads[0]; original Cosine receives the same owning refusal on its three shared writes and three shared reads. All-register double-reduce remains accepted and CPU-emitted execution returns [10] for [1,2,3,4].",
+    "scope": "CPU admission, source control-flow semantics and Corpus only. No new native compilation, device correctness or performance qualification."
+  }
 }

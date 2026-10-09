@@ -314,6 +314,9 @@ class Compiler:
 
         accepted = not any(finding.blocks_acceptance for finding in findings)
         lowering_eligible = accepted and not any(finding.blocks_lowering for finding in findings)
+        if lowering_eligible:
+            from .performance.program_repetition import program_repetition_guidance
+            findings.extend(program_repetition_guidance(typed_schedule))
         analysis = MappingProxyType({
             "grid": resolve_grid(typed_schedule),
             "operation_counts": dict(sorted(Counter(

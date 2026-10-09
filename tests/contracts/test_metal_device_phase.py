@@ -27,6 +27,9 @@ except BlockingIOError:
     locked = True
 finally:
     os.close(fd)
+if request.get('no_report'):
+    while True:
+        time.sleep(30)
 report = {'job': os.environ.get('METAL_JOB_ID'), 'locked': locked,
           'pid': os.getpid(), 'group': os.getpgrp(),
           'descriptor': os.fstat(int(os.environ['METAL_BROKER_LOCK_FD'])).st_ino}
@@ -84,15 +87,42 @@ class MetalDevicePhaseTests(unittest.TestCase):
             os.close(descriptor)
 
     def test_failure_and_timeout_keep_streams_and_release_by_process_exit(self):
-        for name, extra in [('failure', {'exit': 7}), ('timeout', {'sleep': True})]:
-            with self.subTest(name=name), self.environment():
-                host = MetalArchiveHost(self.helper, {}, timeout_seconds=1)
-                with self.assertRaises(RunProtocolFault):
+        popen = subprocess.Popen
+        for name, extra, timeout, reason in [
+            ('failure', {'exit': 7}, 10, 'helper process failed'),
+            ('timeout', {'sleep': True}, 1, 'helper did not finish'),
+            ('timeout_without_report', {'no_report': True}, 1, 'helper did not finish'),
+        ]:
+            children = []
+            def start(*args, **kwargs):
+                child = popen(*args, **kwargs)
+                children.append(child)
+                return child
+            with (self.subTest(name=name), self.environment(),
+                  patch.object(subprocess, 'Popen', side_effect=start)):
+                host = MetalArchiveHost(self.helper, {}, timeout_seconds=timeout)
+                with self.assertRaisesRegex(RunProtocolFault, reason) as fault:
                     host.invoke({'target': 'apple_gpu_family9', **extra}, self.root / name)
-                report = json.loads((self.root / name / 'stdout.json').read_bytes())
-                self.assertTrue(report['locked'])
+                self.assertEqual(len(children), 1)
+                child = children[0]
+                stdout = (self.root / name / 'stdout.json').read_bytes()
+                stderr = (self.root / name / 'stderr.log').read_bytes()
+                if name == 'failure':
+                    self.assertEqual(child.returncode, 7)
+                    report = json.loads(stdout)
+                    self.assertEqual(report['pid'], child.pid)
+                    self.assertTrue(report['locked'])
+                else:
+                    timeout_error = fault.exception.__cause__
+                    self.assertIsInstance(timeout_error, subprocess.TimeoutExpired)
+                    self.assertEqual(child.returncode, -signal.SIGKILL)
+                    # Timeout can precede a complete report, including interpreter startup.
+                    self.assertEqual(stdout, timeout_error.stdout or b'')
+                    self.assertEqual(stderr, timeout_error.stderr or b'')
+                    if name == 'timeout_without_report':
+                        self.assertEqual(stdout, b'')
                 with self.assertRaises(ProcessLookupError):
-                    os.kill(report['pid'], 0)
+                    os.kill(child.pid, 0)
                 self.unlocked()
 
     def test_borrowed_allocation_remains_owned_after_helper_exit(self):
