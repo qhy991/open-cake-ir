@@ -70,11 +70,10 @@ class TritonReductionStorageTest(unittest.TestCase):
         fold = document["operations"][0]
         fold.update(reads=["x"], depends_on=[])
         document["buffers"] = [b for b in document["buffers"] if b["name"] != "tile"]
-        next(b for b in document["buffers"] if b["name"] == "x")["shape"] = [8]
-        document["program_map"]["axes"][0].update(buffer="y")
-        document["access_maps"] = [dict(operation="fold", buffer="x", boundary="mask_tiled_axes",
-                                       indices=[dict(source="dimension", dimension=0)]),
-                                    document["access_maps"][1]]
+        next(b for b in document["buffers"] if b["name"] == "rows")["shape"] = [8]
+        next(b for b in document["buffers"] if b["name"] == "y")["shape"] = [2, 8]
+        document["access_maps"][0]["operation"] = "fold"
+        document["access_maps"][1]["indices"].append(dict(source="dimension", dimension=1))
         for target in ("sm_100a", "sm_103a", "gfx938", "gfx1151", "xcore1002"):
             with self.subTest(target=target):
                 document["target"] = target
@@ -138,6 +137,7 @@ class TritonReductionStorageTest(unittest.TestCase):
         for producer, op in itertools.product(("resident", "scalar_load", "block_load"), ("sum", "max")):
             with self.subTest(producer=producer, op=op):
                 document = _chain(producer, op=op, broadcast=True)
+                document["target"] = "gfx938"  # Declares broadcast_in_dim.
                 emission = self.lower(document)
                 load_only = producer != "resident"
                 memories = dict(x=[-3, -7] if load_only else [-3] * 8 + [-7] * 8, y=[None] * 8)
