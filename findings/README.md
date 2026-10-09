@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
+
 - [F-2026-10-09-001](2026-10-09-001-claude-prompt-transport.json) — v7 sends full prompts through supervised stdin and reserves context room with100k native compaction. Preserve original E2BIG/context-limit failures; live qualification and large UTF8 transport tests retained.
 
 - [F-2026-10-08-002](2026-10-08-002-c550-local-fault-scope.json) — bounded MACA shared-layout assertion classification and coherent author-delivery timeout isolation. Same-runtime baseline/rejected-input CPU controls pass; original failures stay sealed and no hardware tile range is inferred.
