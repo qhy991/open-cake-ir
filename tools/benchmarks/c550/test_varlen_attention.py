@@ -1,5 +1,6 @@
 """Bounded emitted-source controls; no native or original-device qualification."""
 from contextlib import ExitStack
+from dataclasses import replace
 import importlib.util
 import json
 import math
@@ -13,6 +14,7 @@ from open_cake_ir.compiler import Compiler, Target
 from open_cake_ir.compiler.backends.triton import emit
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.program_frontend import parse_program
+from open_cake_ir.evaluation.workload import TensorABI
 from tests.contracts.test_triton_loop_scopes import _TL, _Tile, _execute
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -145,6 +147,7 @@ class VarlenVisionAttention(unittest.TestCase):
         self.assertEqual(observed['segments'], [1,1,3,3,3])
         self.assertTrue(math.isfinite(observed['scores'][1]))
         self.assertEqual(observed['scores'][2], -math.inf)
+        self.check(3, [1,2,3,3,3], (8,2,4))
 
     def test_all_zero_lengths_return_zero_even_with_projection_bias(self):
         self.check(3, [0,0], (8,2,4))
@@ -176,6 +179,21 @@ class VarlenVisionAttention(unittest.TestCase):
         fused = bf16(1.0078125*.9921875-1.015625*1.0078125)
         self.assertNotEqual(expected,fused)
         self.assertEqual(observed['q'][0],expected)
+
+    def test_public_binder_keeps_original_int64_endpoints_and_tensor_order(self):
+        t,s,e,h,d=5,4,*attention.DIMENSIONS
+        abi=[TensorABI('hidden_states',(t,e),'bf16','input'), TensorABI('cu_seqlens',(s,),'int64','input'),
+             TensorABI('cos',(t,h,d),'bf16','input'), TensorABI('sin',(t,h,d),'bf16','input'),
+             TensorABI('qkv_weight',(3*e,e),'bf16','input'), TensorABI('qkv_bias',(3*e,),'bf16','input'),
+             TensorABI('proj_weight',(e,e),'bf16','input'), TensorABI('proj_bias',(e,),'bf16','input'),
+             TensorABI('output',(t,e),'bf16','output')]
+        workload=SimpleNamespace(target=attention.TARGET,tensor_abi=lambda case:abi)
+        self.assertEqual(attention.source_for_workload(workload),attention.source_for(t,s))
+        for index,change in ((1,{'dtype':'int32'}),(2,{'shape':(t,e)}),
+                             (4,{'shape':(e,3*e)}),(8,{'dtype':'fp32'})):
+            altered=list(abi);altered[index]=replace(abi[index],**change)
+            with self.assertRaisesRegex(ValueError,'original tensor shape, dtype or order'):
+                attention.source_for_workload(SimpleNamespace(target=attention.TARGET,tensor_abi=lambda case:altered))
 
 
 if __name__=='__main__':
