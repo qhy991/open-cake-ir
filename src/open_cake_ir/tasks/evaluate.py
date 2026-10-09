@@ -36,7 +36,7 @@ from open_cake_ir.compiler.target import CodeObject
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda, observe_local_cuda
 from open_cake_ir.evaluation.attempts import job_mode
 from open_cake_ir.evaluation.platforms import ExecutionPlatform, PLATFORMS, platform_for, platform_for_paired_kind
-from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs, _same_tensor_inputs
+from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs, _same_tensor_inputs, _plain_json
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case, PreparedTensorCase
 from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, admit_local_job
 from open_cake_ir.tasks.launch import parse_launch_manifest
@@ -77,6 +77,7 @@ _BROKER_ALLOCATION: dict | None = None
 
 def _write_new(path: Path, value: object) -> None:
     from open_cake_ir.lab.ncu_process import write_new
+    value = _plain_json(value)
     # Attach allocation provenance to device observations, not to the closed
     # worker result envelope. Legacy local-broker evidence remains unchanged.
     if (_BROKER_ALLOCATION is not None and isinstance(value, dict)
@@ -595,7 +596,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
                    'launch_manifests':{role:manifest.as_dict() for role,manifest in manifests.items()},
                    'error':str(error),'error_class':type(error).__name__}
             retained = dict(getattr(error, 'artifact_payloads', {}))
-            retained['paired_activity'] = _canonical_json_bytes(raw)
+            retained['paired_activity'] = _canonical_json_bytes(_plain_json(raw))
             error.artifact_payloads = retained
         raise
     finally:
@@ -850,7 +851,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     except BaseException as error:
         if authority.candidate.is_program and profile_raw is not None:
             retained = dict(getattr(error, 'artifact_payloads', {}))
-            retained['program_activity'] = _canonical_json_bytes(profile_raw)
+            retained['program_activity'] = _canonical_json_bytes(_plain_json(profile_raw))
             error.artifact_payloads = retained
         raise
     finally:
