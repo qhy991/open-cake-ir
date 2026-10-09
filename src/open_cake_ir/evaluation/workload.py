@@ -144,6 +144,15 @@ class WorkloadContract:
     def target(self) -> str:
         return _name(self._document["semantics"].get("target"), "workload target")
 
+    def compare_output_values(self, expected, observed):
+        """Let a registered task retain its external numerical comparison owner.
+
+        The default retains the existing elementwise comparison. A task override
+        returns its verdict and metrics, including the original comparison record.
+        Input effects remain checked by common Evaluation.
+        """
+        return NotImplemented
+
     def tensor_abi(self, case_id: str) -> tuple[TensorABI, ...]:
         """Resolve the explicitly ordered input/output ABI, without operator dispatch.
 

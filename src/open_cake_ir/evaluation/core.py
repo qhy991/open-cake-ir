@@ -649,6 +649,10 @@ def compare_tile_output_values(workload, expected, observed):
     references can reuse their established input verdict while still checking
     every observed output here, without inventing another numerical comparator.
     """
+    if isinstance(workload, WorkloadContract):
+        comparison = workload.compare_output_values(expected, observed)
+        if comparison is not NotImplemented:
+            return comparison
     import struct
     validation = workload.document['validation']
     comparisons = None
@@ -771,13 +775,14 @@ def load_torch_program(candidate,manifest,arguments,admission,loader):
 class LoadedTorchTensorCandidate:
     """One Workload-shaped argument set and admitted module for preflight/timing/postflight."""
 
-    def __init__(self, candidate, manifest, inputs, admission):
+    def __init__(self, candidate, manifest, inputs, admission, *, preserve_output_tensors=False):
         from array import array
         import torch
         self.candidate = candidate
         self.manifest = manifest
         self.admission = admission
         self._native_inputs = None
+        self._preserve_output_tensors = preserve_output_tensors
         if any(_is_torch_tensor(value) for value in inputs.values()):
             from .torch_tensor_inputs import LoadedTorchTensorInputs
             self._native_inputs = LoadedTorchTensorInputs(candidate, manifest, inputs, admission)
@@ -859,6 +864,8 @@ class LoadedTorchTensorCandidate:
         arguments = self.arguments if arguments is None else arguments
         if self._native_inputs is not None:
             observed, after = self._native_inputs.snapshot_values(arguments)
+            if self._preserve_output_tensors:
+                return observed, after
             return {name: value.reshape(-1).tolist() for name, value in observed.items()}, after
         observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
                     in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'output'}

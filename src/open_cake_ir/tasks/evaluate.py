@@ -188,6 +188,11 @@ def _prepare_local_tensor_work(authority, kind):
             and authority.request['purpose'] != 'attribution'):
         from open_cake_ir.evaluation.metax_native_events import prepare_helper
         prepare_helper()  # Host compilation precedes the device lease.
+    from open_cake_ir.tasks.workloads import requires_target_preparation
+    if requires_target_preparation(authority.workload):
+        # The original Bench factory and reference require the actual target.
+        # They run after its lease is observed and before candidate measurement.
+        return authority
     cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
              and not isinstance(authority.manifest, MetalTensorLaunchManifest)
              else validation_case_ids(policy) if 'validation_case_ids' in policy
@@ -196,6 +201,25 @@ def _prepare_local_tensor_work(authority, kind):
     # original task creates both inputs and references once per required case.
     prepared = {case: PreparedTensorCase(authority.workload, case) for case in cases}
     return replace(authority, prepared_cases=MappingProxyType(prepared))
+
+
+def _prepare_target_tensor_work(authority, admission):
+    from open_cake_ir.tasks.workloads import requires_target_preparation
+    if not requires_target_preparation(authority.workload):
+        return authority
+    if authority.prepared_cases is not None:
+        raise ValueError('target oracle preparation cannot replace an existing prepared case')
+    policy = authority.request['evaluation_protocol']
+    cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
+             else validation_case_ids(policy) if 'validation_case_ids' in policy
+             else (authority.case_id,))
+    prepared = {case: PreparedTensorCase(authority.workload, case, admission=admission) for case in cases}
+    return replace(authority, prepared_cases=MappingProxyType(prepared))
+
+
+def _tensor_snapshot_options(workload):
+    from open_cake_ir.tasks.workloads import preserves_output_tensors
+    return {'preserve_output_tensors': True} if preserves_output_tensors(workload) else {}
 
 
 def _load_authority(request_path: Path) -> _Authority:
@@ -397,6 +421,8 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
             check['output_mismatches'] += observation['output_mismatches']
             check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
             check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
+            if 'original_bench_check' in observation:
+                check.setdefault('original_bench_checks', []).append(observation['original_bench_check'])
         return samples, check
     finally:
         release = getattr(loaded, 'release_argument_sets', None)
@@ -478,7 +504,8 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     try:
         for role in protocol.arms:
             for case_id in cases:
-                loaded[(role, case_id)] = LoadedTorchTensorCandidate(candidates[role], manifests[role], input_cases[case_id], admission)
+                loaded[(role, case_id)] = LoadedTorchTensorCandidate(candidates[role], manifests[role], input_cases[case_id], admission,
+                    **_tensor_snapshot_options(authority.workload))
                 counters['module_loads'] += loaded[(role, case_id)].module_count
             correctness(role, 'preflight')
             counters['preflight_calls'] += len(cases)
@@ -602,7 +629,8 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
     for case_id in cases:
         authority.manifest.check_validation_case(authority.workload, case_id)
         inputs = _inputs_for(authority, case_id)
-        loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
+        loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission,
+            **_tensor_snapshot_options(authority.workload))
         counters["module_loads"] += loaded.module_count
         try:
             protocol = EvaluationProtocol("workload-tensor-worker-correctness", authority.request["purpose"],
@@ -669,7 +697,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             and "validation_case_ids" in authority.request["evaluation_protocol"]):
         return _evaluate_untimed_validation_cases(authority, result, admission)
     inputs = _inputs_for(authority, authority.case_id)
-    loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
+    loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission,
+        **_tensor_snapshot_options(authority.workload))
     counters = result['counters']
     counters['module_loads'] = loaded.module_count
     # Attribution's child supplies correctness; the parent adds the profiler assay.
@@ -1051,6 +1080,7 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
     elif admission.runtime_library != host["runtime_library"]:
         raise ValueError("MACA device admission refers to another runtime library")
     result.update(job_id=admission.broker_job_id, mode=job_mode(admission.broker_job_id), admitted=True)
+    authority = _prepare_target_tensor_work(authority, admission)
     if authority.request['purpose'] == 'attribution':
         _evaluate_tile_candidate(authority, result, None, admission, False,
             route_calls_per_cohort=None, profile_format=MACA_PROFILE,

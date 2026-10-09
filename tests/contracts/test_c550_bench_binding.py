@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 from open_cake_ir.tasks.c550_bench.binding import BenchProblem, validate_document
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
+from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
+from open_cake_ir.evaluation.core import compare_tile_output_values
 
 
 def problem():
@@ -30,6 +32,35 @@ def problem():
 
 
 class BenchBindingTest(unittest.TestCase):
+    def test_common_comparison_keeps_original_ratio_verdict_and_full_record(self):
+        original = problem()
+        check = {"passed": True, "outputs": {"out": {"passed": True,
+                 "reason": "upstream_numeric", "max_absolute_error": .0625,
+                 "max_relative_error": .0139}}}
+        observed, expected = object(), object()
+        calls = []
+        def compare(uuid, wanted, actual):
+            calls.append((uuid, wanted, actual))
+            return check
+        original = SimpleNamespace(compare=compare)
+        workload = BenchWorkload(problem().workload_document("original-7"))
+        with patch("open_cake_ir.tasks.c550_bench.workload.problem_for", return_value=(original, "original-7")):
+            passed, metrics = compare_tile_output_values(workload, expected, observed)
+        self.assertTrue(passed)
+        self.assertEqual(calls, [("original-7", expected, observed)])
+        self.assertEqual(metrics["original_bench_check"], check)
+        self.assertEqual(metrics["comparison_unit"], "original_bench_output_contract")
+        self.assertEqual(metrics["output_mismatches"], 0)
+
+    def test_original_non_numeric_output_refusal_remains_rejected(self):
+        original = SimpleNamespace(compare=lambda *args: {"passed": False, "reason": "output_names", "outputs": {}})
+        workload = BenchWorkload(problem().workload_document("original-7"))
+        with patch("open_cake_ir.tasks.c550_bench.workload.problem_for", return_value=(original, "original-7")):
+            passed, metrics = compare_tile_output_values(workload, {}, {})
+        self.assertFalse(passed)
+        self.assertEqual(metrics["output_mismatches"], 1)
+        self.assertEqual(metrics["original_bench_check"]["reason"], "output_names")
+
     def test_preserves_original_integer_mask_scalar_and_effective_tolerance(self):
         document = problem().workload_document("original-7")
         self.assertEqual(document["tensors"]["positions"]["dtype"], "int64")

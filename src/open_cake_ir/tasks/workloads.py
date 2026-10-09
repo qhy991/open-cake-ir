@@ -35,8 +35,10 @@ from .solx_fib import workload as solx_fib_math
 from .solx_fib.authoring import starter_source as solx_fib_starter_source
 from .tinygemm import reproduction as tinygemm_reproduction
 from . import metax_fp8_gemm
+from .c550_bench import workload as c550_bench_math
 
 _TASKS = {
+    c550_bench_math.OPERATOR: (c550_bench_math.validate_contract, c550_bench_math.BenchWorkload),
     metax_fp8_gemm.OPERATOR: (metax_fp8_gemm.validate_contract, WorkloadContract),
     tinygemm_reproduction.OPERATOR: (tinygemm_reproduction.validate_contract, WorkloadContract),
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
@@ -108,6 +110,8 @@ def load_workload(path) -> WorkloadContract:
 def _tensor_math(workload: WorkloadContract):
     """Task-owned routing for the common tensor Evaluation input/oracle interface."""
     operator = workload.document["operator"]
+    if operator == c550_bench_math.OPERATOR:
+        return c550_bench_math
     if operator == metax_fp8_gemm.OPERATOR:
         return metax_fp8_gemm
     if operator == tinygemm_reproduction.OPERATOR:
@@ -191,7 +195,20 @@ def reference_evaluation_outputs(workload: WorkloadContract, case_id: str, input
             for name, value in reference_tensors(workload, case_id, inputs).items()}
 
 
-def materialize_evaluation_case(workload: WorkloadContract, case_id: str):
+def requires_target_preparation(workload: WorkloadContract) -> bool:
+    return getattr(_tensor_math(workload), 'REQUIRES_TARGET_PREPARATION', False)
+
+
+def preserves_output_tensors(workload: WorkloadContract) -> bool:
+    return getattr(_tensor_math(workload), 'PRESERVE_OUTPUT_TENSORS', False)
+
+
+def materialize_evaluation_case(workload: WorkloadContract, case_id: str, *, admission=None):
+    owner = _tensor_math(workload)
+    if requires_target_preparation(workload):
+        if admission is None:
+            raise ValueError('this task requires its original oracle on the leased target')
+        return owner.prepare_evaluation_case(workload, case_id, admission=admission)
     inputs = materialize_evaluation_inputs(workload, case_id)
     return inputs, reference_evaluation_outputs(workload, case_id, inputs)
 
