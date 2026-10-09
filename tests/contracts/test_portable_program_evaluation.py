@@ -1,6 +1,7 @@
 """Complete non-CUDA Programs through real software boundaries, CPU substitutes only."""
 from hashlib import sha256
 from io import StringIO
+import importlib
 import json
 from pathlib import Path
 import os
@@ -147,7 +148,9 @@ class PortableProgramEvaluation(unittest.TestCase):
         admission = SimpleNamespace(device_arch=candidate.target)
         arguments = [torch.full(shape, 0., dtype=dtype, device='cuda:0')
                      for _, shape, dtype, _ in manifest.tensor_abi]
-        with patch.dict('sys.modules', {'torch': torch}), patch(native, side_effect=loader) as native_load:
+        module_name, class_name, _ = native.rsplit('.', 2)
+        driver_class = getattr(importlib.import_module(module_name), class_name)
+        with patch.dict('sys.modules', {'torch': torch}), patch.object(driver_class, 'load', side_effect=loader) as native_load:
             loaded, tensors = load_torch_program(candidate, manifest, arguments, admission,
                 _MODULE_LOADERS[platform_for(candidate.target).code_object])
         self.assertEqual(native_load.call_count, len(program.stages))
@@ -266,7 +269,7 @@ class PortableProgramEvaluation(unittest.TestCase):
                 authority_document={'lowering_route': program.document['stages'][0]['schedule']['lowering']})
             result = environment.build(CandidateSubmission.seal(environment.media_type, program.document_bytes))
             self.assertNotEqual(result.disposition, 'launchable')
-            self.assertIn('one dispatch', str(result.feedback))
+            self.assertIn('not qualified' if backend == 'triton-metax' else 'one dispatch', str(result.feedback))
             toolchain.build_stage.assert_not_called()
 
     def test_local_worker_prepares_complete_program_oracles_and_refuses_timing_before_lock(self):

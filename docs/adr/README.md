@@ -88,3 +88,4 @@ ADR 保存设计理由，当前实现以代码和[当前状态](../../reports/cu
 - [0079: Ordered Python candidate bundles](0079-ordered-python-candidate-bundles.md)
 - [0080: Paired Studies bind provider transport per arm](0080-paired-studies-bind-provider-transport-per-arm.md)
 - [0081: Isolate Codex author state per Run](0081-isolate-codex-author-home-per-run.md)
+- [0082: Retain recovered restricted file-tool denials in opt-in v5](0082-recovered-restricted-file-tool-denials.md)

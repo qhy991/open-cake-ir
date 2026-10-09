@@ -10,6 +10,7 @@ import json
 from typing import Callable, Mapping
 
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate
+from open_cake_ir.evaluation.refusals import EvaluationRefusal, refusal_from_attempts
 from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.evidence.store import RunLedger
 
@@ -40,7 +41,7 @@ class EvaluationWriter:
     execution: Mapping[str, object]
     _job_ids: set = field(default_factory=set, repr=False)
 
-    def evaluate(self, candidate: LaunchableCandidate, *, purpose: str, turn=None, source_turn=None) -> EvaluationReceipt:
+    def evaluate(self, candidate: LaunchableCandidate, *, purpose: str, turn=None, source_turn=None) -> EvaluationReceipt | EvaluationRefusal:
         if (turn is None) == (source_turn is None) or (purpose == 'confirmatory' and source_turn is None):
             raise ValueError('Evaluation needs one search turn or a terminal nomination source')
         origin = {'turn': turn} if turn is not None else {'source_turn': source_turn}
@@ -77,6 +78,15 @@ class EvaluationWriter:
             },
         )
         if receipt is None:
+            refusal = (refusal_from_attempts(attempt.attempts, candidate=candidate,
+                case_id=self.case_id, purpose=purpose) if turn is not None else None)
+            if refusal is not None:
+                self.ledger.append('evaluation_refused', {
+                    **origin, 'purpose': purpose, 'candidate_sha256': candidate.candidate_sha256,
+                    'refusal': refusal.document,
+                    'elapsed_wall_seconds': round(self.ralph.elapsed_wall_seconds, 6),
+                })
+                return refusal
             # The broker already said why it produced none. Repeating it here keeps the
             # fault readable without reopening the archived attempts.
             last = attempt.attempts[-1] if attempt.attempts else None

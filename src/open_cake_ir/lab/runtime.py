@@ -367,9 +367,15 @@ class CommandBrokerSubmitter:
                     diagnostic_payloads[f'failure_{role}'] = payload
                     fault_artifacts[f'failure_{role}'] = payload
                 job_observations = _BROKER_JOB_OBSERVATION.findall(completed.stderr)
-                if len(job_observations) != 1:
+                from open_cake_ir.evaluation.refusals import is_local_allocation_refusal
+                allocation_refused = is_local_allocation_refusal(
+                    result, completed.stdout, completed.stderr, target=candidate.target)
+                if allocation_refused:
+                    observed_job_id = result['job_id']
+                elif len(job_observations) != 1:
                     raise ValueError("broker job observation coverage differs")
-                observed_job_id = job_observations[0].decode("ascii")
+                else:
+                    observed_job_id = job_observations[0].decode("ascii")
                 if result.get("job_id") not in {observed_job_id, _WORKER_JOB_PLACEHOLDER if observed_job_id.startswith("gpuq-") else observed_job_id}:
                     raise ValueError("worker and broker job identities differ")
                 result = dict(result)
