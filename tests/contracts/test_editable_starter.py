@@ -74,6 +74,51 @@ class EditableMaterial(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'immutable task material'):
             TaskPackage('bad', 'open_cake', 'No authorized implementation', 'Rules', initial_candidate_source=source)
 
+    def test_provider_checks_initial_bytes_once_and_never_resets_on_resume(self):
+        from open_cake_ir.lab.providers import QualifiedRunProvider
+        from open_cake_ir.lab.provider_documents import ProviderTurn
+        from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACT
+        package = TaskPackage('seed', 'open_cake', PROGRAM, '# Rules', initial_candidate_source=PROGRAM)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            materialize_task_package(root, package)
+            calls = []
+            class Adapter:
+                def execute(self, invocation, *, candidate_path, expected_change, expected_terminal_message, **kwargs):
+                    self_before = candidate_path.read_text()
+                    calls.append((expected_change, self_before))
+                    source = self_before.replace('seed_program', 'first_edit') if len(calls) == 1 else self_before.replace('first_edit', 'second_edit')
+                    candidate_path.write_text(source)
+                    raw = source.encode()
+                    candidates = project_python_candidate_bundle(raw, maximum_candidates_per_turn=1)
+                    return ProviderTurn(thread_id='01234567-89ab-cdef-0123-456789abcdef', provider_tokens=10,
+                        candidates=candidates, candidate_sha256s=tuple(sha256(c).hexdigest() for c in candidates),
+                        raw_submission=raw, raw_events=b'CPU component double', raw_events_sha256='1' * 64,
+                        terminal_message=expected_terminal_message, terminal_message_count=1, normalization='CPU fixture')
+            # This unit exercises turn materialization/custody only. The separate
+            # qualification fixture runs the actual Claude adapter and Replay.
+            provider = QualifiedRunProvider.__new__(QualifiedRunProvider)
+            provider._builders = {'seed': SimpleNamespace(workspace=root, build=lambda *a, **k: SimpleNamespace())}
+            provider._task_packages = {'seed': package}
+            provider._submission_contract = PYTHON_CANDIDATE_BUNDLE_V1
+            provider._event_contract = CLAUDE_EVENT_CONTRACT
+            provider.configuration = {'harness': 'claude-code', 'event_contract': CLAUDE_EVENT_CONTRACT}
+            provider._adapter = Adapter()
+            request = dict(run_id='seed', arm='open_cake', environment_kind='open_cake',
+                           maximum_candidates_per_turn=1, state_card={})
+            path = root / 'candidate-set.py'
+            path.write_text(PROGRAM + '# unexpected mutation\n')
+            with self.assertRaisesRegex(ValueError, 'initial provider material'):
+                provider.turn(SimpleNamespace(**request, turn=1, thread_id=None, cumulative_provider_tokens=0))
+            self.assertEqual(calls, [])
+            path.write_text(PROGRAM)
+            first = provider.turn(SimpleNamespace(**request, turn=1, thread_id=None, cumulative_provider_tokens=0))
+            provider.turn(SimpleNamespace(**request, turn=2, thread_id=first.thread_id, cumulative_provider_tokens=10))
+            self.assertEqual([call[0] for call in calls], ['update', 'update'])
+            self.assertIn('first_edit', calls[1][1])
+            self.assertIn('second_edit', path.read_text())
+            self.assertIn('seed_program', (root / 'TASK.md').read_text())
+
 
 class EditableQualification(unittest.TestCase):
     def setUp(self):
