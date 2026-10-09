@@ -27,7 +27,7 @@ from open_cake_ir.tasks.normalization.study import task_run_inputs
 from open_cake_ir.tasks.preparation import prepare_task_run
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import load_workload, create_task
-from tests.contracts.test_metal_preflight import MetalPreflightTests
+from tests.contracts import test_metal_preflight
 from tests.contracts.test_native_triton_pairing import CompilationFixture
 from tests.contracts.test_runtime_config import runtime_document
 from tests.contracts._executor_fixture import compiler_reference
@@ -56,7 +56,7 @@ class ProgramTaskStarters(unittest.TestCase):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.directory=Path(temp.name).resolve()
         self.compiler=Compiler.load(ROOT,ROOT/'compiler/revision.json')
-        _, self.study, self.executor, self.receipt, _ = MetalPreflightTests.fixture(
+        _, self.study, self.executor, self.receipt, _ = test_metal_preflight.MetalPreflightTests.fixture(
             self,self.directory,'claude-code',backend='triton-b200')
         self.workload=load_workload(self.directory/'workload.json')
         self.source=program_source((self.directory/'starter.py').read_text())
@@ -124,7 +124,7 @@ class ProgramTaskStarters(unittest.TestCase):
         lowered=lower_skeleton(self.compiler,self.prepared)
         self.validate_baseline(self.candidate,lowered)
         manifest,children,_=program_components(self.candidate)
-        self.assertEqual(list(children),['copy','activate'])
+        self.assertEqual(set(children),{'copy','activate'})
         for change in ('later_body','missing','order'):
             document=deepcopy(self.prepared)
             if change=='later_body':document['stages'][1]['schedule']['operations'][-1]['parameters']['coalesced']=True

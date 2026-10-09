@@ -322,6 +322,8 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
         for stage, lowering in zip(baseline_lowering.program.stages, baseline_lowering.lowerings, strict=True):
             if stage.schedule.lowering.backend.value != route['backend']:
                 raise ValueError(f'fixed baseline Program stage {stage.name!r} backend differs')
+            if manifests[stage.name].kernel_name != lowering.toolchain_requirements['kernel_entry_point']:
+                raise ValueError(f'fixed baseline Program stage {stage.name!r} entry point differs')
             try:
                 _validate_starter_kernel(project_root, children[stage.name], lowering, route, manifests[stage.name])
             except ValueError as error:
@@ -374,8 +376,7 @@ def _validate_starter_kernel(project_root, sealed_baseline, baseline_lowering, r
                 expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters,
             )
     reference_differs = (not source_matches or list(manifest.grid) != list(grid)
-                         or manifest.block != block
-                         or manifest.kernel_name != requirements['kernel_entry_point'])
+                         or manifest.block != block)
     if reference_differs:
         raise differs(
             'fixed baseline differs from the frozen Compiler kernel or launch commitments',
