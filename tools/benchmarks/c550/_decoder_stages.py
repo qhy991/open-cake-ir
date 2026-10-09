@@ -226,7 +226,7 @@ def attention_output_gradient(b,s,h,heads,depth):
         head_index = lm.coordinate(source="program", name="head", id="head_index")
     for feature in lm.range(grad_attn_output, name="features", dimension=3, tile=32, num_stages=1, loop_unroll_factor=1):
         with compute:
-            features = lm.coordinate(source="loop_tile", name="feature", id="features")
+            features = lm.coordinate(source="loop_tile", name="feature", id="feature_coordinates")
             columns = head_index * {depth} + features
         for hidden in lm.range(grad_hidden_states_attn, name="hidden", dimension=2, tile=32, num_stages=1, loop_unroll_factor=1):
             with compute:

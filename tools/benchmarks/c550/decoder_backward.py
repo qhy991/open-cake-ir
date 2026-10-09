@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from tools.benchmarks.c550 import _decoder_stages as stages
+from . import _decoder_stages as stages
 
 TASK = 'L2/056_language_model_decoder_prenorm_attention_ffn_residual_backward'
 TARGET = 'xcore1002'
