@@ -94,7 +94,41 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
     return command
 
 
-def dispatch_must_stop(report, exit_code, fault=None):
+def _local_resource_failure(report, fault, evidence):
+    """Read the archived failed attempt; a message alone never releases the queue."""
+    if evidence is None or not isinstance(fault, dict) or fault.get('stage') != 'evaluation':
+        return False
+    from open_cake_ir.evaluation.metax_failures import is_local_launch_resource_failure
+    try:
+        events = evidence.replay_events(report['run_id'])
+        faults = [event for event in events if event['kind'] == 'run_fault']
+        if len(faults) != 1 or faults[0]['payload'] != fault:
+            return False
+        attempts = [event for event in events if event['kind'] == 'evaluation_attempt_completed'
+                    and event['payload'].get('turn') == fault.get('turn')]
+        if len(attempts) != 1 or attempts[0]['payload'].get('purpose') != 'search':
+            return False
+        refs = attempts[0]['payload']['objects']
+        by_role = {ref['role']: ref for ref in refs}
+        required = {'attempt_1_evaluator_result', 'attempt_1_failure_launch_resource',
+                    'attempt_1_stdout', 'attempt_1_stderr'}
+        if len(by_role) != len(refs) or not required <= by_role.keys():
+            return False
+        if any(role.startswith('attempt_2_') for role in by_role):
+            return False
+        def read(role):
+            return evidence.read_object(by_role[role]).decode('utf-8')
+        result = json.loads(read('attempt_1_evaluator_result'))
+        diagnostic = json.loads(read('attempt_1_failure_launch_resource'))
+        if diagnostic.get('candidate_sha256') != attempts[0]['payload'].get('candidate_sha256'):
+            return False
+        return is_local_launch_resource_failure(result, diagnostic,
+            read('attempt_1_stdout'), read('attempt_1_stderr'))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
+def dispatch_must_stop(report, exit_code, fault=None, *, evidence=None):
     """An archived author path failure ends its Run, not qualified sibling Runs.
 
     Unknown reports, custody faults, account/provider availability and device
@@ -106,6 +140,9 @@ def dispatch_must_stop(report, exit_code, fault=None):
             or report.get('replay', {}).get('refusals')):
         return True
     if audit.get('protocol_adherence') == 'adhered':
+        return False
+    if (audit.get('protocol_adherence') == 'broker_fault'
+            and _local_resource_failure(report, fault, evidence)):
         return False
     messages = {'Claude write is outside the candidate envelope',
                 'Claude candidate write lifecycle is incomplete',

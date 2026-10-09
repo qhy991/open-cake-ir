@@ -416,6 +416,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     baseline's dispatches to the candidate's kernel name, and the assay would have refused
     -- correctly, and one layer too late to say why.
     """
+    from open_cake_ir.evaluation.metax_failures import MetaxLaunchResourceError
     evaluation = authority.request['evaluation_protocol']
     protocol = paired_protocol(evaluation)
     all_cases = 'validation_case_ids' in evaluation
@@ -452,10 +453,11 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
         metrics['max_abs_error'] = max(metrics['max_abs_error'], values['max_abs_error'])
         metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and values['inputs_unchanged']
     def correctness(role, phase):
-        nonlocal correctness_calls
+        nonlocal correctness_calls, active_position
         launches = []
         combined = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
         for case_id in cases:
+            active_position = {'arm': role, 'phase': phase, 'input_case_id': case_id}
             correctness_protocol = EvaluationProtocol('workload-tensor-worker-correctness',
                 authority.request['purpose'], authority.workload.canonical_sha256, case_id, 'none')
             evaluate = evaluate_tile_validation_case if all_cases else evaluate_tile_workload
@@ -545,6 +547,11 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'artifacts': {'correctness_output': 'correctness-output.json',
                           'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
     except Exception as error:
+        if isinstance(error, MetaxLaunchResourceError) and hasattr(error, 'launch_resource'):
+            observation = {**error.launch_resource, **(active_position or {}),
+                'job_id': admission.broker_job_id, 'purpose': authority.request['purpose'],
+                'teardown_completed': False}
+            error.artifact_payloads['launch_resource'] = _canonical_json_bytes(observation)
         # Retain the failed native cohort before module teardown and before the
         # common broker discards its temporary worker directory. A diagnostic
         # snapshot is not a receipt and cannot qualify timing or correctness.
@@ -572,6 +579,10 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             except BaseException as error:
                 if cleanup_error is None:
                     cleanup_error = error
+        if isinstance(pending_error, MetaxLaunchResourceError) and hasattr(pending_error, 'launch_resource'):
+            observation = json.loads(pending_error.artifact_payloads['launch_resource'])
+            observation['teardown_completed'] = cleanup_error is None
+            pending_error.artifact_payloads['launch_resource'] = _canonical_json_bytes(observation)
         if cleanup_error is not None:
             if pending_error is not None:
                 raise pending_error from cleanup_error
