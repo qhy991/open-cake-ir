@@ -14,6 +14,27 @@ from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1, Prov
 from open_cake_ir.lab.python_candidate_bundle import project_python_candidate_bundle
 from open_cake_ir.serialization import canonical_json_bytes
 
+PROGRAM = '''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="first", target="xcore1002", backend="triton", entry_point="first")
+def first(lm, x: cake.Tensor((1, 7), "fp32"), tmp: cake.Tensor((1, 7), "fp32", mode="output")):
+    compute = lm.role(execution_groups=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        value = lm.load(x[row, :])
+        lm.store(tmp[row, :], value)
+@cake.schedule(name="second", target="xcore1002", backend="triton", entry_point="second")
+def second(lm, tmp: cake.Tensor((1, 7), "fp32"), out: cake.Tensor((1, 7), "fp32", mode="output")):
+    compute = lm.role(execution_groups=[0])
+    row = lm.program(tmp, axis=0, dimension=0, tile=1)
+    with compute:
+        value = lm.load(tmp[row, :])
+        lm.store(out[row, :], value)
+cake.program(program_id="seed_program", inputs=("x",), outputs=("out",), stages=(
+    cake.stage(name="first", schedule=first, bindings={"x":"x", "tmp":"tmp"}),
+    cake.stage(name="second", schedule=second, bindings={"tmp":"tmp", "out":"out"}),
+))
+'''
+
 
 class EditableMaterial(unittest.TestCase):
     def test_only_the_declared_known_kernel_file_author_can_receive_a_seed(self):
@@ -28,7 +49,7 @@ class EditableMaterial(unittest.TestCase):
             self.assertFalse(TaskPackage.permits_editable_starter({**authoring, 'provider': {**authoring['provider'], **provider}}))
 
     def test_exclusive_copy_preserves_original_and_resumed_bytes(self):
-        source = (Path(__file__).resolve().parents[2] / 'examples/python/metal_row_sum.py').read_text()
+        source = PROGRAM
         package = TaskPackage('seed', 'open_cake', '# Original\n' + source, '# Rules', initial_candidate_source=source)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
