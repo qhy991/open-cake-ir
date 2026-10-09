@@ -34,8 +34,7 @@ def reference(inputs, *, heads, kv_heads):
     go = inputs['grad_attn_output']
     weights, dropped = inputs['attn_weights'], inputs['attn_weights_dropped']
     values, mask = inputs['value_states'], inputs['dropout_mask']
-    batch, queries, _, width = go.shape
-    keys = values.shape[2]
+    batch = go.shape[0]
     groups = heads // kv_heads
     dw = np.empty_like(weights)
     dv = np.empty_like(values)
