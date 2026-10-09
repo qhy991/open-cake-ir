@@ -141,7 +141,7 @@ class IndexedMMAProvenance(unittest.TestCase):
                 ('repeated', ('left', 'batch_0', 'm_features')),
             ):
                 with self.subTest(target=target, indices=indices):
-                    _, schedule = self.execute(target, sequence=17, rows=3, columns=7, indices=indices)
+                    _, schedule = self.execute(target, sequence=33, rows=3, columns=7, indices=indices)
                     self.assertEqual(schedule.operation('left_0').reads, dependencies)
 
     def test_missing_reordered_or_unwritten_index_refuses_at_its_existing_owner(self):
