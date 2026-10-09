@@ -319,7 +319,7 @@ class EvaluationReceipt:
             ):
                 raise ValueError("EvaluationReceipt raw correctness or launch receipt differs")
             raw_metrics = correctness_raw.get("metrics", correctness_raw)
-            if not isinstance(raw_metrics, Mapping) or dict(raw_metrics) != _plain_json(self.correctness):
+            if not isinstance(raw_metrics, Mapping) or _plain_json(raw_metrics) != _plain_json(self.correctness):
                 raise ValueError("EvaluationReceipt correctness summary differs from raw output")
             derived_correctness = correctness_raw.get("passed")
             if derived_correctness is None and {
