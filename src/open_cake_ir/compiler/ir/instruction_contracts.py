@@ -90,6 +90,10 @@ _RECORDS = (
     _elementwise("ocml.fma.f32", ElementwiseOp.FMA, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),
+    # Registration permits a bounded software probe; the Target separately owns
+    # device admission for the MACA math library's compatible sin/cos entries.
+    _elementwise("maca.sin.f32", ElementwiseOp.SIN, DType.FP32),
+    _elementwise("maca.cos.f32", ElementwiseOp.COS, DType.FP32),
     _elementwise("maca.fma.f32", ElementwiseOp.FMA, DType.FP32),
     # Explicit result-rounding choices on the same ternary FP32 primitive.
     # Registration does not admit a contract on any Target.

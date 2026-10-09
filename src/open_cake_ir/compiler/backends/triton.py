@@ -179,7 +179,12 @@ _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 # Target's to say. MACA's CUDA-compatible entry maps to its own maca_mathlib, not
 # NVIDIA's implementation, so it carries a separate contract as well.
 _TRITON_TANH_CONTRACTS = frozenset({"libdevice.tanh.f32", "ocml.tanh.f32", "maca.tanh.f32"})
-_TRITON_TRIG_CONTRACTS = frozenset({"ocml.sin.f32", "ocml.cos.f32"})
+_TRITON_TRIG_LIBRARIES = {CodeObject.HSACO: "ocml", CodeObject.MCFATBIN: "maca"}
+
+
+def _trig_contract(target, op):
+    library = _TRITON_TRIG_LIBRARIES.get(target.code_object)
+    return f"{library}.{op.value}.f32" if library is not None else None
 
 _TRITON_MMA_CONTRACTS = frozenset(
     name for name in contracts_of(ContractKind.MMA) if name.startswith("triton.dot.")
@@ -583,12 +588,12 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             )
             if operation.parameters.op in {ElementwiseOp.SIN, ElementwiseOp.COS}:
                 instruction = operation.parameters.instruction
-                add(target.code_object is CodeObject.HSACO
-                    and instruction is not None
-                    and instruction.contract == f"ocml.{operation.parameters.op.value}.f32",
+                expected = _trig_contract(target, operation.parameters.op)
+                add(expected is not None and instruction is not None
+                    and instruction.contract == expected,
                     "TRITON_ELEMENTWISE_UNSUPPORTED",
                     f"operations[{index}].parameters.instruction",
-                    "OCML FP32 trig requires the HSACO route and the matching explicit contract")
+                    "FP32 trig requires the code object's matching explicit math contract")
             # Global arguments are pointers; _operand only names already-produced
             # values. Arithmetic does not implement access maps or memory effects.
             for edge in ("reads", "writes"):
@@ -1819,10 +1824,10 @@ class _TritonEmitter:
                     raise EmitError("the Triton fma body requires its target's admitted FMA contract")
                 expression = f"libdevice.{function}({operands[0]}, {operands[1]}, {operands[2]})"
         elif parameters.op in {ElementwiseOp.SIN, ElementwiseOp.COS}:
-            _require(self.target.code_object is CodeObject.HSACO
-                     and parameters.instruction is not None
-                     and parameters.instruction.contract == f"ocml.{parameters.op.value}.f32",
-                     "Triton trig requires its explicit OCML FP32 contract")
+            expected = _trig_contract(self.target, parameters.op)
+            _require(expected is not None and parameters.instruction is not None
+                     and parameters.instruction.contract == expected,
+                     "Triton trig requires the code object's explicit FP32 math contract")
             expression = f"libdevice.{parameters.op.value}({operands[0]})"
         elif parameters.op is ElementwiseOp.TANH:
             instruction = parameters.instruction

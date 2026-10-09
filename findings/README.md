@@ -3,6 +3,7 @@
 - [F-2026-10-09-010](2026-10-09-010-metax-complete-program-measurement.json) — complete MACA Program event and separate attribution adapters are software-verified; exact-target device qualification remains pending and the production evidence set stays empty.
 - [F-2026-10-09-008](2026-10-09-008-local-evaluation-refusals.json) — preserve witnessed allocation and zero-dispatch candidate resource refusals as unmeasured Evaluation outcomes. The successor must keep budget accounting, independent replay, and incomplete attribution separate from qualification; frozen C1 failures remain sealed.
 
+- [F-2026-10-09-012](2026-10-09-012-metax-math-library-trig.json) — installed MACA sin/cos API and isolated native compilation confirmed; explicit software contracts implemented while real Target admission and original-domain device correctness remain pending.
 
 - [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
 - [F-2026-10-09-007](2026-10-09-007-claude-input-validation-recovery.json) — opt-in v8 distinguishes a native Write input-validation failure from a completed write. Retained-stream replay preserves the later candidate, compaction and usage; C1 remains frozen and fresh provider qualification is still required.
