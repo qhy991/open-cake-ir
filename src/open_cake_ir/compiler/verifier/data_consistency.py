@@ -18,10 +18,11 @@ from ..ir import (
     Schedule,
 )
 from ..ir.vocabulary import ScanOp
-from ..ir.operations import elementwise_result_dtype, ELEMENTWISE_FLOAT_DTYPES as _ELEMENTWISE_FLOAT_DTYPES
+from ..ir.operations import cast_supported, elementwise_result_dtype, ELEMENTWISE_FLOAT_DTYPES as _ELEMENTWISE_FLOAT_DTYPES
 from ..diagnostics import FindingCategory
 from ._collector import _Collector
 from .hardware_conformance import _BLOCK_SCALE_MMA_CONTRACT
+from .output_partitions import partition_refusal
 
 
 def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
@@ -674,12 +675,15 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
         if len(ops) > 1:
-            out.add(
-                "BUFFER_MULTIPLE_WRITERS",
-                f"buffers[{schedule.buffers.index(buffer)}]",
-                f"buffer {name!r} is written by {', '.join(sorted(ops))}",
-                category,
-            )
+            refusal = partition_refusal(schedule, name)
+            if refusal is not None:
+                code, reason = refusal
+                out.add(
+                    code,
+                    f"buffers[{schedule.buffers.index(buffer)}]",
+                    f"buffer {name!r} is written by {', '.join(sorted(ops))}; {reason}",
+                    category,
+                )
     for name, ops in sorted(readers.items()):
         buffer = buffers[name]
         if buffer.mode is BufferMode.SCRATCH and name not in writers:
@@ -908,15 +912,12 @@ def _verify_operation_shape(
                         f"{list(output.shape)}",
                         category,
                     )
-                allowed = {DType.BF16, DType.FP16, DType.FP32, DType.FP8_E4M3}
-                float_conversion = source.dtype in allowed and output.dtype in allowed
-                integer_to_float = source.dtype is DType.INT32 and output.dtype is DType.FP32
-                if not (float_conversion or integer_to_float):
+                if not cast_supported(source.dtype, output.dtype):
                     out.add(
                         "CAST_DTYPE_UNSUPPORTED",
                         path,
                         "cast admits conversions among bf16, fp16, fp32 and fp8e4m3, "
-                        "and the directed int32-to-fp32 conversion",
+                        "integer-to-fp32 RNE, exact int32-to-int64 and bool-to-int32 conversions",
                         category,
                     )
                 if output.dtype is not operation.parameters.to:
@@ -1789,12 +1790,12 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"{index_buffer.space.value}, not registers", out,
                         category,
                     )
-                    if index_buffer.dtype is not DType.INT32:
+                    if index_buffer.dtype not in {DType.INT32, DType.INT64}:
                         out.add(
                             "ACCESS_INDEX_BUFFER_DTYPE",
                             component_path,
                             f"runtime index buffer {component.name!r} is "
-                            f"{index_buffer.dtype.value}, not int32",
+                            f"{index_buffer.dtype.value}, not int32 or int64",
                             category,
                         )
             else:

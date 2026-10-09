@@ -1,5 +1,16 @@
 # Findings
 
+
+- [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
+
+- [F-2026-10-09-001](2026-10-09-001-claude-prompt-transport.json) — v7 sends full prompts through supervised stdin and reserves context room with100k native compaction. Preserve original E2BIG/context-limit failures; live qualification and large UTF8 transport tests retained.
+
+- [F-2026-10-08-002](2026-10-08-002-c550-local-fault-scope.json) — bounded MACA shared-layout assertion classification and coherent author-delivery timeout isolation. Same-runtime baseline/rejected-input CPU controls pass; original failures stay sealed and no hardware tile range is inferred.
+
+- [F-2026-10-08-001](2026-10-08-001-claude-exact-file-permissions.json) — native exact-file permissions block wrong candidate paths while preserving atomic Write/Edit; v6 recovery and archived author-fault isolation are opt-in. Original failures remain failures; fresh live qualification gates new Runs.
+
+- [F-2026-10-07-009](2026-10-07-009-c550-claude-nested-candidate-path.json) — C550 RMSNorm Turn16 writes two successful candidate paths; retain the original refusal. Explicit OS-isolated successors name the exact file each turn; v5 requires native restriction support. C5502.1.226 rejects that flag, so fresh v4 successor qualification remains the launch gate.
+
 Append-only records between campaign evidence and Compiler/Executor changes. One file
 per finding, named `YYYY-MM-DD-NNN-slug.json`. The evidence ledger already records what
 happened; a finding is the curated "so what" that a Revision decision can cite.
@@ -44,6 +55,23 @@ path. A finding closes only when `implemented_in` names the Revision that change
 ## Index
 
 - F-2026-10-06-008 — unprofiled MACA event mean10 rejects short-task identical-artifact controls at the declared 5% A/A boundary; bounded contraction controls pass. Retain all samples and task-scoped acceptance; no global measurement-reliability or Compiler promotion.
+- [F-2026-10-09-006](2026-10-09-006-triton-singleton-splat.json) — MACA scalar reshape fails during native compilation; singleton inputs use a splat before the declared reduction. Device verification remains separate.
+
+- [F-2026-10-09-003](2026-10-09-003-triton-reduction-storage-and-scalar.json) — Triton reduction storage admission and logical singleton rank consistency; successor software verification is recorded in the Finding.
+
+- [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.
+
+- [F-2026-10-07-007](2026-10-07-007-hcu-frozen-pointer-range.json) — reuse a checked contiguous HCU ABI to supply pointer extent without caching addresses; host-only pilot and Compiler qualification remain distinct.
+
+- [F-2026-10-07-006](2026-10-07-006-claude-restricted-path-recovery.json) — restricted Claude file tools block a mistaken outside path, but v4 refuses the author's recovered submission. Opt-in v5 requires complete denial witnesses and successful final writes; original failures stay unchanged, and live qualification remains required before new Metal Runs.
+
+- [F-2026-10-07-005](2026-10-07-005-register-transpose-capacity.json) — explicit rank-two register permutation with shared typing and axis provenance; device qualification and performance remain separate.
+
+- [F-2026-10-07-003](2026-10-07-003-hsaco-resource-feedback.json) — connect HSACO allocation inspection to existing portable feedback, preserve code-object identity, and keep fixed LDS, dynamic launch allocation and unknown stack distinct.
+- [F-2026-10-07-004](2026-10-07-004-store-loop-stage-selection.json) — explicit named output-loop depth selection reuses existing range options and preserves the arithmetic/access graph; no default stage-depth policy.
+
+- [F-2026-10-07-001](2026-10-07-001-ordinary-output-program-ownership.json) — shared direct ordinary-output ownership, reproduced from DCU partial reductions; singleton, persistent and indirect boundaries remain distinct.
+- [F-2026-10-07-002](2026-10-07-002-pure-pointwise-width-applicability.json) — existing width rewrite coverage for typed selections and fixed independent pointwise loops; no default-width or search-performance claim.
 
 The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
 assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
@@ -230,3 +258,5 @@ Output-prefix003 preserves original002 at751ead87; main002 describes independent
 - F-2026-10-04-003 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded qualification passed; review and integration status are owned by the canonical Finding.
 
 The output-prefix pruning record first published as F-2026-10-04-002 on task/core-valid-extent-work-pruning-20261004 is assigned global sequence003 here. Original record and evidence remain at751ead87; main sequence002 belongs to the separate local-device admission observation.
+
+- [F-2026-10-09-009](2026-10-09-009-int64-bool-storage.json) — add explicit INT64/BOOL storage and conversion semantics for original Bench input ABIs; software verification is bounded, native-device qualification remains open.

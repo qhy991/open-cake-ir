@@ -36,10 +36,13 @@ def command(workspace, program):
                  'ANTHROPIC_DEFAULT_HAIKU_MODEL'):
         args += ['--setenv', name, os.environ[name]] if name != 'ANTHROPIC_AUTH_TOKEN' else []
     # bwrap --clearenv cannot inherit a single secret without argv. Pass it over
-    # stdin to the trusted inner Python shim instead; Claude receives DEVNULL.
+    # stdin carries one credential line followed by the optional UTF-8 prompt.
+    # Both stay out of argv. Read bytes to avoid consuming buffered prompt bytes.
     return args + ['--', '/usr/bin/python3', '-c',
-        'import os,sys; os.environ["ANTHROPIC_AUTH_TOKEN"]=sys.stdin.readline().rstrip("\\n"); '
-        'os.environ["ANTHROPIC_API_KEY"]=os.environ["ANTHROPIC_AUTH_TOKEN"]; fd=os.open("/dev/null",os.O_RDONLY); os.dup2(fd,0); os.close(fd); os.execv(sys.argv[1],sys.argv[1:])',
+        'import os,sys,tempfile; os.environ["ANTHROPIC_AUTH_TOKEN"]=sys.stdin.buffer.readline().rstrip(b"\\n").decode(); '
+        'os.environ["ANTHROPIC_API_KEY"]=os.environ["ANTHROPIC_AUTH_TOKEN"]; '
+        'f=tempfile.TemporaryFile(); f.write(sys.stdin.buffer.read()); f.seek(0); '
+        'os.dup2(f.fileno(),0); os.execv(sys.argv[1],sys.argv[1:])',
         *program]
 
 def main():
@@ -85,8 +88,9 @@ raise SystemExit(0 if all(checks.values()) else 1)
                 input=(token+'\n').encode(),env=os.environ).returncode
         finally: escape.unlink()
     home.mkdir(mode=0o700,exist_ok=True)
+    prompt = sys.stdin.buffer.read()
     return subprocess.run(command(workspace,['/provider/claude',*sys.argv[1:]]),
-        input=(token+'\n').encode(),env=os.environ).returncode
+        input=(token+'\n').encode()+prompt,env=os.environ).returncode
 
 if __name__=='__main__': raise SystemExit(main())
 '''
