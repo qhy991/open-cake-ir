@@ -207,7 +207,7 @@ def evaluate(args, result):
     if platform.code_object not in {CodeObject.HSACO, CodeObject.MCFATBIN}:
         raise ValueError('this local tensor qualification command implements HIP and MACA allocation adapters')
     if args.command in {'profile', 'events'} and platform.code_object is not CodeObject.MCFATBIN:
-        raise ValueError('this Program profile/event source implements only MACA')
+        raise ValueError('this Program profile/event source implements only MACA attribution or event observation')
     protocol = EvaluationProtocol('tensor-program-correctness', 'confirmatory', workload.canonical_sha256,
                                   args.case, 'none')
     result.update(phase='cpu_preparation', target=workload.target, workload_id=workload.workload_id, case_id=args.case)
