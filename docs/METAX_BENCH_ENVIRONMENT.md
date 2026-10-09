@@ -41,6 +41,22 @@ qualification. Partial input-layout observations do not qualify a complete task.
 CPU host admission, isolated native compilation of a small two-stage Program,
 and discrete-storage/conversion compilation have passed. A software coverage
 contract failure was retained and resolved by its owner in a separate reviewed
-tick; the affected contracts passed at the successor commit. These results cover
-software preparation only. Device, original-reference and performance
-qualification remain open under the tracking issue.
+tick; the affected contracts passed at the successor commit.
+
+The successor passed exact-target admission on eight C550 devices. The unmodified
+benchmark at `ababa4c0` then passed its original reference self-check for all ten
+tasks: 16 workloads per task, ten fresh-input rounds per workload, and 1,600
+passing checks. Each task ran in a separate process through the existing device
+lease. All processes exited successfully, and the final device observation
+showed no remaining GPU process from these checks.
+
+The checked public entry is `95fbbcf5`, with the separate coverage-contract fix
+`583e6cc6`. The private, clean Executor source records their ancestry together
+with the canonical host capture. Its source mapping, replay bundle, commands and
+original reports remain in private evidence.
+
+This closes the environment and original-reference scope of #406. The reports
+retain `mode=reference_selfcheck`, `full_device_correctness=false`, and
+`performance=not_measured`. Candidate correctness, paired timing, provider
+qualification and optimization Runs remain separate gates under #400. The
+draft PR is not an integration or merge claim.
