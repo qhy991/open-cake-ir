@@ -307,11 +307,38 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
         return
     if baseline_lowering is None:
         raise ValueError('starter baseline requires the frozen Compiler lowering')
+    from open_cake_ir.compiler.program import LoweredProgram
+    if isinstance(baseline_lowering, LoweredProgram):
+        from open_cake_ir.evaluation.program import program_components, single_kernel_lowering
+        baseline_lowering.validate_binding()
+        single = single_kernel_lowering(baseline_lowering)
+        if single is not None and not sealed_baseline.is_program:
+            _validate_starter_kernel(project_root, sealed_baseline, single, route,
+                                     manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest'])))
+            return
+        manifest, children, manifests = program_components(sealed_baseline)
+        if manifest.program.document != baseline_lowering.program.document:
+            raise ValueError('fixed baseline Program differs from the complete frozen Compiler Program')
+        for stage, lowering in zip(baseline_lowering.program.stages, baseline_lowering.lowerings, strict=True):
+            if stage.schedule.lowering.backend.value != route['backend']:
+                raise ValueError(f'fixed baseline Program stage {stage.name!r} backend differs')
+            try:
+                _validate_starter_kernel(project_root, children[stage.name], lowering, route, manifests[stage.name])
+            except ValueError as error:
+                raise ValueError(f'fixed baseline Program stage {stage.name!r}: {error}') from error
+        return
+    if sealed_baseline.is_program:
+        raise ValueError('fixed baseline Program requires complete frozen Program lowering')
+    _validate_starter_kernel(project_root, sealed_baseline, baseline_lowering, route,
+                             manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest'])))
+
+
+def _validate_starter_kernel(project_root, sealed_baseline, baseline_lowering, route, manifest):
+    """Compare one real kernel's retained source and launch against its lowering."""
     requirements = baseline_lowering.toolchain_requirements
     source = sealed_baseline.artifact_payloads.get('lowered_source')
     if source is None:
         raise ValueError('fixed baseline requires retained Compiler lowering source')
-    manifest = manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
     if route["backend"] == "metal":
         source_matches = source == baseline_lowering.source.encode()
         grid, block = requirements["threadgroups_per_grid"], tuple(requirements["threads_per_threadgroup"])
@@ -322,7 +349,7 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
         # The width comes from the Target that declares it. Reading a shared 32 here
         # refused every wave64 baseline, and said the Compiler kernel differed.
         _, target_path = source_reference_path(
-            project_root, f"compiler/targets/{workload.target}.json",
+            project_root, f"compiler/targets/{baseline_lowering.target}.json",
             'paired baseline target')
         grid = requirements['grid']
         block = tuple(native_block(
@@ -336,7 +363,7 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
         if route["backend"] == "triton":
             expected_hidden = _hidden_pointers(
                 triton_route(requirements), sealed_baseline.artifact_payloads,
-                len(workload.tensor_abi(str(evaluation['case_id']))),
+                len(manifest.tensor_abi),
                 codegen_arch=requirements.get('codegen_arch'),
                 kernel_name=requirements['kernel_entry_point'])
         else:
@@ -347,11 +374,12 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
                 expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters,
             )
     reference_differs = (not source_matches or list(manifest.grid) != list(grid)
-                         or manifest.block != block)
+                         or manifest.block != block
+                         or manifest.kernel_name != requirements['kernel_entry_point'])
     if reference_differs:
         raise differs(
             'fixed baseline differs from the frozen Compiler kernel or launch commitments',
-            expected={'candidate': fixed['candidate'], 'source_matches': True,
+            expected={'candidate': candidate_identity(sealed_baseline), 'source_matches': True,
                       'grid': list(grid), 'block': block},
             observed={'candidate': candidate_identity(sealed_baseline), 'source_matches': source_matches,
                       'grid': list(manifest.grid), 'block': manifest.block},
@@ -500,7 +528,7 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         admit_paired_baseline_artifact(project_root=project_root, workload=workload,
             evaluation=protocol, execution=execution, route=baseline_route)
     validate_reference_handoff(project_root, {'author': authoring}, workload=workload, case_id=protocol['case_id'])
-    from .python_reference import read_skeleton_reference
+    from .python_reference import read_skeleton_reference, skeleton_route
     for name in ('scaffold', * (('launch_contract', 'candidate_skeleton') if specification.environment_kind == 'direct_cuda' else ())):
         reference = _object(authoring.get(name), f'run.authoring.{name}')
         if set(reference) != {'path', 'sha256'}:
@@ -529,13 +557,22 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
                 if starter_path.suffix != '.py':
                     raise ValueError('Python-only Run requires a .py Schedule starter')
             _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
-            if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
+            if skeleton.get('target') != execution['target'] or skeleton_route(skeleton) != authoring.get('lowering_route'):
                 raise ValueError('Run Schedule skeleton target or lowering route differs')
+            if 'program_id' in skeleton:
+                from .pairing import bind_baseline
+                from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+                if authoring['provider'].get('submission_contract') != PYTHON_CANDIDATE_BUNDLE_V1:
+                    raise ValueError('Program starter requires the Python candidate-bundle submission contract')
+                bind_baseline(skeleton, workload, str(protocol['case_id']),
+                              backend=authoring['lowering_route']['backend'])
     for name, reference in document['reference_inputs'].items():
         if name == 'baseline_programs':
             continue
         _, skeleton = read_skeleton_reference(project_root, reference, f'Run {name}')
         from .pairing import native_backend
+        if 'program_id' in skeleton:
+            raise ValueError('native comparison does not support a Program starter')
         if (skeleton.get('target') != execution['target']
             or skeleton.get('lowering', {}).get('backend') != native_backend(specification.environment_kind).backend):
             raise ValueError('Run baseline Schedule target or backend differs')

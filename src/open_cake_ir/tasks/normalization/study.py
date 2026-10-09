@@ -242,10 +242,13 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         route = dict(lowering_route)
         starter_reference = {'python_starter': {'path': str(starter_path)}}
     else:
-        source = frontend.read_schedule(starter_path)
-        route = source.document['lowering']
+        from open_cake_ir.lab.python_reference import read_skeleton, skeleton_route
+        source = read_skeleton(starter_path)
+        if 'program_id' in source and source_file:
+            raise ValueError('Program starter requires the Python candidate-bundle submission contract')
+        route = skeleton_route(source)
         starter_reference = {'schedule_skeleton': {'path': str(starter_path),
-            'canonical_sha256': sha256(canonical(source.document)).hexdigest()}}
+            'canonical_sha256': sha256(canonical(source)).hexdigest()}}
     input_format = 'python_source_v1'
     tool_surface = (['submit_python_bundle'] if reference_access == 'known_kernel_reproduction'
                     and not source_file else ['submit_python_source'])
