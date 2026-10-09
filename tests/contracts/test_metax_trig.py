@@ -46,7 +46,7 @@ class MetaxTrig(unittest.TestCase):
             self.assertIn(f'libdevice.{op}(values)'.encode(), projected)
             validate_triton_kernel(projected, emitted.toolchain)
             self.assertIn('TARGET_INSTRUCTION_UNSUPPORTED',
-                          {f.code for f in Compiler.load(ROOT).assess(schedule).findings})
+                          {f.code for f in Compiler.load(ROOT).assess(frontend.parse(source(op)).document).findings})
 
     def test_maca_contract_cannot_borrow_another_code_object_or_dtype(self):
         for op in ('sin', 'cos'):
