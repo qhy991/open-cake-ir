@@ -514,6 +514,8 @@ def _qualify(root, workspace, args, executable, source_path):
                 command.extend(('--native-skill-name', name))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
+    if getattr(args, 'claude_event_contract', None) is not None:
+        command.extend(('--claude-event-contract', args.claude_event_contract))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
     _write(workspace / "qualification.stdout", completed.stdout.encode())
     _write(workspace / "qualification.stderr", completed.stderr.encode())
@@ -567,6 +569,9 @@ def main(argv=None) -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
+    from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+    parser.add_argument('--claude-event-contract', choices=CLAUDE_EVENT_CONTRACTS,
+                        help='explicit Claude transport successor; default preserves v4')
     parser.add_argument("--response-model-alias", action="append", default=[],
                         help="explicit additional assistant-response model name for Claude; request/init/usage model stays exact")
     parser.add_argument("--workspace", type=Path, required=True)
@@ -722,7 +727,10 @@ def main(argv=None) -> int:
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
         source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
-        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10)
+        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30,
+        metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10,
+        metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10,
+        claude_event_contract=args.claude_event_contract)
     if route == 'metal':
         admit_cohort_payload(workload, args.case,
             inputs['evaluation_protocol']['paired_timing']['route_calls_per_cohort'])

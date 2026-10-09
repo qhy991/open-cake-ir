@@ -9,9 +9,8 @@ Each destination is inferred from a signal the loop already produces, not from a
 
 * **candidate** -- a gate refused it, or the set repeated itself. The Schedule is wrong,
   or two of them are one program under two names, and its author can see why either way.
-* **verifier** -- every gate passed and the toolchain refused Compiler-produced source. Something was true of
-  this Schedule that the pre-compile gates do not model, which is a missing rule rather
-  than a bad candidate.
+* **verifier** -- reserved for a diagnosed missing or incorrect verification rule.
+  Toolchain refusal alone does not establish that diagnosis.
 * **backend_lowering** -- Cake IR admits the Schedule, but the selected backend has
   no implementation for its declared instruction, dtype, access or exact target.
   This is a Compiler evolution candidate, not a reason to corrupt the Schedule.
@@ -86,12 +85,10 @@ def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -
         return Route(CANDIDATE, "the toolchain refused source authored by this arm")
 
     if stage == "compile":
-        # The gates admitted it and the toolchain did not. Whatever was wrong is outside
-        # what the verifier models, so the rule is missing rather than the Schedule bad.
         return Route(
-            VERIFIER,
-            "every gate passed and the toolchain still refused, so a contract this "
-            "Schedule violated is not yet modelled",
+            BACKEND_TRIAGE,
+            "the toolchain refused Compiler-produced source; inspect the emitted source, "
+            "toolchain and environment before assigning a backend or verifier defect",
         )
 
     error = feedback.get("error")

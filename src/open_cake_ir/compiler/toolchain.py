@@ -57,7 +57,7 @@ _TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range", "float"}
 
 def _libdevice_function_allowed(name, requirements) -> bool:
     from .backends.metax import DIRECTED_FMA_FUNCTIONS
-    return (name == "tanh" or name in {"sin", "cos"} and requirements.get("code_object") == CodeObject.HSACO.value
+    return (name == "tanh" or name in {"sin", "cos", "fma"} and requirements.get("code_object") == CodeObject.HSACO.value
             or requirements.get("code_object") == CodeObject.MCFATBIN.value
             and name in DIRECTED_FMA_FUNCTIONS.values())
 
@@ -153,7 +153,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     """Admit one kernel-only module without importing or evaluating any source.
 
     Module imports and @triton.jit have one spelling. The optional libdevice import
-    admits tanh, unary OCML sin/cos on HSACO, and direct ternary MACA directed
+    admits tanh, unary OCML sin/cos and ternary FMA on HSACO, and direct ternary MACA directed
     FMA calls on mcfatbin only. A max scan may carry its one exact pure JIT
     combine helper; no general callback or user helper is admitted.
     Constant infinity identities and the exact FP32 FMA instruction
@@ -255,7 +255,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 if (not isinstance(attribute, ast.Attribute) or attribute.value is not node
                     or not isinstance(call, ast.Call) or call.func is not attribute
                     or not _approved_libdevice_call(call, requirements)):
-                    raise ValueError(f"native Triton libdevice requires a direct tanh call, unary HSACO sin/cos call or an admitted MACA directed FMA call at line {node.lineno}")
+                    raise ValueError(f"native Triton libdevice requires a direct tanh call, unary HSACO sin/cos call, ternary HSACO FMA call or an admitted MACA directed FMA call at line {node.lineno}")
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES
@@ -553,7 +553,7 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         )
 
 
-def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
+def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int | None]:
     """Read one unambiguous kernel's allocation from the .amdgpu_metadata note.
 
     The AMDGPU backend writes this note into the assembly it already produced, so there
@@ -569,8 +569,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
       it is not folded into that number.
     - `.private_segment_fixed_size` is one per-lane scratch allocation covering what CUDA
       reports separately as LOCAL and STACK. This ISA does not separate them, so the whole
-      figure is reported as local bytes and the stack figure is zero because it is not an
-      observable quantity here -- not because no stack frame exists.
+      figure is reported as local bytes and separate stack bytes remain unknown.
     """
     # A kernel's first metadata key carries a YAML list dash, so every field pattern
     # here tolerates one. Relying on the keys staying in an order that keeps `-` off
@@ -579,7 +578,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
     names = re.findall(r"^[ \t]*(?:-[ \t]+)?\.name:\s*(\S+)\s*$", assembly, flags=re.MULTILINE)
     if names.count(entry_point) != 1 or len(names) != 1:
         raise ValueError("AMDGCN metadata does not name exactly one requested kernel")
-    result: dict[str, int] = {}
+    result: dict[str, int | None] = {}
     for label, name in (
         (".vgpr_count", "registers_per_thread"),
         (".group_segment_fixed_size", "static_shared_bytes"),
@@ -591,7 +590,7 @@ def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
         if len(values) != 1:
             raise ValueError(f"AMDGCN metadata has missing or ambiguous {label}")
         result[name] = int(values[0])
-    result["stack_bytes"] = 0
+    result["stack_bytes"] = None
     return result
 
 
@@ -605,17 +604,20 @@ def inspect_amdgcn_resources(compilation: TritonCompilation) -> CompiledResource
     route = route_for_code_object(compilation.code_object)
     if route.text_role != "amdgcn":
         raise ValueError(f"target {compilation.target!r} does not produce AMDGCN assembly")
+    allocation = _parse_amdgcn_resources(
+        compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point)
     return CompiledResources(
         source_sha256=sha256(compilation.source).hexdigest(),
-        cubin_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
+        binary_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
         target=compilation.target, entry_point=compilation.entry_point,
         threads_per_cta=compilation.threads_per_cta,
+        # AMDGPU's fixed group segment and the launch's dynamic shared request
+        # are distinct. The DTK HCU route uses dynamic LDS with fixed size zero.
         dynamic_shared_bytes=compilation.dynamic_shared_bytes,
+        code_object="hsaco",
         compiler_version=compilation.compiler_version,
         inspector_version=f"amdgpu-metadata via triton {compilation.compiler_version}",
-        **_parse_amdgcn_resources(
-            compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point
-        ),
+        **allocation,
     )
 
 
@@ -662,7 +664,7 @@ def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Pa
         )
     return CompiledResources(
         source_sha256=sha256(compilation.source).hexdigest(),
-        cubin_sha256=sha256(compilation.artifacts["cubin"]).hexdigest(),
+        binary_sha256=sha256(compilation.artifacts["cubin"]).hexdigest(),
         target=compilation.target, entry_point=compilation.entry_point,
         threads_per_cta=compilation.threads_per_cta,
         dynamic_shared_bytes=compilation.dynamic_shared_bytes,
