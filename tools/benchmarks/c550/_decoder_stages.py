@@ -160,23 +160,172 @@ def rms_weight(name,b,s,h,gradient,normalized,output):
 
 
 def softmax_backward(b,s,heads,depth):
-    return header('softmax_backward',[tensor('grad_attn_weights',(b,heads,s,s)),
-        tensor('attn_weights',(b,heads,s,s)),tensor('grad_attn_logits',(b,heads,s,s),output=True)])+f'''    query = lm.program(grad_attn_logits, axis=0, dimension=2, tile=1)
-    head = lm.program(grad_attn_logits, axis=1, dimension=1, tile=1)
-    batch = lm.program(grad_attn_logits, axis=2, dimension=0, tile=1)
+    return header('softmax_backward',[tensor('grad_attn_weights',(b*heads,s,s)),
+        tensor('attn_weights',(b,heads,s,s)),tensor('grad_attn_logits',(b*heads,s,s),output=True)])+f'''    query = lm.program(grad_attn_logits, axis=0, dimension=1, tile=1)
+    key = lm.program(grad_attn_logits, axis=1, dimension=2, tile=32)
+    group = lm.program(grad_attn_logits, axis=2, dimension=0, tile=1)
     with compute:
+        group_index = lm.coordinate(source="program", name="group", id="group_index")
+        batch_index = group_index // {heads}
+        head_index = group_index % {heads}
         keys = lm.coordinate(source="range", start=0, extent={1 << (s-1).bit_length()}, id="keys")
-        grad_stored = lm.load(grad_attn_weights[batch, head, query, keys], id="load_grad")
-        weight_stored = lm.load(attn_weights[batch, head, query, keys], id="load_weights")
+        grad_stored = lm.load(grad_attn_weights[group, query, keys], id="load_grad")
+        weight_stored = lm.load(attn_weights[lm.scalar_index(batch_index), lm.scalar_index(head_index), query, keys], id="load_weights")
         grad = lm.cast(grad_stored, to="fp32", id="widen_grad")
         weights = lm.cast(weight_stored, to="fp32", id="widen_weights")
         products = grad * weights
         total = lm.reduce(products, op="sum", axis=0, scope="cta", across_loop=False, id="total")
-        centered = grad - total
-        weighted = weights * centered
+        tile_grad_stored = lm.load(grad_attn_weights[group, query, key], id="load_tile_grad")
+        tile_weight_stored = lm.load(attn_weights[lm.scalar_index(batch_index), lm.scalar_index(head_index), query, key], id="load_tile_weight")
+        tile_grad = lm.cast(tile_grad_stored, to="fp32", id="widen_tile_grad")
+        tile_weight = lm.cast(tile_weight_stored, to="fp32", id="widen_tile_weight")
+        centered = tile_grad - total
+        weighted = tile_weight * centered
         scaled = weighted / {depth ** 0.5!r}
         rounded = lm.cast(scaled, to="bf16", id="round_output")
-        lm.store(grad_attn_logits[batch, head, query, :], rounded, id="store_output")
+        lm.store(grad_attn_logits[group, query, key], rounded, id="store_output")
+'''
+
+
+def weight_gradient(name,b,s,m,n,left,right,output):
+    """Fixed batches accumulate as FP32 tiles; no per-batch global matrices."""
+    source=header(name,[tensor(left,(b,s,m)),tensor(right,(b,s,n)),tensor(output,(m,n),output=True)])
+    source+=f'''    row = lm.program({output}, axis=0, dimension=0, tile=16)
+    column = lm.program({output}, axis=1, dimension=1, tile=32)
+    with compute:
+        row_index = lm.coordinate(source="program", name="row", id="row_index")
+        zero = row_index * 0
+'''
+    for batch in range(b):
+        source+=f'''    with compute:
+        batch_{batch} = zero + {batch}
+    for sequence_{batch} in lm.range({left}, name="sequence_{batch}", dimension=1, tile=32, num_stages=1, loop_unroll_factor=1):
+        with compute:
+            left_{batch} = lm.load({left}[lm.scalar_index(batch_{batch}), sequence_{batch}, row], id="load_left_{batch}")
+            right_{batch} = lm.load({right}[lm.scalar_index(batch_{batch}), sequence_{batch}, column], id="load_right_{batch}")
+            a_{batch} = lm.transpose(left_{batch}, id="transpose_left_{batch}")
+            b_{batch} = lm.transpose(right_{batch}, id="transpose_right_{batch}")
+            product_{batch} = lm.mma(a_{batch}, b_{batch}, instruction={{"contract":"triton.dot.bf16_fp32"}}, tile_shape=(16,32,32), id="product_{batch}")
+'''
+        if batch:
+            prior='product_0' if batch==1 else f'accumulated_{batch-1}'
+            source+=f'    with compute:\n        accumulated_{batch} = {prior} + product_{batch}\n'
+    result='product_0' if b==1 else f'accumulated_{b-1}'
+    return source+f'''    with compute:
+        rounded = lm.cast({result}, to="bf16", id="round_output")
+        lm.store({output}[row, column], rounded, id="store_output")
+'''
+
+
+def attention_output_gradient(b,s,h,heads,depth):
+    return header('attention_output_gradient',[tensor('grad_hidden_states_attn',(b,s,h)),
+        tensor('o_weight',(h,heads*depth)),tensor('grad_attn_output',(b,s,heads,depth),output=True)])+f'''    row = lm.program(grad_attn_output, axis=0, dimension=1, tile=16)
+    head = lm.program(grad_attn_output, axis=1, dimension=2, tile=1)
+    batch = lm.program(grad_attn_output, axis=2, dimension=0, tile=1)
+    with compute:
+        head_index = lm.coordinate(source="program", name="head", id="head_index")
+    for feature in lm.range(grad_attn_output, name="features", dimension=3, tile=32, num_stages=1, loop_unroll_factor=1):
+        with compute:
+            features = lm.coordinate(source="loop_tile", name="feature", id="features")
+            columns = head_index * {depth} + features
+        for hidden in lm.range(grad_hidden_states_attn, name="hidden", dimension=2, tile=32, num_stages=1, loop_unroll_factor=1):
+            with compute:
+                a = lm.load(grad_hidden_states_attn[batch, row, hidden], id="load_gradient")
+                weight = lm.load(o_weight[hidden, columns], id="load_weight")
+                wt = lm.transpose(weight, id="transpose_weight")
+                product = lm.mma(a, wt, instruction={{"contract":"triton.dot.bf16_fp32"}}, tile_shape=(16,32,32), id="product")
+        with compute:
+            rounded = lm.cast(product, to="bf16", id="round_output")
+            lm.store(grad_attn_output[batch, row, head, feature], rounded, id="store_output")
+'''
+
+
+def attention_weight_gradient(b,s,heads,depth):
+    return header('attention_weight_gradient',[tensor('grad_attn_output',(b,s,heads,depth)),
+        tensor('value_states_repeated',(b,heads,s,depth)),tensor('grad_attn_weights',(b*heads,s,s),output=True)])+f'''    row = lm.program(grad_attn_weights, axis=0, dimension=1, tile=16)
+    column = lm.program(grad_attn_weights, axis=1, dimension=2, tile=32)
+    group = lm.program(grad_attn_weights, axis=2, dimension=0, tile=1)
+    with compute:
+        group_index = lm.coordinate(source="program", name="group", id="group_index")
+        batch_index = group_index // {heads}
+        head_index = group_index % {heads}
+    for feature in lm.range(grad_attn_output, name="features", dimension=3, tile=32, num_stages=1, loop_unroll_factor=1):
+        with compute:
+            a = lm.load(grad_attn_output[lm.scalar_index(batch_index), row, lm.scalar_index(head_index), feature], id="load_gradient")
+            value = lm.load(value_states_repeated[lm.scalar_index(batch_index), lm.scalar_index(head_index), column, feature], id="load_value")
+            product = lm.mma(a, value, instruction={{"contract":"triton.dot.bf16_fp32"}}, tile_shape=(16,32,32), id="product")
+    with compute:
+        rounded = lm.cast(product, to="bf16", id="round_output")
+        lm.store(grad_attn_weights[group, row, column], rounded, id="store_output")
+'''
+
+
+def query_gradient(b,s,heads,depth):
+    return header('rotated_query_gradient',[tensor('grad_attn_logits',(b*heads,s,s)),
+        tensor('key_states_repeated',(b,heads,s,depth)),tensor('grad_query_rotated',(b,s,heads*depth),output=True)])+f'''    row = lm.program(grad_query_rotated, axis=0, dimension=1, tile=16)
+    column = lm.program(grad_query_rotated, axis=1, dimension=2, tile=32)
+    batch = lm.program(grad_query_rotated, axis=2, dimension=0, tile=1)
+    with compute:
+        batch_index = lm.coordinate(source="program", name="batch", id="batch_index")
+        column_index = lm.coordinate(source="program", name="column", id="column_index")
+        columns = lm.coordinate(source="program_tile", name="column", id="columns")
+        head_index = column_index * 32 // {depth}
+        features = columns % {depth}
+        group_index = batch_index * {heads} + head_index
+    for key in lm.range(grad_attn_logits, name="keys", dimension=2, tile=32, num_stages=1, loop_unroll_factor=1):
+        with compute:
+            a = lm.load(grad_attn_logits[lm.scalar_index(group_index), row, key], id="load_logits")
+            values = lm.load(key_states_repeated[batch, lm.scalar_index(head_index), key, features], id="load_keys")
+            wt = lm.transpose(values, id="transpose_keys")
+            product = lm.mma(a, wt, instruction={{"contract":"triton.dot.bf16_fp32"}}, tile_shape=(16,32,32), id="product")
+    with compute:
+        rounded = lm.cast(product, to="bf16", id="round_output")
+        lm.store(grad_query_rotated[batch, row, column], rounded, id="store_output")
+'''
+
+
+def grouped_gradient(name,b,s,heads,kv,depth,*,key_gradient):
+    left='grad_attn_logits' if key_gradient else 'attn_weights'
+    right='query_states_rotated' if key_gradient else 'grad_attn_output'
+    output='grad_key_rotated' if key_gradient else 'grad_value'
+    left_shape=(b*heads,s,s) if key_gradient else (b,heads,s,s)
+    source=header(name,[tensor(left,left_shape),tensor(right,(b,s,heads,depth)),tensor(output,(b,s,kv*depth),output=True)])
+    source+=f'''    row = lm.program({output}, axis=0, dimension=1, tile=16)
+    column = lm.program({output}, axis=1, dimension=2, tile=32)
+    batch = lm.program({output}, axis=2, dimension=0, tile=1)
+    with compute:
+        batch_index = lm.coordinate(source="program", name="batch", id="batch_index")
+        column_index = lm.coordinate(source="program", name="column", id="column_index")
+        columns = lm.coordinate(source="program_tile", name="column", id="columns")
+        kv_index = column_index * 32 // {depth}
+        features = columns % {depth}
+'''
+    groups=heads//kv
+    for group in range(groups):
+        left_access=(f'{left}[lm.scalar_index(global_head_{group}), query_{group}, row]' if key_gradient else
+                     f'{left}[batch, lm.scalar_index(head_{group}), query_{group}, row]')
+        dimension=1 if key_gradient else 2
+        source+=f'''    with compute:
+        head_{group} = kv_index * {groups} + {group}
+        global_head_{group} = batch_index * {heads} + head_{group}
+    for query_{group} in lm.range({left}, name="queries_{group}", dimension={dimension}, tile=32, num_stages=1, loop_unroll_factor=1):
+        with compute:
+            left_{group} = lm.load({left_access}, id="load_left_{group}")
+            right_{group} = lm.load({right}[batch, query_{group}, lm.scalar_index(head_{group}), features], id="load_right_{group}")
+            a_{group} = lm.transpose(left_{group}, id="transpose_left_{group}")
+            b_{group} = lm.transpose(right_{group}, id="transpose_right_{group}")
+            product_{group} = lm.mma(a_{group}, b_{group}, instruction={{"contract":"triton.dot.bf16_fp32"}}, tile_shape=(16,32,32), id="product_{group}")
+    with compute:
+        bf16_{group} = lm.cast(product_{group}, to="bf16", id="round_head_{group}")
+        fp32_{group} = lm.cast(bf16_{group}, to="fp32", id="widen_head_{group}")
+'''
+        if group:
+            prior='fp32_0' if group==1 else f'accumulated_{group-1}'
+            source+=f'        accumulated_{group} = {prior} + fp32_{group}\n'
+    result='fp32_0' if groups==1 else f'accumulated_{groups-1}'
+    return source+f'''    with compute:
+        rounded = lm.cast({result}, to="bf16", id="round_group_sum")
+        lm.store({output}[batch, row, column], rounded, id="store_output")
 '''
 
 
