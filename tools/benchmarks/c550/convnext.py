@@ -82,7 +82,7 @@ def _gelu_lines(value, result, indent='        '):
         f'negative = lm.compare({value}, 0.0, op="lt", id="negative")',
         f'absolute = lm.select(negative, {value} * -1.0, {value}, id="absolute")',
         f'z = absolute * {1 / math.sqrt(2)!r}',
-        't = 1.0 / (1.0 + z * 0.3275911)',
+        't = lm.reciprocal(z * 0.3275911 + 1.0, id="t")',
         'polynomial = (((((t * 1.061405429 - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t',
         'exponential = lm.exp(z * z * -1.0, id="exponential")',
         'erfc = polynomial * exponential',
@@ -128,7 +128,7 @@ def _spatial_norm(b, c, p):
     ]) + '\n'
     return source + '''    with compute:
         inverse = lm.rsqrt(total, id="inverse")
-        norm = 1.0 / inverse
+        norm = lm.reciprocal(inverse, id="norm")
         lm.store(global_norm[batch, feature], norm, coalesced=False, id="store_norm")
 '''
 
