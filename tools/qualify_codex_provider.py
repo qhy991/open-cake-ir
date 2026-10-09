@@ -241,8 +241,8 @@ def _validate_invocation(
         tools = ",".join(CLAUDE_AUTHORING_TOOLS)
         expected_options = {"--permission-mode": "acceptEdits", "--tools": tools, "--allowedTools": tools,
                             "--output-format": "stream-json", "--json-schema": _canonical_json_bytes(terminal_schema()).decode()}
-        from open_cake_ir.lab.claude import CLAUDE_EXACT_FILE_EVENT_CONTRACT, exact_file_tools
-        if event_contract == CLAUDE_EXACT_FILE_EVENT_CONTRACT:
+        from open_cake_ir.lab.claude import CLAUDE_FILE_CONTRACTS, exact_file_tools
+        if event_contract in CLAUDE_FILE_CONTRACTS:
             filename = ('candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
                         'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else 'candidate-set.json')
             expected_options.update({'--permission-mode':'default',
