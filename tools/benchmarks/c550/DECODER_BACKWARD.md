@@ -8,8 +8,8 @@ Raw reference code, input-view observations and generated workloads remain exter
 
 - [x] Trace the original high-level semantics and Workload/Program boundaries.
 - [x] Check the stage and rounding design, including two accumulation alternatives.
-- [ ] Implement and verify small numerical and boundary controls.
-- [ ] Assess and lower all 16 original workloads; report declared memory.
+- [x] Implement and verify small numerical and boundary controls.
+- [x] Assess and lower all 16 original workloads; report declared memory.
 - [ ] Reconcile the design with implementation and obtain independent review.
 
 ## Caller and ownership
@@ -77,7 +77,8 @@ carry, and the result cannot escape both loops. The fixed-batch candidate has a
 proven sequence contraction for every batch. Its remaining refusal comes from the
 backend's load-provenance check counting address-index reads as data operands.
 Issue #435 owns that separate shared repair. The candidate selects fixed-batch
-FP32 tile accumulation, with execution proof pending that reviewed successor.
+FP32 tile accumulation. After the reviewed #435 successor, the two-batch
+sequence-tail control and complete small backward chain both pass.
 
 Per-batch BF16 partial gradients are rejected because they add a rounding boundary
 absent from the original expression. Large per-batch matrix scratch is rejected
@@ -116,8 +117,29 @@ unit. Independent source review of the final implementation remains required.
 At `d65f9de0`, seven arithmetic/ABI contracts pass. At the same fixed source, all
 16 original metadata records and the retained input-view observations produce
 complete Programs. B=1 cases lower 19 of 22 stages; larger batches lower 12 of 22.
-All remaining refusals are the indexed-MMA provenance restriction in #435. This
-is not complete software or device acceptance.
+All remaining refusals are the indexed-MMA provenance restriction in #435.
+
+The accepted shared fix `25869327` is merged with preserved ancestry at
+`d76e5692`. At that clean source, all 16 original Programs and all 352 leaf stages
+pass assessment and lowering. The sixteen candidate sources are byte-identical
+to the earlier inventory. The change increases lowerable stages from 220 to 352
+and complete Programs from zero to sixteen. This is software coverage, not a
+performance result or a claim that the original device comparator passed.
+
+Five integration-sensitive controls pass at `d76e5692` with no skips: the full
+two-batch, four-head-group chain checks all ten gradients, the weight-gradient
+control sums both batches, and GQA/two-path/three-path falsifiers check rounding.
+Seven other controls retain their prior fixed-commit passes. Together these cover
+all twelve distinct controls without repeating the unaffected checks. The complete
+chain permits independent FP32 reduction order with predeclared small-control
+tolerances; the seam falsifiers require exact distinguishing results. This does not
+replace or change the original Bench comparator.
+
+The retained software records are `cake-decoder-original-inventory-001/result.json`,
+`cake-decoder-original-inventory-002/result.json` and the latter directory's
+`before-after.json`, outside source. The existing preparation command now routes
+this task to the new starter. It requires the accepted original Decoder
+`--input-views` observation; a missing or changed physical view is refused.
 
 The largest per-case declared allocations are 2,887,864,320 input bytes,
 655,400,960 output bytes and 1,321,396,224 scratch bytes. The maximum paired tensor

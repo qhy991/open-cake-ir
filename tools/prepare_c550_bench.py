@@ -25,6 +25,7 @@ STARTER_MODULES = {
     'L2/024_moe_expert_parallel_execution': 'expert_execution',
     'L2/035_convnextv2_block_with_grn': 'convnext',
     'L2/060_chunk_gated_delta_rule_linear_attention': 'chunk_delta',
+    'L2/056_language_model_decoder_prenorm_attention_ffn_residual_backward': 'decoder_backward',
 }
 
 
