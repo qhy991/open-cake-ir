@@ -30,5 +30,14 @@
     "regression_before_fix": "At 2ba3dedc, the legitimate full-preflight aggregate and standalone composer fail, while removing the aggregate diagnostic unexpectedly passes. Existing plain metrics and oracle guards pass.",
     "tests": "Four focused CPU controls intentionally give preflight and instrumented different nested diagnostics and errors. They prove the aggregate inherits preflight, max_abs_error covers both checks, both complete observations survive, and aggregate diagnostic deletion/addition/change/wrong-phase substitution is refused. Old three-field records retain identical canonical JSON. Together with the separate core repair, all sixteen new contracts and twenty-nine adjacent contracts pass: 45/45, zero skips/errors.",
     "scope": "Source/CPU verification at a clean fixed checkout. The full successor still requires independent review and its own device qualification before a measurement claim."
-  }
+  },
+  "verification_updates": [
+    {
+      "commit": "5753b23f503306c7478ec50c3190fe1e21621e14",
+      "result": "Independent Linux CPU acceptance passed 51/51 contracts with zero skips/errors/failures, including the installed CPU Torch Program profile composition tests.",
+      "independent_review": "No remaining source blocker: complete preflight basis, strict whole-aggregate equality, separate full instrumented diagnostics and unchanged legacy plain records are verified.",
+      "evidence": "immutable-evidence-integration-cpu-001/summary.json, tests.stderr, test-command.json and execution.json; final-review.md under the software mirror.",
+      "scope": "Contract source/CPU repair only. Old failed A/A attempts remain failed and no new GPU, profiling or A/A was executed for this repair."
+    }
+  ]
 }

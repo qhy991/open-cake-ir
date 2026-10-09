@@ -32,5 +32,16 @@
     "tests": "The integrated fixed source passes 45 CPU contracts: twelve immutable-evidence controls, four separate MetaX aggregate controls and twenty-nine adjacent worker/serialization/profile-handoff contracts. Complete nested values, names and order survive; mutation is refused. Allocation provenance treats frozen and plain observations equally while keeping the closed worker envelope unchanged. Unknown values, non-string keys, NaN and infinity are refused. Existing valid canonical bytes are unchanged.",
     "boundary_audit": "Paired correctness still owns a strict three-scalar aggregate and needs no recursive change. Paired timing already uses its existing recursive canonical projection; frozen receipt reconstruction passes. Pre-freeze task JSON producers were examined without evidence of the same defect and were not mechanically rewritten.",
     "scope": "Source and CPU only. Linux CPU and final independent review are recorded in the follow-up verification entry. No new GPU, provider or A/A is authorized by this Finding."
-  }
+  },
+  "verification_updates": [
+    {
+      "commit": "5753b23f503306c7478ec50c3190fe1e21621e14",
+      "environment": "Independent Linux CPU checkout in the accepted no-network, no-device, no-key container; original source and failed GPU outputs unchanged.",
+      "result": "51/51 CPU contracts passed, zero skips/errors/failures, including the 45 earlier contracts and six MetaX Program profile contracts with actual CPU Torch.",
+      "source_custody": "New complete detached checkout, no remotes or alternates, clean before and after; imported Compiler path explicitly bound to that checkout.",
+      "independent_review": "Final read-only source review passed for complete JSON-domain comparison, failure payloads, provenance order and separate MetaX aggregate ownership.",
+      "evidence": "immutable-evidence-integration-cpu-001/summary.json, tests.stderr, test-command.json and execution.json; mirrored under the software evidence root.",
+      "scope": "Protocol source/CPU repair verified. No new GPU or A/A attempt; the prior counted-but-unretained samples remain an invalid measurement."
+    }
+  ]
 }
