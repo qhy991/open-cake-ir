@@ -95,3 +95,36 @@ The installed library exposes an FP32 ERF API, but Cake has no ERF primitive.
 That requires a separate proposal covering syntax, canonical type/effect rules,
 legality, lowering, diagnostic/cost coverage and counterexamples under P1–P8.
 This change adds no ERF registry entry, source whitelist or Target capability.
+
+## Complete original RoPE check and numerical diagnosis
+
+The pre-admission bridge at `d6985ddd` passed five CPU contracts and built all
+16 original shapes through the isolated native compiler. The original Bench
+check retained its inputs, reference, comparator and ten-round sequence. It
+passed ten invocations of the first shape, then stopped at the first invocation
+of B=1, S=2048. The maximum output absolute error was 0.0418701171875.
+This failed result remains sealed as `rope-original-20261009`; the production
+math declarations remain closed.
+
+A separate one-case diagnosis compared three computations using the same original
+inputs. The CAKE candidate and an FP32 elementwise-angle computation followed by
+Torch cosine/sine produced identical BF16 values at all 524,288 output positions.
+Both failed the original comparison. The original reference uses a matrix
+multiplication for its angles; its angles differed from the FP32 products by up
+to 0.0419921875. Inputs were unchanged and the native module closed.
+
+The captured environment sets `TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1` and reports
+`float32_matmul_precision=high`, `allow_tf32=true`. A fresh CPU process importing
+only Torch reports the same policy. The original `set_seed` function changes
+random seeds, not that policy. The reference's effective math policy is therefore
+an execution input that needs explicit binding. Removing the environment override
+would change this observation's reference semantics.
+
+**Promotion disposition: no promotion.** This diagnosis locates the discrepancy
+in angle computation. It does not qualify the C550 TF32 route or establish its
+rounding rule. The existing global IR already has `triton.dot.fp32_tf32`; the
+C550 Target does not admit it, and its prior RNE10 hypothesis has retained
+failures. A new bounded probe will compare the actual K=1 matrix path against
+the original reference. Production admission and the complete original RoPE
+check remain separate pending decisions. No tolerance, oracle or failed result
+has been changed.
