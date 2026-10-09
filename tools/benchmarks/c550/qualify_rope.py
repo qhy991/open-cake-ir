@@ -14,17 +14,25 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tools')]
-from open_cake_ir.tasks.c550_bench.binding import BenchProblem, BENCH_COMMIT
+from open_cake_ir.tasks.c550_bench.binding import BenchProblem, BENCH_COMMIT, validate_oracle_numerics
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.source_identity import checkout_commit
 from benchmarks.c550.rope import TASK, source_for_workload
+from benchmarks.c550.native_bridge import BoundCase
+from qualify_c550_bench_native import evaluate_original
 
 
 def write(path, document):
     from open_cake_ir.cli import _json_projection
     with path.open('xb') as stream:
         stream.write(canonical_json_bytes(_json_projection(document)))
+
+
+def read_oracle_numerics(path):
+    from open_cake_ir.lab.bindings import external_file
+    path = external_file(ROOT, str(path), 'RoPE oracle numerics observation')
+    return validate_oracle_numerics(json.loads(path.read_text()))
 
 
 def emission_for(workload):
@@ -34,7 +42,7 @@ def emission_for(workload):
     from open_cake_ir.compiler.verifier import verify
     raw = frontend.parse(source_for_workload(workload, 'primary')).document
     target = Target.load(ROOT / 'compiler/targets/xcore1002.json')
-    if {'maca.sin.f32', 'maca.cos.f32'} & target.instruction_contracts:
+    if {'maca.sin.f32', 'maca.cos.f32', 'triton.dot.fp32_tf32'} & target.instruction_contracts:
         raise ValueError('this pre-admission qualification requires the original closed math Target')
     probe = replace(target, instruction_contracts=target.instruction_contracts | {'maca.sin.f32', 'maca.cos.f32'})
     schedule = Schedule.from_dict(raw)
@@ -42,8 +50,8 @@ def emission_for(workload):
     if any(item.blocks_lowering for item in findings):
         raise ValueError('the original RoPE candidate fails its synthetic math capability probe')
     real = Compiler.load(ROOT).assess(raw)
-    if real.lowering_eligible:
-        raise ValueError('production unexpectedly admitted the pre-admission RoPE')
+    if {item.code for item in real.findings if item.blocks_lowering} != {'TARGET_INSTRUCTION_UNSUPPORTED'}:
+        raise ValueError('production RoPE refusal differs from the closed math Target')
     return raw, emit(schedule, probe)
 
 
@@ -56,6 +64,7 @@ def build(args, result):
     from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
     from open_cake_ir.evaluation.paired import candidate_identity
     from launch_task import _triton_toolchain_config
+    policy = read_oracle_numerics(args.oracle_numerics)
     problem = BenchProblem.open(args.bench_root, TASK)
     gate = Compiler.load(ROOT).check_corpus()
     write(args.output / 'compiler-gate.json', gate)
@@ -65,11 +74,11 @@ def build(args, result):
     executor.admit_host()
     isolated = IsolatedTritonCompiler(**_triton_toolchain_config(executor))
     isolated.check_executor(executor, author_workspace=args.output)
-    result.update(bench_commit=BENCH_COMMIT, task=TASK, cases=[])
+    result.update(bench_commit=BENCH_COMMIT, task=TASK, target='xcore1002', oracle_numerics=policy, cases=[])
     for row in problem.workloads:
         directory = args.output / row.uuid
         directory.mkdir()
-        document = problem.workload_document(row.uuid)
+        document = problem.workload_document(row.uuid, oracle_numerics=policy)
         workload = BenchWorkload(document)
         raw, emission = emission_for(workload)
         requirements = {'compiler': 'triton', 'source_language': 'python', 'target': 'xcore1002', **emission.toolchain}
@@ -108,23 +117,32 @@ def read_candidate(built_root, uuid):
     return candidate, manifest
 
 
-def bind_original_build(built_root, bench_root, commit):
+def bind_original_build(built_root, bench_root, commit, *, oracle_numerics):
     from open_cake_ir.compiler import Target
     from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment
     from open_cake_ir.evaluation.program import check_triton_launch_record
+    from open_cake_ir.compiler.metax_toolchain import native_pointer_parameters
     from open_cake_ir.tasks.evaluate import _input_path
     built_root = built_root.resolve(strict=True)
+    policy = validate_oracle_numerics(oracle_numerics)
     index = json.loads(_input_path(built_root, 'result.json', 'RoPE build').read_text())
     problem = BenchProblem.open(bench_root, TASK)
     target = Target.load(ROOT / 'compiler/targets/xcore1002.json')
-    if (index.get('source_commit') != commit or not index.get('passed') or index.get('bench_commit') != BENCH_COMMIT
-            or index.get('task') != TASK or [c['uuid'] for c in index['cases']] != [c.uuid for c in problem.workloads]):
+    expected_uuids = [row.uuid for row in problem.workloads]
+    if (not commit or len(expected_uuids) != 16 or len(set(expected_uuids)) != 16
+            or index.get('source_commit') != commit or index.get('passed') is not True
+            or index.get('bench_commit') != BENCH_COMMIT or index.get('target') != 'xcore1002'
+            or index.get('oracle_numerics') != policy or index.get('task') != TASK
+            or [c['uuid'] for c in index['cases']] != expected_uuids):
         raise ValueError('RoPE build must bind this source and all ordered original workloads')
-    shapes = set()
+    shapes, cases = set(), []
     for case in index['cases']:
-        workload = BenchWorkload(problem.workload_document(case['uuid']))
+        workload = BenchWorkload(problem.workload_document(case['uuid'], oracle_numerics=policy))
         raw, emission = emission_for(workload)
         candidate, manifest = read_candidate(built_root, case['uuid'])
+        original_path = _input_path(built_root, case['uuid'] + '/workload.json', 'RoPE original Workload')
+        if json.loads(original_path.read_text()) != workload.document:
+            raise ValueError('retained RoPE original Workload or numerical policy differs')
         manifest.check_workload(workload, 'primary')
         submission = CandidateSubmission.seal(OpenCakeEnvironment.media_type, canonical_json_bytes(raw))
         shape = tuple(workload.tensor_abi('primary')[0].shape)
@@ -132,90 +150,30 @@ def bind_original_build(built_root, bench_root, commit):
                 or candidate.artifact_payloads['lowered_source'] != emission.source.encode()
                 or manifest.kernel_name != emission.toolchain['kernel_entry_point']
                 or list(manifest.grid) != emission.toolchain['grid']
-                or tuple(manifest.block) != (emission.toolchain['compile_options']['num_warps'] * target.warp_size, 1, 1)):
+                or tuple(manifest.block) != (emission.toolchain['compile_options']['num_warps'] * target.warp_size, 1, 1)
+                or manifest.aligned_variant or manifest.pointer_alignments):
             raise ValueError('RoPE artifact or unique original shape binding differs')
         check_triton_launch_record(candidate, manifest, candidate.artifact_roles['lowered_source'])
+        hidden = native_pointer_parameters(candidate.artifact_payloads['mcfatbin'], target.architecture,
+                                           manifest.kernel_name) - len(manifest.tensor_abi)
+        if hidden not in (0, 2) or hidden != manifest.hidden_null_pointer_parameters:
+            raise ValueError('RoPE native pointer ABI differs')
         shapes.add(shape)
-    return problem
-
-
-class NativeRope:
-    """One sealed native call per original Bench invocation, with explicit teardown."""
-    def __init__(self, built_root, trace_path):
-        from open_cake_ir.lab.executor import ExecutorRevision
-        from open_cake_ir.evaluation.triton_metax import observe_local_metax
-        from open_cake_ir.tasks.evaluate import _input_path
-        self.root, self.trace = Path(built_root).resolve(strict=True), Path(trace_path)
-        index = json.loads(_input_path(self.root, 'result.json', 'RoPE build').read_text())
-        if (not index.get('passed') or index.get('source_commit') != checkout_commit(ROOT)
-                or index.get('bench_commit') != BENCH_COMMIT or index.get('task') != TASK):
-            raise ValueError('RoPE runtime requires the current complete build')
-        self.cases = {tuple(item['shape']): item['uuid'] for item in index['cases']}
-        host = ExecutorRevision.for_target(ROOT, 'xcore1002').admit_host()
-        self.admission = observe_local_metax('xcore1002', runtime_library=host['runtime_library'])
-
-    def run(self, position_ids, inv_freq, attention_scaling):
-        import torch
-        from open_cake_ir.evaluation.metax_driver import LoadedMetaxCandidate
-        shape = tuple(position_ids.shape)
-        if shape not in self.cases or type(attention_scaling) not in (float, int) or attention_scaling != 1.0:
-            raise ValueError('RoPE input shape or original scalar differs')
-        candidate, manifest = read_candidate(self.root, self.cases[shape])
-        before = [value.view(torch.uint8).cpu().clone() for value in (position_ids, inv_freq)]
-        out = torch.full((*shape, 128, 2), float('nan'), dtype=torch.bfloat16, device='cuda:0')
-        loaded = LoadedMetaxCandidate.load(candidate, manifest, self.admission)
-        primary = None
-        unchanged = False
-        try:
-            loaded.launch((position_ids, inv_freq, out), tensor_contract=manifest,
-                          stream=int(torch.cuda.current_stream().cuda_stream))
-            torch.cuda.synchronize()
-            unchanged = all(torch.equal(value.view(torch.uint8).cpu(), prior)
-                            for value, prior in zip((position_ids, inv_freq), before, strict=True))
-            if not unchanged:
-                raise ValueError('RoPE candidate changed an original input')
-        except BaseException as error:
-            primary = error
-        finally:
-            try:
-                loaded.close(synchronize=torch.cuda.synchronize, primary=primary)
-            except BaseException as error:
-                primary = error
-            with self.trace.open('a') as stream:
-                stream.write(json.dumps({'uuid': self.cases[shape], 'kernel_calls': loaded.launch_calls,
-                    'input_unchanged': unchanged, 'module_closed': loaded.closed, 'error': str(primary) if primary else None}) + '\n')
-        if primary is not None:
-            raise primary
-        return out
+        cases.append(BoundCase(case['uuid'], workload, candidate, manifest))
+    return problem, tuple(cases)
 
 
 def evaluate(args, result):
-    from open_cake_ir.evaluation.local_broker import admit_local_job
-    problem = bind_original_build(args.built, args.bench_root, result['source_commit'])
-    trace = args.output / 'native-calls.jsonl'
-    trace.touch(exist_ok=False)
-    adapter = args.output / 'candidate.py'
-    adapter.write_text('from benchmarks.c550.qualify_rope import NativeRope\n'
-                       f'_native = NativeRope({str(args.built.resolve())!r}, {str(trace)!r})\n'
-                       'run = _native.run\n')
-    result['job_id'] = admit_local_job('maca', device=args.physical_device, runtime_device=args.runtime_device,
-        expected_pci=args.expected_pci, lock_scope='device', queue_seconds=300)
-    suite = problem.api.document('suite.json')
-    report = problem.api.check_problem(problem.api.task_record(TASK), device='cuda:0', candidate_path=adapter,
-        symbol='run', reference_selfcheck=False, workload_scope='all', rounds=suite['correctness_rounds'],
-        output=args.output / 'original-bench.json', seed=suite['seed'], threads=4)
-    rows = [json.loads(line) for line in trace.read_text().splitlines()]
-    expected = [item.uuid for item in problem.workloads for _ in range(suite['correctness_rounds'])]
-    native_ok = ([row['uuid'] for row in rows] == expected and all(row['kernel_calls'] == 1
-        and row['module_closed'] and row['input_unchanged'] and row['error'] is None for row in rows))
-    result.update(passed=report['status'] == 'passed' and report['full_device_correctness'] and native_ok,
-        original_checks=len(report['cases']), original_passed=sum(row['passed'] for row in report['cases']),
-        full_device_correctness=report['full_device_correctness'], native_checks_passed=native_ok,
-        native_kernel_calls=sum(row['kernel_calls'] for row in rows), target_admission_changed=False,
-        performance='not_measured')
+    policy = read_oracle_numerics(args.oracle_numerics)
+    problem, cases = bind_original_build(args.built, args.bench_root, result['source_commit'],
+                                         oracle_numerics=policy)
+    result.update(evaluate_original(problem, cases, args.output,
+        physical_device=args.physical_device, runtime_device=args.runtime_device,
+        expected_pci=args.expected_pci))
+    result.update(oracle_numerics=policy, target_admission_changed=False)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     builder = sub.add_parser('build')
@@ -227,16 +185,17 @@ def main():
     for command in (builder, runner):
         command.add_argument('--bench-root', type=Path, required=True)
         command.add_argument('--output', type=Path, required=True)
-    args = parser.parse_args()
+        command.add_argument('--oracle-numerics', type=Path, required=True)
+    args = parser.parse_args(argv)
     commit = checkout_commit(ROOT)
     if commit is None or os.environ.get('METAL_BROKER_LOCK_FD') or os.environ.get('GPUQ_JOB_ID'):
         parser.error('qualification needs a clean commit and starts outside a GPU allocation')
-    args.output = args.output.resolve()
-    if args.output == ROOT or ROOT in args.output.parents:
-        parser.error('evidence must stay outside source')
+    from open_cake_ir.lab.custody import admit_new_campaign_path
+    args.output = admit_new_campaign_path(ROOT, args.output, role='bounded original RoPE qualification')
     args.output.mkdir(parents=True, exist_ok=False)
     result = {'source_commit': commit, 'passed': False,
-              'scope': 'original RoPE correctness under a declared math probe; no optimization or performance'}
+              'target': 'xcore1002', 'target_admission_changed': False,
+              'scope': 'bounded original RoPE under a synthetic math probe; no optimization or performance'}
     try:
         (build if args.command == 'build' else evaluate)(args, result)
     except Exception as error:
