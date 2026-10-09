@@ -223,6 +223,53 @@ class NativeBridgeContracts(unittest.TestCase):
         self.assertEqual(len(torch.allocations),1);self.assertFalse(kernels.children)
         self.assertIsNotNone(trace[0]['error'])
 
+    def test_qualification_delegates_original_rng_loop_and_binds_its_report(self):
+        import importlib.util
+        cases=self.fixtures[False][2]
+        for mode in ('normal','wrong_order','failed_verdict','numeric_drift'):
+            torch=Torch();kernels=Kernels();calls=[]
+            def check_problem(task,**kwargs):
+                self.assertEqual(kwargs['workload_scope'],'all');self.assertEqual(kwargs['rounds'],10)
+                self.assertEqual(kwargs['seed'],401);self.assertFalse(kwargs['reference_selfcheck'])
+                spec=importlib.util.spec_from_file_location('original_bench_candidate',kwargs['candidate_path'])
+                module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+                records=[]
+                for case in cases:
+                    for round_index in range(10):
+                        # Only this fake original owner advances its input sequence.
+                        value=torch.full((2,4),float(len(calls)),dtype='fp32',device='cuda:0')
+                        out=module.run(value,2.)
+                        self.assertEqual(out.data,[float(len(calls)+1)]*8)
+                        calls.append((case.uuid,round_index))
+                        records.append({'workload_uuid':case.uuid,'round':round_index,'passed':True})
+                if mode=='wrong_order':records[0],records[1]=records[1],records[0]
+                if mode=='failed_verdict':records[-1]['passed']=False
+                if mode=='numeric_drift':self.observer.return_value={**POLICY,'float32_matmul_precision':'high'}
+                return {'status':'passed','full_device_correctness':True,'cases':records}
+            problem=SimpleNamespace(task_id='L1/bridge_fixture',api=SimpleNamespace(
+                document=lambda name:{'correctness_rounds':10,'seed':401},
+                task_record=lambda task:{'id':task},check_problem=check_problem))
+            native_class=bridge.NativeBench
+            def construct(*args):return native_class(*args,torch_module=torch,loader=kernels.load)
+            self.observer.reset_mock();self.observer.return_value=deepcopy(POLICY)
+            with tempfile.TemporaryDirectory() as temporary,patch.dict(sys.modules,torch=torch), \
+                 patch('open_cake_ir.lab.executor.ExecutorRevision.for_target',return_value=SimpleNamespace(admit_host=lambda:{'runtime_library':'CPU fixture'})), \
+                 patch('open_cake_ir.evaluation.local_broker.admit_local_job',return_value='maca-123456789abc') as allocate, \
+                 patch('open_cake_ir.evaluation.triton_metax.observe_local_metax',return_value=object()), \
+                 patch.object(bridge,'NativeBench',side_effect=construct):
+                if mode=='numeric_drift':
+                    with self.assertRaisesRegex(ValueError,'after original check_problem'):
+                        command.evaluate_original(problem,cases,Path(temporary),physical_device=7,runtime_device=0,expected_pci='0000:34:00')
+                else:
+                    result=command.evaluate_original(problem,cases,Path(temporary),physical_device=7,runtime_device=0,expected_pci='0000:34:00')
+                    self.assertEqual(result['passed'],mode=='normal')
+                    self.assertEqual(result['native_kernel_calls'],160)
+                allocate.assert_called_once_with('maca',device=7,runtime_device=0,expected_pci='0000:34:00',lock_scope='device',queue_seconds=300)
+            self.assertIsNone(bridge._ACTIVE)
+            self.assertEqual(len(calls),160)
+            self.assertEqual(self.observer.call_count,163)
+            self.assertTrue(all(kernel.closed for kernel in kernels.children))
+
     def test_original_noncontiguous_input_uses_the_checked_view_without_copy(self):
         case=self.fixtures[False][2][0];document=case.workload.document
         document['semantics']['input_views']['x']=[1,0]
@@ -252,7 +299,7 @@ class NativeBridgeContracts(unittest.TestCase):
 
     def test_missing_case_changed_source_gate_view_and_payload_refuse_during_cpu_binding(self):
         problem,path,_=self.fixtures[False];index=json.loads(path.read_text())
-        for mutation in ('missing','source','gate','view','payload','escape','old_numerics'):
+        for mutation in ('missing','source','gate','view','payload','escape','old_numerics','manifest'):
             with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as temporary:
                 import shutil
                 folder=Path(temporary).resolve()/ 'copy';shutil.copytree(path.parent,folder)
@@ -274,6 +321,21 @@ class NativeBridgeContracts(unittest.TestCase):
                 elif mutation=='old_numerics':
                     document=json.loads((last/'workload.json').read_text());document['semantics'].pop('oracle_numerics')
                     (last/'workload.json').write_bytes(canonical_json_bytes(document))
+                elif mutation=='manifest':
+                    from hashlib import sha256
+                    from open_cake_ir.evaluation.core import LaunchableCandidate
+                    from open_cake_ir.lab.bindings import load_baseline_bundle
+                    candidate=load_baseline_bundle(ROOT,last/'baseline/candidate.json')
+                    payloads=dict(candidate.artifact_payloads)
+                    manifest=json.loads(payloads['launch_manifest']);manifest['tensor_abi'][-1]['shape']=[1,8]
+                    payloads['launch_manifest']=canonical_json_bytes(manifest)
+                    changed=LaunchableCandidate(candidate.candidate_sha256,candidate.target,candidate.entry_point,
+                        {role:sha256(value).hexdigest() for role,value in payloads.items()},sha256(payloads['launch_manifest']).hexdigest(),payloads)
+                    bundle=json.loads((last/'baseline/candidate.json').read_text());bundle['candidate']=candidate_identity(changed)
+                    (last/'baseline/candidate.json').write_bytes(canonical_json_bytes(bundle))
+                    (last/'baseline/launch_manifest.bin').write_bytes(payloads['launch_manifest'])
+                    handoff=json.loads((last/'prepared-baseline.json').read_text());handoff['fixed_baseline_candidate']=candidate_identity(changed)
+                    (last/'prepared-baseline.json').write_bytes(canonical_json_bytes(handoff))
                 else:
                     p=last/'baseline/mcfatbin.bin';p.unlink();p.symlink_to(path.parent/index['cases'][0]['uuid']/'baseline/mcfatbin.bin')
                 (folder/'locators.json').write_bytes(canonical_json_bytes(copied))

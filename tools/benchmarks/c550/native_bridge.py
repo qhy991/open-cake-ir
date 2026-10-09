@@ -107,6 +107,12 @@ def bind_case(problem, uuid, prepared_path, compiler, views):
         assessment = compiler.assess(bind_schedule_workload(skeleton, workload.canonical_sha256))
         if not assessment.lowering_eligible:
             raise ValueError('prepared Schedule is not admitted by the current Compiler')
+        public = tuple((buffer.name, buffer.shape, buffer.dtype.value, buffer.mode.value)
+                       for buffer in assessment.typed_schedule.buffers if buffer.space.value == 'global')
+        expected_abi = tuple((arg.name, tuple(arg.shape), arg.dtype, arg.mode)
+                             for arg in workload.tensor_abi('primary'))
+        if public != expected_abi:
+            raise ValueError('prepared Schedule public ABI differs from the original Workload')
         lowering = compiler.lower(assessment)
         manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
         _leaf(candidate, manifest, lowering, target)
@@ -120,7 +126,8 @@ def bind_case(problem, uuid, prepared_path, compiler, views):
 def bind_all(problem, index_path, *, input_views=None, compiler=None):
     """Bind all original UUIDs and immutable payloads before any allocation."""
     compiler = Compiler.load(ROOT) if compiler is None else compiler
-    if compiler.commit is None:
+    from open_cake_ir.source_identity import checkout_commit
+    if compiler.commit is None or compiler.commit != checkout_commit(ROOT):
         raise ValueError('Bench bridge requires clean committed source')
     index_path = external_file(ROOT, str(Path(index_path)), 'baseline locator index')
     index = json.loads(index_path.read_text())
