@@ -124,7 +124,8 @@ def bound_candidates(built_root, source_commit):
         if (candidate.candidate_sha256 != submission.sha256
                 or candidate.artifact_payloads.get('lowered_source') != emission.source.encode()
                 or manifest.kernel_name != emission.toolchain['kernel_entry_point']
-                or list(manifest.grid) != emission.toolchain['grid']):
+                or list(manifest.grid) != emission.toolchain['grid']
+                or tuple(manifest.block) != (emission.toolchain['compile_options']['num_warps'] * target.warp_size, 1, 1)):
             raise ValueError('retained transpose candidate differs from the current fixed probe emission')
         bound.append((item, candidate, manifest))
     return tuple(bound)

@@ -163,6 +163,12 @@ class DeviceBoundary(unittest.TestCase):
         self.reseal_last(manifest=manifest)
         self.refused_before_allocation('Workload|workload')
 
+    def test_self_consistent_wrong_launch_block_refuses_before_allocation(self):
+        manifest = json.loads(self.last[0].artifact_payloads['launch_manifest'])
+        manifest['block'] = [128, 1, 1]
+        self.reseal_last(manifest=manifest)
+        self.refused_before_allocation('current fixed probe emission')
+
     def test_open_production_target_cannot_use_pre_admission_probe(self):
         with patch.object(Target, 'load', return_value=self.probe):
             self.refused_before_allocation('production Target to remain closed')
