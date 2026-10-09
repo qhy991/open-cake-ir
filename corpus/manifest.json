@@ -1127,10 +1127,10 @@
       "case_id": "metal-store-program-ownership",
       "schedule": "corpus/schedules/metal-store-program-ownership.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "METAL_STORE_OWNERSHIP"
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"
         ],
         "schedule_sha256": "7db5339f2edf96348e174827ec7a0848368cc31a866a257667fd5f1360b155ce",
         "lowering_source_sha256": null
@@ -1850,11 +1850,10 @@
       "case_id": "native-argmin-domain-drift",
       "schedule": "corpus/schedules/native-argmin-domain-drift.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "NATIVE_ARGMIN_DOMAIN",
-          "NATIVE_STORE_PROGRAM_OWNERSHIP"
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"
         ],
         "schedule_sha256": "a02c64b5895da23fa0983bebfb5d90f876d0fe40fcd0c77d4e9877320db7722e",
         "lowering_source_sha256": null
@@ -1864,10 +1863,10 @@
       "case_id": "triton-argmin-domain-drift",
       "schedule": "corpus/schedules/triton-argmin-domain-drift.json",
       "expected": {
-        "accepted": true,
+        "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "TRITON_ARGMIN_DOMAIN"
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION"
         ],
         "schedule_sha256": "03c31781f15c6803158fb083a573598e9fccc3ec9da6e8d3bcae98712d4f3f60",
         "lowering_source_sha256": null
@@ -2002,7 +2001,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "49bc00550e16f51705d2f08dc79903cefbfa13bb9690a726073951cf5d1e6c87",
-        "lowering_source_sha256": "65605e9aa7a14ca15904a82cb3f7ce2db1f64de8e2bcb77ad7b5b64b171e3093"
+        "lowering_source_sha256": "f53a7543a2397197df994a7af163195fb047e66a0532826092461180c5d20f60"
       }
     },
     {
@@ -2061,7 +2060,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "63fe4419607113932ab159a275d2d42c7b195f195cae92a18b6b2fb40ff9f35b",
-        "lowering_source_sha256": "163fe96b3505d2282e4ba04057c19229effe65d24863d98013411c9e7a3624cc"
+        "lowering_source_sha256": "01af35d6758fcda50f849f41a9359b48860b38ff93ef79c69aea0bae009e29bc"
       }
     },
     {
@@ -2090,7 +2089,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "9e0cb98ce6769a964f96b3faf1df6aa73e625f98772b4516ca13bca7cd8c62ef",
-        "lowering_source_sha256": "fb1dfcebe21a954d23dc8a046e38a0ffdf22396b4700a574ef8ad5f37186c312"
+        "lowering_source_sha256": "c2e107210c50cc6f4ca0bccc2cc372a9aedbac35bcb5edb90d2436bf0e6c11cc"
       }
     },
     {
@@ -2119,7 +2118,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "7d1650d455ec3801f766d6d0206004c7d03de2bbeeb8d24c3b23798d8ed8242e",
-        "lowering_source_sha256": "70c52d63ed8cfe7b03851242f3151950e1622e2fe452d3792e184b52818023c4"
+        "lowering_source_sha256": "a141fb136a74b65403d80dfca40ac4c95abcdc72ffd6e76576480f6a5a8f4b5d"
       }
     },
     {
@@ -2133,7 +2132,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "4ba20ba1e68a0a67b46eab2c954896cae0298b19d08922f5c5680e881aa32b91",
-        "lowering_source_sha256": "1e918a35f2a9ef9bc9ed9a7e3d4e4ed1609eb3c8a8bd1e23b6213b8d5538d59b"
+        "lowering_source_sha256": "817a92c9a9ee5add51122ca66d92fbb6f1bd298fe9030eaa8fdbce86161c2567"
       }
     },
     {
@@ -2146,7 +2145,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "8c4277007e661fd57c18d9c91fa1c679634e2ea31dc7a2aaf58d858bd814ec2c",
-        "lowering_source_sha256": "1f3ae243d2e0bcf28dd1cbadae5bde8746dcec49c1852a94e17996e08444b6c6"
+        "lowering_source_sha256": "97fd364d088490daa7eb12ab485eb2d3eef2ac26e32416eea48e52db6d27971f"
       }
     },
     {
@@ -2449,7 +2448,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "a22aaa6db494c826478555ed0050bed198217dccd0a0a16bada72395c9d67952",
-        "lowering_source_sha256": "95c22e2cc92b22acbf2706ebea5951b7421463da1c49d72c7438adb4b9e4b356"
+        "lowering_source_sha256": "bb7d21c87814941383f7ccbb049d9c0f85d9395a2da07a3b9e980ead557c11c5"
       }
     },
     {
@@ -2462,7 +2461,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "559dcba1ce275bd83b0af561cf6ec77097688375743e2a21906e29fdbaba18e0",
-        "lowering_source_sha256": "2824d4f67c60f4943890059747f03c4567d682d3973e30dc7e9e389c1eb937a2"
+        "lowering_source_sha256": "48967a3b1bbe9b21468b0ce888bf88b5401f5e3288667c7a36e47877980e174c"
       }
     },
     {
@@ -2475,7 +2474,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "e79b1a7f4c7710b54d4e30b5fbd2a13cde6417dbeebcb3ce84f9dfbace4c8e91",
-        "lowering_source_sha256": "4c9ae865d413c7d3de35e22c8822c6332fa73782d446bb2bf28419d47fe31c59"
+        "lowering_source_sha256": "b7530de4964467996b87922e34e7d644545614a66602682d2dd14e9045099bce"
       }
     },
     {
@@ -2503,7 +2502,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "45e6801fffc02cbd5139275c1743757eb5da2c37d811a2edf76ee4b510823904",
-        "lowering_source_sha256": "2f5da80ec5f9a08a3fce7db7d87e02b0ce0183f9039cfa9509ac9cc0533896be"
+        "lowering_source_sha256": "81b1a057b004c78f8fa955ba876ed870497977f6b932522e8877073ebd44096d"
       }
     },
     {
@@ -2558,7 +2557,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "4cfc12e3351e00a499c412c0df47c303b91f972bcbcb92de82848b8721773d85",
-        "lowering_source_sha256": "e32c5d97514a2c4868c4b05461372747851b6fa43aa063369a9c9570ce798578"
+        "lowering_source_sha256": "7e39c5380d1f9b2cf960f5271f50ef6bee3859d1f32d8fae6f1c34199555b2e3"
       }
     },
     {
@@ -2571,7 +2570,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "34728d604654b74752c0a879f378d130138891053fbd89588671fced5681f007",
-        "lowering_source_sha256": "3b1d7961ef259f85b0867dbde68c5f2385744e97d2bca79964a3bb4f1ac43d45"
+        "lowering_source_sha256": "a86b5b70faaee53b0b8236a39756c5a0d628a3922e088fa33825f1f2e1d91d9d"
       }
     },
     {
@@ -2584,7 +2583,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "3769b15c95467d821fb287ed3da3fed4a235962a6bc722aec4a0ae84098f4c22",
-        "lowering_source_sha256": "9b9e8040656a006c5436feef55b9922ee857a88a83076e6f68248205f285fedd"
+        "lowering_source_sha256": "61f067338f42879483499d7aaf9c6dbeb3eb51376c63e79f5376e102f2f44731"
       }
     },
     {
@@ -2597,7 +2596,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "f0084908fde1b5be73ba8cebf29147d4a2f0f0952c696868d69e84b3802f49fe",
-        "lowering_source_sha256": "fc75aaa7027c57df4ba8acb291fa041e94656c27a3fbd03f3374acecc4e3e56f"
+        "lowering_source_sha256": "7a0da3be1f2771a2189bc887f1539a570d336a02fe0502cbe71512c94e2d4090"
       }
     },
     {
@@ -2610,7 +2609,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "43eaf13c59af5b37b0d3425df1e1ecbf15acfc5474c96c6236d169db40465967",
-        "lowering_source_sha256": "c664c2d71bae21491ecb719bafb69ded249153d1937f23ffb22dd228ff8e5b4d"
+        "lowering_source_sha256": "3de66a2da53bac225df822c9b1eb0f989d1eea35510a5ecdc1ff908588299d7b"
       }
     },
     {
@@ -2623,7 +2622,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "2e1ffd6ab11614f35657e0b3374998a164924d50c016b980cf654b407fee025e",
-        "lowering_source_sha256": "427954b0be07d0872cef9c8a4efab24ca9dfaec3139c667f5bfb0beaf29737a6"
+        "lowering_source_sha256": "bcfa64c0721b45f5a40b571678eb849c16b74d601a56b0c04e7cab01cb00032b"
       }
     },
     {
@@ -2636,7 +2635,7 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "8d0c7aef679303c40bb5d12e46a3208e6a631b2e38750c2ba6cdecd4af200a12",
-        "lowering_source_sha256": "85fa60a758c16f0efbcc6c84453f34045bc11d732ae817f5d1c197113a80c750"
+        "lowering_source_sha256": "1f119d13a3c1d60faa9bbd0877be3b83ab3d324bcd8aeb6c0605043a4cda6002"
       }
     },
     {
@@ -2649,7 +2648,73 @@
           "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "8e95a41a43a6970b155a74ec55584b8f00ba099b33c8dc4ab314ecf0c6f90196",
-        "lowering_source_sha256": "048dbdf896ad85979beafbe305d4ac039e874258d9c265f4ec4127fcaa47c7d9"
+        "lowering_source_sha256": "dcb1e0d81b7649a9ec87cb8e1c1d014efa44899d116091c81e01dc060f5a27b2"
+      }
+    },
+    {
+      "case_id": "gfx938-output-program-axis-collision",
+      "schedule": "corpus/schedules/gfx938-output-program-axis-collision.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "OUTPUT_STORE_PROGRAM_AXIS_COLLISION",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "934541596c885f0a37ea0bd65cbd8986bbc0418e18da726f87c779a171b1fb8f",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "gfx938-register-transpose-tail",
+      "schedule": "corpus/schedules/gfx938-register-transpose-tail.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "031694bbf17fb8f026d54aeb63a10e509abec8ecb4ba65b1aed0ad7594ab0823",
+        "lowering_source_sha256": "b2fc5d59ee02fb55dd6a89097d0c5ca29a059e34aebb41b967ebf21f8d67d93b"
+      }
+    },
+    {
+      "case_id": "gfx938-kn-transpose-mma-tail",
+      "schedule": "corpus/schedules/gfx938-kn-transpose-mma-tail.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "91e5c61c554c070f5d37aa7606a969dbb4fa3b7221e72a8ae5a123ce78a3e937",
+        "lowering_source_sha256": "90db7e02481e846d15147d9c75ca993ffe9bfa925eaa33c50f09fd02383dce56"
+      }
+    },
+    {
+      "case_id": "gfx938-ocml-fma",
+      "schedule": "corpus/schedules/gfx938-ocml-fma.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "a00956fc0ccb1756595704440b6d513937189c4f580eb20f8e716b929950e398",
+        "lowering_source_sha256": "60af343ed2e38b235ce89afda915a2fbf2495154a16dc305a3495f9b6fe569d9"
+      }
+    },
+    {
+      "case_id": "gfx938-ocml-fma-nested",
+      "schedule": "corpus/schedules/gfx938-ocml-fma-nested.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "e7d1ce08d35d5680b61324c55bfa1d760dd13b0a5dd8e5eb7a240d825ed32d25",
+        "lowering_source_sha256": "a3e16263c157b6dcbfd06346b5ddd8d725b16f9bad34c5bd534d7a5aa0baf627"
       }
     }
   ]

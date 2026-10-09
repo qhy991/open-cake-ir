@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "id": "F-2026-10-07-009",
+  "kind": "bug",
+  "decision": "proposed",
+  "title": "C550 author successfully creates a duplicate Run directory before correcting its candidate path",
+  "compiler_revision_id": "open-cake-ir@fa3224062160bf37f40e73dc8e23ed5028d67382",
+  "executor_revision": "xcore1002@fa3224062160bf37f40e73dc8e23ed5028d67382",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/gated-event-task-readiness-20261006/runs/rmsnorm/run-evidence",
+    "locators": ["runs/c550-gated-development-20261006-rmsnorm/events/000000000219.json", "runs/c550-gated-development-20261006-rmsnorm/events/000000000221.json"]
+  },
+  "observation": "Turn16 has three completed successful tool calls and no pending tool: Write to actor/Run-id/candidate-set.py, Write to actor/candidate-set.py, then Edit to actor/candidate-set.py. The exact terminal declares candidate_written. Two distinct successful paths correctly fail v4's one-file lifecycle. This is not a context-compaction fault or a recovered denied write. The four-task batch is sealed; fifty tasks never started.",
+  "proposed_change": "For an explicitly declared OS-isolated successor, name the absolute candidate file on initial and resumed turns; preserve the undeclared historical v3/v4 prompts. Reuse opt-in v5 recovery only with declared native --restricted support, refusing unsupported executables before authoring. C5502.1.226 rejects that flag in the retained CPU probe at provider-path-review-20261007; --version alone did not validate it. v5 rejects successful nested paths. Do not reinterpret old streams. A successor prompt/configuration requires fresh live qualification.",
+  "promotion_disposition": "Lab provider transport only. No Compiler change, performance promotion, retry or original outcome reclassification. C550 uses the OS-isolated v4 successor; native v5 remains unsupported on its2.1.226 executable. Exact-path guidance is not proof that every future author will comply; custody remains strict.",
+  "implemented_in": "105c3944",
+  "verified_by": {
+    "software": "74 Claude/provider policy tests at105c3944 in /tmp/cake-claude-write-recovery-tests with its own PYTHONPATH=src",
+    "native_unsupported_option": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/provider-path-review-20261007/stderr.txt",
+    "live_successor": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/provider-path-successor-20261007/receipt.json",
+    "live_evidence": "provider-path-successor-20261007/evidence/runs/c550-glm53-exact-path-20261007/events: OS read-isolation observation, two provider qualification turns, qualified receipt and terminal archive",
+    "scope": "CPU-only initial/resume qualification; no successor GPU Run or 50-task campaign yet"
+  }
+}

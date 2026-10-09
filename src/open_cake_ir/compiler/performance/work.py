@@ -418,8 +418,8 @@ def operation_repetitions(
 def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
     """Floating-point operations one execution performs, or None when it is uncountable."""
 
-    if operation.kind in {OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT, OperationKind.BROADCAST_IN_DIM}:
-        return 0  # Integer coordinates/predicates and selection are not floating arithmetic.
+    if operation.kind in {OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT, OperationKind.BROADCAST_IN_DIM, OperationKind.TRANSPOSE}:
+        return 0  # Coordinates, selection and register-axis permutation are not floating arithmetic.
     if operation.kind in _NON_ARITHMETIC_KINDS:
         return 0
     if operation.kind is OperationKind.SCAN:

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-002",
+  "kind": "protocol",
+  "decision": "implemented_bounded",
+  "title": "Retain candidate launch-resource refusal and allow evidenced task-local failure isolation",
+  "compiler_revision_id": "open-cake-ir@a50523e3",
+  "executor_revision": "xcore1002@a50523e3",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-1:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006/fault-successor-development-20261008/dispatch-v2/runs/fib_gemm_n4096_k4096/run-evidence",
+    "locators": ["event16 evaluation_attempt_completed: original SDK stdout reports4KB/thread host private-memory limit and7KB/thread request; zero kernel calls and timing samples; no final receipt"]
+  },
+  "observation": "mcModuleLaunchKernel returned mcErrorMemoryValueTooLarge32. Original generic RuntimeError discarded structured launch resources, so the dispatcher could not distinguish a candidate resource refusal from device unavailability.",
+  "proposed_change": "Type only mcModuleLaunchKernel status32; retain loaded resource metadata, target, candidate, phase, arm and teardown. Continue independent tasks only from complete audited failure evidence with zero launches, candidate preflight, successful teardown and SDK request/host-limit agreement. Never treat a message alone, unknown limits, baseline failures or partial launches as task-local.",
+  "promotion_disposition": "Evaluation diagnostics and Lab dispatch only. The current Run remains failed with no correctness/timing receipt. Same-Run search recovery requires a future explicit rejected Evaluation outcome. Do not change the host limit or infer a universal4KB target constant.",
+  "implemented_in": "ffc57c6c",
+  "verified_by": {
+    "software": "32 focused tests on isolated commit; final integration4e5dd777 passes249 relevant contracts with1 skip and201 Corpus cases",
+    "retained_control": "Original event16 CPU replay remains non-continuable because it has generic RuntimeError and no new structured resource diagnostic. Positive/negative new-protocol fixtures cover changing SDK limits, cleanup, candidate identity and partial launch rejection.",
+    "scope": "No failed Run rerun and no new device-performance claim"
+  }
+}
