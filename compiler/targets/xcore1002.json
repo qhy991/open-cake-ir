@@ -9,7 +9,7 @@
   "warp_size": 64,
   "l2_cache_bytes": 8388608,
   "memory_spaces": ["global", "shared", "register"],
-  "operation_kinds": ["load", "cast", "coordinate", "compare", "select", "elementwise", "mma", "reduce", "top_k", "store"],
+  "operation_kinds": ["load", "cast", "transpose", "coordinate", "compare", "select", "elementwise", "mma", "reduce", "top_k", "store"],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_shared_memory_bytes": 65536,
@@ -24,6 +24,11 @@
   "instruction_contracts": ["maca.tanh.f32", "maca.fma.f32", "maca.fma.rz.f32", "maca.fma.rd.f32", "maca.fma.ru.f32", "maca.simt.fp8e4m3_compensated_fp32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "MetaX C550 native storage qualification, 2026-10-09",
+      "locator": "Public probe 346d4934, job maca-2c5cc31ae97a: rank-two register transpose passed 83 byte-exact checks across fp32, fp16, bf16, int32, int64 and bool at shapes16x32,35x67,1x3. All 261554 checked output bytes matched the independent CPU permutation; inputs were unchanged and all18modules closed. Numeric types use4patterns per shape; bool uses9,12,2coordinate bit-plane patterns. The qualified source's relevant probe, Compiler, Evaluation, Lab build and exact Target implementation matches public346d4934. This is bounded storage movement evidence, not transpose-plus-MMA, Decoder Workload, arbitrary-shape, timing or performance qualification. FP8 retains the existing type and MACA operation refusals. See docs/metax-transpose.md and issue418."
+    },
     {
       "kind": "device_observation",
       "source": "c550-2, Triton3.6/MACA3.8.0.4.c600u, 2026-09-27",
