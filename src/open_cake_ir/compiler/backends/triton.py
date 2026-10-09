@@ -535,6 +535,21 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "the Triton backend supports at most one reduce_argmin operation",
     )
     for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.REDUCE:
+            # This emitter folds resident values. A global argument is a pointer,
+            # and assigning a Python name does not realize a shared-memory write.
+            for edge in ("reads", "writes"):
+                for position, name in enumerate(getattr(operation, edge)):
+                    buffer = schedule.buffer(name)
+                    if buffer is not None:
+                        add(
+                            buffer.space is MemorySpace.REGISTER,
+                            "TRITON_REDUCE_STORAGE",
+                            f"operations[{index}].{edge}[{position}]",
+                            f"Triton reduction requires register values; {name!r} "
+                            f"is {buffer.space.value}. Use explicit supported "
+                            "load/store operations for memory effects.",
+                        )
         if operation.kind is OperationKind.REDUCE_ARGMIN:
             source = schedule.buffer(operation.reads[0]) if len(operation.reads) == 1 else None
             result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
@@ -1862,11 +1877,16 @@ class _TritonEmitter:
         template = reduction.accumulate if carried else reduction.once
         if source.dtype is DType.INT32:
             template = template.replace("tl.float32", "tl.int32")
+        # The IR's scalar shape is [1]. A prior reduction or scalar load may
+        # produce a rank-zero Triton value, while a block load or loop state
+        # produces [1]. Normalize only this consumer's input; retain the declared
+        # fold and its dtype promotion rather than replacing it with arithmetic.
+        value = f"tl.reshape({source.name}, (1,))" if source.is_scalar else source.name
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(
             pad
             + template.format(
-                out=operation.writes[0], src=operation.reads[0], axis=axis
+                out=operation.writes[0], src=value, axis=axis
             ),
             declares=(operation.writes[0],),
         )

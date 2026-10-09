@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-003",
+  "kind": "bug",
+  "decision": "proposed",
+  "title": "Triton reduction admission loses storage commitments and singleton result rank",
+  "compiler_revision_id": "open-cake-ir@1b5cca1b",
+  "executor_revision": "xcore1002@1b5cca1b",
+  "backend": "triton",
+  "target": "xcore1002",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006",
+    "locators": [
+      "gated-event-task-readiness-20261006/runs/layernorm/run-evidence: event403 Turn32",
+      "path-successor-development-20261007-v2/runs/cosine_similarity/run-evidence: event360 Turn30"
+    ],
+    "cpu_replay": "/Users/haiyan/.codex/visualizations/2026/10/01/01a0f724-5277-7381-9850-2908be179c27/cake-compiler-lessons-20261009/audit-evidence/cake-two-gap-cpu-replay.json",
+    "register_control": "/Users/haiyan/.codex/visualizations/2026/10/01/01a0f724-5277-7381-9850-2908be179c27/cake-compiler-lessons-20261009/audit-evidence/cake-register-singleton-reduce-repro.py",
+    "scope": "Read-only parse,assess,lower replay on clean main1b5cca1b. No new native compile,GPU execution or device qualification."
+  },
+  "observation": "Both retained candidates still report accepted and lowering_eligible at latest reviewed main. LayerNorm reduces the ABI global Buffer directly and emits tl.sum(x.to(float32),axis=0), leaving x a pointer; original toolchain refused pointer conversion. Cosine declares shared singleton reduce outputs but emits plain scalar assignments with no shared access; the next reduce emits axis0 on rank0. An independent all-register singleton double-reduce control reproduces the rank inconsistency without shared storage.",
+  "proposed_change": "Add localized reduction source/result storage admission at the owning backend unless declared placement is implemented faithfully. Independently make logical singleton result shape consistent across producers/consumers. Test global input,shared result,shared input and legal register chaining separately; do not hide storage loss behind a scalar reshape or impose one backend restriction on every target.",
+  "promotion_disposition": "Compiler correctness and performance-transparency repair lead. No performance gain, new IR primitive or wider hardware capability is established. Implementation and analyses must be reviewed together in a shared core successor.",
+  "implemented_in": null,
+  "verified_by": null
+}
