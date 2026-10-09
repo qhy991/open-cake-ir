@@ -12,6 +12,17 @@ REQUIRES_TARGET_PREPARATION = True
 PRESERVE_OUTPUT_TENSORS = True
 
 
+def _recorded_statistics(value):
+    """Keep exceptional upstream statistics explicit in canonical JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return 'NaN' if math.isnan(value) else ('Infinity' if value > 0 else '-Infinity')
+    if isinstance(value, dict):
+        return {name: _recorded_statistics(item) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_recorded_statistics(item) for item in value]
+    return value
+
+
 @lru_cache(maxsize=16)
 def problem_for(workload):
     binding = workload.document["semantics"]["benchmark"]
@@ -31,8 +42,10 @@ class BenchWorkload(WorkloadContract):
         finite = [float(value) for value in errors if isinstance(value, (int, float)) and math.isfinite(value)]
         return check["passed"], {
             "output_mismatches": failures, "max_abs_error": max(finite, default=0.),
+            "max_abs_error_coverage": "finite_original_statistics_only",
             "comparison_unit": "original_bench_output_contract",
-            "original_bench_check": check,
+            "original_bench_statistics_encoding": "nonfinite_float_strings_v1",
+            "original_bench_check": _recorded_statistics(check),
         }
 
 

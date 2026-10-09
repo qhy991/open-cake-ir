@@ -39,7 +39,10 @@ class BenchProblem:
         spec = importlib.util.spec_from_file_location("cake_original_c550_bench", root / "c550bench.py")
         api = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(api)
-        api.upstream()
+        upstream = api.upstream()
+        import sol_execbench.core.bench.correctness as comparison
+        if not Path(comparison.__file__).resolve().is_relative_to(upstream.resolve()):
+            raise ValueError("The loaded Bench comparison module came from another source root")
         definition, workloads, raw, task_root = api.load_problem(api.task_record(task_id))
         if len(workloads) != 16 or len({row.uuid for row in workloads}) != 16:
             raise ValueError("A C550 Bench task must retain all 16 original workload IDs")
@@ -91,6 +94,7 @@ class BenchProblem:
                 "benchmark": {"root": str(self.root), "commit": BENCH_COMMIT,
                               "task": self.task_id, "workload_uuid": uuid},
                 "fixed_scalar_inputs": scalars,
+                "original_input_specifications": raw["inputs"],
                 "ordered_original_inputs": list(definition.inputs),
                 "ordered_original_outputs": list(definition.outputs),
                 "oracle_preparation": "original_factory_and_reference_on_leased_target",
@@ -99,6 +103,8 @@ class BenchProblem:
             },
             "oracle": {"kind": "original_c550_bench_reference", "device": TARGET,
                        "reference_access": "high_level_reference_read",
+                       "reference_source": definition.reference,
+                       "custom_inputs_entrypoint": definition.custom_inputs_entrypoint,
                        "implementation": "fixed_Bench_load_problem_and_reference_run"},
             "validation": {"primary_case": "primary", "all_cases_required": True,
                            "comparison": "original_c550_bench",
@@ -158,4 +164,3 @@ def validate_document(document):
     expected = problem.workload_document(binding["workload_uuid"])
     if json.dumps(document, sort_keys=True, allow_nan=False) != json.dumps(expected, sort_keys=True, allow_nan=False):
         raise ValueError("Bench Workload differs from its original ABI, scalar, oracle or tolerance")
-

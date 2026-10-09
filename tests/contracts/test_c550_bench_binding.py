@@ -9,12 +9,15 @@ from open_cake_ir.tasks.c550_bench.binding import BenchProblem, validate_documen
 from open_cake_ir.tasks.c550_bench.plan import case_budget_plan
 from open_cake_ir.tasks.c550_bench.workload import BenchWorkload
 from open_cake_ir.evaluation.core import compare_tile_output_values
+from open_cake_ir.serialization import canonical_json_bytes
 
 
 def problem():
     def tensor(dtype):
         return SimpleNamespace(dtype=SimpleNamespace(value=dtype))
     definition = SimpleNamespace(
+        reference="def run(positions, mask, scale):\n    return positions * scale\n",
+        custom_inputs_entrypoint=None,
         inputs={"positions": tensor("int64"), "mask": tensor("bool"), "scale": tensor("float32")},
         outputs={"out": tensor("bfloat16")},
         get_input_shapes=lambda axes: {"positions": (axes["N"],), "mask": (axes["N"],), "scale": None},
@@ -32,6 +35,33 @@ def problem():
 
 
 class BenchBindingTest(unittest.TestCase):
+    def test_rejected_nonfinite_statistics_do_not_become_serialization_faults(self):
+        import json
+        for statistic, encoded in [(float('inf'), 'Infinity'), (float('-inf'), '-Infinity'), (float('nan'), 'NaN')]:
+            check = {"passed": False, "outputs": {"out": {"passed": False, "max_absolute_error": statistic}}}
+            original = SimpleNamespace(compare=lambda *args: check)
+            workload = BenchWorkload(problem().workload_document("original-7"))
+            with patch("open_cake_ir.tasks.c550_bench.workload.problem_for", return_value=(original, "original-7")):
+                passed, metrics = compare_tile_output_values(workload, {}, {})
+            retained = json.loads(canonical_json_bytes(metrics))
+            self.assertFalse(passed)
+            self.assertEqual(retained['original_bench_check']['outputs']['out']['max_absolute_error'], encoded)
+            self.assertEqual(retained['max_abs_error_coverage'], 'finite_original_statistics_only')
+
+    def test_changed_external_reference_factory_or_input_spec_refuses_the_frozen_document(self):
+        changes = [
+            lambda p: setattr(p.definition, 'reference', 'def run(*args): return None'),
+            lambda p: setattr(p.definition, 'custom_inputs_entrypoint', 'other_factory'),
+            lambda p: p.raw_workloads[7]['inputs']['scale'].update(value=2.),
+        ]
+        for change in changes:
+            original = problem()
+            document = copy.deepcopy(original.workload_document('original-7'))
+            change(original)
+            with patch.object(BenchProblem, 'open', return_value=original):
+                with self.assertRaisesRegex(ValueError, 'original ABI, scalar, oracle or tolerance'):
+                    validate_document(document)
+
     def test_common_comparison_keeps_original_ratio_verdict_and_full_record(self):
         original = problem()
         check = {"passed": True, "outputs": {"out": {"passed": True,
@@ -78,6 +108,8 @@ class BenchBindingTest(unittest.TestCase):
             lambda doc: doc["tensors"]["positions"].update(dtype="int32"),
             lambda doc: doc["semantics"]["fixed_scalar_inputs"]["scale"].update(value=1.),
             lambda doc: doc["validation"]["effective_tolerance"].update(required_matched_ratio=.98),
+            lambda doc: doc["oracle"].update(reference_source="def run(*inputs): return inputs[0]"),
+            lambda doc: doc["semantics"]["original_input_specifications"]["scale"].update(value=.25),
         ]
         with patch.object(BenchProblem, "open", return_value=original):
             document = original.workload_document("original-7")
