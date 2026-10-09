@@ -31,7 +31,7 @@ def _chain(producer="resident", *, op="sum", dtype="fp32", singleton=False,
     previous = document["operations"][-1]["id"]
     document["operations"].append(dict(
         id="fold_again", kind="reduce", role="compute", reads=["rows"], writes=["folded"],
-        depends_on=[previous], parameters=dict(op=op, axis=0, scope="cta", across_loop=carried)))
+        depends_on=[previous], parameters=dict(op=op, axis=0, scope="cta", **({} if carried else {"across_loop": False}))))
     if in_loop:
         loop = document["tile_loops"][0]
         next(item for item in document["operations"] if item["id"] == "fold")["parameters"]["across_loop"] = False
@@ -43,7 +43,7 @@ def _chain(producer="resident", *, op="sum", dtype="fp32", singleton=False,
         next(buffer for buffer in document["buffers"] if buffer["name"] == "y")["shape"] = [2, 4]
         document["operations"].append(dict(
             id="expand", kind="broadcast_in_dim", role="compute", reads=["folded"], writes=["expanded"],
-            depends_on=["fold_again"], parameters=dict(dimensions=[])))
+            depends_on=["fold_again"], parameters=dict(dimensions=[0])))
         document["access_maps"][-1]["indices"].append(dict(source="dimension", dimension=1))
         store.update(reads=["expanded"], depends_on=["expand"])
     document["operations"].append(store)
@@ -72,7 +72,9 @@ class TritonReductionStorageTest(unittest.TestCase):
         document["buffers"] = [b for b in document["buffers"] if b["name"] != "tile"]
         next(b for b in document["buffers"] if b["name"] == "x")["shape"] = [8]
         document["program_map"]["axes"][0].update(buffer="y")
-        document["access_maps"] = document["access_maps"][1:]
+        document["access_maps"] = [dict(operation="fold", buffer="x", boundary="mask_tiled_axes",
+                                       indices=[dict(source="dimension", dimension=0)]),
+                                    document["access_maps"][1]]
         for target in ("sm_100a", "sm_103a", "gfx938", "gfx1151", "xcore1002"):
             with self.subTest(target=target):
                 document["target"] = target
@@ -95,7 +97,8 @@ class TritonReductionStorageTest(unittest.TestCase):
                 buffer["space"] = space
                 if space in {"shared", "tensor"}:
                     buffer.update(allocation="pool", byte_offset=0)
-                    document["allocations"] = [dict(name="pool", space=space, size_bytes=128)]
+                    document["allocations"] = [dict(name="pool", space=space, size_bytes=128,
+                                                   **({"allocating_role": "compute"} if space == "tensor" else {}))]
                 findings = preflight(Schedule.from_dict(document), TARGET)
                 matching = [f for f in findings if f.code == "TRITON_REDUCE_STORAGE"]
                 self.assertEqual([f.path for f in matching], [f"operations[1].{edge}[0]"])
