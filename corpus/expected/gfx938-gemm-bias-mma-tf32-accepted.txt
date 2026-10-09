@@ -7,6 +7,18 @@ import triton
 import triton.language as tl
 
 
+class _cake_pointer_range_arg:
+    __slots__ = ("base", "dtype", "nbytes")
+    def __init__(self, base, dtype, nbytes):
+        self.base = base
+        self.dtype = dtype
+        self.nbytes = nbytes
+    def data_ptr(self):
+        return self.base.data_ptr()
+    def ptr_range(self):
+        return self.nbytes
+
+
 @triton.jit
 def _cake_gfx938_gemm_bias_b1_smoke_tf32_kernel(
     a,
@@ -73,6 +85,8 @@ def _cake_gfx938_gemm_bias_b1_smoke_tf32_kernel(
     # CAKE_KERNEL_END
 
 
+_cake_launch_cake_gfx938_gemm_bias_b1_smoke_tf32 = _cake_gfx938_gemm_bias_b1_smoke_tf32_kernel[(8, 4, 1)]
+
 def cake_gfx938_gemm_bias_b1_smoke_tf32(a, b, bias, out=None):
     for tensor, shape, dtype in (
         (a, (512, 256), torch.float32),
@@ -89,15 +103,16 @@ def cake_gfx938_gemm_bias_b1_smoke_tf32(a, b, bias, out=None):
         raise ValueError("every input must share one device")
     if out is None:
         out = torch.empty((512, 256), dtype=torch.float32, device=a.device)
-    if tuple(out.shape) != (512, 256) or out.dtype != torch.float32:
-        raise ValueError("out differs from the frozen output contract")
-    if out.device != a.device or not out.is_contiguous():
-        raise ValueError("out must be contiguous on the input device")
-    _cake_gfx938_gemm_bias_b1_smoke_tf32_kernel[(8, 4, 1)](
-        a,
-        b,
-        bias,
-        out,
+    else:
+        if tuple(out.shape) != (512, 256) or out.dtype != torch.float32:
+            raise ValueError("out differs from the frozen output contract")
+        if out.device != a.device or not out.is_contiguous():
+            raise ValueError("out must be contiguous on the input device")
+    _cake_launch_cake_gfx938_gemm_bias_b1_smoke_tf32(
+        _cake_pointer_range_arg(a, torch.float32, 524288),
+        _cake_pointer_range_arg(b, torch.float32, 262144),
+        _cake_pointer_range_arg(bias, torch.float32, 1024),
+        _cake_pointer_range_arg(out, torch.float32, 524288),
         N_M_BLOCK=512,
         N_K_LOOP=256,
         N_N_BLOCK=256,

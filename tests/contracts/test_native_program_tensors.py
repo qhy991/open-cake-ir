@@ -34,6 +34,9 @@ class McaCompilationFixture:
         route = triton_route(requirements)
         artifacts = {role: b'CPU fixture; not executable' for role in route.artifact_roles}
         artifacts['source'] = source
+        from tests.contracts.test_metax_binary import bundle, native_fixture
+        artifacts['mcfatbin'] = bundle(native=native_fixture(len(requirements['signature']),
+                                                           requirements['kernel_entry_point']))[0]
         params = ', '.join(f'%arg{i}: !tt.ptr<f32>' for i in range(len(requirements['signature'])))
         artifacts['ttgir'] = f'tt.func public @fixture({params}) attributes {{}}'.encode()
         return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'], artifacts,

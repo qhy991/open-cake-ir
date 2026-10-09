@@ -7,6 +7,9 @@
 
 [返回 Wiki](README.md) · [结果解释](results.md)
 
+选择任务和检查精确目标/形状，先看[统一任务目录](../TASK_CATALOG.md)。
+`open-cake-ir tasks list` 汇总已注册入口与参考集合；`tasks check` 明确区分源码检查和未验收的运行条件。
+
 新实验先对齐[共同研究主题](../RESEARCH_AGENDA.md)：说明所检验的机制或假设，再选择工程 Run 或预分配 Study。预算与硬件分支方向以该约定为准；本页说明执行流程。
 
 ## 按任务目的选择入口

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-10-03-004",
+  "kind": "capacity",
+  "date": "2026-10-03",
+  "title": "gfx938 omits the existing bounded INT32 atomic fetch-add contract",
+  "backend": "triton",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@2d44616e1f43b1522583be11c9f8b2f9e547c6ce",
+  "executor_revision": "bw1100-bench@77a2848f95bd2a13fea0ce69dcc1147ccac39a93; self-contained HCU gateway, not canonical Lab Executor",
+  "evidence": {
+    "workspace": "bw1100-1:/data3/testuser01/experiments/bw1100-bench-cake-batch-expert-sort-20261003",
+    "schedule": "campaign/schedules/gfx938-058-hist-n16384-v1.json",
+    "assessment": "campaign/generated/hist-n16384-refused/assessment.json",
+    "handoff": "campaign/EVOLUTION.md"
+  },
+  "observation": "The retained histogram candidate co-occurs with a genuine absent Target operation and exact atomic contract, but is not an admissible program: ATOMIC_EDGE_COUNT, OUTPUT_MODE and ATOMIC_RESULT_SPACE also block it. Its one-write scatter spelling must not be accepted. A valid existing fetch-add reservation Schedule retargeted to gfx938 isolates the declaration gap without changing IR or verifier rules.",
+  "proposed_change": "Admit only existing atomic_rmw and triton.atomic_add.i32.relaxed.gpu on gfx938 after device qualification; retain returned-old-value, state placement, bounded-index and memory-model guards. Add positive and dtype refusal Corpus cases.",
+  "principles": "P1/P3 reuse the existing primitive. P2/P8 expose exact memory semantics and native ISA. P4/P5/P7 retain current typing/effect/legality owners. P6 complete Corpus and unsafe-edge counterexamples.",
+  "decision": "accepted",
+  "implemented_in": "3952544f",
+  "verified_by": {
+    "source_commit": "d7d37fa49413a74c28d33d0cc5f5c40b9b821e1f",
+    "workspace": "bw1100-1:/data3/testuser01/experiments/bw1100-cake-atomic-successor-20261003",
+    "result": "results/atomic-001/device-result.json",
+    "terminal": "results/atomic-001-admission-terminal.json",
+    "run_id": "bw-03df593adfc7",
+    "checks": 150,
+    "native_instruction": "buffer_atomic_add with returned old value",
+    "release": "exit0,VRAM0,no live container,no visible KFD",
+    "scope": "Bounded successor component engineering qualification. No performance, full integer routing, stable sort, physical exclusivity or canonical Lab Campaign claim."
+  },
+  "remaining_acceptance": "int32 scan, FP32-to-INT32 conversion, comparisons and a whole stable-sort candidate remain separate unqualified capabilities; no rolling optimization batch launched."
+}

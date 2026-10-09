@@ -1,0 +1,125 @@
+"""The frozen FP8 task owns its input bytes and high-precision oracle."""
+
+import struct
+from pathlib import Path
+import unittest
+
+from open_cake_ir.tasks import metax_fp8_gemm
+from open_cake_ir.tasks.workloads import create_task, load_workload
+from open_cake_ir.compiler import frontend
+
+
+ROOT = Path(__file__).resolve().parents[2]
+CONTRACT = ROOT / "contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json"
+
+
+class MetaxFP8Workload(unittest.TestCase):
+    def test_nt_successor_preserves_v1_and_checks_rhs_orientation(self):
+        old = load_workload(CONTRACT.with_name(CONTRACT.name.replace("v2.json", "v1.json")))
+        self.assertEqual(old.document, metax_fp8_gemm.workload_document("1"))
+        with self.assertRaisesRegex(ValueError, "NT Workload successor"):
+            metax_fp8_gemm.starter_source(old, "primary")
+        workload = load_workload(CONTRACT)
+        self.assertEqual(workload.document["tensors"]["b"]["shape"], ["N", "K"])
+        a, b = metax_fp8_gemm._bytes_for_case(workload.case("identity"))
+        nt = metax_fp8_gemm.reference_bytes(a, b, rhs_transposed=True)
+        expected = [metax_fp8_gemm.decode_e4m3fn(b[n * 64 + m])
+                    for m in range(64) for n in range(64)]
+        self.assertEqual(nt, expected)
+        self.assertNotEqual(nt, metax_fp8_gemm.reference_bytes(a, b))
+
+    def test_launcher_uses_exact_target_and_known_cake_source(self):
+        from tools.launch_task import TASKS, _default_shape
+
+        self.assertIn(metax_fp8_gemm.TASK, TASKS)
+        self.assertEqual(_default_shape(metax_fp8_gemm.TASK, None, None), (64, 64))
+        document, source = create_task(metax_fp8_gemm.TASK, backend="triton-metax",
+                                       rows=64, columns=64, case_id="primary")
+        workload = load_workload(CONTRACT)
+        self.assertEqual(document, workload.document)
+        schedule = frontend.parse(source).document
+        self.assertEqual(schedule["metadata"]["workload_contract_sha256"], workload.canonical_sha256)
+        self.assertEqual(
+            source.replace(f", metadata={{'workload_contract_sha256': '{workload.canonical_sha256}'}}", ""),
+            (ROOT / "examples/python/xcore1002_fp8_compensated.py").read_text(),
+        )
+        for backend, rows, columns, depth in (("triton-b300", 64, 64, None),
+                                               ("triton-metax", 32, 64, None),
+                                               ("triton-metax", 64, 64, 32),
+                                               ("triton-metax", 64, 64, 64.0)):
+            with self.subTest(backend=backend, rows=rows, columns=columns, depth=depth):
+                with self.assertRaisesRegex(ValueError, "fixed M=N=K=64"):
+                    create_task(metax_fp8_gemm.TASK, backend=backend, rows=rows,
+                                columns=columns, depth=depth)
+
+    def test_bucketed_projection_binds_only_the_frozen_nt_workload(self):
+        workload = load_workload(CONTRACT)
+        source = metax_fp8_gemm.bucketed_source(workload)
+        schedule = frontend.parse(source).document
+        self.assertEqual(schedule["metadata"]["workload_contract_sha256"], workload.canonical_sha256)
+        globals_ = [(b["name"], tuple(b["shape"]), b["dtype"], b["mode"])
+                    for b in schedule["buffers"] if b["space"] == "global"]
+        self.assertEqual(globals_, [(arg.name, arg.shape, arg.dtype, arg.mode)
+                                  for arg in workload.tensor_abi("primary")])
+        old = load_workload(CONTRACT.with_name(CONTRACT.name.replace("v2.json", "v1.json")))
+        with self.assertRaisesRegex(ValueError, "NT Workload successor"):
+            metax_fp8_gemm.bucketed_source(old)
+        with self.assertRaisesRegex(KeyError, "unknown workload case"):
+            metax_fp8_gemm.bucketed_source(workload, "missing_case")
+
+    def test_frozen_contract_and_exact_candidate_abi(self):
+        workload = load_workload(CONTRACT)
+        self.assertEqual(workload.workload_id, metax_fp8_gemm.WORKLOAD_ID)
+        self.assertEqual(len(workload.case_ids), 37)
+        self.assertEqual(
+            [(arg.name, arg.shape, arg.dtype, arg.mode) for arg in workload.tensor_abi("primary")],
+            [("a", (64, 64), "fp8_e4m3", "input"),
+             ("b", (64, 64), "fp8_e4m3", "input"),
+             ("out", (64, 64), "fp32", "output")],
+        )
+        schedule = frontend.read_schedule(ROOT / "examples/python/xcore1002_fp8_compensated.py").document
+        self.assertEqual(
+            [(buffer["name"], tuple(buffer["shape"]), buffer["dtype"], buffer["mode"])
+             for buffer in schedule["buffers"] if buffer["mode"] in {"input", "output"}],
+            [(arg.name, arg.shape, arg.dtype, arg.mode) for arg in workload.tensor_abi("primary")],
+        )
+
+    def test_finite_decoder_and_generator(self):
+        decode = metax_fp8_gemm.decode_e4m3fn
+        self.assertEqual((decode(0), decode(0x38), decode(0xB8), decode(0x7E)),
+                         (0.0, 1.0, -1.0, 448.0))
+        with self.assertRaisesRegex(ValueError, "finite"):
+            decode(0x7F)
+        case = load_workload(CONTRACT).case("heldout_full_finite_05")
+        self.assertEqual(metax_fp8_gemm._bytes_for_case(case), metax_fp8_gemm._bytes_for_case(case))
+        self.assertTrue(all(code not in (0x7F, 0xFF)
+                            for tensor in metax_fp8_gemm._bytes_for_case(case) for code in tensor))
+
+    def test_independent_oracle_identity_zero_and_precision_counterexample(self):
+        workload = load_workload(CONTRACT)
+        for name in ("zeros", "identity"):
+            a, b = metax_fp8_gemm._bytes_for_case(workload.case(name))
+            output = metax_fp8_gemm.reference_bytes(a, b)
+            expected = ([0.0] * 4096 if name == "zeros" else
+                        [metax_fp8_gemm.decode_e4m3fn(code) for code in b])
+            self.assertEqual(output, expected)
+
+        a, b = metax_fp8_gemm._bytes_for_case(workload.case("heldout_full_finite_03"))
+        exact = metax_fp8_gemm.reference_bytes(a, b, rhs_transposed=True)[62 * 64 + 39]
+        left = [metax_fp8_gemm.decode_e4m3fn(code) for code in a]
+        right = [metax_fp8_gemm.decode_e4m3fn(code) for code in b]
+        fp32 = lambda value: struct.unpack("<f", struct.pack("<f", value))[0]
+        ordinary_sum = 0.0
+        for k in range(64):
+            ordinary_sum = fp32(ordinary_sum + fp32(left[62 * 64 + k] * right[39 * 64 + k]))
+        self.assertGreater(abs(ordinary_sum - exact), 0.001 + 0.0001 * abs(exact))
+
+    def test_invalid_input_is_rejected_before_reference(self):
+        with self.assertRaisesRegex(ValueError, "shape"):
+            metax_fp8_gemm.reference_bytes(bytes(3), bytes(4096))
+        with self.assertRaisesRegex(ValueError, "finite"):
+            metax_fp8_gemm.reference_bytes(bytes([0x7F]) + bytes(4095), bytes(4096))
+
+
+if __name__ == "__main__":
+    unittest.main()

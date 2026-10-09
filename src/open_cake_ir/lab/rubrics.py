@@ -70,8 +70,10 @@ def derive_rubric(feedback: object = _ABSENT) -> dict[str, object]:
         "correctness_rejected": "Search correctness is reported as rejected. Inspect the available oracle diagnostic and repair the candidate before interpreting latency as an improvement.",
     }.get(correctness, "GPU correctness is not established here. Static admission, missing evidence and unknown values do not establish an oracle result."))
 
-    measurement = field("measurement_quality", ("stable", "unstable", "not_measured"))
+    measurement = field("measurement_quality", ("stable", "unstable", "not_measured", "valid_samples", "invalid_samples"))
     add("measurement", measurement, ("measurement_quality", "search_latency_ms"), {
+        "valid_samples": "The declared samples are valid; dispersion is diagnostic-only under this Run policy. Use the declared mean without claiming timing stability or independent replication.",
+        "invalid_samples": "Timing samples are invalid under the declared policy; do not use them as an optimization result.",
         "stable": "Search timing is reported as stable. Compare only within the frozen workload and timing boundary; inspect confirmation separately.",
         "unstable": "Search timing is reported as unstable. Do not explain its apparent latency difference as an optimization benefit; inspect measurement evidence before changing a performance hypothesis.",
         "not_measured": "Search timing was not measured. There is no latency comparison to explain.",

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Mapping
 
 from ._documents import _canonical_json_bytes
+from .native_skills import NativeSkillPackage
 
 
 def required_live_provider_qualification_scope(claim_scope: str) -> str:
@@ -111,8 +112,15 @@ def _project_candidate_submission(
         if environment_kind != 'open_cake' or not isinstance(arm, str) or not arm:
             raise ValueError('Python candidate-bundle submission contract differs')
         from .python_candidate_bundle import project_python_candidate_bundle
-        return project_python_candidate_bundle(payload,
-            maximum_candidates_per_turn=maximum_candidates_per_turn)
+        try:
+            return project_python_candidate_bundle(payload,
+                maximum_candidates_per_turn=maximum_candidates_per_turn)
+        except ValueError as error:
+            # The native Turn/session/file/usage were valid; the authored file
+            # was not. Preserve its exact bytes in raw_submission and reject
+            # the whole bundle as one invalid submission, without compiling or
+            # truncating excess proposals. The next Turn can repair its source.
+            return (canonical_json_bytes({'python_bundle_error':str(error)}),)
     if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or not isinstance(arm, str) or not arm or environment_kind not in {
         "open_cake",
         "direct_cuda",
@@ -169,6 +177,25 @@ class ProviderInvocation:
     thread_id: str | None
     codex_home: Path | None = None
     system_skills_snapshot: tuple[tuple[str, int, str], ...] | None = None
+    user_home: Path | None = None
+    native_skill_package: "NativeSkillPackage | None" = None
+
+
+def invocation_document(invocation: ProviderInvocation, *, include_prompt: bool = True) -> dict:
+    """One invocation projection; Run skill binding explicitly omits the final prompt."""
+    document = {
+        'argv' if include_prompt else 'argv_without_prompt': list(
+            invocation.argv if include_prompt else invocation.argv[:-1]),
+        'cwd': str(invocation.cwd), 'sandbox': invocation.sandbox,
+        'provider_revision': invocation.provider_revision,
+        'removed_environment': list(invocation.removed_environment),
+        'thread_id': invocation.thread_id,
+    }
+    if invocation.codex_home is not None: document['codex_home'] = str(invocation.codex_home)
+    if invocation.user_home is not None: document['user_home'] = str(invocation.user_home)
+    if invocation.native_skill_package is not None:
+        document['native_skill_package'] = invocation.native_skill_package.reference
+    return document
 
 
 @dataclass(frozen=True)
@@ -199,6 +226,12 @@ class ProviderTurn:
     tool_activity: tuple["ProviderAuxiliaryActivity", ...] = ()
     reference_bundle: bytes | None = None
     """Exact rendered reference bytes embedded in this Turn, when one exists."""
+
+    native_skill_input: bytes | None = None
+    """Bounded same-invocation native skill frames; not a qualification receipt."""
+
+    native_skill_binding: bytes | None = None
+    """Executor-owned Run/turn/invocation binding, never authored by the provider."""
 
 
 @dataclass(frozen=True)
@@ -253,6 +286,9 @@ class ParsedCodexTurnEvents:
     tool_activity: tuple[ProviderAuxiliaryActivity, ...] = ()
 
 
+NATIVE_SKILL_QUALIFICATION_V1 = "native_skill_qualification_v1"
+
+
 @dataclass(frozen=True)
 class ProviderQualificationReceipt:
     """Non-secret capability gate for a provider revision."""
@@ -266,6 +302,7 @@ class ProviderQualificationReceipt:
     qualified: bool
     scope: str
     system_skills_sha256: str | None = None
+    native_skill_input_contract: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -288,6 +325,11 @@ class ProviderQualificationReceipt:
                 or any(char not in '0123456789abcdef' for char in self.system_skills_sha256)))
         ):
             raise ValueError("provider qualification identity differs")
+        if self.native_skill_input_contract is not None and (
+            self.native_skill_input_contract != NATIVE_SKILL_QUALIFICATION_V1
+            or self.system_skills_sha256 is None):
+            raise ValueError('provider native skill qualification capability differs')
+
 
     @classmethod
     def load(cls, path: str | Path) -> "ProviderQualificationReceipt":
@@ -306,8 +348,9 @@ class ProviderQualificationReceipt:
             "scope",
         }
         version = document.get('schema_version') if isinstance(document, Mapping) else None
-        if (not isinstance(document, Mapping) or type(version) is not int or version not in {1, 2}
-            or set(document) != fields | ({'system_skills_sha256'} if version == 2 else set())):
+        if (not isinstance(document, Mapping) or type(version) is not int or version not in {1, 2, 3}
+            or set(document) != fields | ({'system_skills_sha256'} if version in {2, 3} else set())
+                | ({'native_skill_input_contract'} if version == 3 else set())):
             raise ValueError("provider qualification fields differ")
         return cls(
             provider_revision=str(document["provider_revision"]),
@@ -318,7 +361,8 @@ class ProviderQualificationReceipt:
             usage_observed=document["usage_observed"] is True,
             qualified=document["qualified"] is True,
             scope=str(document["scope"]),
-            system_skills_sha256=(str(document['system_skills_sha256']) if version == 2 else None),
+            system_skills_sha256=(str(document['system_skills_sha256']) if version in {2, 3} else None),
+            native_skill_input_contract=(str(document['native_skill_input_contract']) if version == 3 else None),
         )
 
     @property
@@ -326,7 +370,8 @@ class ProviderQualificationReceipt:
         """Return the canonical non-secret receipt document."""
 
         return {
-            "schema_version": 2 if self.system_skills_sha256 is not None else 1,
+            "schema_version": 3 if self.native_skill_input_contract is not None else (
+                2 if self.system_skills_sha256 is not None else 1),
             "provider_revision": self.provider_revision,
             "executable_sha256": self.executable_sha256,
             "configuration_sha256": self.configuration_sha256,
@@ -337,6 +382,8 @@ class ProviderQualificationReceipt:
             "scope": self.scope,
             **({'system_skills_sha256': self.system_skills_sha256}
                if self.system_skills_sha256 is not None else {}),
+            **({'native_skill_input_contract': self.native_skill_input_contract}
+               if self.native_skill_input_contract is not None else {}),
         }
 
     @property
@@ -379,3 +426,19 @@ CODEX_DISABLED_FEATURES = (
     "tool_suggest",
     "workspace_dependencies",
 )
+
+
+
+def expected_codex_disabled_features(event_contract: str, author_home_policy: str | None) -> tuple[str, ...]:
+    """The declared tool surface and author-home boundary jointly own CLI features.
+
+    Native task skills remain available in the explicitly projected user HOME.
+    Isolated homes cannot import account plugins or connector integrations on
+    startup; their existing file and native-input checks still decide admission.
+    This is configuration, not proof that a CLI actually honored the restriction.
+    """
+    if event_contract == 'closed_file_change_v1':
+        return CODEX_DISABLED_FEATURES
+    if event_contract == 'tool_rich_candidate_v1':
+        return () if author_home_policy is None else ('apps', 'plugins', 'remote_plugin')
+    raise ValueError('Codex feature and event contracts differ')

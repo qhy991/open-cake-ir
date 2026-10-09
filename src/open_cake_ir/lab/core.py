@@ -137,6 +137,7 @@ class Lab:
             provider=provider,
             environments=environments,
             evaluator=evaluator,
+            task_package=self.task_package,
         )
 
     def _replay_matched_run(

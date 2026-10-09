@@ -26,6 +26,7 @@ def _replay_launchable_candidate(
     compiler_factory=None,
     authored_bytes=None,
     workload_sha256: str | None = None,
+    source_authority=None,
 ) -> LaunchableCandidate:
     """Rebuild one sealed launchable and enforce its arm-owned artifact contract."""
 
@@ -87,7 +88,30 @@ def _replay_launchable_candidate(
         launch_spec_sha256=manifest.canonical_sha256,
         artifact_payloads=artifact_payloads,
     )
+    from ..build import compiled_allocation_feedback
+    compiled_allocation_feedback(candidate)
     authored = json.loads(authored_bytes) if arm=='open_cake' and authored_bytes is not None else None
+    from ..generated_source import authored_document, generated_source_permission
+    inspect_source = generated_source_permission(source_authority or {})
+    if inspect_source:
+        if arm != 'open_cake' or authored_bytes is None or compiler_factory is None:
+            refuse(location + '.lowered_source', 'generated source lacks its authored candidate or frozen Compiler')
+        projected = authored_document(authored_bytes)
+        if 'program_id' in projected:
+            if (projected.get('target') != candidate.target
+                or any(stage['schedule']['lowering']['backend'] != source_authority['lowering_route']['backend']
+                       for stage in projected['stages'])):
+                refuse(location + '.lowered_source', 'Program target or route differs from source inspection authority')
+        else:
+            from ..workload_binding import bind_schedule_workload
+            if (projected.get('target') != candidate.target
+                or projected.get('lowering') != source_authority.get('lowering_route')):
+                refuse(location + '.lowered_source', 'Schedule target or route differs from source inspection authority')
+            bound = bind_schedule_workload(projected, workload_sha256 or manifest.workload_sha256)
+            compiler = compiler_factory()
+            lowering = compiler.lower(compiler.assess(bound))
+            if candidate.artifact_payloads.get('lowered_source') != lowering.source.encode('utf-8'):
+                refuse(location + '.lowered_source', 'differs from its authored Schedule and frozen Compiler lowering')
     if candidate.is_program or isinstance(authored,Mapping) and 'program_id' in authored:
         if compiler_factory is None:
             raise ValueError('Program replay requires its exact Compiler')

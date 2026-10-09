@@ -254,6 +254,11 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
         timed_feedback = ["qualified_timing"]
         profile_feedback = ["profile"] if attribution_evaluation is not None else []
     expected_open_cake_feedback = ["findings", "correctness", *timed_feedback, *profile_feedback]
+    from .generated_source import GENERATED_SOURCE_V1, generated_source_permission
+    for authority in arms.values():
+        generated_source_permission(authority)
+    if generated_source_permission(open_cake):
+        expected_open_cake_feedback.append(GENERATED_SOURCE_V1)
     expected_comparison_feedback = (
         None if comparison is None else ["compile", "correctness", *timed_feedback, *profile_feedback]
     )
@@ -555,7 +560,10 @@ class CampaignLock:
         if comparison is not None and "candidate_selection" in arms[comparison]:
             raise ValueError(f"{comparison} empirical selection is unsupported")
         if "candidate_selection" in arms["open_cake"]:
-            if (
+            from open_cake_ir.compiler.target import CodeObject
+            from open_cake_ir.evaluation.platforms import platform_for
+            native_mcpti = platform_for(document['execution']['target']).code_object is CodeObject.MCFATBIN
+            if not native_mcpti and (
                 comparison != "direct_cuda"
                 or "input_format" in arms["open_cake"]
             ):

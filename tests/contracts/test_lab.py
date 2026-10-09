@@ -2562,7 +2562,15 @@ class QualifiedCandidateSelectionTest(SemanticLabTestCase):
                         launch_spec_sha256=roles["launch_manifest"],
                         artifact_payloads=artifacts,
                     ),
-                    {"findings": [{"variant": variant}]},
+                    {"findings": [{
+                        "code": f"FIXTURE_VARIANT_{variant}",
+                        "path": f"operations[{variant}]",
+                        "message": f"resource finding for candidate {variant}",
+                        "category": "hardware_conformance",
+                        "severity": "report",
+                        "blocks_acceptance": False,
+                        "blocks_lowering": False,
+                    }]},
                     result.artifact_payloads,
                 )
 
@@ -2715,9 +2723,17 @@ class QualifiedCandidateSelectionTest(SemanticLabTestCase):
         self.assertIn(("confirmatory", 1), evaluator.selections)
         next_turns = [request for request in provider.requests if request.turn == 2]
         self.assertTrue(next_turns)
-        self.assertTrue(
-            all(request.feedback["findings"] == [{"variant": 1}] for request in next_turns)
-        )
+        expected_winner_findings = [{
+            "code": "FIXTURE_VARIANT_1",
+            "path": "operations[1]",
+            "message": "resource finding for candidate 1",
+            "category": "hardware_conformance",
+            "severity": "report",
+            "blocks_acceptance": False,
+            "blocks_lowering": False,
+        }]
+        for request in next_turns:
+            self.assertEqual(request.feedback["findings"], expected_winner_findings)
 
 
 

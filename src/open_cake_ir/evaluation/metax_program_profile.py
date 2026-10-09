@@ -84,7 +84,7 @@ def program_profile_summary(raw):
                 or child.target != spec.target or child.entry_point != spec.kernel_name
                 or child.launch_spec_sha256 != spec.canonical_sha256
                 or child.artifact_roles.get('lowered_source') != manifest.lowered_sources[stage.name]
-                or spec.hidden_null_pointer_parameters != 0 or spec.aligned_variant
+                or spec.hidden_null_pointer_parameters not in (0, 2) or spec.aligned_variant
                 or kernel['name'] != spec.kernel_name or tuple(kernel['grid']) != spec.grid
                 or tuple(kernel['block']) != spec.block
                 or kernel['dynamic_shared_bytes'] != spec.dynamic_shared_memory_bytes
