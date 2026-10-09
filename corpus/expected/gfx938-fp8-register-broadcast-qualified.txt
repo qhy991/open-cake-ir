@@ -7,6 +7,18 @@ import triton
 import triton.language as tl
 
 
+class _cake_pointer_range_arg:
+    __slots__ = ("base", "dtype", "nbytes")
+    def __init__(self, base, dtype, nbytes):
+        self.base = base
+        self.dtype = dtype
+        self.nbytes = nbytes
+    def data_ptr(self):
+        return self.base.data_ptr()
+    def ptr_range(self):
+        return self.nbytes
+
+
 @triton.jit
 def _qualify_broadcast_fp8_e4m3_kernel(
     a,
@@ -59,8 +71,8 @@ def qualify_broadcast_fp8_e4m3(a, out=None):
         if out.device != a.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_qualify_broadcast_fp8_e4m3(
-        a,
-        out,
+        _cake_pointer_range_arg(a, torch.float8_e4m3fn, 4),
+        _cake_pointer_range_arg(out, torch.float8_e4m3fn, 32),
         N_ROW=1,
         D_A_1=4,
         D_OUT_0=1,

@@ -43,6 +43,12 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- [F-2026-10-09-001](2026-10-09-001-unknown-compile-owner-triage.json) — unknown generated-source compile refusals need owner triage before asserting a verifier defect; no hardware or performance claim.
+
+- [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.
+
+- [F-2026-10-07-007](2026-10-07-007-hcu-frozen-pointer-range.json) — reuse a checked contiguous HCU ABI to supply pointer extent without caching addresses; host-only pilot and Compiler qualification remain distinct.
+
 - [F-2026-10-07-006](2026-10-07-006-claude-restricted-path-recovery.json) — restricted Claude file tools block a mistaken outside path, but v4 refuses the author's recovered submission. Opt-in v5 requires complete denial witnesses and successful final writes; original failures stay unchanged, and live qualification remains required before new Metal Runs.
 
 - [F-2026-10-07-005](2026-10-07-005-register-transpose-capacity.json) — explicit rank-two register permutation with shared typing and axis provenance; device qualification and performance remain separate.
