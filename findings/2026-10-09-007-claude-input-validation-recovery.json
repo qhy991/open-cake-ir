@@ -26,9 +26,10 @@
   "promotion_disposition": "Lab provider parser successor. Frozen C1 source, Run evidence and outcome remain unchanged. No failed Run is reclassified or restarted. Fresh initial/resume provider qualification is required before a v8 Run; a v7 receipt cannot qualify it.",
   "implemented_in": "ec35a563",
   "verified_by": {
-    "cpu_commit": "ec35a563",
+    "cpu_commit": "eba1ed0c",
     "retained_stream_replay": "The unmodified 16551-event stream refuses under v7 and parses under v8. The result retains one successful Write, the failed Write activity, both native compaction lifecycles and 277382 reported tokens. Source stream remains outside the checkout.",
-    "contracts": "At ec35a563, 78 Claude provider contracts and 2 isolation contracts passed. The broader provider*.py run completed 100 tests with 20 failures and 15 errors, including WriterCustody os.mkdir(dir_fd) PermissionError under the local sandbox. That verification stopped without changing the custody environment. Broader acceptance remains unverified.",
-    "native_qualification": "Not attempted. No new provider or GPU calls."
+    "contracts": "At eba1ed0c, 79 Claude provider contracts passed, including inherited stdin/compaction/isolation and refusal of a v7 qualification receipt. At ec35a563, 2 isolation contracts also passed. The separate broader provider*.py run at ec35a563 completed 100 tests with 20 failures and 15 errors, including WriterCustody os.mkdir(dir_fd) PermissionError under the local sandbox. That verification stopped without changing the custody environment. Broader acceptance remains unverified.",
+    "native_qualification": "Not attempted. No new provider or GPU calls.",
+    "independent_review": "Read-only review of ec35a563 implementation and eba1ed0c counterexamples found no blocking issue; /tmp/cake-claude-v8-independent-review-20261009.md. Reviewer pytest collection was unavailable, so this is independent source review, not an independent test pass."
   }
 }
