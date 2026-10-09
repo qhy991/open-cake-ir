@@ -990,16 +990,31 @@ class ClaudeInvocationBuilder:
                 "second arm for an unpinned window to be incomparable with"),
         }
 
-    def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:
+    @staticmethod
+    def render_invocation(prompt: str, *, executable: Path, workspace: Path,
+                          provider_revision: str, configuration: Mapping,
+                          context_window: str, thread_id: str | None) -> ProviderInvocation:
+        """Render the logical invocation for execution and anchored-evidence replay.
+
+        The constructor owns current executable/workspace/capability admission.
+        Replay uses the same renderer without reopening historical host paths.
+        """
+        event_contract = configuration['event_contract']
+        submission_contract = configuration['submission_contract']
+        isolation_policy = configuration.get('isolation_policy')
+        admitted_windows = ({'100k'} if event_contract in CLAUDE_STDIN_CONTRACTS else
+                            {CLAUDE_AUTOCOMPACT_WINDOW, CLAUDE_AUTOCOMPACT_UNSUPPORTED})
+        if context_window not in admitted_windows:
+            raise ValueError('Claude logical invocation context-window contract differs')
         if not isinstance(prompt, str) or not prompt or "\x00" in prompt:
             raise ValueError("Claude provider prompt is required")
         if thread_id is not None and (not isinstance(thread_id, str) or _THREAD_ID.fullmatch(thread_id) is None):
             raise ValueError("Claude resume session id differs")
         tools = ",".join(CLAUDE_AUTHORING_TOOLS)
-        filename = ('candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1
-                    else 'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
+        filename = ('candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1
+                    else 'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
                     else 'candidate-set.json')
-        guarded = self._event_contract in CLAUDE_FILE_CONTRACTS
+        guarded = event_contract in CLAUDE_FILE_CONTRACTS
         # F-2026-09-10-008: auto-compact silently drops provider context mid-turn, which
         # changes what the author saw and breaks comparability between arms. This CLI has
         # no off switch -- `--autocompact` takes only `auto` or a 100k..1M window -- so the
@@ -1008,22 +1023,22 @@ class ClaudeInvocationBuilder:
         # does not recognize, that window is clamped to the CLI's assumed model context
         # (glm-5.3: 200k), so a long session can still compact. v3 refuses it;
         # v4 validates and records it, without claiming identical author context.
-        window = (() if self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED
-                  else (CLAUDE_AUTOCOMPACT_OPTION, self._autocompact))
-        arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
+        window = (() if context_window == CLAUDE_AUTOCOMPACT_UNSUPPORTED
+                  else (CLAUDE_AUTOCOMPACT_OPTION, context_window))
+        arguments = (str(executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
                      *window,
-                     "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", 'default' if guarded else 'acceptEdits',
-                     "--tools", tools, "--allowedTools", exact_file_tools(self.workspace, filename) if guarded else tools)
-        if self._event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
+                     "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", configuration['model'], "--effort", configuration['reasoning_effort'], "--permission-mode", 'default' if guarded else 'acceptEdits',
+                     "--tools", tools, "--allowedTools", exact_file_tools(workspace, filename) if guarded else tools)
+        if event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT:
             arguments += ('--restricted',)
-        if (self._event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
-                or self._isolation_policy is not None):
+        if (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
+                or isolation_policy is not None):
             # Opt-in successor only: frozen v3/v4 argv and prompts stay unchanged.
             # The CLI owns file-tool confinement; qualification must witness it.
-            filename = ('candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1
-                        else 'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
+            filename = ('candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1
+                        else 'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
                         else 'candidate-set.json')
-            prompt = ('Candidate file: ' + str(self.workspace / filename) + '\n'
+            prompt = ('Candidate file: ' + str(workspace / filename) + '\n'
                       'The working directory is already the task workspace. '
                       'Write or edit only this exact file. Do not append the Run id to '
                       'the directory or create a subdirectory. If a file tool refuses '
@@ -1037,8 +1052,14 @@ class ClaudeInvocationBuilder:
             arguments += ("--resume", thread_id)
         # This is a logical invocation. The v7 adapter removes the final prompt
         # before spawning and supplies those same bytes through supervised stdin.
-        return ProviderInvocation(arguments + ("--", prompt), self.workspace, "none",
-                                  self.provider_revision, self._removed_environment, thread_id)
+        return ProviderInvocation(arguments + ("--", prompt), workspace, "none",
+                                  provider_revision, tuple(configuration['removed_environment']), thread_id)
+
+
+    def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:
+        return self.render_invocation(prompt, executable=self.executable, workspace=self.workspace,
+            provider_revision=self.provider_revision, configuration=self.configuration,
+            context_window=self._autocompact, thread_id=thread_id)
 
 
 class ClaudeProviderAdapter:

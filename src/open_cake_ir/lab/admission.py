@@ -71,15 +71,18 @@ def validate_provider(*, open_cake, policy, project_root, study):
 
 def validate_editable_starter_observation(*, authority, payload, read_object, provider, qualification):
     """Reconstruct the existing qualification plan, exact sources and native Edit events."""
-    from .claude import parse_claude_turn_events
-    from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+    from .claude import (parse_claude_turn_events, ClaudeInvocationBuilder,
+                         CLAUDE_AUTOCOMPACT_OPTION, CLAUDE_AUTOCOMPACT_UNSUPPORTED)
+    from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1, invocation_document
     from .task_package import TaskPackage, render_task_request
     if (authority.get('harness') != 'claude-code' or authority.get('arms') != ['open_cake']
             or authority.get('submission_contract') != PYTHON_CANDIDATE_BUNDLE_V1
             or authority.get('turns') != ['initial_seed_update', 'same_thread_resume_update']
             or authority.get('gpu_execution_authorized') is not False
             or authority.get('provider_revision') != qualification.provider_revision
-            or any(authority.get(key) != provider.get(key) for key in ('model', 'reasoning_effort', 'event_contract'))):
+            or authority.get('executable_sha256') != qualification.executable_sha256
+            or any(authority.get(key) != provider.get(key) for key in
+                   ('model', 'reasoning_effort', 'event_contract', 'removed_environment', 'submission_contract'))):
         raise ValueError('editable starter qualification has no declared initial-Edit/resume-Edit lifecycle')
     references = payload.get('objects', [])
     def raw(role):
@@ -123,11 +126,21 @@ def validate_editable_starter_observation(*, authority, payload, read_object, pr
         prompt, expected_projection = render_task_request(package, {'turn': number})
         invocation = json.loads(raw(prefix + 'invocation'))
         argv = invocation.get('argv', [])
-        if (raw(prefix + 'task_projection') != expected_projection or len(argv) < 2 or argv[-2:] != ['--', prompt]
+        if (raw(prefix + 'task_projection') != expected_projection or len(argv) < 2
                 or str(Path(invocation['cwd']) / 'candidate-set.py') != plan['candidate_path']
-                or invocation.get('provider_revision') != qualification.provider_revision
-                or invocation.get('sandbox') != 'none'):
+                or not Path(invocation['cwd']).is_absolute() or not Path(argv[0]).is_absolute()
+                or argv.count(CLAUDE_AUTOCOMPACT_OPTION) > 1):
             raise ValueError('editable starter qualification invocation differs from its frozen task')
+        try:
+            window = (argv[argv.index(CLAUDE_AUTOCOMPACT_OPTION) + 1]
+                      if CLAUDE_AUTOCOMPACT_OPTION in argv else CLAUDE_AUTOCOMPACT_UNSUPPORTED)
+            expected = ClaudeInvocationBuilder.render_invocation(prompt, executable=Path(argv[0]),
+                workspace=Path(invocation['cwd']), provider_revision=qualification.provider_revision,
+                configuration=provider, context_window=window, thread_id=None if number == 1 else thread)
+        except (IndexError, TypeError, ValueError) as error:
+            raise ValueError('editable starter qualification logical invocation is invalid') from error
+        if invocation != invocation_document(expected):
+            raise ValueError('editable starter qualification logical invocation differs from its builder')
         if number == 1:
             if invocation.get('thread_id') is not None or '--resume' in argv:
                 raise ValueError('editable starter qualification initial invocation was already resumed')
