@@ -1,5 +1,13 @@
 # Findings
 
+- [F-2026-10-09-001](2026-10-09-001-claude-prompt-transport.json) — v7 sends full prompts through supervised stdin and reserves context room with100k native compaction. Preserve original E2BIG/context-limit failures; live qualification and large UTF8 transport tests retained.
+
+- [F-2026-10-08-002](2026-10-08-002-c550-local-fault-scope.json) — bounded MACA shared-layout assertion classification and coherent author-delivery timeout isolation. Same-runtime baseline/rejected-input CPU controls pass; original failures stay sealed and no hardware tile range is inferred.
+
+- [F-2026-10-08-001](2026-10-08-001-claude-exact-file-permissions.json) — native exact-file permissions block wrong candidate paths while preserving atomic Write/Edit; v6 recovery and archived author-fault isolation are opt-in. Original failures remain failures; fresh live qualification gates new Runs.
+
+- [F-2026-10-07-009](2026-10-07-009-c550-claude-nested-candidate-path.json) — C550 RMSNorm Turn16 writes two successful candidate paths; retain the original refusal. Explicit OS-isolated successors name the exact file each turn; v5 requires native restriction support. C5502.1.226 rejects that flag, so fresh v4 successor qualification remains the launch gate.
+
 Append-only records between campaign evidence and Compiler/Executor changes. One file
 per finding, named `YYYY-MM-DD-NNN-slug.json`. The evidence ledger already records what
 happened; a finding is the curated "so what" that a Revision decision can cite.

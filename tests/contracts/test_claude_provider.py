@@ -29,6 +29,132 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    def test_v7_large_prompt_uses_stdin_and_preserves_exact_rules_and_resume(self):
+        builder=self.builder(event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT,
+                             cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format','--autocompact'},
+                             isolation_policy='linux_claude_workspace_v1')
+        prompt='公开历史\n'*40000
+        for session in (None,SESSION):
+            invocation=builder.build(prompt,thread_id=session)
+            with patch('open_cake_ir.lab.claude.run_supervised',
+                       return_value=subprocess.CompletedProcess([],0,self.raw(),b'')) as process:
+                turn=ClaudeProviderAdapter().execute(invocation,candidate_path=self.candidate,
+                    expected_change='add' if session is None else 'update',
+                    expected_terminal_message=TERMINAL,event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT,
+                    arm='open_cake')
+            self.assertEqual(turn.raw_events,self.raw())
+            self.assertEqual(process.call_args.kwargs['input_bytes'],invocation.argv[-1].encode())
+            argv=process.call_args.args[0]
+            self.assertEqual(argv[argv.index('--autocompact')+1],'100k')
+            self.assertNotIn(invocation.argv[-1],argv)
+            self.assertIn('--input-format',argv)
+            self.assertEqual('--resume' in argv,session is not None)
+            self.assertIn(claude.exact_file_tools(self.workspace,self.candidate.name),argv)
+        self.assertEqual(builder.cli_limitations['context_window'],'100k')
+    def exact_file_events(self):
+        events = self.recovered_restricted_events()
+        notice = events[2]
+        notice.pop('decision_reason_type'); notice.pop('decision_reason')
+        path = events[1]['message']['content'][0]['input']['file_path']
+        message = "Claude requested permissions to write to " + path + ", but you haven't granted it yet."
+        notice['message'] = message
+        events[3]['message']['content'][0]['content'] = message
+        return events
+
+    def test_exact_file_denial_recovery_requires_three_native_witnesses(self):
+        raw = self.raw(self.exact_file_events())
+        turn = self.normalize(raw, event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.candidates, self.normalize().candidates)
+        for index in (1, 2, 3):
+            events = self.exact_file_events(); events.pop(index)
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        events = self.exact_file_events(); events[3]['message']['content'][0]['is_error'] = False
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        with self.assertRaises(ValueError):self.normalize(raw)
+
+    def test_exact_file_working_directory_denial_requires_exact_native_reason(self):
+        events = self.exact_file_events()
+        events[2].update(decision_reason_type='workingDir',
+                         decision_reason='Path is outside allowed working directories')
+        turn = self.normalize(self.raw(events),event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        self.assertEqual(turn.candidates,self.normalize().candidates)
+        for key,value in [('decision_reason_type','userApproved'),
+                          ('decision_reason','permissions bypassed'),('unknown','extra')]:
+            changed=copy.deepcopy(events);changed[2][key]=value
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(changed),event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        with self.assertRaises(ValueError):self.normalize(self.raw(events))
+
+    def test_exact_file_initial_resume_permissions_and_bypass_refusal(self):
+        builder = self.builder(event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT,
+                               isolation_policy='linux_claude_workspace_v1')
+        self.assertEqual(builder.configuration['permission_mode'], 'default')
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertEqual(invocation.argv[invocation.argv.index('--allowedTools')+1],
+                             claude.exact_file_tools(self.workspace, self.candidate.name))
+        bad = replace(invocation, argv=tuple('acceptEdits' if x=='default' else x for x in invocation.argv))
+        with patch('open_cake_ir.lab.claude.run_supervised') as process:
+            with self.assertRaisesRegex(ValueError, 'exact-file invocation permissions differ'):
+                ClaudeProviderAdapter().execute(bad,candidate_path=self.candidate,expected_change='update',
+                    expected_terminal_message=TERMINAL,event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+            process.assert_not_called()
+        with self.assertRaisesRegex(ValueError, 'requires OS workspace isolation'):
+            self.builder(event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        with self.assertRaisesRegex(ValueError,'permission path differs'):
+            claude.exact_file_tools(self.workspace/'wild*card',self.candidate.name)
+
+    def test_v5_initial_and_resume_bind_restricted_tools_and_exact_candidate_path(self):
+        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                               cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'},
+                               submission_contract=claude.PYTHON_CANDIDATE_BUNDLE_V1)
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertEqual(invocation.argv.count('--restricted'), 1)
+            self.assertIn(str(self.workspace / 'candidate-set.py'), invocation.argv[-1])
+            self.assertIn('Do not append the Run id', invocation.argv[-1])
+            self.assertEqual(invocation.cwd, self.workspace)
+        legacy = self.builder().build('task projection', thread_id=None)
+        self.assertNotIn('--restricted', legacy.argv)
+        self.assertEqual(legacy.argv[-1], 'task projection')
+
+    def test_v5_successful_nested_candidate_write_is_not_a_recovered_denial(self):
+        events = self.events()
+        events[0]['cwd'] = str(self.workspace)
+        events[1]['message']['content'][0]['input']['file_path'] = str(
+            self.workspace / 'duplicated-run-id' / self.candidate.name)
+        with self.assertRaisesRegex(ValueError, 'candidate envelope'):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v5_adapter_refuses_missing_restriction_before_provider_call(self):
+        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                               cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'})
+        invocation = builder.build('task projection', thread_id=None)
+        invocation = replace(invocation, argv=tuple(x for x in invocation.argv if x != '--restricted'))
+        with patch('open_cake_ir.lab.claude.run_supervised') as process:
+            with self.assertRaisesRegex(ValueError, 'requires restricted file tools'):
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change='add', expected_terminal_message=TERMINAL,
+                    event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+            process.assert_not_called()
+
+    def test_v5_missing_native_restricted_option_refuses_at_construction(self):
+        with self.assertRaisesRegex(ValueError, 'qualified executable with --restricted support'):
+            self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v4_isolated_successor_names_exact_path_without_unsupported_cli_option(self):
+        from open_cake_ir.lab.claude_isolation import CLAUDE_WORKSPACE_V1
+        builder = self.builder(isolation_policy=CLAUDE_WORKSPACE_V1,
+                               submission_contract=claude.PYTHON_CANDIDATE_BUNDLE_V1)
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertNotIn('--restricted', invocation.argv)
+            self.assertIn(str(self.workspace / 'candidate-set.py'), invocation.argv[-1])
+        self.assertEqual(builder.configuration['isolation_policy'], CLAUDE_WORKSPACE_V1)
+
     def recovered_restricted_events(self):
         events = self.events()
         events[0]['cwd'] = str(self.workspace)
@@ -147,7 +273,8 @@ class ClaudeProviderContracts(unittest.TestCase):
             qualified=True, scope='live_two_turn_tool_rich_provider')
         with self.assertRaisesRegex(ValueError, 'configuration differs from provider qualification'):
             ClaudeRunProvider(qualification=receipt,
-                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)},
+                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                    cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'})},
                 task_packages={'open_cake-1': TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')})
 
     def test_raw_python_file_has_the_same_sealed_projection_as_codex(self):
