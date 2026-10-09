@@ -49,8 +49,16 @@ class ImmutableEvaluationEvidence(unittest.TestCase):
 
     def test_receipt_reconstruction_compares_frozen_metrics_in_their_json_domain(self):
         original = self.receipt_with_raw_diagnostics()
-        rebuilt = replace(original, correctness=original.correctness)
-        self.assertEqual(rebuilt.correctness, original.correctness)
+        for metrics in (original.correctness, _plain_json(original.correctness)):
+            rebuilt = replace(original, correctness=metrics)
+            self.assertEqual(rebuilt.correctness, original.correctness)
+            self.assertEqual(rebuilt.artifact_payloads, original.artifact_payloads)
+
+    def test_paired_summary_reconstruction_already_uses_its_json_domain(self):
+        fixture = self.maca()
+        original = fixture.execute()
+        rebuilt = replace(original, timing=original.timing, correctness=original.correctness)
+        self.assertEqual(rebuilt.timing, original.timing)
         self.assertEqual(rebuilt.artifact_payloads, original.artifact_payloads)
 
     def test_receipt_wire_projection_still_rejects_nested_value_name_or_order_changes(self):
