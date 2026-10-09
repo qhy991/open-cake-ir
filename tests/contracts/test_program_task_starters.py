@@ -134,6 +134,42 @@ class ProgramTaskStarters(unittest.TestCase):
                 changed=lower_skeleton(self.compiler,document)
                 self.validate_baseline(self.candidate,changed)
 
+    def test_later_stage_source_and_launch_drift_refuse_even_with_coherent_bundle(self):
+        from open_cake_ir.evaluation import LaunchableCandidate
+        from open_cake_ir.evaluation.kernel_bundle import pack_candidates
+        manifest, original_children, _ = program_components(self.candidate)
+        lowered = lower_skeleton(self.compiler,self.prepared)
+        for change in ('source', 'grid'):
+            children = dict(original_children)
+            child = children['activate']
+            payloads = dict(child.artifact_payloads)
+            outer = manifest.as_dict()
+            report = json.loads(payloads['stage_compilation'])
+            launch = json.loads(payloads['launch_manifest'])
+            if change == 'source':
+                replaced = payloads['lowered_source'].replace(b'tl.exp(', b'tl.exp2(', 1)
+                self.assertNotEqual(replaced,payloads['lowered_source'])
+                payloads['lowered_source'] = replaced
+                report['source_sha256'] = sha256(replaced).hexdigest()
+                outer['lowered_sources']['activate'] = report['source_sha256']
+            else:
+                launch['grid'][0] += 1
+                report['grid'] = launch['grid']
+            payloads['stage_compilation'] = canonical(report)
+            payloads['launch_manifest'] = canonical(launch)
+            children['activate'] = LaunchableCandidate(child.candidate_sha256,child.target,child.entry_point,
+                {role:sha256(value).hexdigest() for role,value in payloads.items()},
+                sha256(payloads['launch_manifest']).hexdigest(),payloads)
+            payloads = {'launch_manifest':canonical(outer),'program_bundle':pack_candidates(children)}
+            changed = LaunchableCandidate(self.candidate.candidate_sha256,self.candidate.target,self.candidate.entry_point,
+                {role:sha256(value).hexdigest() for role,value in payloads.items()},
+                sha256(payloads['launch_manifest']).hexdigest(),payloads)
+            # The graph and internal metadata are coherent; only comparison to the
+            # frozen Compiler's second stage exposes this substitution.
+            program_components(changed)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError,"stage 'activate'"):
+                self.validate_baseline(changed,lowered)
+
     def test_prepare_task_run_and_tasklab_preflight_use_the_complete_starter(self):
         inputs=task_run_inputs(ROOT,self.workload,self.directory/'workload.json',self.path,
             harness='claude-code',model='exact-test-model',effort='high',turns=2)
