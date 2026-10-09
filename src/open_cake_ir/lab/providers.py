@@ -280,7 +280,7 @@ class QualifiedRunProvider:
             'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
             'candidate-set.json')
         expected_change = package.candidate_change(request.turn)
-        if (expected_change == "add" and candidate_path.exists()) or (
+        if candidate_path.is_symlink() or (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()
         ):
             raise ValueError("provider candidate lifecycle differs before invocation")

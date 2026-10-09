@@ -113,6 +113,14 @@ class EditableMaterial(unittest.TestCase):
             self.assertEqual(calls, [])
             path.write_text(PROGRAM)
             first = provider.turn(SimpleNamespace(**request, turn=1, thread_id=None, cumulative_provider_tokens=0))
+            saved = root / 'saved-author-source.py'
+            path.rename(saved)
+            path.symlink_to(saved)
+            with self.assertRaisesRegex(ValueError, 'candidate lifecycle'):
+                provider.turn(SimpleNamespace(**request, turn=2, thread_id=first.thread_id, cumulative_provider_tokens=10))
+            self.assertEqual(len(calls), 1)
+            path.unlink()
+            saved.rename(path)
             provider.turn(SimpleNamespace(**request, turn=2, thread_id=first.thread_id, cumulative_provider_tokens=10))
             self.assertEqual([call[0] for call in calls], ['update', 'update'])
             self.assertIn('first_edit', calls[1][1])
