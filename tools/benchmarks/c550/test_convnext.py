@@ -85,10 +85,10 @@ def execute(program, inputs):
         return _Tile(result.shape,[fp32(v) if isinstance(v,float) else v for v in result.values])
     def sum_axis(tile,axis):
         result=_TL.reduce(tile,axis,sum)
-        return _Tile(result.shape,[fp32(v) for v in result.values])
+        return _Tile(result.shape,[fp32(v) if isinstance(v,float) else v for v in result.values])
     def dot_rounded(a,b,**kwargs):
         result=dot(a,b,**kwargs)
-        return _Tile(result.shape,[fp32(v) for v in result.values])
+        return _Tile(result.shape,[fp32(v) if isinstance(v,float) else v for v in result.values])
     with ExitStack() as stack:
         stack.enter_context(patch.object(_Tile,'binary',rounded_binary))
         stack.enter_context(patch.object(_TL,'sum',staticmethod(sum_axis)))
