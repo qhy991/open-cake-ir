@@ -44,6 +44,43 @@ def linear(x,w,b,s,k,n):
 
 
 class DecoderBackwardContracts(unittest.TestCase):
+    def test_full_small_chain_checks_all_ten_gradients_with_two_batches_and_four_head_groups(self):
+        from tools.benchmarks.c550 import _decoder_cpu_reference as reference
+        b,s=2,33
+        dimensions=decoder.Dimensions(hidden=64,heads=4,kv_heads=1,depth=64,intermediate=64)
+        inputs=reference.fixture(b,s,dimensions)
+        program=decoder.program_for(b,s,eps=1e-6,dimensions=dimensions)
+        observed,traces=execute(program,inputs)
+        expected=reference.evaluate(inputs,b,s,dimensions,1e-6)
+        self.assertEqual(set(expected),set(decoder.OUTPUT_NAMES))
+        for name in decoder.OUTPUT_NAMES:
+            self.assertEqual(len(observed[name]),len(expected[name]))
+            errors=[]
+            for actual,wanted in zip(observed[name],expected[name],strict=True):
+                self.assertTrue(math.isfinite(actual),name)
+                # Independent reduction order can differ. Component falsifiers
+                # separately require the exact BF16 seams, signs and grouping.
+                allowance=(1e-6+1e-5*abs(wanted) if 'ln_weight' in name
+                           else 2e-6+abs(wanted)/64)
+                errors.append(abs(actual-wanted)-allowance)
+            self.assertLessEqual(max(errors),0.,name)
+        self.assertTrue(all(set(trace.stores.values())=={1} for trace in traces))
+        for name,values in inputs.items():
+            self.assertTrue(all(a==b or math.isnan(a) and math.isnan(b)
+                                for a,b in zip(observed[name],values,strict=True)),name)
+
+    def test_weight_gradient_reduces_both_batches_without_bf16_batch_partials(self):
+        b,s,m,n=2,65,16,32
+        left=[bf16((batch+1)*((row+feature)%3-1)) for batch in range(b) for row in range(s) for feature in range(m)]
+        right=[bf16((batch+2)*((row+2*feature)%5-2)) for batch in range(b) for row in range(s) for feature in range(n)]
+        observed,_=single(stages.weight_gradient('weight_gradient',b,s,m,n,'left','right','out'),
+                           {'left':left,'right':right},('out',))
+        expected=[bf16(sum(left[(batch*s+row)*m+i]*right[(batch*s+row)*n+j]
+                    for batch in range(b) for row in range(s))) for i in range(m) for j in range(n)]
+        self.assertEqual(observed['out'],expected)
+        first_only=[bf16(sum(left[row*m+i]*right[row*n+j] for row in range(s))) for i in range(m) for j in range(n)]
+        self.assertNotEqual(expected,first_only)
+
     def test_two_linear_branches_round_before_their_sum(self):
         b,s,k,n=2,33,64,32
         x=quantized(b*s*k,3,.25);w=quantized(k*n,5,.125)
