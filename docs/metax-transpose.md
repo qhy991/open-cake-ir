@@ -43,3 +43,10 @@ This successor does not import that probe or change its frozen results.
 Independent source review and the fixed-commit CPU/Corpus results are required
 before using this successor for the Decoder starter. This admission contains no
 new GPU or provider Run and changes no frozen C1 source.
+
+At `aed4d35a`, 54 of 55 focused CPU contracts passed and the 204-case Corpus
+matched unchanged expectations. The remaining new test incorrectly expected
+backend findings after value typing had already stopped Compiler assessment.
+Commit `5ad04d6c` checks both existing FP8 refusals at their own boundaries.
+All four new admission contracts pass there with no skips. The 51 unaffected
+contracts and Corpus were not repeated after that test-only correction.
