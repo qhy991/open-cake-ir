@@ -14,7 +14,7 @@ from open_cake_ir.lab.bindings import (
 from open_cake_ir.lab.admission import (
     admit_paired_baseline_artifact, validate_paired_baseline, validate_backend_assay,
 )
-from open_cake_ir.lab.python_reference import read_skeleton_reference
+from open_cake_ir.lab.python_reference import read_skeleton_reference, read_skeleton, lower_skeleton
 from open_cake_ir.lab.toolchains import toolchain_for
 from open_cake_ir.serialization import canonical_json_bytes
 from .runtime import TaskLab
@@ -57,18 +57,15 @@ def prepare_task_run(project_root,inputs,*,compiler_reference,executor,qualifica
         # below; the selection label alone does not qualify another binary ABI.
         return specification
     if baseline_source_path is not None:
-        from open_cake_ir.compiler import frontend
-        skeleton = frontend.read_schedule(external_file(root, str(baseline_source_path), 'baseline source')).document
+        skeleton = read_skeleton(external_file(root, str(baseline_source_path), 'baseline source'))
     else:
         if authoring['reference_access'] == 'clean_start':
             raise ValueError('clean-start baseline preparation needs a private baseline source, outside author material')
         _,skeleton = read_skeleton_reference(root,authoring['schedule_skeleton'])
     baseline = prepare_schedule(skeleton,workload,document['evaluation_protocol']['case_id'],authoring)
     compiler = Compiler.load(root,root/compiler_reference['path'])
-    assessment = compiler.assess(baseline)
-    if not assessment.lowering_eligible:
-        raise ValueError('task optimization baseline is not lowerable')
+    lowering = lower_skeleton(compiler, baseline)
     validate_paired_baseline(project_root=root,workload=workload,evaluation=document['evaluation_protocol'],
-        execution=document['execution'],route=authoring['lowering_route'],baseline_lowering=compiler.lower(assessment),
+        execution=document['execution'],route=authoring['lowering_route'],baseline_lowering=lowering,
         manifest_parser=parse_launch_manifest)
     return specification

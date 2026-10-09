@@ -44,6 +44,7 @@ class MetaxDriverTests(unittest.TestCase):
         self.payload, self.native = bundle(native=native_fixture())
         self.api = API()
         self.candidate = SimpleNamespace(target="xcore1002", entry_point="kernel",
+            candidate_sha256='d' * 64,
             launch_spec_sha256="c" * 64, artifact_payloads={"mcfatbin": self.payload},
             artifact_roles={"mcfatbin": sha256(self.payload).hexdigest()})
         self.manifest = SimpleNamespace(target="xcore1002", kernel_name="kernel", canonical_sha256="c" * 64,
@@ -80,6 +81,23 @@ class MetaxDriverTests(unittest.TestCase):
                 loaded.launch([argument], tensor_contract=self.manifest)
         self.assertEqual(self.api.launches, [])
         loaded.close()
+
+    def test_private_memory_launch_failure_has_typed_loaded_resource_diagnostics(self):
+        from open_cake_ir.evaluation.metax_failures import MetaxLaunchResourceError
+        loaded = self.load()
+        loaded.resources['local_bytes'] = 7680
+        self.api.mcModuleLaunchKernel = lambda *args: 32
+        with self.assertRaises(MetaxLaunchResourceError) as caught:
+            loaded.launch([self.argument()], tensor_contract=self.manifest)
+        self.assertEqual(caught.exception.launch_resource['resources']['local_bytes'], 7680)
+        self.assertEqual(caught.exception.launch_resource['completed_target_calls'], 0)
+        self.assertEqual(loaded.launch_calls, 0)
+        loaded.close()
+        self.assertEqual(self.api.unloads, [17])
+        self.api.mcModuleUnload = lambda *args: 32
+        with self.assertRaises(RuntimeError) as caught:
+            _call(self.api, 'mcModuleUnload', None)
+        self.assertNotIsInstance(caught.exception, MetaxLaunchResourceError)
 
     def test_narrow_and_integer_tensor_abis_keep_their_declared_runtime_dtype(self):
         for dtype, runtime_dtype in (("fp16", "torch.float16"), ("bf16", "torch.bfloat16"),

@@ -86,6 +86,16 @@ class ProviderBoundaryDeclarationFault(RunProtocolFault):
         super().__init__("provider_fault", message, **kwargs)
 
 
+class ProviderDeliveryTimeout(RunProtocolFault):
+    """A coherent author stream made progress but did not complete its Turn.
+
+    The Run remains failed. Its independent siblings need not be stopped.
+    No terminal usage or candidate acceptance is inferred from partial output.
+    """
+    def __init__(self, message: str, **kwargs) -> None:
+        super().__init__('provider_fault', message, **kwargs)
+
+
 class CandidateCompileRejected(ValueError):
     """Observed compiler rejection that may feed the next Turn."""
 

@@ -1,0 +1,165 @@
+{
+  "access_maps": [
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "x",
+      "indices": [
+        {
+          "name": "m",
+          "source": "program_tile"
+        },
+        {
+          "name": "n",
+          "source": "program_tile"
+        }
+      ],
+      "operation": "load_x"
+    },
+    {
+      "boundary": "mask_tiled_axes",
+      "buffer": "out",
+      "indices": [
+        {
+          "name": "n",
+          "source": "program_tile"
+        },
+        {
+          "name": "m",
+          "source": "program_tile"
+        }
+      ],
+      "operation": "store_out"
+    }
+  ],
+  "allocations": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "dtype": "fp32",
+      "mode": "input",
+      "name": "x",
+      "shape": [
+        17,
+        33
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "output",
+      "name": "out",
+      "shape": [
+        33,
+        17
+      ],
+      "space": "global"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "v",
+      "shape": [
+        16,
+        32
+      ],
+      "space": "register"
+    },
+    {
+      "dtype": "fp32",
+      "mode": "scratch",
+      "name": "t",
+      "shape": [
+        32,
+        16
+      ],
+      "space": "register"
+    }
+  ],
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "register_transpose"
+  },
+  "metadata": {},
+  "operations": [
+    {
+      "id": "load_x",
+      "kind": "load",
+      "parameters": {
+        "movement": "global"
+      },
+      "reads": [
+        "x"
+      ],
+      "role": "compute",
+      "writes": [
+        "v"
+      ]
+    },
+    {
+      "depends_on": [
+        "load_x"
+      ],
+      "id": "transpose",
+      "kind": "transpose",
+      "parameters": {},
+      "reads": [
+        "v"
+      ],
+      "role": "compute",
+      "writes": [
+        "t"
+      ]
+    },
+    {
+      "depends_on": [
+        "transpose"
+      ],
+      "id": "store_out",
+      "kind": "store",
+      "parameters": {
+        "coalesced": true
+      },
+      "reads": [
+        "t"
+      ],
+      "role": "compute",
+      "writes": [
+        "out"
+      ]
+    }
+  ],
+  "outputs": [
+    "out"
+  ],
+  "pipelines": [],
+  "program_map": {
+    "axes": [
+      {
+        "axis": 0,
+        "buffer": "x",
+        "dimension": 0,
+        "name": "m",
+        "tile": 16
+      },
+      {
+        "axis": 1,
+        "buffer": "x",
+        "dimension": 1,
+        "name": "n",
+        "tile": 32
+      }
+    ]
+  },
+  "roles": [
+    {
+      "execution_groups": [
+        0
+      ],
+      "name": "compute"
+    }
+  ],
+  "schedule_id": "gfx938-register-transpose-tail",
+  "schema_version": 2,
+  "target": "gfx938",
+  "tile_loops": []
+}

@@ -83,7 +83,7 @@ def replay_feedback(*, events, evidence, specification,
             key = (turn, payload['candidate_sha256'])
             if key in launchables:
                 seen_launchables[key] = launchables[key]
-        elif kind == "candidate_evaluated":
+        elif kind in {"candidate_evaluated", "evaluation_refused"}:
             origin = evaluation_origin(payload)
             purpose = payload["purpose"]
             identity = payload["candidate_sha256"]

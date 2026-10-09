@@ -7,6 +7,18 @@ import triton
 import triton.language as tl
 
 
+class _cake_pointer_range_arg:
+    __slots__ = ("base", "dtype", "nbytes")
+    def __init__(self, base, dtype, nbytes):
+        self.base = base
+        self.dtype = dtype
+        self.nbytes = nbytes
+    def data_ptr(self):
+        return self.base.data_ptr()
+    def ptr_range(self):
+        return self.nbytes
+
+
 @triton.jit
 def _qualify_validity_broadcast_3_kernel(
     a,
@@ -86,9 +98,9 @@ def qualify_validity_broadcast_3(a, b, out=None):
         if out.device != a.device or not out.is_contiguous():
             raise ValueError("out must be contiguous on the input device")
     _cake_launch_qualify_validity_broadcast_3(
-        a,
-        b,
-        out,
+        _cake_pointer_range_arg(a, torch.float32, 96),
+        _cake_pointer_range_arg(b, torch.float32, 32),
+        _cake_pointer_range_arg(out, torch.float32, 32),
         N_BATCH=1,
         N_ROWS=3,
         D_A_2=8,

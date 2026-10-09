@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "id": "F-2026-10-09-012",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "MACA math-library sin/cos compiles but requires independent numerical qualification",
+  "compiler_revision_id": "open-cake-ir@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "executor_revision": "xcore1002@5bb474c6df2948d1cc50b2d46f9ab828525be3c2",
+  "backend": "triton",
+  "target": "xcore1002",
+  "tracking_issue": "https://github.com/qhy991/open-cake-ir/issues/401",
+  "pull_request": "https://github.com/qhy991/open-cake-ir/pull/403",
+  "evidence": {
+    "root": "c550-2:/root/open-cake-runs-reviewed/c550-evolution-parallel-author-20261006",
+    "locators": [
+      "math-trig-native-137a28f9-20261009/result.json",
+      "math-trig-native-137a28f9-20261009/sin/toolchain_stderr",
+      "math-trig-native-7cdd24a9-20261009/result.json",
+      "math-trig-native-7cdd24a9-20261009/sin/requirements.json",
+      "math-trig-native-7cdd24a9-20261009/cos/requirements.json",
+      "/opt/conda/lib/python3.10/site-packages/triton/backends/metax/compiler.py",
+      "/opt/conda/lib/python3.10/site-packages/triton/language/extra/cuda/libdevice.py"
+    ],
+    "scope": "Installed source inspection and isolated native CPU compilation. GPU visibility was empty; no device numerical evaluation or provider call occurred. The first failed preparation and its frozen source remain preserved."
+  },
+  "observation": "The installed MetaX backend redirects libdevice to a CUDA-compatible Python API, but explicitly links MACA bitcode libraries. FP32 sin/cos compile to MCFATBIN under the declared xcore1000 native family. C1 only admits OCML trig emission on HSACO. The missing MACA route is a software lowering boundary, not evidence that the device lacks a math path. Numerical behavior remains unmeasured by this work.",
+  "proposed_change": "Register explicit maca.sin.f32 and maca.cos.f32 instructions for the existing FP32 unary operations; emit only their matching MCFATBIN route and admit only direct unary source calls. Keep the real Target unchanged until original-domain device evidence supports a reviewed successor declaration. Preserve the RoPE factory's scaled inv_freq and custom scalar value rather than applying scaling again or changing its tensor ABI.",
+  "promotion_disposition": "Software implementation and isolated compilation are available. No target instruction admission, performance claim or Compiler optimization is promoted. ERF remains a separate IR-and-analysis proposal. Device numerical qualification and original Bench correctness are pending, so this capacity finding remains open.",
+  "principles_review": {
+    "P1_P3": "Reuse existing lm.sin/lm.cos and the one canonical scalar-specialization boundary; introduce no alternate IR operation or layout model.",
+    "P2_P8": "Name the MACA contract separately and expose the actual library call and native object route.",
+    "P4_P5_P7": "Reuse unary FP32 typing/effects and register operation/dtype ownership; code-object checks and restricted source admission accompany emission. Existing cost coverage continues to report uncounted transcendental arithmetic.",
+    "P6": "Focused contract tests and unchanged Corpus expectations verify software behavior; native CPU compilation and device numerical evidence remain separate gates."
+  },
+  "implemented_in": "3a3a996a3fffd101ee343f49dd467893ceb6c093",
+  "verified_by": {
+    "commit": "7cdd24a9d40a083dc5e8109f559b14ae6e7a70e7",
+    "regression_before_fix": "cb813f97: the explicit MACA instruction record and native unary-call contracts fail; the cross-code-object and dtype refusal control passes.",
+    "tests": "29 focused CPU contracts pass at 7cdd24a9; the initial compile-field omission has its own regression contract.",
+    "test_log": "/tmp/cake-metax-trig-successor-20261009.log",
+    "corpus": "204 cases match unchanged expectations at 137a28f9; later changes repair the standalone probe's compile metadata and add task source, not Compiler behavior.",
+    "native_compile": "7cdd24a9 sin and cos each compile through the captured isolated compiler to MCFATBIN using Triton 3.6.0; each declares 64 threads and zero dynamic shared bytes. No native module was loaded on a GPU.",
+    "rope_software": "Detached integration 1cebc49e combines the integer-storage/task and math successors. Three RoPE contracts pass, and all 16 original shapes emit under synthetic probe admission while the committed Target still refuses trig. Retained at /tmp/cake-rope-software-20261009/result.json.",
+    "scope": "Software and native compilation only. Independent review, original-domain device numerical qualification, full Bench correctness and target admission are pending."
+  }
+}

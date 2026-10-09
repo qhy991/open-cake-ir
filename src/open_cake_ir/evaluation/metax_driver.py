@@ -12,6 +12,7 @@ from typing import Callable, Sequence
 from open_cake_ir.compiler.metax_toolchain import device_image, native_pointer_parameters
 from open_cake_ir.compiler.target import CodeObject, declared_target
 from .loaders import LifecycleError, check_candidate_authority
+from .metax_failures import MetaxLaunchResourceError
 
 
 _STATUS_NAMES = {
@@ -26,6 +27,9 @@ def _call(api, name: str, *arguments) -> None:
     status = getattr(api, name)(*arguments)
     if status:
         label = _STATUS_NAMES.get(status, "unknown")
+        if name == 'mcModuleLaunchKernel' and status == 32:
+            raise MetaxLaunchResourceError(
+                f"MACA {name} failed with status {status} ({label})")
         raise RuntimeError(f"MACA {name} failed with status {status} ({label})")
 
 
@@ -103,6 +107,7 @@ class LoadedMetaxCandidate:
             raise ValueError("MACA launch tensor contract differs")
         dtype_names = {"fp32": "torch.float32", "fp16": "torch.float16",
                        "bf16": "torch.bfloat16", "int32": "torch.int32",
+                       "int64": "torch.int64", "bool": "torch.bool",
                        "fp8_e4m3": "torch.float8_e4m3fn"}
         pointers = []
         for (name, shape, dtype, _mode), argument in zip(self.manifest.tensor_abi, arguments, strict=True):
@@ -110,10 +115,10 @@ class LoadedMetaxCandidate:
                     or str(argument.dtype) != dtype_names.get(dtype)
                     or argument.device.type != "cuda" or argument.device.index != 0):
                 raise ValueError(f"MACA tensor {name!r} differs from its sealed ABI")
-            if dtype == "fp8_e4m3":
+            if dtype in {"fp8_e4m3", "int64", "bool"}:
                 from ..compiler.ir import DType
-                if argument.element_size() != DType.FP8_E4M3.itemsize:
-                    raise ValueError(f"MACA tensor {name!r} differs from its sealed FP8 storage width")
+                if argument.element_size() != DType(dtype).itemsize:
+                    raise ValueError(f"MACA tensor {name!r} differs from its sealed storage width")
             pointer = argument.data_ptr()
             if type(pointer) is not int or pointer <= 0:
                 raise ValueError(f"MACA tensor {name!r} has no device address")
@@ -129,10 +134,15 @@ class LoadedMetaxCandidate:
 
     def launch(self, arguments: Sequence[object], *, tensor_contract, stream: int = 0) -> None:
         pointers, slots = self.prepare_arguments(arguments, tensor_contract=tensor_contract)
-        _call(self._api, "mcModuleLaunchKernel", self._function,
-              *(ctypes.c_uint(n) for n in (*self.manifest.grid, *self.manifest.block)),
-              ctypes.c_uint(self.manifest.dynamic_shared_memory_bytes),
-              ctypes.c_void_p(stream), slots, None)
+        try:
+            _call(self._api, "mcModuleLaunchKernel", self._function,
+                  *(ctypes.c_uint(n) for n in (*self.manifest.grid, *self.manifest.block)),
+                  ctypes.c_uint(self.manifest.dynamic_shared_memory_bytes),
+                  ctypes.c_void_p(stream), slots, None)
+        except MetaxLaunchResourceError as error:
+            error.retain_launch(self.candidate, self.manifest, self.resources,
+                                completed_target_calls=self.launch_calls)
+            raise
         self.launch_calls += 1
 
     def close(self, *, synchronize: Callable[[], None] | None = None,

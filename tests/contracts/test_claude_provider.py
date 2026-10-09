@@ -29,6 +29,362 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    def malformed_input_events(self):
+        events = self.events()
+        call, result = copy.deepcopy(events[1:3])
+        call['message']['content'][0].update(id='bad-input', input={
+            '__unparsedToolInput': {'raw': '{"content": ', 'len': 12}})
+        result['message']['content'][0].update(tool_use_id='bad-input', is_error=True,
+            content='<tool_use_error>InputValidationError: Write was called with input that could not be parsed as JSON.\n'
+                    'You sent (first 200 of 12 bytes): {"content": \n'
+                    'Common causes: unescaped backslashes in file paths (use / or \\\\), '
+                    'unescaped control characters, or truncated output. Retry with valid JSON.</tool_use_error>')
+        events[1:1] = [call, result]
+        return events
+
+    def test_v8_recovers_native_input_failure_and_retains_activity_and_usage(self):
+        events = self.malformed_input_events()
+        events[1:1] = self.compaction_events()
+        raw = self.raw(events)
+        turn = self.normalize(raw, event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        baseline = self.normalize()
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.provider_tokens, baseline.provider_tokens)
+        self.assertEqual(turn.candidates, baseline.candidates)
+        self.assertEqual([(a.item_id, a.status) for a in turn.tool_activity if a.tool == 'Write'],
+                         [('bad-input', 'error_recovered'), ('toolu_write', 'completed')])
+        with self.assertRaisesRegex(ValueError, 'candidate envelope'):
+            self.normalize(self.raw(self.malformed_input_events()),
+                           event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT)
+
+    def test_v8_input_failure_requires_matching_error_and_exact_marker(self):
+        cases = {}
+        def changed(label):
+            events = self.malformed_input_events()
+            cases[label] = events
+            return events[1]['message']['content'][0], events[2]['message']['content'][0]
+        changed('wrong id')[1]['tool_use_id'] = 'unrelated'
+        changed('successful result')[1]['is_error'] = False
+        changed('generic error')[1]['content'] = 'Write failed'
+        changed('different native reason')[1]['content'] = 'InputValidationError: missing file_path'
+        changed('different raw preview')[0]['input']['__unparsedToolInput']['raw'] = 'different'
+        changed('extra marker field')[0]['input']['__unparsedToolInput']['extra'] = 'unmodeled'
+        changed('explicit path')[0]['input']['file_path'] = '/tmp/outside.py'
+        changed('unsupported tool')[0]['name'] = 'Edit'
+        for value in [True, 0, -1, '12', 12.0]:
+            changed('length ' + repr(value))[0]['input']['__unparsedToolInput']['len'] = value
+        for value in [None, '', 12]:
+            changed('raw ' + repr(value))[0]['input']['__unparsedToolInput']['raw'] = value
+        for key in ('raw', 'len'):
+            del changed('missing ' + key)[0]['input']['__unparsedToolInput'][key]
+        events = self.malformed_input_events(); del events[2]
+        cases['missing completion'] = events
+        for label, events in cases.items():
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+
+    def test_v8_requires_successful_candidate_write_after_input_failure(self):
+        original = self.malformed_input_events()
+        cases = [original[:3] + original[5:],
+                 [original[0], *original[3:5], *original[1:3], *original[5:]]]
+        cases.append([original[0], original[3], *original[1:3], original[4], *original[5:]])
+        failed = copy.deepcopy(original)
+        failed[4]['message']['content'][0]['is_error'] = True
+        cases.append(failed)
+        for events in cases:
+            with self.assertRaisesRegex(ValueError, 'later candidate write'):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        outside = copy.deepcopy(original)
+        outside[3]['message']['content'][0]['input']['file_path'] = '/tmp/outside.py'
+        with self.assertRaisesRegex(ValueError, 'candidate envelope'):
+            self.normalize(self.raw(outside), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        for index in (0, -1):
+            events = copy.deepcopy(original); events[index]['session_id'] = OTHER_SESSION
+            with self.assertRaisesRegex(ValueError, 'session identity'):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        bad_terminal = copy.deepcopy(original)
+        bad_terminal[-1]['structured_output']['candidate_written'] = False
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(bad_terminal), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+
+    def test_v8_cannot_reuse_v7_qualification(self):
+        from hashlib import sha256
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        from open_cake_ir.lab.task_package import TaskPackage
+        args = dict(cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format', '--autocompact'},
+                    isolation_policy='linux_claude_workspace_v1')
+        previous = self.builder(event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT, **args)
+        receipt = ProviderQualificationReceipt(provider_revision=previous.provider_revision,
+            executable_sha256=sha256(self.executable.read_bytes()).hexdigest(),
+            configuration_sha256=sha256(canonical_json_bytes(previous.configuration)).hexdigest(),
+            initial_and_resume_equivalent=True, file_lifecycle_observed=True, usage_observed=True,
+            qualified=True, scope='live_two_turn_tool_rich_provider')
+        with self.assertRaisesRegex(ValueError, 'configuration differs from provider qualification'):
+            ClaudeRunProvider(qualification=receipt,
+                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT, **args)},
+                task_packages={'open_cake-1': TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')})
+
+    def test_v8_requires_stdin_compaction_and_isolation_before_execution(self):
+        options = set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format', '--autocompact'}
+        args = dict(event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT,
+                    isolation_policy='linux_claude_workspace_v1', cli_options=options)
+        for missing, message in [('--input-format', 'input-format'),
+                                  ('--autocompact', 'compaction control')]:
+            with self.assertRaisesRegex(ValueError, message):
+                self.builder(**{**args, 'cli_options': options - {missing}})
+        with self.assertRaisesRegex(ValueError, 'OS workspace isolation'):
+            self.builder(**{**args, 'isolation_policy': None})
+
+    def test_stdin_contracts_large_prompt_uses_stdin_and_preserves_exact_rules_and_resume(self):
+        for contract in claude.CLAUDE_STDIN_CONTRACTS:
+            builder=self.builder(event_contract=contract,
+                                 cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format','--autocompact'},
+                                 isolation_policy='linux_claude_workspace_v1')
+            prompt='公开历史\n'*40000
+            for session in (None,SESSION):
+                invocation=builder.build(prompt,thread_id=session)
+                with patch('open_cake_ir.lab.claude.run_supervised',
+                           return_value=subprocess.CompletedProcess([],0,self.raw(),b'')) as process:
+                    turn=ClaudeProviderAdapter().execute(invocation,candidate_path=self.candidate,
+                        expected_change='add' if session is None else 'update',
+                        expected_terminal_message=TERMINAL,event_contract=contract,
+                        arm='open_cake')
+                self.assertEqual(turn.raw_events,self.raw())
+                self.assertEqual(process.call_args.kwargs['input_bytes'],invocation.argv[-1].encode())
+                argv=process.call_args.args[0]
+                self.assertEqual(argv[argv.index('--autocompact')+1],'100k')
+                self.assertNotIn(invocation.argv[-1],argv)
+                self.assertIn('--input-format',argv)
+                self.assertEqual('--resume' in argv,session is not None)
+                self.assertIn(claude.exact_file_tools(self.workspace,self.candidate.name),argv)
+            self.assertEqual(builder.cli_limitations['context_window'],'100k')
+    def exact_file_events(self):
+        events = self.recovered_restricted_events()
+        notice = events[2]
+        notice.pop('decision_reason_type'); notice.pop('decision_reason')
+        path = events[1]['message']['content'][0]['input']['file_path']
+        message = "Claude requested permissions to write to " + path + ", but you haven't granted it yet."
+        notice['message'] = message
+        events[3]['message']['content'][0]['content'] = message
+        return events
+
+    def test_exact_file_denial_recovery_requires_three_native_witnesses(self):
+        raw = self.raw(self.exact_file_events())
+        turn = self.normalize(raw, event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.candidates, self.normalize().candidates)
+        for index in (1, 2, 3):
+            events = self.exact_file_events(); events.pop(index)
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        events = self.exact_file_events(); events[3]['message']['content'][0]['is_error'] = False
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        with self.assertRaises(ValueError):self.normalize(raw)
+
+    def test_exact_file_working_directory_denial_requires_exact_native_reason(self):
+        events = self.exact_file_events()
+        events[2].update(decision_reason_type='workingDir',
+                         decision_reason='Path is outside allowed working directories')
+        turn = self.normalize(self.raw(events),event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        self.assertEqual(turn.candidates,self.normalize().candidates)
+        for key,value in [('decision_reason_type','userApproved'),
+                          ('decision_reason','permissions bypassed'),('unknown','extra')]:
+            changed=copy.deepcopy(events);changed[2][key]=value
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(changed),event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        with self.assertRaises(ValueError):self.normalize(self.raw(events))
+
+    def test_exact_file_initial_resume_permissions_and_bypass_refusal(self):
+        builder = self.builder(event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT,
+                               isolation_policy='linux_claude_workspace_v1')
+        self.assertEqual(builder.configuration['permission_mode'], 'default')
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertEqual(invocation.argv[invocation.argv.index('--allowedTools')+1],
+                             claude.exact_file_tools(self.workspace, self.candidate.name))
+        bad = replace(invocation, argv=tuple('acceptEdits' if x=='default' else x for x in invocation.argv))
+        with patch('open_cake_ir.lab.claude.run_supervised') as process:
+            with self.assertRaisesRegex(ValueError, 'exact-file invocation permissions differ'):
+                ClaudeProviderAdapter().execute(bad,candidate_path=self.candidate,expected_change='update',
+                    expected_terminal_message=TERMINAL,event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+            process.assert_not_called()
+        with self.assertRaisesRegex(ValueError, 'requires OS workspace isolation'):
+            self.builder(event_contract=claude.CLAUDE_EXACT_FILE_EVENT_CONTRACT)
+        with self.assertRaisesRegex(ValueError,'permission path differs'):
+            claude.exact_file_tools(self.workspace/'wild*card',self.candidate.name)
+
+    def test_v5_initial_and_resume_bind_restricted_tools_and_exact_candidate_path(self):
+        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                               cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'},
+                               submission_contract=claude.PYTHON_CANDIDATE_BUNDLE_V1)
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertEqual(invocation.argv.count('--restricted'), 1)
+            self.assertIn(str(self.workspace / 'candidate-set.py'), invocation.argv[-1])
+            self.assertIn('Do not append the Run id', invocation.argv[-1])
+            self.assertEqual(invocation.cwd, self.workspace)
+        legacy = self.builder().build('task projection', thread_id=None)
+        self.assertNotIn('--restricted', legacy.argv)
+        self.assertEqual(legacy.argv[-1], 'task projection')
+
+    def test_v5_successful_nested_candidate_write_is_not_a_recovered_denial(self):
+        events = self.events()
+        events[0]['cwd'] = str(self.workspace)
+        events[1]['message']['content'][0]['input']['file_path'] = str(
+            self.workspace / 'duplicated-run-id' / self.candidate.name)
+        with self.assertRaisesRegex(ValueError, 'candidate envelope'):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v5_adapter_refuses_missing_restriction_before_provider_call(self):
+        builder = self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                               cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'})
+        invocation = builder.build('task projection', thread_id=None)
+        invocation = replace(invocation, argv=tuple(x for x in invocation.argv if x != '--restricted'))
+        with patch('open_cake_ir.lab.claude.run_supervised') as process:
+            with self.assertRaisesRegex(ValueError, 'requires restricted file tools'):
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change='add', expected_terminal_message=TERMINAL,
+                    event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+            process.assert_not_called()
+
+    def test_v5_missing_native_restricted_option_refuses_at_construction(self):
+        with self.assertRaisesRegex(ValueError, 'qualified executable with --restricted support'):
+            self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v4_isolated_successor_names_exact_path_without_unsupported_cli_option(self):
+        from open_cake_ir.lab.claude_isolation import CLAUDE_WORKSPACE_V1
+        builder = self.builder(isolation_policy=CLAUDE_WORKSPACE_V1,
+                               submission_contract=claude.PYTHON_CANDIDATE_BUNDLE_V1)
+        for thread in (None, SESSION):
+            invocation = builder.build('task projection', thread_id=thread)
+            self.assertNotIn('--restricted', invocation.argv)
+            self.assertIn(str(self.workspace / 'candidate-set.py'), invocation.argv[-1])
+        self.assertEqual(builder.configuration['isolation_policy'], CLAUDE_WORKSPACE_V1)
+
+    def recovered_restricted_events(self):
+        events = self.events()
+        events[0]['cwd'] = str(self.workspace)
+        arguments = {'file_path': str(self.root / 'wrong-task' / self.candidate.name), 'content': 'denied'}
+        message = 'outside actor workspace; --restricted confines the file tools to the working directory.'
+        denied_call = {'type': 'assistant', 'session_id': SESSION, 'parent_tool_use_id': None,
+            'message': {'model': 'exact-requested-model', 'content': [
+                {'type': 'tool_use', 'id': 'toolu_denied', 'name': 'Write', 'input': arguments}]}}
+        notice = {'type': 'system', 'subtype': 'permission_denied', 'tool_name': 'Write',
+            'tool_use_id': 'toolu_denied', 'decision_reason_type': 'other',
+            'decision_reason': '--restricted: path outside the working directory',
+            'message': message, 'uuid': OTHER_SESSION, 'session_id': SESSION}
+        completion = {'type': 'user', 'session_id': SESSION, 'parent_tool_use_id': None,
+            'message': {'content': [{'type': 'tool_result', 'tool_use_id': 'toolu_denied',
+                                      'is_error': True, 'content': message}]}}
+        events[1:1] = [denied_call, notice, completion]
+        events[-1]['permission_denials'] = [{'tool_name': 'Write', 'tool_use_id': 'toolu_denied',
+                                             'tool_input': arguments}]
+        return events
+
+    def test_v5_restricted_denial_recovery_preserves_raw_events_and_successful_path(self):
+        raw = self.raw(self.recovered_restricted_events())
+        turn = self.normalize(raw, event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.candidates, self.normalize().candidates)
+        parsed = parse_claude_turn_events(raw, expected_terminal_message=TERMINAL,
+                                        event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        self.assertEqual(parsed.candidate_path, str(self.candidate))
+        self.assertEqual(parsed.write_tools, ('Write',))
+        self.assertEqual(parsed.provider_tokens, 205)
+        self.assertEqual([(a.item_type, a.status) for a in turn.tool_activity[:2]],
+                         [('tool_use', 'error_recovered'), ('permission_denial', 'observed')])
+        # Historical v4 never gains the successor's interpretation.
+        with self.assertRaisesRegex(ValueError, 'declared event contract'):
+            self.normalize(raw)
+
+    def test_v5_refuses_unwitnessed_malformed_or_successful_permission_denials(self):
+        cases = []
+        e = self.recovered_restricted_events(); e.pop(2); cases.append(e)
+        e = self.recovered_restricted_events(); e.pop(3); cases.append(e)
+        e = self.recovered_restricted_events(); e[-1]['permission_denials'] = []; cases.append(e)
+        e = self.recovered_restricted_events(); e[-1]['permission_denials'][0]['tool_input'] = {}; cases.append(e)
+        e = self.recovered_restricted_events(); e[-1]['permission_denials'] *= 2; cases.append(e)
+        e = self.recovered_restricted_events(); e[3]['message']['content'][0]['is_error'] = False; cases.append(e)
+        e = self.recovered_restricted_events(); e[3]['message']['content'][0]['content'] = 'actually read outside'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['tool_use_id'] = 'unbound'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['decision_reason'] = 'user approved outside write'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['uuid'] = 'bad'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['unknown'] = True; cases.append(e)
+        e = self.recovered_restricted_events(); e[2]['session_id'] = OTHER_SESSION; cases.append(e)
+        e = self.recovered_restricted_events(); e[1]['message']['content'][0]['name'] = 'Bash'; cases.append(e)
+        e = self.recovered_restricted_events(); e[2], e[3] = e[3], e[2]; cases.append(e)
+        e = self.recovered_restricted_events(); e[4]['message']['content'][0]['input']['file_path'] = str(self.root / self.candidate.name); cases.append(e)
+        for index, events in enumerate(cases):
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v5_denied_or_failed_write_never_witnesses_a_candidate(self):
+        events = self.recovered_restricted_events()
+        del events[4:6]
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        events = self.events()
+        events[2]['message']['content'][0]['is_error'] = True
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+
+    def test_v5_retains_compaction_and_ui_boundaries(self):
+        events = self.recovered_restricted_events()
+        events[1:1] = self.compaction_events()
+        events.insert(0, self.ui_preamble())
+        turn = self.normalize(self.raw(events), event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT)
+        self.assertEqual([a.status for a in turn.tool_activity if a.item_type == 'context_compaction'],
+                         ['started', 'started', 'completed', 'boundary'])
+
+    def test_v5_common_replay_requires_the_retained_denial_projection(self):
+        from hashlib import sha256
+        from types import SimpleNamespace
+        from open_cake_ir.lab.replay.provider import _replay_provider_turns
+        from open_cake_ir.lab.task_package import TaskPackage
+        contract = claude.CLAUDE_RESTRICTED_EVENT_CONTRACT
+        events = self.recovered_restricted_events()
+        raw = self.raw(events)
+        turn = self.normalize(raw, event_contract=contract)
+        package = TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')
+        state = {'kind': 'ralph_state_v1', 'iteration': 1, 'cumulative_provider_tokens': 0,
+                 'terminal_reason': None}
+        objects = {'provider_events': raw, 'provider_reference_bundle': package.evidence_bundle(state),
+                   'provider_submission_envelope': self.submission, 'candidate_submission_0000': turn.candidates[0]}
+        payload = {'turn': 1, 'thread_id': SESSION, 'turn_provider_tokens': turn.provider_tokens,
+                   'cumulative_provider_tokens': turn.provider_tokens, 'normalization': turn.normalization,
+                   'candidate_count': 1,
+                   'objects': [{'role': role, 'sha256': sha256(value).hexdigest()} for role, value in objects.items()],
+                   'auxiliary_activity': [dict(item.document) for item in turn.tool_activity]}
+        arguments = dict(arm='open_cake', audit=SimpleNamespace(run_id='open_cake-1'),
+            evidence=SimpleNamespace(read_object=lambda ref: objects[ref['role']]),
+            expected_task_package=package, maximum_candidates_per_turn=1,
+            provider_events=[{'payload': payload}], event_contract=contract,
+            provider_authority={'event_contract': contract, 'model': 'exact-requested-model'})
+        self.assertEqual(_replay_provider_turns(**arguments)[0], {1: turn.provider_tokens})
+        payload['auxiliary_activity'] = [item for item in payload['auxiliary_activity']
+                                         if item['item_type'] != 'permission_denial']
+        with self.assertRaisesRegex(ReplayRefusal, 'provider_turn_completed'):
+            _replay_provider_turns(**arguments)
+
+    def test_v4_qualification_cannot_admit_v5_runtime(self):
+        from hashlib import sha256
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        from open_cake_ir.lab.task_package import TaskPackage
+        previous = self.builder()
+        receipt = ProviderQualificationReceipt(provider_revision=previous.provider_revision,
+            executable_sha256=sha256(self.executable.read_bytes()).hexdigest(),
+            configuration_sha256=sha256(canonical_json_bytes(previous.configuration)).hexdigest(),
+            initial_and_resume_equivalent=True, file_lifecycle_observed=True, usage_observed=True,
+            qualified=True, scope='live_two_turn_tool_rich_provider')
+        with self.assertRaisesRegex(ValueError, 'configuration differs from provider qualification'):
+            ClaudeRunProvider(qualification=receipt,
+                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_RESTRICTED_EVENT_CONTRACT,
+                    cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--restricted'})},
+                task_packages={'open_cake-1': TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')})
+
     def test_raw_python_file_has_the_same_sealed_projection_as_codex(self):
         from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
         from open_cake_ir.serialization import canonical_json_bytes

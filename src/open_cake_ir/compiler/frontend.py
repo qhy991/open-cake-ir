@@ -24,7 +24,7 @@ from .ir import (
     ProgramAxis, Role, Schedule, ScheduleParseError,
 )
 
-from .ir.operations import elementwise_result_dtype
+from .ir.operations import cast_supported, elementwise_result_dtype
 
 
 @dataclass(frozen=True)
@@ -318,9 +318,9 @@ class _Builder:
                     continue
                 if isinstance(index, _Ref) and index.collection == "buffers":
                     index_buffer = self.buffer(index, component)
-                    if (index_buffer.dtype.value != "int32" or index_buffer.space.value != "register"
+                    if (index_buffer.dtype.value not in {"int32", "int64"} or index_buffer.space.value != "register"
                         or len(index_buffer.shape) != 1):
-                        self.fail(component, "gather indices require rank-one INT32 register buffers")
+                        self.fail(component, "gather indices require rank-one INT32 or INT64 register buffers")
                     if buffer.space.value != "global":
                         self.fail(node, "buffer-indexed loads require global source storage")
                     if index_shape is not None and index_buffer.shape != index_shape:
@@ -422,11 +422,11 @@ class _Builder:
             return result
         if method == "scalar_index":
             if len(node.args) != 1 or node.keywords:
-                self.fail(node, "scalar_index takes one INT32 [1] register buffer")
+                self.fail(node, "scalar_index takes one INT32 or INT64 [1] register buffer")
             ref = self.reference(self.value(node.args[0]), node)
             buffer = self.buffer(ref, node)
-            if buffer.dtype.value != "int32" or buffer.shape != (1,) or buffer.space.value != "register":
-                self.fail(node, "scalar_index takes one INT32 [1] register buffer")
+            if buffer.dtype.value not in {"int32", "int64"} or buffer.shape != (1,) or buffer.space.value != "register":
+                self.fail(node, "scalar_index takes one INT32 or INT64 [1] register buffer")
             return _ScalarIndex(ref)
         if method == "broadcast":
             if len(node.args) != 1 or set(k.arg for k in node.keywords) != {"axis"}:
@@ -588,6 +588,10 @@ class _Builder:
                 if type(axis) is not int or not 0 <= axis < len(shape):
                     self.fail(node, "reduce requires a valid static axis")
                 shape = shape[:axis] + shape[axis + 1:] or [1]
+            elif kind == "transpose":
+                if len(reads) != 1 or len(first.shape) != 2:
+                    self.fail(node, "transpose requires one rank-two register value")
+                shape = list(reversed(first.shape))
             elif kind == "scan":
                 # The scan's accumulator type owns its result, as in the verifier.
                 dtype = "int32" if first.dtype.value == "int32" else "fp32"
@@ -596,6 +600,13 @@ class _Builder:
                     self.fail(node, "lm.cast requires to=...", "SCHEDULE_STRUCTURE",
                               canonical_path=f"operations[{len(self.document['operations'])}].parameters")
                 dtype = parameters["to"]
+                if first.dtype.value in {"int64", "bool"} or dtype in ("int64", "bool"):
+                    from .ir import DType
+                    target_dtype = next((value for value in DType if value.value == dtype), None)
+                    if target_dtype is None or not cast_supported(first.dtype, target_dtype):
+                        self.fail(node, "this explicit storage conversion is unsupported",
+                                  "CAST_DTYPE_UNSUPPORTED",
+                                  canonical_path=f"operations[{len(self.document['operations'])}].parameters.to")
             elif kind == "mma":
                 if len(reads) != 2 or len(first.shape) != 2:
                     self.fail(node, "automatic MMA results require two rank-two operands")
@@ -756,6 +767,19 @@ class _Builder:
             if key in options:
                 self.document[key] = options.pop(key)
                 self.mark(key, decorator)
+        if "program_map" in options:
+            mapping = options.pop("program_map")
+            keyword = next(item for item in decorator.keywords if item.arg == "program_map")
+            if not isinstance(mapping, dict):
+                self.fail(keyword.value, "program_map must be a dictionary of map options")
+            if "axes" in mapping:
+                self.fail(keyword.value, "lm.program declarations own program_map.axes")
+            # Axes remain single-assignment declarations in the body. All other fields
+            # go directly to ProgramMap's existing structural and semantic checks.
+            self.document["program_map"] = dict(axes=[], **mapping)
+            self.mark("program_map", keyword.value)
+            for key, value in zip(keyword.value.keys, keyword.value.values):
+                self.mark(f"program_map.{self.literal(key)}", value)
         if options:
             self.fail(decorator, f"unknown schedule options: {', '.join(options)}")
         args = function.args

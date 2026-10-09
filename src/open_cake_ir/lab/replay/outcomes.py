@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Mapping, Sequence, cast
 
 from open_cake_ir.evaluation import EvaluationReceipt
+from open_cake_ir.evaluation.refusals import EvaluationRefusal
 from open_cake_ir.evidence import RunAudit
 from open_cake_ir.serialization import canonical_json_bytes
 
@@ -54,6 +55,8 @@ def _expected_matched_diagnoses_v1(
                     )
                 ),
                 materiality_ratio=materiality_ratio,
+                unavailable_profiles=frozenset(key[2] for key, value in receipts.items()
+                    if key[0] == turn and key[1] == 'attribution' and isinstance(value, EvaluationRefusal)),
             )
             if cost_diagnosis is not None:
                 projected.append(cost_diagnosis)

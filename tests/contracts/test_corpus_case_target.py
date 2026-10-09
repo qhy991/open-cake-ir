@@ -93,7 +93,11 @@ class CorpusCaseTarget(unittest.TestCase):
         # The C550 indexed-gather successor adds one exact ABI-bound positive case.
         # The fixed compensated FP8 SIMT route adds one independently device-checked case.
         # Seven retained DCU admissions/refusals and one output-prefix GEMM extend the180-case shared corpus.
-        self.assertEqual(report.case_count, 196)
+        # One reduced DCU ordinary-output collision adds the shared ownership regression.
+        # Two transpose cases pin tail copies and transposed K-loop MMA provenance.
+        # Two OCML FMA cases pin direct ternary emission and nested producer rounding.
+        # Three multi-region MMA cases pin attention tails, typed nested operands and varying-operand refusal.
+        self.assertEqual(report.case_count, 204)
 
 
 if __name__ == "__main__":
