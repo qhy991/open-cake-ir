@@ -25,24 +25,23 @@ def candidate(lm, position_ids: cake.Tensor(({batch_size}, {seq_len}), "int64"),
     compute = lm.role(execution_groups=[0])
     batch = lm.program(position_ids, axis=0, dimension=0, tile=1)
     row = lm.program(position_ids, axis=1, dimension=1, tile=1)
-    frequency = lm.program(cos_sin, axis=2, dimension=2, tile=64)
+    frequency = lm.program(cos_sin, axis=2, dimension=2, tile=1)
     with compute:
         positions_i64 = lm.load(position_ids[batch, row], id="load_positions")
         positions = lm.cast(positions_i64, to="fp32", id="positions_to_fp32")
-        frequency_indices = lm.coordinate(source="program_tile", name="frequency", id="frequency_indices")
-        inverse_indices = frequency_indices % 64
-        frequencies = lm.load(inv_freq[inverse_indices], id="load_scaled_inv_freq")
+        frequency_index = lm.coordinate(source="program", name="frequency", id="frequency_index")
+        inverse_index = frequency_index % 64
+        frequencies = lm.load(inv_freq[lm.scalar_index(inverse_index)], id="load_scaled_inv_freq")
         angles = positions * frequencies
         cosine = lm.cos(angles, instruction={{"contract": "maca.cos.f32"}}, id="cosine")
         sine = lm.sin(angles, instruction={{"contract": "maca.sin.f32"}}, id="sine")
         scaled_cosine = cosine * {attention_scaling!r}
         scaled_sine = sine * {attention_scaling!r}
-        cosine_bf16 = lm.cast(scaled_cosine, to="bf16", id="round_cosine")
-        sine_bf16 = lm.cast(scaled_sine, to="bf16", id="round_sine")
-        cosine_column = lm.broadcast(cosine_bf16, axis=1, id="cosine_column")
-        sine_column = lm.broadcast(sine_bf16, axis=1, id="sine_column")
-        lm.store(cos_sin[batch, row, frequency, 0:1], cosine_column, coalesced=False, id="store_cosine")
-        lm.store(cos_sin[batch, row, frequency, 1:2], sine_column, coalesced=False, id="store_sine")
+        components = lm.coordinate(source="range", start=0, extent=2, id="components")
+        use_cosine = lm.compare(components, 0, op="eq", id="use_cosine")
+        stacked = lm.select(use_cosine, scaled_cosine, scaled_sine, id="stack_cos_sin")
+        rounded = lm.cast(stacked, to="bf16", id="round_output")
+        lm.store(cos_sin[batch, row, frequency, :], rounded, coalesced=False, id="store_output")
 '''
 
 
