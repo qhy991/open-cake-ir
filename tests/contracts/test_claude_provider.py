@@ -29,28 +29,136 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
-    def test_v7_large_prompt_uses_stdin_and_preserves_exact_rules_and_resume(self):
-        builder=self.builder(event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT,
-                             cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format','--autocompact'},
-                             isolation_policy='linux_claude_workspace_v1')
-        prompt='公开历史\n'*40000
-        for session in (None,SESSION):
-            invocation=builder.build(prompt,thread_id=session)
-            with patch('open_cake_ir.lab.claude.run_supervised',
-                       return_value=subprocess.CompletedProcess([],0,self.raw(),b'')) as process:
-                turn=ClaudeProviderAdapter().execute(invocation,candidate_path=self.candidate,
-                    expected_change='add' if session is None else 'update',
-                    expected_terminal_message=TERMINAL,event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT,
-                    arm='open_cake')
-            self.assertEqual(turn.raw_events,self.raw())
-            self.assertEqual(process.call_args.kwargs['input_bytes'],invocation.argv[-1].encode())
-            argv=process.call_args.args[0]
-            self.assertEqual(argv[argv.index('--autocompact')+1],'100k')
-            self.assertNotIn(invocation.argv[-1],argv)
-            self.assertIn('--input-format',argv)
-            self.assertEqual('--resume' in argv,session is not None)
-            self.assertIn(claude.exact_file_tools(self.workspace,self.candidate.name),argv)
-        self.assertEqual(builder.cli_limitations['context_window'],'100k')
+    def malformed_input_events(self):
+        events = self.events()
+        call, result = copy.deepcopy(events[1:3])
+        call['message']['content'][0].update(id='bad-input', input={
+            '__unparsedToolInput': {'raw': '{"content": ', 'len': 12}})
+        result['message']['content'][0].update(tool_use_id='bad-input', is_error=True,
+            content='<tool_use_error>InputValidationError: Write was called with input that could not be parsed as JSON.\n'
+                    'You sent (first 200 of 12 bytes): {"content": \n'
+                    'Common causes: unescaped backslashes in file paths (use / or \\\\), '
+                    'unescaped control characters, or truncated output. Retry with valid JSON.</tool_use_error>')
+        events[1:1] = [call, result]
+        return events
+
+    def test_v8_recovers_native_input_failure_and_retains_activity_and_usage(self):
+        events = self.malformed_input_events()
+        events[1:1] = self.compaction_events()
+        raw = self.raw(events)
+        turn = self.normalize(raw, event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        baseline = self.normalize()
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.provider_tokens, baseline.provider_tokens)
+        self.assertEqual(turn.candidates, baseline.candidates)
+        self.assertEqual([(a.item_id, a.status) for a in turn.tool_activity if a.tool == 'Write'],
+                         [('bad-input', 'error_recovered'), ('toolu_write', 'completed')])
+        with self.assertRaisesRegex(ValueError, 'candidate envelope'):
+            self.normalize(self.raw(self.malformed_input_events()),
+                           event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT)
+
+    def test_v8_input_failure_requires_matching_error_and_exact_marker(self):
+        cases = {}
+        def changed(label):
+            events = self.malformed_input_events()
+            cases[label] = events
+            return events[1]['message']['content'][0], events[2]['message']['content'][0]
+        changed('wrong id')[1]['tool_use_id'] = 'unrelated'
+        changed('successful result')[1]['is_error'] = False
+        changed('generic error')[1]['content'] = 'Write failed'
+        changed('different native reason')[1]['content'] = 'InputValidationError: missing file_path'
+        changed('different raw preview')[0]['input']['__unparsedToolInput']['raw'] = 'different'
+        changed('extra marker field')[0]['input']['__unparsedToolInput']['extra'] = 'unmodeled'
+        changed('explicit path')[0]['input']['file_path'] = '/tmp/outside.py'
+        changed('unsupported tool')[0]['name'] = 'Edit'
+        for value in [True, 0, -1, '12', 12.0]:
+            changed('length ' + repr(value))[0]['input']['__unparsedToolInput']['len'] = value
+        for value in [None, '', 12]:
+            changed('raw ' + repr(value))[0]['input']['__unparsedToolInput']['raw'] = value
+        for key in ('raw', 'len'):
+            del changed('missing ' + key)[0]['input']['__unparsedToolInput'][key]
+        events = self.malformed_input_events(); del events[2]
+        cases['missing completion'] = events
+        for label, events in cases.items():
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+
+    def test_v8_requires_successful_candidate_write_after_input_failure(self):
+        original = self.malformed_input_events()
+        cases = [original[:3] + original[5:],
+                 [original[0], *original[3:5], *original[1:3], *original[5:]]]
+        cases.append([original[0], original[3], *original[1:3], original[4], *original[5:]])
+        failed = copy.deepcopy(original)
+        failed[4]['message']['content'][0]['is_error'] = True
+        cases.append(failed)
+        for events in cases:
+            with self.assertRaisesRegex(ValueError, 'later candidate write'):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        outside = copy.deepcopy(original)
+        outside[3]['message']['content'][0]['input']['file_path'] = '/tmp/outside.py'
+        with self.assertRaisesRegex(ValueError, 'candidate envelope'):
+            self.normalize(self.raw(outside), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        for index in (0, -1):
+            events = copy.deepcopy(original); events[index]['session_id'] = OTHER_SESSION
+            with self.assertRaisesRegex(ValueError, 'session identity'):
+                self.normalize(self.raw(events), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+        bad_terminal = copy.deepcopy(original)
+        bad_terminal[-1]['structured_output']['candidate_written'] = False
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(bad_terminal), event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+
+    def test_v8_cannot_reuse_v7_qualification(self):
+        from hashlib import sha256
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        from open_cake_ir.lab.task_package import TaskPackage
+        args = dict(cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format', '--autocompact'},
+                    isolation_policy='linux_claude_workspace_v1')
+        previous = self.builder(event_contract=claude.CLAUDE_STDIN_EVENT_CONTRACT, **args)
+        receipt = ProviderQualificationReceipt(provider_revision=previous.provider_revision,
+            executable_sha256=sha256(self.executable.read_bytes()).hexdigest(),
+            configuration_sha256=sha256(canonical_json_bytes(previous.configuration)).hexdigest(),
+            initial_and_resume_equivalent=True, file_lifecycle_observed=True, usage_observed=True,
+            qualified=True, scope='live_two_turn_tool_rich_provider')
+        with self.assertRaisesRegex(ValueError, 'configuration differs from provider qualification'):
+            ClaudeRunProvider(qualification=receipt,
+                builders={'open_cake-1': self.builder(event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT, **args)},
+                task_packages={'open_cake-1': TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')})
+
+    def test_v8_requires_stdin_compaction_and_isolation_before_execution(self):
+        options = set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format', '--autocompact'}
+        args = dict(event_contract=claude.CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT,
+                    isolation_policy='linux_claude_workspace_v1', cli_options=options)
+        for missing, message in [('--input-format', 'input-format'),
+                                  ('--autocompact', 'compaction control')]:
+            with self.assertRaisesRegex(ValueError, message):
+                self.builder(**{**args, 'cli_options': options - {missing}})
+        with self.assertRaisesRegex(ValueError, 'OS workspace isolation'):
+            self.builder(**{**args, 'isolation_policy': None})
+
+    def test_stdin_contracts_large_prompt_uses_stdin_and_preserves_exact_rules_and_resume(self):
+        for contract in claude.CLAUDE_STDIN_CONTRACTS:
+            builder=self.builder(event_contract=contract,
+                                 cli_options=set(claude.CLAUDE_REQUIRED_OPTIONS) | {'--input-format','--autocompact'},
+                                 isolation_policy='linux_claude_workspace_v1')
+            prompt='公开历史\n'*40000
+            for session in (None,SESSION):
+                invocation=builder.build(prompt,thread_id=session)
+                with patch('open_cake_ir.lab.claude.run_supervised',
+                           return_value=subprocess.CompletedProcess([],0,self.raw(),b'')) as process:
+                    turn=ClaudeProviderAdapter().execute(invocation,candidate_path=self.candidate,
+                        expected_change='add' if session is None else 'update',
+                        expected_terminal_message=TERMINAL,event_contract=contract,
+                        arm='open_cake')
+                self.assertEqual(turn.raw_events,self.raw())
+                self.assertEqual(process.call_args.kwargs['input_bytes'],invocation.argv[-1].encode())
+                argv=process.call_args.args[0]
+                self.assertEqual(argv[argv.index('--autocompact')+1],'100k')
+                self.assertNotIn(invocation.argv[-1],argv)
+                self.assertIn('--input-format',argv)
+                self.assertEqual('--resume' in argv,session is not None)
+                self.assertIn(claude.exact_file_tools(self.workspace,self.candidate.name),argv)
+            self.assertEqual(builder.cli_limitations['context_window'],'100k')
     def exact_file_events(self):
         events = self.recovered_restricted_events()
         notice = events[2]

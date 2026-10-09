@@ -43,7 +43,9 @@ CLAUDE_EVENT_CONTRACT = "claude_stream_candidate_v4"
 CLAUDE_RESTRICTED_EVENT_CONTRACT = "claude_stream_candidate_v5"
 CLAUDE_EXACT_FILE_EVENT_CONTRACT = "claude_stream_candidate_v6"
 CLAUDE_STDIN_EVENT_CONTRACT = "claude_stream_candidate_v7"
-CLAUDE_FILE_CONTRACTS = (CLAUDE_EXACT_FILE_EVENT_CONTRACT, CLAUDE_STDIN_EVENT_CONTRACT)
+CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT = "claude_stream_candidate_v8"
+CLAUDE_STDIN_CONTRACTS = (CLAUDE_STDIN_EVENT_CONTRACT, CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT)
+CLAUDE_FILE_CONTRACTS = (CLAUDE_EXACT_FILE_EVENT_CONTRACT, *CLAUDE_STDIN_CONTRACTS)
 CLAUDE_EVENT_CONTRACTS = (CLAUDE_LEGACY_EVENT_CONTRACT, CLAUDE_EVENT_CONTRACT,
                         CLAUDE_RESTRICTED_EVENT_CONTRACT, *CLAUDE_FILE_CONTRACTS)
 _MODERN_CONTRACTS = (CLAUDE_EVENT_CONTRACT, CLAUDE_RESTRICTED_EVENT_CONTRACT,
@@ -516,6 +518,21 @@ def _restricted_denials(terminal, event_contract):
     return result
 
 
+def _unparsed_write_failure(arguments):
+    marker = arguments.get('__unparsedToolInput')
+    if (set(arguments) != {'__unparsedToolInput'}
+            or not isinstance(marker, Mapping) or set(marker) != {'raw', 'len'}
+            or not isinstance(marker['raw'], str) or not marker['raw']
+            or type(marker['len']) is not int or marker['len'] <= 0):
+        raise ValueError('Claude malformed Write input marker differs')
+    return (
+        '<tool_use_error>InputValidationError: Write was called with input that could not be parsed as JSON.\n'
+        f"You sent (first 200 of {marker['len']} bytes): {marker['raw'][:200]}\n"
+        'Common causes: unescaped backslashes in file paths (use / or \\\\), '
+        'unescaped control characters, or truncated output. Retry with valid JSON.</tool_use_error>'
+    )
+
+
 def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: str,
                             event_contract: str = CLAUDE_EVENT_CONTRACT,
                             response_aliases=(), candidate_filename: str = 'candidate-set.json') -> ParsedClaudeTurnEvents:
@@ -557,6 +574,9 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     active_tools: dict[str, dict] = {}
     writes: list[tuple[str, str]] = []
     pending_writes: dict[str, tuple[str, str]] = {}
+    invalid_writes: dict[str, str] = {}
+    recovery_writes: set[str] = set()
+    needs_input_recovery = False
     models: list[str] = []
     activity: list[ProviderAuxiliaryActivity] = [
         ProviderAuxiliaryActivity(event['uuid'], 'ui_invalidate', 'observed')
@@ -654,6 +674,11 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                             or _canonical_json_bytes(arguments) != _canonical_json_bytes(denied['tool_input'])):
                         raise ValueError('Claude permission denial invocation differs')
                     denial_invocations.add(identity)
+                elif (event_contract == CLAUDE_INPUT_RECOVERY_EVENT_CONTRACT
+                      and name == 'Write' and '__unparsedToolInput' in arguments):
+                    invalid_writes[identity] = _unparsed_write_failure(arguments)
+                    needs_input_recovery = True
+                    recovery_writes.clear()
                 elif name in {"Write", "Edit"}:
                     path = arguments.get("file_path")
                     if not isinstance(path, str) or not path:
@@ -672,6 +697,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                         raise ValueError("Claude write is outside the candidate envelope")
                     if event_contract in _DENIAL_CONTRACTS:
                         pending_writes[identity] = (str(resolved), name)
+                        if needs_input_recovery:
+                            recovery_writes.add(identity)
                     else:
                         writes.append((str(resolved), name))
             elif event["type"] == "user" and kind == "tool_result":
@@ -690,6 +717,9 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                         or not isinstance(errored, bool)):
                     raise ValueError("Claude tool completion differs")
                 invocation = active_tools[identity]
+                if identity in invalid_writes:
+                    if not errored or block.get('content') != invalid_writes.pop(identity):
+                        raise ValueError('Claude malformed Write input completion differs')
                 if identity in denied_tools:
                     if (not errored or identity not in denial_notices
                             or block.get('content') != denial_notices[identity]):
@@ -699,6 +729,9 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                     completed_write = pending_writes.pop(identity)
                     if not errored:
                         writes.append(completed_write)
+                        if identity in recovery_writes:
+                            needs_input_recovery = False
+                    recovery_writes.discard(identity)
                 if invocation.get("name") == CLAUDE_TERMINAL_TOOL:
                     if errored:
                         terminal_tool_failed = True
@@ -731,6 +764,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     if (set(denied_tools) != denial_invocations or set(denied_tools) != set(denial_notices)
             or set(denied_tools) != denial_completions):
         raise ValueError('Claude permission denial lifecycle is incomplete')
+    if needs_input_recovery:
+        raise ValueError('Claude malformed Write input did not recover with a later candidate write')
     if active_tools or not writes or len({path for path, _ in writes}) != 1:
         if not writes and not active_tools and terminal_tool_completed:
             # The structured terminal above already matched the expected message
@@ -880,7 +915,7 @@ class ClaudeInvocationBuilder:
         # say "never execute this fixture", and a constructor that ran `--help` on it
         # would be executing exactly that.
         options = frozenset(cli_options)
-        if event_contract == CLAUDE_STDIN_EVENT_CONTRACT and '--input-format' not in options:
+        if event_contract in CLAUDE_STDIN_CONTRACTS and '--input-format' not in options:
             raise ValueError('Claude stdin successor requires --input-format support')
         if (event_contract == CLAUDE_RESTRICTED_EVENT_CONTRACT
                 and '--restricted' not in options):
@@ -898,11 +933,11 @@ class ClaudeInvocationBuilder:
         # window unpinned: it reaches that refusal sooner, and the run ends there. That is
         # the consequence `cli_limitations` states, and `tools/qualify_codex_provider.py`
         # writes beside the receipt it just issued.
-        self._autocompact = (('100k' if event_contract == CLAUDE_STDIN_EVENT_CONTRACT
+        self._autocompact = (('100k' if event_contract in CLAUDE_STDIN_CONTRACTS
                              else CLAUDE_AUTOCOMPACT_WINDOW)
                              if CLAUDE_AUTOCOMPACT_OPTION in options
                              else CLAUDE_AUTOCOMPACT_UNSUPPORTED)
-        if event_contract == CLAUDE_STDIN_EVENT_CONTRACT and self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED:
+        if event_contract in CLAUDE_STDIN_CONTRACTS and self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED:
             raise ValueError('Claude stdin successor requires explicit native compaction control')
 
     @property
@@ -932,8 +967,8 @@ class ClaudeInvocationBuilder:
                 "context_window": self._autocompact,
                 "finding": "F-2026-09-10-008",
                 "severity": "none",
-                "consequence": ('v7 compacts at100k to reserve room for the next complete task projection'
-                                if self._event_contract == CLAUDE_STDIN_EVENT_CONTRACT else
+                "consequence": ('stdin contracts compact at100k to reserve room for the next complete task projection'
+                                if self._event_contract in CLAUDE_STDIN_CONTRACTS else
                                 'the context window is pinned at the maximum this build accepts'),
             }
         return {
@@ -1061,7 +1096,7 @@ class ClaudeProviderAdapter:
             expected = _json(expected_terminal_message)
             arguments[arguments.index("--json-schema") + 1] = _canonical_json_bytes(terminal_schema(expected)).decode()
         stdin_options = {}
-        if event_contract == CLAUDE_STDIN_EVENT_CONTRACT:
+        if event_contract in CLAUDE_STDIN_CONTRACTS:
             if len(arguments) < 2 or arguments[-2] != '--':
                 raise ValueError('Claude stdin invocation requires one final prompt')
             stdin_options['input_bytes'] = arguments[-1].encode('utf-8')
