@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "id": "F-2026-10-10-003",
+  "kind": "protocol",
+  "decision": "accepted",
+  "title": "MetaX profile aggregate must preserve complete preflight diagnostics",
+  "compiler_revision_id": "open-cake-ir@eaf123f3",
+  "executor_revision": "xcore1002@eaf123f3",
+  "backend": "triton",
+  "target": "xcore1002",
+  "tracking_issue": "https://github.com/qhy991/open-cake-ir/issues/452",
+  "pull_request": "https://github.com/qhy991/open-cake-ir/pull/453",
+  "evidence": {
+    "root": "c550-bench-ralph-20261009/immutable-evidence-contracts-20261010",
+    "locators": [
+      "core-green-001.log",
+      "profile-red-001.log",
+      "profile-integrated-001.log",
+      "final-cpu-001.log"
+    ],
+    "scope": "CPU composition using real immutable Evaluation receipts and CPU native-loader/activity substitutes. No device or host admission is claimed by the identities in this record."
+  },
+  "observation": "After the independent serialization repair, the actual attribution reader rejected correctly retained nested diagnostics. The common worker copies all preflight metrics and aggregates three shared values, but the MetaX validator compared the whole aggregate against a dictionary containing only those three values. It rejected legitimate extra diagnostics while accepting their omission. The standalone Program profiler instead inherited instrumented diagnostics, making the two producers disagree.",
+  "proposed_change": "Start the validator's expected aggregate from the complete preflight mapping, recompute output_mismatches, inputs_unchanged and max_abs_error under the existing strict oracle rules, and compare the entire record. Use the same preflight basis in the standalone Program profiler. Keep both complete phase observations; additions, removals, mutations and substitution of instrumented diagnostics in the aggregate remain refusals.",
+  "implemented_in": "7f4bcc2c",
+  "promotion_disposition": "A MetaX attribution contract repair, separate from F-2026-10-10-002 shared serialization changes. No profile schema, numerical rule, tolerance, timing policy or Compiler capability changes. No GPU or A/A is launched by this tick, and no failed measurement is reclassified as successful.",
+  "verified_by": {
+    "commit": "5753b23f503306c7478ec50c3190fe1e21621e14",
+    "regression_before_fix": "At 2ba3dedc, the legitimate full-preflight aggregate and standalone composer fail, while removing the aggregate diagnostic unexpectedly passes. Existing plain metrics and oracle guards pass.",
+    "tests": "Four focused CPU controls intentionally give preflight and instrumented different nested diagnostics and errors. They prove the aggregate inherits preflight, max_abs_error covers both checks, both complete observations survive, and aggregate diagnostic deletion/addition/change/wrong-phase substitution is refused. Old three-field records retain identical canonical JSON. Together with the separate core repair, all sixteen new contracts and twenty-nine adjacent contracts pass: 45/45, zero skips/errors.",
+    "scope": "Source/CPU verification at a clean fixed checkout. The full successor still requires independent review and its own device qualification before a measurement claim."
+  }
+}

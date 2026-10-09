@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-10-003](2026-10-10-003-metax-profile-diagnostic-contract.json) — MetaX attribution aggregates the three shared metrics over a complete preflight diagnostic record, retains both oracle observations and strictly rejects changed aggregate extras; source/CPU scope only.
+
 - [F-2026-10-10-002](2026-10-10-002-immutable-evaluation-evidence.json) — reuse the Evaluation JSON projection at evidence writing and raw/frozen receipt comparison boundaries; preserve full diagnostics and strict refusals. A failed attempt's 20 counted samples are not a qualified measurement.
 
 - [F-2026-10-10-001](2026-10-10-001-c550-bench-mapping-boundary.json) — shallow named-output mapping adaptation at the original C550 Bench API preserves immutable common preparation and original verdicts; exact CPU failure replay and twenty contracts pass, while successor device measurement remains pending.
