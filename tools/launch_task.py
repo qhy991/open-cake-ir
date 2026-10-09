@@ -454,7 +454,11 @@ def _prepare_baseline(root, workspace, compiler, executor, host, workload, autho
         root, workspace, executor, host, workload, compiler_reference)
     environment = TaskOpenCakeEnvironment(compiler, builder, authority_document=authoring,
                                          workload=workload, case_id="primary", executor=executor)
-    submission = CandidateSubmission.seal(environment.media_type, canonical({"python_source": source}))
+    from open_cake_ir.lab.python_reference import parse_skeleton
+    skeleton = parse_skeleton(source, filename='baseline-starter.py')
+    payload = ({'python_program_source': source, 'program_id': skeleton['program_id']}
+               if 'program_id' in skeleton else {'python_source': source})
+    submission = CandidateSubmission.seal(environment.media_type, canonical(payload))
     result = environment.build(submission)
     _write(workspace / "baseline-feedback.json", canonical(dict(result.feedback)))
     if result.launchable is None:

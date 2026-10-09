@@ -263,3 +263,4 @@ Output-prefix003 preserves original002 at751ead87; main002 describes independent
 The output-prefix pruning record first published as F-2026-10-04-002 on task/core-valid-extent-work-pruning-20261004 is assigned global sequence003 here. Original record and evidence remain at751ead87; main sequence002 belongs to the separate local-device admission observation.
 
 - [F-2026-10-09-009](2026-10-09-009-int64-bool-storage.json) — add explicit INT64/BOOL storage and conversion semantics for original Bench input ABIs; software verification is bounded, native-device qualification remains open.
+- [F-2026-10-09-011](2026-10-09-011-program-task-starters.json) — complete Python Program starters reach ordinary TaskLab preparation and full sealed-stage baseline checks; native Program comparison is explicitly refused.
