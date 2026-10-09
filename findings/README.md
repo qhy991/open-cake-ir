@@ -1,5 +1,7 @@
 # Findings
 
+- [F-2026-10-09-001](2026-10-09-001-claude-prompt-transport.json) — v7 sends full prompts through supervised stdin and reserves context room with100k native compaction. Preserve original E2BIG/context-limit failures; live qualification and large UTF8 transport tests retained.
+
 - [F-2026-10-08-002](2026-10-08-002-c550-local-fault-scope.json) — bounded MACA shared-layout assertion classification and coherent author-delivery timeout isolation. Same-runtime baseline/rejected-input CPU controls pass; original failures stay sealed and no hardware tile range is inferred.
 
 - [F-2026-10-08-001](2026-10-08-001-claude-exact-file-permissions.json) — native exact-file permissions block wrong candidate paths while preserving atomic Write/Edit; v6 recovery and archived author-fault isolation are opt-in. Original failures remain failures; fresh live qualification gates new Runs.
