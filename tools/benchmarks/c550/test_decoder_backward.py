@@ -101,10 +101,10 @@ class DecoderBackwardContracts(unittest.TestCase):
     def test_three_linear_branches_round_the_q_plus_k_sum_before_adding_v(self):
         b,s,k,n=1,33,64,32
         x=([1.]+[0.]*(k-1))*(b*s)
-        inputs={f'x_{j}':x[:] for j in range(3)}
+        inputs={f'branch_{j}':x[:] for j in range(3)}
         for j,value in enumerate((1.,2**-8,-1.)):
-            inputs[f'w_{j}']=[value]*n+[0.]*((k-1)*n)
-        source=stages.linear_paths('three_linear',b,s,n,[(f'x_{j}',f'w_{j}',k) for j in range(3)],'out')
+            inputs[f'matrix_{j}']=[value]*n+[0.]*((k-1)*n)
+        source=stages.linear_paths('three_linear',b,s,n,[(f'branch_{j}',f'matrix_{j}',k) for j in range(3)],'out')
         result,_=single(source,inputs,('out',))
         self.assertEqual(set(result['out']),{0.})
         changed=source.replace('lm.cast(rounded_sum_1, to="fp32", id="prior_2")',
