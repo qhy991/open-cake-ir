@@ -64,7 +64,9 @@ def profile_program(candidate, workload, protocol, admission, prepared, host):
         first = json.loads(preflight.artifact_payloads['correctness_output'])
         second = json.loads(instrumented.artifact_payloads['correctness_output'])
         raw = second.pop('native_activity')
-        metrics = {**dict(instrumented.correctness),
+        metrics = {**dict(preflight.correctness),
+                   'output_mismatches': preflight.correctness['output_mismatches'] + instrumented.correctness['output_mismatches'],
+                   'inputs_unchanged': preflight.correctness['inputs_unchanged'] and instrumented.correctness['inputs_unchanged'],
                    'max_abs_error': max(preflight.correctness['max_abs_error'], instrumented.correctness['max_abs_error'])}
         correctness = {'passed': True, 'metrics': metrics, 'correctness_launches': 2,
             'preflight': dict(preflight.correctness), 'instrumented': {'passed': True, 'metrics': dict(instrumented.correctness)},

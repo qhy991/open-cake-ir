@@ -132,8 +132,9 @@ def validate_profile_correctness(launch, correctness):
            or type(check.get('max_abs_error')) not in (int, float)
            or not math.isfinite(check['max_abs_error']) or check['max_abs_error'] < 0 for check in checks):
         raise ValueError('MACA profile preflight or instrumented oracle metrics differ')
-    combined = {'output_mismatches': 0, 'inputs_unchanged': True,
-                'max_abs_error': max(check['max_abs_error'] for check in checks)}
+    combined = dict(preflight)
+    combined.update(output_mismatches=0, inputs_unchanged=True,
+                    max_abs_error=max(check['max_abs_error'] for check in checks))
     if correctness.get('passed') is not True or correctness.get('metrics') != combined:
         raise ValueError('MACA profile correctness aggregate differs from both oracle checks')
 
