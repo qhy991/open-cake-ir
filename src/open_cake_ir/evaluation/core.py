@@ -525,7 +525,7 @@ class TensorLaunchManifest(WorkloadTensorManifest):
             or not isinstance(document['case_id'], str) or not document['case_id']
             or not isinstance(rows, list) or not rows):
             raise ValueError('Workload tensor launch identity differs')
-        abi = tensor_abi_rows(rows, dtypes=frozenset({'fp32', 'bf16', 'fp16', 'fp8_e4m3', 'int32'}),
+        abi = tensor_abi_rows(rows, dtypes=frozenset({'fp32', 'bf16', 'fp16', 'fp8_e4m3', 'int32', 'int64', 'bool'}),
                               ascii_names=False,
                               row_error='Workload tensor launch ABI differs',
                               order_error='Workload tensor launch ABI order differs')
@@ -566,7 +566,7 @@ class TensorLaunchManifest(WorkloadTensorManifest):
 
     @property
     def tensors(self) -> tuple[tuple[str, tuple[int, ...], str], ...]:
-        dtypes = {'fp32': 'torch.float32', 'bf16': 'torch.bfloat16', 'fp16': 'torch.float16', 'fp8_e4m3': 'torch.float8_e4m3fn', 'int32': 'torch.int32'}
+        dtypes = {'fp32': 'torch.float32', 'bf16': 'torch.bfloat16', 'fp16': 'torch.float16', 'fp8_e4m3': 'torch.float8_e4m3fn', 'int32': 'torch.int32', 'int64': 'torch.int64', 'bool': 'torch.bool'}
         return tuple((name, shape, dtypes[dtype]) for name, shape, dtype, _ in self.tensor_abi)
 
     def as_dict(self) -> dict[str, object]:
@@ -678,7 +678,17 @@ def compare_tile_output_values(workload, expected, observed):
             if not isinstance(actual, (list, tuple)) or len(actual) != len(values):
                 mismatch += 1
                 continue
+            dtype = workload.document.get('tensors', {}).get(name, {}).get('dtype')
             for value, reference in zip(actual, values, strict=True):
+                if dtype in {'int64', 'bool'}:
+                    expected_type = bool if dtype == 'bool' else int
+                    valid = all(type(v) is expected_type and
+                                (dtype == 'bool' or -(2**63) <= v < 2**63)
+                                for v in (value, reference))
+                    mismatch += not (valid and value == reference)
+                    if valid:
+                        maximum_error = max(maximum_error, abs(value - reference))
+                    continue
                 if any(not isinstance(v, (float,int)) or isinstance(v,bool) for v in (value,reference)):
                     mismatch += 1
                     continue
@@ -728,7 +738,20 @@ _MODULE_LOADERS = {
 
 
 _TORCH_DTYPE_NAMES = {'fp32':'float32','bf16':'bfloat16','fp16':'float16',
-                      'fp8_e4m3':'float8_e4m3fn','int32':'int32'}
+                      'fp8_e4m3':'float8_e4m3fn','int32':'int32','int64':'int64','bool':'bool'}
+
+
+def _output_poison(dtype, *, finite=False):
+    """Keep discrete initialization in its own storage domain."""
+    if dtype == 'bool':
+        return True
+    if dtype in {'int32', 'int64'}:
+        return -(2 ** ((32 if dtype == 'int32' else 64) - 1))
+    if finite:
+        import torch
+        return torch.finfo(getattr(torch, _TORCH_DTYPE_NAMES[dtype])).max
+    return float('nan')
+
 
 
 def load_torch_program(candidate,manifest,arguments,admission,loader):
@@ -752,7 +775,7 @@ def load_torch_program(candidate,manifest,arguments,admission,loader):
     for name, tensor in zip(public, arguments, strict=True):
         check_tensor(tensor, manifest.program.tensors[name])
     def allocate(spec):
-        return torch.full(spec.shape,float('nan') if spec.dtype.value!='int32' else -(2**31),
+        return torch.full(spec.shape,_output_poison(spec.dtype.value),
             dtype=getattr(torch,_TORCH_DTYPE_NAMES[spec.dtype.value]),device=device)
     def span(tensor):
         if not tensor.is_contiguous():
@@ -803,7 +826,7 @@ class LoadedTorchTensorCandidate:
         self.arguments = [
             torch.tensor(inputs[name], dtype=dtypes[dtype], device='cuda:0').reshape(shape)
             if mode == 'input' else torch.full(shape,
-                float('nan') if dtype != 'int32' else -(2**31),
+                _output_poison(dtype),
                 dtype=dtypes[dtype], device='cuda:0')
             for name, shape, dtype, mode in manifest.tensor_abi
         ]
@@ -835,8 +858,7 @@ class LoadedTorchTensorCandidate:
         if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
             raise ValueError('fresh tensor argument count differs')
         sets = [[argument if mode == 'input' else torch.full_like(argument,
-                    (torch.finfo(argument.dtype).max if self._native_inputs is not None else float('nan'))
-                    if dtype != 'int32' else -(2**31))
+                    _output_poison(dtype, finite=self._native_inputs is not None))
                  for (_, _, dtype, mode), argument in zip(self.manifest.tensor_abi, self.arguments, strict=True)]
                 for _ in range(count)]
         if self.candidate.is_program:
@@ -870,8 +892,11 @@ class LoadedTorchTensorCandidate:
         observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
                     in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'output'}
         after = {}
-        for (name, _, _, mode), value in zip(self.manifest.tensor_abi, arguments, strict=True):
+        for (name, _, dtype, mode), value in zip(self.manifest.tensor_abi, arguments, strict=True):
             if mode != 'input':
+                continue
+            if dtype in {'int64', 'bool'}:
+                after[name] = value.detach().cpu().reshape(-1).tolist()
                 continue
             host = value.detach().to(device='cpu', dtype=torch.float64).contiguous()
             values = array('d')
@@ -893,8 +918,7 @@ class LoadedTorchTensorCandidate:
         for (_, _, dtype, mode), argument in zip(manifest.tensor_abi, self.arguments, strict=True):
             if mode == 'output':
                 import torch
-                argument.fill_((torch.finfo(argument.dtype).max if self._native_inputs is not None else float('nan'))
-                               if dtype != 'int32' else -(2**31))
+                argument.fill_(_output_poison(dtype, finite=self._native_inputs is not None))
         before = self.loaded.launch_calls
         self.launch()
         observed, after = self.snapshot()

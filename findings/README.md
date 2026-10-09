@@ -258,3 +258,5 @@ Output-prefix003 preserves original002 at751ead87; main002 describes independent
 - F-2026-10-04-003 — grouped DCU MoE masks ragged inputs but still computes padded dot tiles; an existing valid-prefix output can prove a whole program has no observable stores. Shared lowering and runtime work analysis are proposed together; masked inputs, dense outputs and atomic/state effects do not authorize pruning. Bounded qualification passed; review and integration status are owned by the canonical Finding.
 
 The output-prefix pruning record first published as F-2026-10-04-002 on task/core-valid-extent-work-pruning-20261004 is assigned global sequence003 here. Original record and evidence remain at751ead87; main sequence002 belongs to the separate local-device admission observation.
+
+- [F-2026-10-09-009](2026-10-09-009-int64-bool-storage.json) — add explicit INT64/BOOL storage and conversion semantics for original Bench input ABIs; software verification is bounded, native-device qualification remains open.

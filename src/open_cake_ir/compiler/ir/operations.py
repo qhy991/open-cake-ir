@@ -67,6 +67,20 @@ def elementwise_result_dtype(operands: Iterable[DType], op: ElementwiseOp | None
     return None
 
 
+def cast_supported(source: DType, target: DType) -> bool:
+    """Explicit storage conversions; integer-to-FP32 rounds nearest, ties to even.
+
+    BOOL converts exactly to zero or one. INT32-to-INT64 is exact. INT64-to-FP32
+    may lose integer precision but stays finite across the signed 64-bit domain.
+    Integer narrowing and numeric-to-BOOL have no implicit conversion rule.
+    """
+    floating = ELEMENTWISE_FLOAT_DTYPES | {DType.FP8_E4M3}
+    return (source in floating and target in floating
+            or source in {DType.INT32, DType.INT64, DType.BOOL} and target is DType.FP32
+            or source is DType.INT32 and target is DType.INT64
+            or source is DType.BOOL and target is DType.INT32)
+
+
 @dataclass(frozen=True)
 class LoadParameters:
     movement: LoadMovement

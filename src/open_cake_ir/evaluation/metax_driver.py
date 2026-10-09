@@ -107,6 +107,7 @@ class LoadedMetaxCandidate:
             raise ValueError("MACA launch tensor contract differs")
         dtype_names = {"fp32": "torch.float32", "fp16": "torch.float16",
                        "bf16": "torch.bfloat16", "int32": "torch.int32",
+                       "int64": "torch.int64", "bool": "torch.bool",
                        "fp8_e4m3": "torch.float8_e4m3fn"}
         pointers = []
         for (name, shape, dtype, _mode), argument in zip(self.manifest.tensor_abi, arguments, strict=True):
@@ -114,10 +115,10 @@ class LoadedMetaxCandidate:
                     or str(argument.dtype) != dtype_names.get(dtype)
                     or argument.device.type != "cuda" or argument.device.index != 0):
                 raise ValueError(f"MACA tensor {name!r} differs from its sealed ABI")
-            if dtype == "fp8_e4m3":
+            if dtype in {"fp8_e4m3", "int64", "bool"}:
                 from ..compiler.ir import DType
-                if argument.element_size() != DType.FP8_E4M3.itemsize:
-                    raise ValueError(f"MACA tensor {name!r} differs from its sealed FP8 storage width")
+                if argument.element_size() != DType(dtype).itemsize:
+                    raise ValueError(f"MACA tensor {name!r} differs from its sealed storage width")
             pointer = argument.data_ptr()
             if type(pointer) is not int or pointer <= 0:
                 raise ValueError(f"MACA tensor {name!r} has no device address")
