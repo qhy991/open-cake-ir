@@ -85,7 +85,8 @@ class HostOutputOwnership(unittest.TestCase):
             access.update(operation='second_store',buffer='second_output');d['access_maps'].append(access)
             d['outputs'].append('second_output')
         typed=Schedule.from_dict(d);target=Target.load(ROOT/'compiler/targets'/(typed.target+'.json'))
-        source=emit(typed,target).source;tree=ast.parse(source)
+        emission=emit(typed,target)
+        source=emission.source;tree=ast.parse(source)
         entry=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==d['lowering']['entry_point'])
         allocated=[];launches=[];selections=[]
         def empty(shape,*,dtype,device):
@@ -95,6 +96,8 @@ class HostOutputOwnership(unittest.TestCase):
                 selections.append(grid)
                 def run(*args,**options):
                     assert len(selections)==1, 'static grid should be bound once at module initialization'
+                    assert options == {**emission.toolchain['compile_constants'],
+                                       **emission.toolchain['compile_options']}
                     globals_ = [b for b in typed.buffers if b.space.value == 'global']
                     if target_id == 'gfx938':
                         assert [t.ptr_range() for t in args] == [b.elements*b.dtype.itemsize for b in globals_]
