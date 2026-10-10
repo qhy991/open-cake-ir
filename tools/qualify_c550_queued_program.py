@@ -11,7 +11,7 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'src'), str(ROOT/'tools')]
-from benchmarks.c550.default_stream_adapter import CompleteLaunchCapture, CaptureFailure, prepare_helper
+from open_cake_ir.evaluation.metax_queued_events import CompleteLaunchCapture, CaptureFailure, prepare_helper
 from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate, compare_tile_outputs, _plain_json
 from open_cake_ir.tasks.c550_bench.workload import _recorded_statistics
 

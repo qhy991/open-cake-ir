@@ -27,7 +27,7 @@ open-cake-ir = "open_cake_ir.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-open_cake_ir = ["tasks/qsa/assets/*.cu", "tasks/qsa/assets/*.json", "lab/metal/*.swift", "evaluation/metal/*.swift", "evaluation/metax_native_events.cc"]
+open_cake_ir = ["tasks/qsa/assets/*.cu", "tasks/qsa/assets/*.json", "lab/metal/*.swift", "evaluation/metal/*.swift", "evaluation/metax_native_events.cc", "evaluation/metax_queued_gate.cc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

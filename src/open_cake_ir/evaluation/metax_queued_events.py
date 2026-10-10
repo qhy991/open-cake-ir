@@ -1,4 +1,4 @@
-"""Component-only complete-launch capture. No production timer registration."""
+"""Complete-launch queued event capture; production registration is separate."""
 from __future__ import annotations
 import ctypes as C
 import math
@@ -7,6 +7,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+
+from .loaders import UndrainedDeviceWork
+from open_cake_ir.serialization import canonical_json_bytes
 
 _HELPER = None
 _BUILD = None
@@ -30,6 +33,8 @@ def prepare_helper():
     global _HELPER, _BUILD
     if _HELPER is not None:
         return _HELPER
+    if os.environ.get('METAL_BROKER_LOCK_FD') or os.environ.get('GPUQ_JOB_ID'):
+        raise ValueError('host gate compilation must precede device allocation')
     compiler = shutil.which('c++')
     if compiler is None:
         raise ValueError('complete-launch gate requires a host C++ compiler')
@@ -39,7 +44,7 @@ def prepare_helper():
         'CUDA_VISIBLE_DEVICES','MACA_VISIBLE_DEVICES','MCR_VISIBLE_DEVICES',
         'HIP_VISIBLE_DEVICES','ROCR_VISIBLE_DEVICES')}}
     result = subprocess.run([compiler,'-std=c++17','-O2','-shared','-fPIC','-pthread',
-        str(Path(__file__).with_name('default_stream_gate.cc')),
+        str(Path(__file__).with_name('metax_queued_gate.cc')),
         '-o',str(output)], capture_output=True, timeout=60, env=environment)
     if result.returncode:
         directory.cleanup()
@@ -87,11 +92,14 @@ class CompleteLaunchCapture:
 
     def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
         import torch
+        if type(dry_run_iters) is not int or dry_run_iters != 11 or type(repeat_iters) is not int or repeat_iters not in (5, 10):
+            raise ValueError('complete-launch capture requires eleven warmups and five or ten samples')
+        count = dry_run_iters + repeat_iters
         if (self._failed or _RETAIN_UNTIL_EXIT or loaded.loaded.closed
                 or loaded.manifest.as_dict() != self.manifest.as_dict()
                 or loaded.loaded.manifest.as_dict() != self.manifest.as_dict()
-                or dry_run_iters != 11 or repeat_iters != 5 or len(arguments) != 16
-                or len({id(value) for value in arguments}) != 16):
+                or len(arguments) != count
+                or len({id(value) for value in arguments}) != count):
             raise ValueError('complete-launch manifest, ownership or cohort differs')
         def check_stream():
             if (not getattr(torch.version, 'maca', None)
@@ -130,10 +138,31 @@ class CompleteLaunchCapture:
             finally:
                 stage_counts.append(loaded.loaded.launch_calls - before)
         reset_callback, launch_callback = _RESET(reset), _LAUNCH(launch)
-        values = (C.c_float * 5)()
+        values = (C.c_float * repeat_iters)()
         completed, phase, cleanup, drained = C.c_uint(), C.c_uint(), C.c_int(), C.c_uint()
-        status = _HELPER.cake_default_stream_cohort(self._api, reset_callback, launch_callback,
-            None, 11, 5, values, C.byref(completed), C.byref(phase), C.byref(cleanup), C.byref(drained))
+        owners = (self, loaded, arguments, reset_callback, launch_callback, _HELPER)
+        try:
+            status = _HELPER.cake_default_stream_cohort(self._api, reset_callback, launch_callback,
+                None, dry_run_iters, repeat_iters, values, C.byref(completed), C.byref(phase), C.byref(cleanup), C.byref(drained))
+        except BaseException as error:
+            self._failed = True
+            if not drained.value or isinstance(error, UndrainedDeviceWork):
+                _RETAIN_UNTIL_EXIT.append(owners)
+                failure = CaptureFailure({'phase':'native_call_interrupted', 'drained':bool(drained.value),
+                    'capture_completed':False, 'requires_process_exit':True}, unsafe_to_release=True)
+                self.last_activity = failure.observation
+                raise failure from error
+            raise
+        terminal = next((error for error in errors if isinstance(error, UndrainedDeviceWork)), None)
+        unsafe = not drained.value or terminal is not None
+        if unsafe:
+            self._failed = True
+            _RETAIN_UNTIL_EXIT.append(owners)
+        def message(error):
+            try:
+                return str(error)
+            except BaseException:
+                return '<exception message unavailable>'
         observation = {'kind':'unadmitted_complete_launch_gate_component',
             'performance_qualified':False, 'stream':0, 'profiler_enabled':False,
             'interval':'default_stream_events_after_complete_launch_is_queued',
@@ -141,18 +170,17 @@ class CompleteLaunchCapture:
             'status':status, 'phase':phase.value, 'cleanup_status':cleanup.value,
             'drained':bool(drained.value), 'completed_callbacks':completed.value,
             'stage_calls_per_invocation':stage_counts, 'observed_stage_calls':sum(stage_counts),
-            'raw_event_slots_ms':[float(value) for value in values],
-            'callback_errors':[{'type':type(e).__name__,'message':str(e)} for e in errors]}
+            'warmup_calls':dry_run_iters, 'sample_count':repeat_iters,
+            'raw_event_slots_ms':[float(value) if math.isfinite(value) else str(float(value)) for value in values],
+            'callback_errors':[{'type':type(e).__name__,'message':message(e)} for e in errors]}
         complete = bool(drained.value and not status and not cleanup.value and not errors
-            and completed.value == 16 and invoked == 16
-            and stage_counts == [self.manifest.kernels_per_call] * 16
+            and completed.value == count and invoked == count
+            and stage_counts == [self.manifest.kernels_per_call] * count
             and all(math.isfinite(value) and value > 0 for value in values))
-        observation.update(capture_completed=complete, requires_process_exit=not bool(drained.value))
+        observation.update(capture_completed=complete, requires_process_exit=unsafe)
         self.last_activity = observation
-        if not drained.value:
-            self._failed = True
-            _RETAIN_UNTIL_EXIT.append((self, loaded, arguments, reset_callback, launch_callback, _HELPER))
-            raise CaptureFailure(observation, unsafe_to_release=True)
+        if unsafe:
+            raise CaptureFailure(observation, unsafe_to_release=True) from terminal
         if not complete:
             self._failed = True
             failure = CaptureFailure(observation)
@@ -160,3 +188,28 @@ class CompleteLaunchCapture:
                 raise failure from errors[0]
             raise failure
         return list(values)
+
+
+class MacaQueuedEventBenchmark(CompleteLaunchCapture):
+    """Ten complete-launch observations with the common terminal worker contract.
+
+    This adapter is not a production policy registration or performance gate.
+    The caller prepares the helper before allocation and owns the original oracle.
+    """
+    def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
+        if type(repeat_iters) is not int or repeat_iters != 10:
+            raise ValueError('queued measurement requires exactly ten samples')
+        try:
+            return super().capture_loaded_cohort(loaded, arguments,
+                dry_run_iters=dry_run_iters, repeat_iters=repeat_iters)
+        except CaptureFailure as failure:
+            if not failure.unsafe_to_release:
+                raise
+            terminal = (failure.__cause__ if isinstance(failure.__cause__, UndrainedDeviceWork)
+                        else UndrainedDeviceWork('queued capture could not establish safe device ownership'))
+            terminal.retain(self, loaded, arguments, failure)
+            try:
+                terminal.artifact_payloads['native_observation'] = canonical_json_bytes(failure.observation)
+            except BaseException:
+                terminal.artifact_payloads['native_observation'] = b'{"diagnostic_serialization_failed":true,"requires_process_exit":true}'
+            raise terminal from None

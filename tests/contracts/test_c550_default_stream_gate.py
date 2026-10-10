@@ -19,7 +19,7 @@ class DefaultStreamGate(unittest.TestCase):
         cls.directory=tempfile.TemporaryDirectory()
         library=Path(cls.directory.name)/'gate.so'
         subprocess.run([compiler,'-std=c++17','-O2','-shared','-fPIC','-pthread',
-            str(ROOT/'tools/benchmarks/c550/default_stream_gate.cc'),'-o',str(library)],check=True,capture_output=True)
+            str(ROOT/'src/open_cake_ir/evaluation/metax_queued_gate.cc'),'-o',str(library)],check=True,capture_output=True)
         cls.helper=C.CDLL(str(library)).cake_default_stream_cohort
         cls.reset_type=C.CFUNCTYPE(C.c_int,C.c_void_p)
         cls.launch_type=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_uint)

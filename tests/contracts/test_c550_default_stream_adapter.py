@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
-from benchmarks.c550 import default_stream_adapter as adapter
+from open_cake_ir.evaluation import metax_queued_events as adapter
 from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
 from tests.contracts import test_metax_program_events as fixtures
 
@@ -44,7 +44,7 @@ class CompleteLaunchAdapter(unittest.TestCase):
         adapter.prepare_helper()
         fixtures.ProgramEvents.setUpClass()
 
-    def fixture(self, *, fail_drain=False, invalid_sample=False):
+    def fixture(self, *, fail_drain=False, invalid_sample=False, timer_type=None):
         holder=fixtures.ProgramEvents()
         loaded,arguments,torch,calls,_=holder.fixture()
         torch.cuda.current_stream=lambda:NS(cuda_stream=0)
@@ -52,7 +52,7 @@ class CompleteLaunchAdapter(unittest.TestCase):
         admission=MetaxDeviceAdmission('maca-123456789abc','xcore1002','xcore1002',
             'MetaX C550',64,'0000:0f:00','/cpu-runtime-double.so')
         with patch.object(adapter.C,'CDLL',return_value=runtime.symbols):
-            timer=adapter.CompleteLaunchCapture(loaded.manifest,admission)
+            timer=(timer_type or adapter.CompleteLaunchCapture)(loaded.manifest,admission)
         def cleanup():
             # Only CPU fixtures are released here; no device resource exists.
             adapter._RETAIN_UNTIL_EXIT.clear()

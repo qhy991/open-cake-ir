@@ -28,7 +28,7 @@ gates. Program mutation controls are covered below.
 
 ## Component tensor adapter
 
-`default_stream_adapter.prepare_helper()` compiles host code before allocation.
+`open_cake_ir.evaluation.metax_queued_events.prepare_helper()` compiles host code before allocation.
 `CompleteLaunchCapture` then binds an exact admitted C550 runtime. It delegates
 the full call to the existing loader, checks actual stage deltas and catches
 callback exceptions before crossing the C ABI. It accesses no private Program

@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tools'))
 import qualify_c550_queued_program as entry
-from benchmarks.c550.default_stream_adapter import CaptureFailure
+from open_cake_ir.evaluation.metax_queued_events import CaptureFailure
 
 
 class QueuedEntry(unittest.TestCase):
