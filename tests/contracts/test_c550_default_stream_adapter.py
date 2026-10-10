@@ -14,7 +14,7 @@ from tests.contracts import test_metax_program_events as fixtures
 
 
 class Runtime:
-    def __init__(self, *, fail_drain=False):
+    def __init__(self, *, fail_drain=False, invalid_sample=False):
         self.threads=[];self.counter=0;self.fail_drain=fail_drain
         Create=C.CFUNCTYPE(C.c_int,C.POINTER(C.c_void_p),C.c_uint)
         Record=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_void_p)
@@ -26,7 +26,7 @@ class Runtime:
         def join(handle):
             for t in self.threads:t.join(timeout=3)
             return 99 if any(t.is_alive() for t in self.threads) else 0
-        def elapsed(out,begin,end):out[0]=.125;return 0
+        def elapsed(out,begin,end):out[0]=float('nan') if invalid_sample else .125;return 0
         def host(stream,callback,pointer):
             cb=C.CFUNCTYPE(None,C.c_void_p)(callback)
             t=threading.Thread(target=cb,args=(pointer,));t.start();self.threads.append(t);return 0
@@ -44,11 +44,11 @@ class CompleteLaunchAdapter(unittest.TestCase):
         adapter.prepare_helper()
         fixtures.ProgramEvents.setUpClass()
 
-    def fixture(self, *, fail_drain=False):
+    def fixture(self, *, fail_drain=False, invalid_sample=False):
         holder=fixtures.ProgramEvents()
         loaded,arguments,torch,calls,_=holder.fixture()
         torch.cuda.current_stream=lambda:NS(cuda_stream=0)
-        runtime=Runtime(fail_drain=fail_drain)
+        runtime=Runtime(fail_drain=fail_drain,invalid_sample=invalid_sample)
         admission=MetaxDeviceAdmission('maca-123456789abc','xcore1002','xcore1002',
             'MetaX C550',64,'0000:0f:00','/cpu-runtime-double.so')
         with patch.object(adapter.C,'CDLL',return_value=runtime.symbols):
@@ -137,3 +137,12 @@ class CompleteLaunchAdapter(unittest.TestCase):
         args[1]=args[0]
         with self.assertRaises(ValueError):self.capture(timer,loaded,args,torch)
         self.assertEqual(calls,[])
+
+    def test_native_status_zero_does_not_admit_invalid_event_values(self):
+        timer,loaded,args,torch,calls,_=self.fixture(invalid_sample=True)
+        with self.assertRaises(adapter.CaptureFailure) as caught:self.capture(timer,loaded,args,torch)
+        observation=caught.exception.observation
+        self.assertEqual(observation['status'],0)
+        self.assertFalse(observation['capture_completed'])
+        self.assertFalse(observation['performance_qualified'])
+        self.assertFalse(caught.exception.unsafe_to_release)

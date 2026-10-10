@@ -143,14 +143,17 @@ class CompleteLaunchCapture:
             'stage_calls_per_invocation':stage_counts, 'observed_stage_calls':sum(stage_counts),
             'raw_event_slots_ms':[float(value) for value in values],
             'callback_errors':[{'type':type(e).__name__,'message':str(e)} for e in errors]}
+        complete = bool(drained.value and not status and not cleanup.value and not errors
+            and completed.value == 16 and invoked == 16
+            and stage_counts == [self.manifest.kernels_per_call] * 16
+            and all(math.isfinite(value) and value > 0 for value in values))
+        observation.update(capture_completed=complete, requires_process_exit=not bool(drained.value))
         self.last_activity = observation
         if not drained.value:
             self._failed = True
             _RETAIN_UNTIL_EXIT.append((self, loaded, arguments, reset_callback, launch_callback, _HELPER))
             raise CaptureFailure(observation, unsafe_to_release=True)
-        if (status or cleanup.value or errors or completed.value != 16 or invoked != 16
-                or stage_counts != [self.manifest.kernels_per_call] * 16
-                or any(not math.isfinite(value) or value <= 0 for value in values)):
+        if not complete:
             self._failed = True
             failure = CaptureFailure(observation)
             if errors:

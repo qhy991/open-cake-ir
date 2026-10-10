@@ -24,4 +24,27 @@ The CPU tests compile this exact C++ source and substitute runtime callbacks.
 They cover full callback order, stream-zero submissions, partial callback and end
 submission failures, cleanup failure, and bounded timeout. Their sentinel event
 values are not physical timings. Exact-target device semantics, Program mutation
-controls, a tensor adapter, and a separately frozen protocol remain future gates.
+controls, a device entry and a separately frozen protocol remain future gates.
+
+## Component tensor adapter
+
+`default_stream_adapter.prepare_helper()` compiles host code before allocation.
+`CompleteLaunchCapture` then binds an exact admitted C550 runtime. It delegates
+the full call to the existing loader, checks actual stage deltas and catches
+callback exceptions before crossing the C ABI. It accesses no private Program
+children or prepared-storage tables. It is not registered in the evaluator.
+
+Real Program CPU fixtures cover current/bound stream mismatch, storage rebound
+after preparation, omitted stages, partial stage failure, duplicate argument sets,
+physical-target versus codegen-family mismatch, and unsafe resource retention.
+Native status zero alone does not imply capture completion or usable samples.
+
+If `CaptureFailure.unsafe_to_release` is true, the adapter retains the tensor,
+module, callback and helper owners and refuses further captures. A dedicated
+component worker must persist the failure and terminate without running an
+ordinary finally-unload path. Raw invalid event slots may be nonfinite; the
+diagnostic writer must retain them with explicit nonfinite encoding. The adapter
+is not a drop-in replacement for the production worker's teardown policy.
+
+Exact-target device validation remains outstanding. No production protocol or
+performance qualification is introduced by the adapter.
