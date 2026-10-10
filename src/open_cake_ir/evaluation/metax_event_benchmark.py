@@ -295,7 +295,7 @@ def _validate_samples(record, sample_count):
 def validate_paired_events(raw, protocol):
     from .core import TensorLaunchManifest
     from .program import ProgramLaunchManifest
-    from .paired import PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND, PAIRED_MACA_GATED_EVENT_KIND
+    from .paired import PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND, PAIRED_MACA_GATED_EVENT_KIND, PAIRED_MACA_QUEUED_EVENT_KIND
     documents, participants = raw.get('launch_manifests'), raw.get('participants')
     if (not isinstance(documents, Mapping) or set(documents) != set(protocol.arms)
             or not isinstance(participants, Mapping) or set(participants) != set(protocol.arms)):
@@ -310,6 +310,10 @@ def validate_paired_events(raw, protocol):
                 or manifest.case_id != raw.get('case_id')):
             raise ValueError('MACA event manifest differs from its sealed participant')
         for measurement in raw['measurements']:
+            if raw['kind'] == PAIRED_MACA_QUEUED_EVENT_KIND:
+                from .metax_queued_events import validate_cohort as validate_queued_cohort
+                validate_queued_cohort(measurement['arms'][role],manifest,sample_count=protocol.samples_per_cohort)
+                continue
             validate_cohort(measurement['arms'][role], manifest,
                             sample_count=protocol.samples_per_cohort,
                             native=raw['kind'] == PAIRED_MACA_NATIVE_EVENT_KIND,

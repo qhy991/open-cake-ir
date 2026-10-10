@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Mapping
 
 from .loaders import UndrainedDeviceWork
 from open_cake_ir.serialization import canonical_json_bytes
@@ -19,6 +20,19 @@ _LAUNCH = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint)
 SYMBOLS = ('mcEventCreateWithFlags', 'mcEventRecord', 'mcEventSynchronize',
            'mcEventElapsedTime', 'mcEventDestroy', 'mcStreamCreateWithFlags',
            'mcStreamDestroy', 'mcStreamWaitEvent', 'mcLaunchHostFunc', 'mcStreamSynchronize')
+TIMER = 'maca_fully_queued_default_stream_event_elapsed_ms'
+INTERVAL = 'default_stream_events_after_complete_launch_is_queued'
+RESET = 'one_fp32_fill_4x_declared_l2_before_warmups_and_each_sample'
+
+
+def _event_descriptor(manifest, target):
+    from .program import ProgramLaunchManifest
+    return {'kind':'maca_queued_event_samples_v1', 'timer':TIMER, 'interval':INTERVAL,
+        'cache_policy':RESET, 'profiler_enabled':False, 'target':manifest.target,
+        'device':0, 'stream':0, 'l2_cache_bytes':target.l2_cache_bytes,
+        'reset_bytes':4*target.l2_cache_bytes, 'warmup_calls':11,
+        'stage_names':([stage.name for stage in manifest.program.stages]
+                       if isinstance(manifest,ProgramLaunchManifest) else [manifest.kernel_name])}
 
 
 class CaptureFailure(RuntimeError):
@@ -74,7 +88,8 @@ class CompleteLaunchCapture:
         if (target.target_id != 'xcore1002' or admission.target != target.target_id
                 or admission.device_arch != target.target_id
                 or admission.warp_size != target.warp_size
-                or admission.device_name not in target.device_names):
+                or admission.device_name not in target.device_names
+                or type(target.l2_cache_bytes) is not int or target.l2_cache_bytes <= 0):
             raise ValueError('complete-launch component requires exact admitted C550')
         if ((isinstance(manifest, ProgramLaunchManifest) and manifest.aligned_stages)
                 or (not isinstance(manifest, ProgramLaunchManifest) and manifest.aligned_variant)):
@@ -165,8 +180,7 @@ class CompleteLaunchCapture:
                 return '<exception message unavailable>'
         observation = {'kind':'unadmitted_complete_launch_gate_component',
             'performance_qualified':False, 'stream':0, 'profiler_enabled':False,
-            'interval':'default_stream_events_after_complete_launch_is_queued',
-            'reset':'one_fp32_fill_4x_declared_l2_before_warmups_and_each_sample',
+            'interval':INTERVAL, 'reset':RESET,
             'status':status, 'phase':phase.value, 'cleanup_status':cleanup.value,
             'drained':bool(drained.value), 'completed_callbacks':completed.value,
             'stage_calls_per_invocation':stage_counts, 'observed_stage_calls':sum(stage_counts),
@@ -200,7 +214,7 @@ class MacaQueuedEventBenchmark(CompleteLaunchCapture):
         if type(repeat_iters) is not int or repeat_iters != 5:
             raise ValueError('queued measurement requires five samples per AB/BA cohort')
         try:
-            return super().capture_loaded_cohort(loaded, arguments,
+            samples = super().capture_loaded_cohort(loaded, arguments,
                 dry_run_iters=dry_run_iters, repeat_iters=repeat_iters)
         except CaptureFailure as failure:
             if not failure.unsafe_to_release:
@@ -213,3 +227,42 @@ class MacaQueuedEventBenchmark(CompleteLaunchCapture):
             except BaseException:
                 terminal.artifact_payloads['native_observation'] = b'{"diagnostic_serialization_failed":true,"requires_process_exit":true}'
             raise terminal from None
+        capture = self.last_activity
+        self.last_activity = {**_event_descriptor(self.manifest,self.target), 'capture':capture,
+            'samples':[{'index':i,'elapsed_ms':value,'reset_enqueued_before_start':True,
+                        'end_synchronized':True} for i,value in enumerate(samples)]}
+        return samples
+
+
+def validate_cohort(record, manifest, *, sample_count):
+    """Keep this interval distinct from the older submission-gap observations."""
+    from open_cake_ir.compiler.target import declared_target
+    from .program import ProgramLaunchManifest
+    from .metax_event_benchmark import _validate_samples
+    target=declared_target(manifest.target)
+    if (manifest.target!='xcore1002' or type(target.l2_cache_bytes) is not int
+            or target.l2_cache_bytes<=0):
+        raise ValueError('queued events require exact C550 and its declared L2')
+    expected=_event_descriptor(manifest,target)
+    raw=record.get('native_activity')
+    if (sample_count!=5 or manifest.target!='xcore1002'
+            or (manifest.aligned_stages if isinstance(manifest,ProgramLaunchManifest) else manifest.aligned_variant)
+            or not isinstance(raw,Mapping) or set(raw)!=set(expected)|{'capture','samples'}
+            or any(raw.get(key)!=value or type(raw.get(key)) is not type(value) for key,value in expected.items())
+            or record.get('non_target_dispatches') is not None):
+        raise ValueError('queued event interval, target, reset or complete-launch binding differs')
+    _validate_samples(record,sample_count)
+    capture=raw['capture']
+    fixed={'kind':'unadmitted_complete_launch_gate_component','performance_qualified':False,
+        'stream':0,'profiler_enabled':False,'interval':INTERVAL,'reset':RESET,
+        'status':0,'phase':20,'cleanup_status':0,'drained':True,
+        'completed_callbacks':16,'warmup_calls':11,'sample_count':5,
+        'observed_stage_calls':16*manifest.kernels_per_call,
+        'capture_completed':True,'requires_process_exit':False}
+    if (not isinstance(capture,Mapping)
+            or any(capture.get(key)!=value or type(capture.get(key)) is not type(value) for key,value in fixed.items())
+            or capture.get('callback_errors')!=[]
+            or capture.get('stage_calls_per_invocation')!=[manifest.kernels_per_call]*16
+            or any(type(value) is not int for value in capture.get('stage_calls_per_invocation',[]))
+            or capture.get('raw_event_slots_ms')!=record['samples_ms']):
+        raise ValueError('queued event native completion, samples or stage accounting differs')

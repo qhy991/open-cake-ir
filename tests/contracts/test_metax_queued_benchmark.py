@@ -1,5 +1,6 @@
 """Ten-sample capture and terminal propagation through the existing cohort owner."""
 import json
+from copy import deepcopy
 import os
 import sys
 from types import SimpleNamespace as NS
@@ -10,6 +11,7 @@ from open_cake_ir.evaluation import metax_queued_events as adapter
 from open_cake_ir.evaluation.loaders import UndrainedDeviceWork
 from open_cake_ir.tasks.evaluate import capture_tile_cohort
 from tests.contracts import test_c550_default_stream_adapter as fixtures
+from tests.contracts import test_metax_program_events as program_fixtures
 
 
 class QueuedBenchmark(unittest.TestCase):
@@ -37,11 +39,58 @@ class QueuedBenchmark(unittest.TestCase):
         self.assertEqual(len({id(values) for values in args+more}),32)
         self.assertEqual(calls,['first','second']*32)
         self.assertTrue(all(values[-1].data==[3,4,5,6] for values in args+more))
-        self.assertEqual(timer.last_activity['completed_callbacks'],16)
-        self.assertEqual(timer.last_activity['sample_count'],5)
-        self.assertEqual(timer.last_activity['observed_stage_calls'],32)
-        self.assertFalse(timer.last_activity['performance_qualified'])
+        self.assertEqual(timer.last_activity['capture']['completed_callbacks'],16)
+        self.assertEqual(timer.last_activity['capture']['sample_count'],5)
+        self.assertEqual(timer.last_activity['capture']['observed_stage_calls'],32)
+        self.assertFalse(timer.last_activity['capture']['performance_qualified'])
         loaded.release_argument_sets.assert_not_called()
+
+    def test_new_protocol_uses_existing_mean10_and_does_not_relabel_old_events(self):
+        from open_cake_ir.tasks.normalization.study import evaluation_policy
+        from open_cake_ir.evaluation.paired import paired_protocol, PAIRED_MACA_QUEUED_EVENT_KIND
+        policy=evaluation_policy(program_fixtures.ProgramEvents.workload,metax_queued_mean10=True)
+        protocol=paired_protocol(policy)
+        self.assertEqual(policy['paired_timing']['kind'],PAIRED_MACA_QUEUED_EVENT_KIND)
+        self.assertEqual(protocol.samples_per_cohort*len(protocol.pair_order),10)
+        self.assertEqual(protocol.route_calls_per_cohort,16)
+        self.assertEqual(protocol.statistic,'mean')
+        self.assertIsNone(protocol.maximum_cv)
+        timer,loaded,_,torch,_,_=self.fixture()
+        samples,args=self.capture(timer,loaded,torch)
+        record=dict(native_activity=deepcopy(timer.last_activity),samples_ms=samples)
+        adapter.validate_cohort(record,loaded.manifest,sample_count=5)
+        for field,value in [('kind','maca_program_event_samples_v1'),('interval','including_submission_gaps'),
+                            ('profiler_enabled',True),('stage_names',['wrong'])]:
+            changed=deepcopy(record);changed['native_activity'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                adapter.validate_cohort(changed,loaded.manifest,sample_count=5)
+        for field,value in [('drained',False),('requires_process_exit',True),('completed_callbacks',15),
+                            ('status',1),('observed_stage_calls',31),('callback_errors',[{}])]:
+            changed=deepcopy(record);changed['native_activity']['capture'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                adapter.validate_cohort(changed,loaded.manifest,sample_count=5)
+        changed=deepcopy(record);changed['samples_ms'][0]+=1
+        with self.assertRaises(ValueError):adapter.validate_cohort(changed,loaded.manifest,sample_count=5)
+
+    def test_worker_prepares_the_helper_before_local_allocation(self):
+        from open_cake_ir.tasks import evaluate as worker
+        from open_cake_ir.tasks.normalization.study import evaluation_policy
+        holder=program_fixtures.ProgramEvents
+        timer,loaded,_,torch,_,_=self.fixture()
+        authority=NS(allocation_mode='local_serialized',candidate=holder.candidate,baseline=holder.candidate,
+            manifest=loaded.manifest,timed_assay_available=True,
+            request={'purpose':'search','evaluation_protocol':evaluation_policy(holder.workload,metax_queued_mean10=True)},
+            workload=NS(requires_target_preparation=True))
+        with patch.object(adapter,'prepare_helper') as prepare:
+            self.assertIs(worker._prepare_local_tensor_work(authority,'maca'),authority)
+        prepare.assert_called_once_with()
+        from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
+        admission=MetaxDeviceAdmission('maca-123456789abc','xcore1002','xcore1002',
+            'MetaX C550',64,'0000:0f:00','/cpu-runtime-double.so')
+        authority.executor=NS(admit_host=lambda:{'runtime_library':admission.runtime_library})
+        with patch.object(worker,'_prepare_target_tensor_work',return_value=authority),              patch.object(adapter,'MacaQueuedEventBenchmark') as factory,              patch.object(worker,'_evaluate_paired_tile',side_effect=lambda a,r,b,d:b('candidate',a.manifest)):
+            worker._evaluate_metax_candidate(authority,{},collect_timing=True,admission=admission)
+        factory.assert_called_once_with(loaded.manifest,admission)
 
     def test_adapter_refuses_twenty_sample_pair_before_any_dispatch(self):
         timer,loaded,args,torch,calls,_=self.fixture()

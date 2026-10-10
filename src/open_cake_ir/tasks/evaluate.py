@@ -190,6 +190,11 @@ def _prepare_local_tensor_work(authority, kind):
             and authority.request['purpose'] != 'attribution'):
         from open_cake_ir.evaluation.metax_native_events import prepare_helper
         prepare_helper()  # Host compilation precedes the device lease.
+    from open_cake_ir.evaluation.paired import PAIRED_MACA_QUEUED_EVENT_KIND
+    if (policy.get('paired_timing', {}).get('kind') == PAIRED_MACA_QUEUED_EVENT_KIND
+            and authority.request['purpose'] != 'attribution'):
+        from open_cake_ir.evaluation.metax_queued_events import prepare_helper
+        prepare_helper()
     if authority.workload.requires_target_preparation:
         # The original Bench factory and reference require the actual target.
         # They run after its lease is observed and before candidate measurement.
@@ -320,9 +325,9 @@ def _admit_program_assay(authority, *, collect_timing):
             admit_program_execution(candidate.target, timing=collect_timing,
                                     attribution=authority.request['purpose'] == 'attribution')
             if collect_timing and platform_for(candidate.target).code_object is CodeObject.MCFATBIN:
-                from open_cake_ir.evaluation.paired import PAIRED_MACA_EVENT_KIND
+                from open_cake_ir.evaluation.paired import PAIRED_MACA_EVENT_KIND, PAIRED_MACA_QUEUED_EVENT_KIND
                 timing = authority.request['evaluation_protocol'].get('paired_timing', {})
-                if timing.get('kind') != PAIRED_MACA_EVENT_KIND:
+                if timing.get('kind') not in {PAIRED_MACA_EVENT_KIND, PAIRED_MACA_QUEUED_EVENT_KIND}:
                     raise ValueError('MACA Program timing requires its complete default-stream event interval')
 
 
@@ -1156,6 +1161,11 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
         if authority.baseline is None:
             raise ValueError('MACA timing requires the declared paired baseline')
         from open_cake_ir.evaluation.paired import MACA_EVENT_KINDS, PAIRED_MACA_NATIVE_EVENT_KIND, PAIRED_MACA_TORCH_EVENT_KIND, PAIRED_MACA_GATED_EVENT_KIND
+        from open_cake_ir.evaluation.paired import PAIRED_MACA_QUEUED_EVENT_KIND
+        if authority.request['evaluation_protocol']['paired_timing']['kind'] == PAIRED_MACA_QUEUED_EVENT_KIND:
+            from open_cake_ir.evaluation.metax_queued_events import MacaQueuedEventBenchmark
+            _evaluate_paired_tile(authority,result,lambda role,manifest: MacaQueuedEventBenchmark(manifest,admission),admission)
+            return
         if authority.request['evaluation_protocol']['paired_timing']['kind'] in MACA_EVENT_KINDS:
             from open_cake_ir.evaluation.metax_event_benchmark import MacaEventBenchmark, MacaNativeEventBenchmark, MacaTorchResetEventBenchmark, MacaGatedEventBenchmark, MacaProgramEventBenchmark
             assay = (MacaGatedEventBenchmark if authority.request['evaluation_protocol']['paired_timing']['kind']
