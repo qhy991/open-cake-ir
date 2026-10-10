@@ -231,3 +231,7 @@ CAKE_DEMO_DIR=$(mktemp -d)
 
 作者：秦海岩（Haiyan Qin），联系：<haiyanq@buaa.edu.cn>。
 本项目是独立研究实现，不是 CAKE 论文的官方源码。
+
+### C550 验证交接
+
+[已验证范围、Compiler 改进候选与后续工作](docs/results/metax/VERIFICATION_HANDOFF_20261010.md)。组件验收、原始正确性和正式 Bench 优化分别报告。
