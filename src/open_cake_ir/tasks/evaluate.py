@@ -1562,6 +1562,7 @@ def main() -> int:
         # Evidence failure must not unwind through owners retained by the signal.
         try:
             result.update(error='evaluator_failed', failure_class=type(error).__name__, receipt=None)
+            print(f'{type(error).__name__}: {error}', file=sys.stderr, flush=True)
             _retain_failure_artifacts(result, error, request_path.parent)
             _write_new(args.output, result)
         finally:

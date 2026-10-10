@@ -94,6 +94,7 @@ finally:marker.write_text('finally ran')
             result=subprocess.run([sys.executable,'-c',code,str(request),str(output),str(marker),
                 'bad' if bad_artifact else 'valid'],env=env,capture_output=True,text=True,timeout=20)
             self.assertEqual(result.returncode,74,result.stderr)
+            self.assertIn('CPU injected undrained work',result.stderr)
             self.assertFalse(marker.exists())
             if occupied:self.assertEqual(output.read_text(),'retained')
             elif not bad_artifact:
