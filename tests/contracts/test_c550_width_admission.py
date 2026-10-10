@@ -1,5 +1,4 @@
 """Exact C550 pass outputs match device-qualified explicit candidates."""
-import ast
 from copy import deepcopy
 from pathlib import Path
 import unittest
@@ -7,7 +6,7 @@ import unittest
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.toolchain import project_triton_kernel
 from open_cake_ir.tasks.workloads import create_task
-from tools.benchmarks.c550.width_fixtures import extension_cases
+from tools.benchmarks.c550.width_fixtures import extension_cases, output_loop_cases
 from tools.qualify_c550_widths import CASES, width_source
 from tests.contracts.test_dcu_pure_width_specialization import document as pure_document
 
@@ -25,7 +24,7 @@ class C550WidthAdmission(unittest.TestCase):
             entry_point=doc['lowering']['entry_point'])
 
     def test_actual_pass_preserves_all_qualified_kernel_compile_inputs(self):
-        cases = extension_cases()
+        cases = extension_cases() + output_loop_cases()
         for task, rows, columns, widths in CASES:
             _, source = create_task(task, backend='triton-metax', rows=rows, columns=columns)
             cases.append(dict(name=task, widths=widths, source=source))
@@ -37,6 +36,9 @@ class C550WidthAdmission(unittest.TestCase):
                 with self.subTest(case=row['name'], width=width):
                     result = self.apply(original, width)
                     self.assertEqual(original, saved)
+                    if row['name'] == 'ieee_mma_output_loop':
+                        self.assertEqual(result.reason, 'loop_domain')
+                        continue
                     if width == 1:
                         self.assertEqual(result.reason, 'unchanged')
                         continue

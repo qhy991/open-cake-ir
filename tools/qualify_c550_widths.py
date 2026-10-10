@@ -84,9 +84,9 @@ def prepare(output, suite='initial'):
     compiler = Compiler.load(ROOT)
     rows = []
     refusals = []
-    if suite == 'extension':
-        from tools.benchmarks.c550.width_fixtures import extension_cases
-        cases = extension_cases()
+    if suite in {'extension', 'output-loop'}:
+        from tools.benchmarks.c550.width_fixtures import extension_cases, output_loop_cases
+        cases = extension_cases() if suite == 'extension' else output_loop_cases()
     else:
         cases = []
         for task, batch, hidden, widths in CASES:
@@ -101,14 +101,14 @@ def prepare(output, suite='initial'):
             try:
                 candidate = width_source(compiler, row['source'], width)
             except WidthCandidateRefused as error:
-                if suite != 'extension' or width != 16 or error.codes != ('MACA_WARP_COUNT_UNQUALIFIED',):
+                if suite not in {'extension', 'output-loop'} or width != 16 or error.codes != ('MACA_WARP_COUNT_UNQUALIFIED',):
                     raise
                 record = dict(name=name, task=row['task'], width=width, codes=error.codes,
                               scope='expected exact-route refusal; zero native or device calls')
                 write(directory / 'refused.json', record)
                 refusals.append(record)
                 continue
-            write(directory / 'workload.json' , row['workload'])
+            write(directory / 'workload.json', row['workload'])
             (directory / 'starter.py').write_text(candidate)
             write(directory / 'schedule.json', frontend.parse(candidate).document)
             rows.append(dict(name=name, task=row['task'], rows=row['rows'],
@@ -202,7 +202,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phase', choices=('prepare', 'build', 'check'))
     parser.add_argument('--input', type=Path)
-    parser.add_argument('--suite', choices=('initial', 'extension'), default='initial')
+    parser.add_argument('--suite', choices=('initial', 'extension', 'output-loop'), default='initial')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--physical-device', type=int)
     parser.add_argument('--runtime-device', type=int)

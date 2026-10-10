@@ -87,3 +87,12 @@ def extension_cases():
     add('rounded_mma_k_loop','fib_gemm_n128_k2048',5,128,depth=2048,
         transform=lambda source:_mma(source,mode='k_loop',rounded=True))
     return rows
+
+
+def output_loop_cases():
+    """An existing FP16 GEMM oracle for the pass's pure rounded output-loop domain."""
+    workload, source = create_task('fib_gemm_n128_k2048', backend='triton-metax',
+                                  rows=5, columns=128, depth=2048)
+    return [dict(name='rounded_mma_output_loop', task='fib_gemm_n128_k2048',
+                 rows=5, columns=128, widths=WIDTHS, workload=workload,
+                 source=_mma(source, mode='output_loop', rounded=True))]
