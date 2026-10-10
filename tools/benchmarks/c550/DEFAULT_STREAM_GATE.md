@@ -1,7 +1,7 @@
 # Default-stream gate component
 
 Related issue: #458. This native component has no production adapter or admission.
-It starts no Run, owns no device lease, and has no device qualification.
+It starts no Run and owns no device lease. Production qualification remains closed.
 
 The caller supplies the admitted MACA function table, its original single-fill
 reset callback and its complete launch callback. The component primes one event
@@ -23,8 +23,8 @@ it cannot reuse the component or report samples from the failed capture.
 The CPU tests compile this exact C++ source and substitute runtime callbacks.
 They cover full callback order, stream-zero submissions, partial callback and end
 submission failures, cleanup failure, and bounded timeout. Their sentinel event
-values are not physical timings. Exact-target device semantics, a device entry and a separately frozen protocol
-remain future gates. Program mutation controls are covered below.
+values are not physical timings. Broader task domains and a separately frozen production protocol remain future
+gates. Program mutation controls are covered below.
 
 ## Component tensor adapter
 
@@ -46,8 +46,8 @@ ordinary finally-unload path. Raw invalid event slots may be nonfinite; the
 diagnostic writer must retain them with explicit nonfinite encoding. The adapter
 is not a drop-in replacement for the production worker's teardown policy.
 
-Exact-target device validation remains outstanding. No production protocol or
-performance qualification is introduced by the adapter.
+Independent Bench task and production-protocol qualification remain outstanding.
+The adapter alone introduces no performance qualification.
 
 ## Dedicated component entry
 
@@ -69,8 +69,8 @@ exception. The fatal entry persists its observation and uses process exit 74
 without Python stack unwinding. If persistence fails, it still must not enter an
 unsafe cleanup path. CPU subprocess controls cover both cases.
 
-This entry has no device result yet. Host, source, build and exact physical lock
-qualification must precede its one bounded device block. Preserve the historical
+The bounded device result is recorded below. Host, source, build and exact
+physical lock qualification preceded that block. Preserve the historical
 A/A refusal, single-arm diagnostic and author qualification unchanged.
 
 ## Bounded component device evidence
