@@ -72,3 +72,36 @@ unsafe cleanup path. CPU subprocess controls cover both cases.
 This entry has no device result yet. Host, source, build and exact physical lock
 qualification must precede its one bounded device block. Preserve the historical
 A/A refusal, single-arm diagnostic and author qualification unchanged.
+
+## Bounded component device evidence
+
+A private successor of public 87b67327 passed 88 Linux contracts, the unchanged
+204-case Corpus Gate, host/isolation checks, and the same-source four-stage native
+build. The dedicated component block then completed once on C550.
+
+- All five original attention input cases passed preflight; each ran four stages.
+- Both capture cohorts checked all sixteen fresh-output Program calls. Each
+  cohort had eleven warmups and five samples, with 64 observed stage calls.
+- The injected sleeps were 5.0549–5.0585 ms. The corresponding device-event
+  observations were 24.832–25.600 us, satisfying the declared delay-exclusion
+  control. The normal cohort had 25.856–29.440 us observations. All values are
+  retained; no sample was removed and the block was not repeated.
+- Original postflight passed. Separate ordinary-launch profiling observed the
+  four stages in order with zero non-target dispatches. Profiling was not active
+  during event capture. Its span includes ordinary host submission gaps and is
+  not a performance comparison with the queued interval.
+- Total observed work was 160 native stage calls across this small component
+  block. This is not the original Bench's sixteen-by-ten correctness test.
+  Capture modules closed, the worker exited and physical locks were released.
+
+This supports the queued-interval mechanism on that fixture and exact runtime.
+It does not qualify a Bench task, explain the historical uninstrumented spike,
+or demonstrate an operator/Compiler speedup. Production registration remains
+closed. The retained run records `No promotion`.
+
+A production successor must review measurement semantics and safe worker teardown
+as one change. The ordinary common capture/evaluation finally blocks cannot
+release Program intermediates or modules after an undrained failure. After that
+review and software acceptance, freeze a distinct protocol and establish fresh
+per-task baselines, original correctness, common qualification and attribution.
+The historical A/A refusal and previous diagnostics keep their original results.
