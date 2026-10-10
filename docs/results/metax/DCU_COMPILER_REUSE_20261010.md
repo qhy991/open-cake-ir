@@ -3,8 +3,9 @@
 ## 后续设备进展
 
 执行组选择已完成 43 候选、215 项 C550 原正确性检查；有限域实现与审查见
-[执行组资格记录](WIDTH_QUALIFICATION_20261010.md)。目前没有性能结论，FP32 contraction
-到 IEEE MMA 的独立变换仍未对 C550 开门。下文源码对照保留当时的固定版本范围。
+[执行组资格记录](WIDTH_QUALIFICATION_20261010.md)。目前没有性能结论。FP32 contraction 到 IEEE MMA 的有限 NT 路径随后完成了
+[20 项原正确性与组合验证](FP32_CONTRACTION_QUALIFICATION_20261010.md)，KN 仍拒绝。
+下文源码对照保留当时的固定版本范围。
 
 ## 结论
 
