@@ -148,3 +148,35 @@ collisions are separate work before a new Compiler evaluation. Neither the old
 three-task Bench correctness nor the closed component result automatically
 qualifies the new source. Fresh qualification must preserve the original oracle,
 separate profiling, and the ten-sample contract without redrawing closed A/A.
+
+## RMS qualification at the combined successor
+
+A host-bound successor of public `3d28af7b` completed the fixed original RMS
+Bench at `ababa4c0`: all sixteen shapes and ten original rounds passed, with
+160 native calls. It uses the maintained MetaX Compiler capabilities and the
+queued paired worker in one frozen source. This establishes RMS coverage on
+that source, not coverage for the remaining nine Bench tasks.
+
+The single declared common qualification block then completed all sixteen
+same-artifact A/A comparisons and their separate attribution evaluations. Every
+comparison met the unchanged 5% close-null criterion. Each arm retains ten event
+samples from AB/BA cohorts of five. No sample was dropped and no failed block was
+redrawn. The block contains 1,088 confirmatory native calls, 320 event samples and
+32 separate profile calls. Each profile reported zero non-target dispatches.
+The interval excludes the time spent submitting the complete launch; it must not
+be combined with the older submission-gap event measurements. An A/A ratio is
+not an optimization speedup.
+
+The original correctness, every common receipt, count and profile, and both
+available physical locks were checked after completion. The matching author
+controller passed host, compilation and OS-isolation checks. A distinct live
+GLM-5.3 high / Claude Code 2.1.226 / v8 editable-starter qualification observed
+initial Edit and same-thread resume Edit; its receipt is qualified and its
+immediate anchor audit passed. The older author qualification remains unchanged.
+
+No optimization Run was started by these checks. The CLI selection added in
+`3e97fc52` is a software successor with 61 passing contracts; it does not acquire
+this device qualification merely by sharing ancestry. A search must retain the
+qualified source, baseline, protocol, and author binding, or qualify its changed
+boundary explicitly. Workload/reference semantics, the original task budget,
+and the existing TaskLab/Ralph owner remain unchanged.
