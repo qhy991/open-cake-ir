@@ -82,3 +82,14 @@ python tools/benchmarks/c550/review_dcu_reuse.py --compare /tmp/metax-review.jso
 [执行组变换 PR312](https://github.com/qhy991/open-cake-ir/pull/312)、
 [融合 PR310](https://github.com/qhy991/open-cake-ir/pull/310)、
 [store-loop PR375](https://github.com/qhy991/open-cake-ir/pull/375)。
+
+## 软件集成验收与后续合并边界
+
+任务分支的保祖先集成提交 `499a3816` 已通过 27 项受影响合同、204 项 Corpus Gate
+及 115 个发射源码快照。Compiler 目录与已审查 `main@bdd52ce1` 相同。源快照变更沿用
+上游独立采纳提交，本任务没有重新生成期望，也没有修改 Target 或变换资格集。
+
+这不替换原 Bench 的 `b2180ca2`。今后合入那个实验集成时，还有两个明确的记录冲突：
+`F-2026-10-10-001` 在 main 指 constexpr，在 Bench 分支指 Mapping 边界；
+`F-2026-10-10-002` 分别指 MMA 改写和不可变 Evaluation 序列化。需要在后继中明确
+区分记录并更新引用，历史冻结提交按原身份保留；不能把 Git 无文本冲突当作证据整合完成。
