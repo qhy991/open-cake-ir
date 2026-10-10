@@ -41,6 +41,7 @@ from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate
 from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, admit_local_job
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.program import ProgramLaunchManifest
+from open_cake_ir.evaluation.loaders import UndrainedDeviceWork
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_evaluation_inputs, reference_evaluation_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
@@ -359,6 +360,9 @@ def capture_tile_cohort(loaded, strict_cupti, *, samples_per_cohort, route_calls
         if used != len(arguments):
             raise RuntimeError('retained CUPTI helper invocation count differs')
         return samples, arguments
+    except UndrainedDeviceWork as error:
+        error.retain(loaded, arguments, strict_cupti)
+        raise
     except BaseException:
         release = getattr(loaded, 'release_argument_sets', None)
         if release is not None:
@@ -386,9 +390,13 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
             check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
         return samples, check
     finally:
-        release = getattr(loaded, 'release_argument_sets', None)
-        if release is not None:
-            release(arguments)
+        pending = sys.exc_info()[1]
+        if isinstance(pending, UndrainedDeviceWork):
+            pending.retain(loaded, arguments, strict_cupti)
+        else:
+            release = getattr(loaded, 'release_argument_sets', None)
+            if release is not None:
+                release(arguments)
 
 
 def _evaluate_paired_tile(authority, result, benchmark_for, admission):
@@ -552,17 +560,20 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     finally:
         counters['kernel_calls'] = sum(item.loaded.launch_calls for item in loaded.values())
         pending_error = sys.exc_info()[1]
-        cleanup_error = None
-        for item in loaded.values():
-            try:
-                item.close()
-            except BaseException as error:
-                if cleanup_error is None:
-                    cleanup_error = error
-        if cleanup_error is not None:
-            if pending_error is not None:
-                raise pending_error from cleanup_error
-            raise cleanup_error
+        if isinstance(pending_error, UndrainedDeviceWork):
+            pending_error.retain(loaded, assays)
+        else:
+            cleanup_error = None
+            for item in loaded.values():
+                try:
+                    item.close()
+                except BaseException as error:
+                    if cleanup_error is None:
+                        cleanup_error = error
+            if cleanup_error is not None:
+                if pending_error is not None:
+                    raise pending_error from cleanup_error
+                raise cleanup_error
 
 
 def _evaluate_untimed_validation_cases(authority, result, admission):
@@ -1544,6 +1555,14 @@ def main() -> int:
                     "profiler, and never on another platform's behalf")
         else:
             _platform(authority).evaluate(authority, result)
+    except UndrainedDeviceWork as error:
+        # Evidence failure must not unwind through owners retained by the signal.
+        try:
+            result.update(error='evaluator_failed', failure_class=type(error).__name__, receipt=None)
+            _retain_failure_artifacts(result, error, request_path.parent)
+            _write_new(args.output, result)
+        finally:
+            os._exit(74)
     except LocalBrokerBusy as error:
         result = _base_result(error.job_id)
         result.update(error=str(error), failure_class='admission')

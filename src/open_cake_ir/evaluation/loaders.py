@@ -13,6 +13,22 @@ from __future__ import annotations
 from hashlib import sha256
 
 
+class UndrainedDeviceWork(BaseException):
+    """Terminate a dedicated worker without releasing live device owners.
+
+    Ordinary Exception handlers must not convert this signal into a recoverable
+    failure. Capture and worker boundaries retain owners until os._exit.
+    """
+
+    def __init__(self, message: str, *, artifact_payloads=None):
+        super().__init__(message)
+        self.artifact_payloads = dict(artifact_payloads or {})
+        self._owners = []
+
+    def retain(self, *owners) -> None:
+        self._owners.extend(owners)
+
+
 class LifecycleError(RuntimeError):
     """Preserve the primary failure and every failure encountered during teardown."""
 
