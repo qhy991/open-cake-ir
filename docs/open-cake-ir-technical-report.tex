@@ -52,7 +52,7 @@
 \fancyhf{}
 \fancyhead[L]{\scriptsize\sffamily\bfseries\color{accent} OPEN-CAKE-IR \quad / \quad TECHNICAL REPORT}
 \fancyhead[R]{\scriptsize\sffamily\color{muted} 2026.10}
-\fancyfoot[L]{\scriptsize\sffamily\color{muted} 历史实现：677eb444；研究主题：2026-10-06}
+\fancyfoot[L]{\scriptsize\sffamily\color{muted} 历史实现：677eb444；BW1100 增补：2026-10-10}
 \fancyfoot[R]{\small\sffamily\bfseries\color{ink}\thepage}
 \renewcommand{\headrulewidth}{0.45pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{hair}\leaders\hrule height \headrulewidth\hfill}}
@@ -100,9 +100,9 @@
 {\sffamily\bfseries\color{ink}秦海岩 \quad Haiyan Qin\par}
 {\small\color{muted}北京航空航天大学\par}
 \end{minipage}\hfill\begin{minipage}[t]{0.46\textwidth}
-\raggedleft{\sffamily\bfseries\color{ink}2026 年 10 月 6 日\par}
+\raggedleft{\sffamily\bfseries\color{ink}2026 年 10 月 10 日\par}
 {\small\color{muted}MoE 案例增补：9 月 28 日\par}
-{\small\color{muted}协同演进动机补充：10 月 2 日\par}
+{\small\color{muted}BW1100 协同演进实证增补：10 月 10 日\par}
 {\small\color{muted}历史实现快照 \quad / \quad 源码 677eb444\par}
 \end{minipage}
 \vspace{21mm}
@@ -126,6 +126,8 @@
 \code{2c638aad}；该次增补只纳入案例记录，不将后续代码追认为主体快照。
 2026 年 10 月 6 日更新研究定位与第\ref{sec:shared-theme}节共同实验约定。
 历史实现和实验数字仍绑定原来源；新增研究设计不改变它们的验收范围。
+2026 年 10 月 10 日新增第\ref{sec:bw-coevolution}节 BW1100 多轮工程案例；
+Compiler 机制、独立 Bench 与历史契约修正按各自版本列出。
 \end{notebox}
 \end{titlepage}
 \hypersetup{pageanchor=true}
@@ -145,6 +147,11 @@
 历史实现章节保留源码 \code{677eb444} 的八个目标、179 项语料预期及各自设备案例；
 TinyGEMM2 的性能差距与 MoE 的有界正确性也维持原结论。2026 年 10 月的研究更新统一
 各硬件分支的问题、对照和成本口径，已有 Run 保持原有源码、预算和接受规则。
+BW1100 增补将 53 题开发结果追溯到两项 Compiler 改进：删除未使用的 constexpr，
+以及显式 FP32 contraction 到 MMA 的完整改写。后者三个正例在原始用例上判对，
+普通调用配对比为 1.128、1.124 和 1.968。报告还追踪变换注册、任务交付、调用授权与动作反馈，
+说明原生 Lab 已有的机制及外部 hmz 适配器的接入缺口。上述速度比相对开发 starter，不能充当社区 Bench
+或 Agent 搜索效率的整体增益；历史 GQA 精度与 RMSNorm 输出生命周期问题同时保留。
 \end{notebox}
 
 \noindent\textbf{关键词：}GPU 内核；条件化改写；目标适配；智能体；编译器；经验复用
@@ -159,7 +166,12 @@ reselected and independently evaluated. Representation effects, executable-tool 
 freedom and system-successor effects require distinct controls. The October research update defines
 a common agenda for all hardware branches. Historical implementation chapters retain source
 \code{677eb444}, its 179 corpus expectations and the original scope of each device result.
-Controlled transfer benefits remain a research question rather than a consequence of the architecture.\par}
+The October 10 BW1100 addendum connects a completed 53-task development batch to live-constexpr
+pruning and a guarded FP32 contraction rewrite. Three pass-generated candidates pass their original
+cases and improve paired ordinary-call latency against development starters. Historical precision
+and output-lifetime violations remain excluded. The report traces registry-based API delivery, frozen grants, and action feedback,
+while identifying the external hmz adapter's incomplete discovery integration. Whole-suite fresh-search
+and controlled transfer benefits remain open questions.\par}
 
 \vspace{1.6em}
 \section*{阅读约定}
@@ -1326,11 +1338,372 @@ Triton 能向 AMD、Hygon 生成代码，却不保证源参数的资源分配或
 第二台 Hygon 宿主仍需独立 Executor；C550 的容器锁边界和 M2 的计时质量分别限制
 设备主张。可表达性、目标选参、宿主身份、测量与因果归因须分层验收。
 
+
+\clearpage
+\section{BW1100：从多轮 kernel 搜索到 Compiler 机制}\label{sec:bw-coevolution}
+
+本节增补截至 2026 年 10 月 10 日可核对的 BW1100/gfx938 工程证据，源码身份分别列出，
+不回写主体的 \code{677eb444} 快照。多轮优化已形成两类可复用产物：能交付的具体算子，
+以及带条件的编译器能力。当前最强的结论是\textbf{任务搜索能发现重复机制，维护者能将其
+整理成 Compiler 变换，并验证变换生成的候选}。固定版本对后续 Agent 搜索的总体帮助，
+还要由独立 Bench 的新搜索检验。维护、审查与启动由工程流程组织，不称为无人干预的自动演化。
+
+\subsection{两组任务，各自回答不同问题}
+
+开发集包含 53 个任务，每题保留五个原始输入用例。它以任务自己的 canonical starter
+为开发参考，用来发现调度机会、重复改写和诊断缺口。round5 固定 Compiler 为
+\code{8a637ed0}；2026 年 10 月 10 日的终态核对记录了 53/53 个确认终点、265 个用例通过，
+以及 53 项资源释放。这个计数说明该批次完成了原有流程，\textbf{不表示 53 题全部提速}。
+其 30 个非配对 primary-case 普通调用样本只作诊断，不与下文独立配对测量混用。
+
+独立 \code{bw1100-bench} 使用 SOL-ExecBench 原始任务、输入生成器、oracle 和容差，
+每题 16 个 workloads、每个 workload 10 轮新输入。历史 round3/round4 覆盖 10 题；
+后继套件加入 LM-head projection 和 Whisper decoder output projection，扩至 12 题、
+192 个 workloads。两道新增题的 Torch matmul baseline 各通过 160/160 正确性检查，
+该资格检查本身没有产生性能结果。两组任务的分母与用途必须分开：
+
+\begin{table}[htbp]
+\centering\small
+\caption{BW1100 三种比较的分母。加速比不能跨行替换解释。}
+\begin{tabularx}{\textwidth}{@{}p{29mm}Y Y@{}}
+\toprule
+\rowcolor{mist}比较 & 固定参考 & 能回答的问题 \\
+\midrule
+53 题开发搜索 & 各开发 Workload 的 canonical starter & 哪个候选或重复机制值得继续研究？ \\
+Compiler 机制资格 & \code{bec7c9ed} 编译的同一 starter；原任务 oracle & 显式改写生成的候选是否正确、是否改善普通调用？ \\
+独立 Bench 搜索 & 每题冻结的社区库适配器，保持原 ABI 与完整输出 & 固定 Compiler 与相同作者控制下，能交付什么结果？ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[>=Latex,font=\sffamily\footnotesize,align=center,
+ box/.style={draw=hair,fill=mist,rounded corners=2pt,text width=35mm,minimum height=17mm,inner sep=3mm},
+ path/.style={->,draw=accent,line width=0.9pt}]
+\node[box] (search) at (0,0) {固定 Compiler 搜索\\53 题、原始 oracle};
+\node[box] (diagnose) at (5.0,0) {保留源码、失败与 profile\\判断缺口由谁负责};
+\node[box] (promote) at (10.0,0) {运行外实现与审查\\constexpr / FP32 MMA};
+\node[box] (next) at (0,-3.0) {选择版本，再开 53 题\\继承材料重新验收};
+\node[box,dashed,draw=caution] (bench) at (5.0,-3.0) {固定版本独立 Bench\\新搜索与完整分母；待收口};
+\node[box] (freeze) at (10.0,-3.0) {固定后继 \code{bdd52ce1}\\局部资格已通过};
+\draw[path] (search)--(diagnose);
+\draw[path] (diagnose)--(promote);
+\draw[path] (promote)--(freeze);
+\draw[path] (freeze)--(bench);
+\draw[path,dashed,draw=caution] (bench)--(next);
+\draw[path,dashed,draw=caution] (next)--(search);
+\end{tikzpicture}
+\caption{已经完成的发现、机制晋升和局部资格，与仍待完成的版本收益判断分开表示。
+实线是本节已核对的工程阶段；虚线不表示已经取得后续实验结果。}
+\end{figure}
+\FloatBarrier
+
+
+\subsection{已经内化的机制：显式工具与自动清理}
+
+固定在 \code{bdd52ce1} 的 Compiler 声明了十个 Program 变换入口，按机制可归为
+表\ref{tab:bw-transforms} 的七类。入口数不是独立优化思想数，也不是 BW1100 性能通过数。
+每个 pass 接收明确输入，匹配受限图，重建完整候选并重新检查；不适用时给出拒绝原因。
+\code{assess()} 和 \code{lower()} 不隐式执行这些变换。调用者仍选择 tile、执行组、
+流水深度和组合顺序，设备评测决定是否采用\cite{bwtransformcatalog}。
+
+\begin{table}[htbp]
+\centering\footnotesize\renewcommand{\arraystretch}{1.15}
+\caption{已进入 main 的显式机制。注册表的名称、参数与说明由 Compiler 单独维护；
+下表是固定源码的阅读投影。设备资格不能从“有入口”推导。}
+\label{tab:bw-transforms}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{25mm}Y >{\raggedright\arraybackslash}p{43mm}@{}}
+\toprule
+\rowcolor{mist}机制 & 入口与已经编码的动作 & 适用边界 \\
+\midrule
+FP32 收缩到 MMA & \code{specialize\_fp32\_contraction}：广播乘法/K sum 改为显式 M/N/K tile 的 IEEE FP32 MMA，保留支持的 epilogue & 当前为 gfx938/Triton；三个配置有局部设备资格，数值反例保留 \\
+保留舍入的融合 & \code{fuse\_pointwise\_epilogue}、\allowbreak\code{fuse\_tiled\_epilogue}：移除私有中间量的全局 store/reload，保留 narrow cast & 唯一消费者与匹配访问；不是任意图自动融合 \\
+点式输出分块 & \code{tile\_pointwise\_outputs}：将整行改为独立列 tile，统一修改映射、寄存器形状和掩码 & 无跨列归约、scan、原子、状态或同步 \\
+平方差归约分块 & \code{tile\_squared\_difference}、\allowbreak\code{tile\_squared\_difference\_outputs}、\allowbreak\code{specialize\_squared\_difference}：分别或共同选择 K/N tile 与受限展开 & 固定 FP32 squared-distance 图；联合构造可用，组合收益仍需设备确认 \\
+执行宽度选择 & \code{specialize\_triton\_warps}：一致修改执行组数并重做目标与操作检查 & 资格域包含 gfx938、B200、B300；不自动选最佳宽度 \\
+store loop 深度 & \code{specialize\_triton\_store\_loop}：修改指定输出循环的 \code{num\_stages}，保留其他区域 & gfx938 的受限独立输出循环；该循环不含 MMA、归约或状态 \\
+逐输出列 contraction & \code{specialize\_output\_columns}：更多独立 program 换取较少的每 program 私有状态 & 仅 Metal 路线，不计作 BW1100 能力 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+另有一类自动生成行为。最近的 live-constexpr 清理在 lowering 时分析 kernel 实际读取
+的常量，自动收敛签名、调用参数与编译参数，无需 Agent 另选一个 pass。grid-only 维度
+仍保留给 host 工作，不能按名称前缀直接删除。该规则与上述显式候选工具的作用方式不同。
+
+FP32 sin/cos 的 OCML lowering、INT32 inclusive max scan、显式 FMA、寄存器 transpose
+和合法性诊断则属于表达与生成基础。它们支持 Agent 构造更多优化，但不自动完成完整 RoPE、
+排序或最优 GEMM。Bench 中的 graph replay、库 fallback、shape 分派和 wrapper 修改属于
+候选或运行时层；不能把这些完整 callable 的全部速度归入 Compiler pass。
+\FloatBarrier
+
+\subsection{几轮实验改变了什么}
+
+2026 年 10 月 6 日的能力轮次补齐了显式 FP32 sin/cos、INT32 resident inclusive max scan，
+以及受限归约循环的 width 改写接口。它们分别解决 RoPE 表达、排序中前缀传播、重复手改
+归约宽度的问题。sin/cos 和 scan 的验收主要在组件层；199 个保留产物 replay 中有 29 个
+API 改写与原选择生成相同完整源码。decoder 完整调用的 1.254\,$\times$ 属于保留候选
+相对社区基线的 replay，不作为该次 Compiler 升级造成的新搜索收益\cite{bwtrig}。
+
+round3 与 round4 分别使用 \code{6ff00512} 和 \code{9160cbc3}。
+模型、起始 seed 和社区 baseline 的身份可对应，但队列并发和运行负载并不相同，
+每题每版本只有一次作者搜索。因此，这些轮次适合发现任务层面的变化，不能提供
+Compiler 因果增益或搜索方差估计。配对计时的重复次数也不能替代独立 Agent Run 数。
+
+round5 的 53 题扩大了诊断覆盖。对结果的复核没有把每个慢任务都归入 IR 表达不足：
+已有 IR 足以表达的优化留在候选层；反复出现的完整改写进入 pass；未使用的编译参数
+由 lowering 清理。静态 loop partition 已有相应实现，本轮的三个复核任务虽均通过五用例，
+普通调用结果约 1.003--1.018\,$\times$，并非新的明确性能机制，不另造一个 pass。
+
+\subsection{机制一：把重复的 GEMM 改写变成显式工具}
+
+多个任务的 starter 使用逐行 broadcast multiply 和 K 维 sum。Agent 在 GEMM、
+GEMM+SiLU 和转置权重 GEMM 中分别写出 tiled FP32 MMA。重复的是完整的数据流替换，
+不仅是一个 tile 数字。保留的 GEMM ISA 包含 \code{v\_mmac\_16x16x8\_f32}；
+profile 中的 \code{SQ\_INSTS\_MMOP=8192} 与该执行安排相符。原始资源记录显示每 CTA
+使用 16 KiB LDS，不能采用作者日志中“零 LDS”的说法\cite{bwmma}。
+
+PR \#465 将该机制整理为 \code{Compiler.specialize\_fp32\_contraction}。
+Compiler 匹配直接 FP32 A/B 读取、广播乘法与受限 CTA 求和，保留支持的点式 epilogue、
+公共 ABI 和任务元数据；调用者显式选择 M/N/K tile、执行组数与 stage。它使用既有的
+load、transpose、MMA 和 elementwise 表达，不新增一种 MMA 原语，也不自动选择最优配置。
+不满足图、存储或效应条件的输入会被拒绝；生成成功仍须通过外部数值检查。
+
+\begin{table}[htbp]
+\centering\small
+\caption{pass 生成候选的独立资格。时间为 primary 用例的普通完整调用中位数，
+含输出分配与同步；配对比中位数不等于两个汇总中位数的比。}
+\begin{tabularx}{\textwidth}{@{}Y r r r l@{}}
+\toprule
+\rowcolor{mist}任务 & Starter / $\mu$s & 候选 / $\mu$s & 配对比 & 原始用例 \\
+\midrule
+\code{gemm} & 95.109 & 84.195 & 1.128 & 两臂各 5/5 \\
+\code{gemm\_silu} & 96.949 & 86.005 & 1.124 & 两臂各 5/5 \\
+\code{aka\_gemm\_nt\_bias} & 165.595 & 84.010 & 1.968 & 两臂各 5/5 \\
+\code{gemm\_bias} & 未计时 & 未计时 & 不适用 & 两臂各 4/5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+控制臂由 \code{bec7c9ed} 编译 canonical starter，处理臂由 \code{d7a0fe43} 应用显式 pass，
+oracle 和五用例合同沿用 \code{8a637ed0}。前三题正确性共 15/15 用例通过于每一臂；
+计时只覆盖 primary 用例，各执行 10 次 warmup、60 对交替 AB/BA 与 30 对 A/A，
+不使用 graph，不裁剪样本。两种执行顺序的比值均同向。它证明这三个配置生成的实现
+改善了该测量区间，不证明任意 tile、全部形状或后续 Agent 都会受益\cite{bwmma}。
+
+\code{gemm\_bias} 在 mixed\_magnitude 用例的两臂各有 27 个不匹配，禁止计时。
+该反例不是新 pass 独有的故障，也不能用开发轮次的历史 confirmed 终点来豁免本次失败。
+53 题终态记录与本次新资格各保留自己的候选、输入和结果，不合并成“全部实现始终正确”。
+测量通过既有 HCU admission，未建立整台物理设备独占；A/A 只能刻画同次观测的部分波动。
+
+\subsection{机制二：按实际使用清理编译期参数}
+
+PR \#464 根据 kernel 实际读取的编译期常量，同步裁剪函数签名、调用参数和编译参数。
+53 个 starter 中有 52 个携带未使用的维度参数。\code{aka\_momentum\_sgd} 读取全部八个
+维度参数，是不能按任务名或变量前缀删参数的反例；其他任务的新分块候选也可能重新需要
+原 starter 不读取的边界\cite{bwconstexpr}。
+
+这是一项保持 kernel 计算主体的 lowering 简化。固定 baseline 为 \code{bec7c9ed}，
+后继为 \code{949fd804}，四个代表任务两臂各通过 20/20 个原始用例。
+普通调用配对比在 \code{adadelta} 上为 1.032，在 \code{adamw} 上为 1.030，
+在 \code{aka\_row\_gather} 上为 1.011，在 \code{rmsnorm\_input\_gradient} 上为 1.021。
+部分差值接近 A/A 分布，报告将其主要视为代码与接口简化，不把它推广成普遍的 kernel 加速。
+
+两个 PR 已分别在 \code{4ab1c8f5} 和 \code{bdd52ce1} 合入 main。
+各自完整 Corpus 为 204/204，集成树再通过 204 项检查。这里的 204 不替换历史章节的 179。
+后继源码审计还确认 53 题原 Workload、五用例集合与 ABI 未变，53 个 starter 和 53 个
+保留候选都能 parse、assess 与 lower；这些 CPU 检查不授予新设备性能。
+\textbf{版本顺序也不意味着能力严格包含：}\code{8a637ed0} 的 device-CSE 与 singleton
+admission 不在本次 main 后继中。因此独立比较以 \code{bec7c9ed} 为控制、
+\code{bdd52ce1} 为处理；\code{8a637ed0} 到后继的差值应称系统变化，不能只归因于这两个 PR。
+
+
+\subsection{Agent 怎样获知并使用内化机制}\label{sec:agent-transform-discovery}
+
+这里已有可执行的交付机制，但必须区分\textbf{原生 Cake Lab}与当前\textbf{外部 BW1100
+hmz 适配器}。前者能从注册表生成任务中的 API 说明，后者目前主要依赖固定文档与人工整理
+的提示。能力实现、说明交付、获准调用、实际调用和最后获益是五个不同的观察。
+
+\textbf{原生 Lab 的交付链。}Compiler 的 \code{TRANSFORMATIONS} 保存名称、参数和
+语义说明。Run 分别冻结 \code{knowledge.materials} 与 \code{knowledge.transformations}：
+前者是机制解释、来源与反例，后者是允许执行的变换。任务包将可见的 API 投影为
+\code{transformation-api.json}，并把授权列在 \code{run-authority.json} 中；这些内容实际
+嵌入 \code{TASK.md} 的 Frozen reference 段，文件名不是另一套独立事实所有者。
+有机制材料时还嵌入 \code{optimization-knowledge.json}\cite{bwagentdelivery}。
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[>=Latex,font=\sffamily\footnotesize,align=center,
+ box/.style={draw=hair,fill=mist,rounded corners=2pt,text width=37mm,minimum height=17mm,inner sep=3mm},
+ arrow/.style={->,draw=accent,line width=0.9pt}]
+\node[box] (registry) at (0,0) {Compiler 注册表\\名称、参数、语义说明};
+\node[box] (grants) at (5.2,0) {Run 冻结选择\\解释材料与调用授权};
+\node[box] (task) at (10.4,0) {任务包与每轮请求\\可见 API + StateCard};
+\node[box] (history) at (0,-2.8) {本 Run 历史与反馈\\调用、拒绝、生成候选};
+\node[box] (resolve) at (5.2,-2.8) {Lab 解析动作\\授权、父程序、参数检查};
+\node[box] (agent) at (10.4,-2.8) {Agent 提交变换请求\\显式选择机制和参数};
+\draw[arrow] (registry)--(grants);
+\draw[arrow] (grants)--(task);
+\draw[arrow] (task)--(agent);
+\draw[arrow] (agent)--(resolve);
+\draw[arrow] (resolve)--(history);
+\draw[arrow] (history.west)--++(-0.65,0)|- (0,1.2) -| (task.north);
+\end{tikzpicture}
+\caption{已实现的原生 Lab 发现、授权与反馈路径。API 内容随冻结 Run 交付，历史反馈更新于
+下一轮；图不表示所有外部平台适配器已接入，也不证明模型注意到了说明。}
+\end{figure}
+
+\code{render\_task\_request} 将完整 TASK、AGENTS 与当前 StateCard 组成请求投影，
+Provider 在调用前验证任务包并保留相同内容。每轮的 StateCard 还提供 \code{author\_parents}：
+可用父候选、准确 stage 名与新的候选身份建议，减少 Agent 猜测接口名称。
+这证明机制信息被交付到实际请求，不等于模型理解或采用了它。
+
+支持动作的提交合同中，Agent 可以发送一个 transform action；Python candidate-bundle
+也可声明以下静态请求。示例中的 parent/stage 必须来自该 Run 的实际 StateCard，参数
+仍受 pass 的适用条件约束：
+
+\begin{lstlisting}[style=reportcode,language=Python]
+cake.transform(
+    parent="baseline:seed",
+    transformation="specialize_fp32_contraction",
+    parameters={
+        "stage": "seed",
+        "row_tile": 16, "column_tile": 64, "k_tile": 64,
+        "num_warps": 4, "num_stages": 1,
+        "schedule_id": "mma_trial_1", "entry_point": "kernel"
+    },
+)
+\end{lstlisting}
+
+Lab 不执行作者文件中的任意 Python 来完成改写，而是解析声明、检查授权及父程序，
+再调用 \code{Compiler.rewrite\_program}。父对象只能是本 Run 先前轮次的候选或明确授权的
+baseline。同一轮中新写的函数不会自动成为可引用父对象。未授权请求返回
+\code{transform\_not\_granted}，没有后续构建或设备评测；合法请求产生完整候选或 pass
+拒绝原因。动作和结果写入 \path{author_actions_resolved} 事件，并反馈到本 Run 的历史，
+可在 replay 时核对父程序、变换与结果是否一致\cite{bwagentactions}。
+
+\textbf{看见说明与允许执行是分开的。}只有材料、没有调用授权的 Run 仍可看到相关 API
+语义；实际 action 继续被拒绝。这允许分别研究经验说明与可执行工具的贡献。
+无材料且无授权时，原生任务包不自动曝光完整变换目录。新增 pass 注册不会自动扩大已有
+Run 的权限，新 Run 仍需显式选择允许的变换。目录投影只按可见名称筛选，不会先替当前
+Schedule 选择最合适的 pass 或最佳参数。专用单文件
+\code{candidate.py} 提交合同只接受直接编写的候选，不能承载 transform action；
+不能把这条机制写成对所有 Provider 和提交方式无条件生效。
+
+\begin{table}[htbp]
+\centering\footnotesize
+\caption{两条现有路径的具体差异。BW1100 适配器按本次冻结源码审查，未在报告工作中修改。}
+\begin{tabularx}{\textwidth}{@{}p{26mm}Y Y@{}}
+\toprule
+\rowcolor{mist}问题 & 原生 Cake Lab & 外部 BW1100 hmz 路径 \\
+\midrule
+怎样发现工具 & 注册表投影 API 名、参数、说明，嵌入任务与实际请求 & 53 题提示列举部分能力；Bench 提示允许公开变换并要求读固定文档 \\
+怎样决定权限 & Run 独立冻结材料与变换授权，action resolution 强制检查 & 采用自己的来源访问合同；未接入原生逐 pass grant 解析 \\
+怎样调用 & transform action 或受支持的 Python bundle 声明，由 Lab 解析 & Agent 可通过固定 Compiler 的 Python 公共接口构造候选，再交给 bridge \\
+怎样追踪采用 & 保留动作、父候选、拒绝原因、生成结果，并进入后续反馈与 replay & bridge 保留 Schedule、assessment、emission receipt；不自动记录产生 Schedule 的 pass 调用链 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+外部 Bench 的 \code{cake\_bridge} 直接执行固定 Compiler 的 assess/lower。
+其 StateCard 当前汇总本 Run 的评估结果，并不生成可用 pass 清单。\code{TASK.md}
+允许作者调用公共 Compiler transforms，但没有列出新增 FP32 MMA API 的完整签名。
+因此新增接口可能通过源码或文档被发现，却不能仅凭 PR 合并或 bridge 的 emission receipt
+宣称 Agent 已调用它。外部 plan 中的 \code{knowledge=none} 表示没有额外知识材料，
+不能直接解释成原生 Lab 中“变换授权列表为空”；两者属于不同的配置合同\cite{bwexternal}。
+
+\textbf{剩余缺口与可检验的改进。}对后继的外部 scaffold，可从各臂自己的固定 Compiler
+注册表生成同格式能力说明，并通过既有 intake 加入真实初始请求；候选记录保留使用的
+变换、父 Schedule、参数和拒绝原因。复用现有注册表，避免人工再维护一套会过期的工具清单。
+这属于新的 scaffold/source 处理，必须在下一轮冻结时声明，不能注入正在运行的对照。
+报告只提出该接入方向，不声称本次已经实现。
+
+验证应依次观察说明是否交付、Agent 是否提出调用、调用是否适用、生成候选是否通过原
+oracle，以及相对固定参考是否改善。没有调用可能是未发现、判断不适用或主动保留现有候选，
+不能从零调用推断模型不知道工具；调用次数上升也不能替代正确性、性能和总搜索成本。
+现有 CPU fixture 已覆盖材料/权限分离、父对象限制、拒绝无后续评测及动作 replay，
+这些软件检查不构成活跃 Agent 使用率或搜索收益的实机证据。
+\FloatBarrier
+
+\subsection{历史 Bench：逐题结果与两项撤回}
+
+表\ref{tab:bw-history} 保留全部十题，展示当时独立最终确认的完整 callable 与固定社区
+baseline 之比。每个 workload 取正反向比值的较小值，再对 16 个 workloads 取几何平均。
+这些 callable 可以组合 Cake 生成 kernel、PyTorch、社区组件、分派和 graph；
+表中倍数不能全部归因于 Cake 单个 kernel，也不是与各库“全局最快实现”的比较。
+
+\begin{table}[htbp]
+\centering\footnotesize\renewcommand{\arraystretch}{1.14}
+\caption{历史轮次的逐题观察。R3/R4 分别固定 \code{6ff00512}/\code{9160cbc3}。
+“排除”保留原任务在分母中的位置，既不记为零，也不回填其他轮次的候选。}
+\label{tab:bw-history}
+\begin{tabularx}{\textwidth}{@{}p{28mm}Y r r@{}}
+\toprule
+\rowcolor{mist}任务 & 冻结社区 baseline 的实际内容 & R3 & R4 \\
+\midrule
+Residual RMSNorm & vLLM/AITER fused residual-add RMSNorm & 排除 & 排除 \\
+GQA backward & ATen dropout/softmax backward + GEMM 组合 & 2.524 & 排除 \\
+RoPE cos/sin & Transformers LlamaRotaryEmbedding；不含 Q/K 旋转 & 1.789 & 1.954 \\
+GateUp & 框架 GEMM + FlagGems GELU-tanh-and-mul & 2.305 & 2.153 \\
+Expert sort & ATen stable sort + searchsorted & 1.417 & 1.403 \\
+Linear attention & vLLM 内置 FLA FP32 mixed-gate 组件组合 & 1.715 & 2.301 \\
+ConvNeXtV2 & timm ConvNeXtBlock，use\_grn=True & 1.456 & 1.477 \\
+Vision attention & FlagGems bmm + FP32 softmax 显式物化组合 & 4.601 & 4.525 \\
+MoE & FlagGems 逐 expert FP32 bmm 组合 & 4.353 & 4.203 \\
+Decoder backward & ATen backward、GEMM 与归约组合 & 1.239 & 1.240 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+两个历史轮次都曾产生 10/10 个机器确认终点，后续审计揭示了终点之外的契约问题。
+round4 GQA 的 \code{cand07} 把应保留 FP32 的中间 c1/g 提前存成 BF16；原 3.237\,$\times$
+即使通过旧数值容差，也不能计入有效成果。旧的十题汇总 2.115\,$\times$ 到 2.226\,$\times$
+及“提升 5.3\%”随之撤回，不重新挑选九题来替代原十题总分。
+
+两版 RMSNorm 的保留 seed 还存在返回缓冲区被后续调用覆盖的问题。
+修复输出生命周期并重新执行 caller、完整正确性与性能确认后，独立结果为
+\textbf{1.258\,$\times$}，16 个 workloads 中 14 个稳健胜出、无 material regression。
+它属于新的修复确认，不继承历史约 1.96\,$\times$，也不填回 R3/R4。
+这些修正保留原始记录，只撤回不满足完整契约的解释。来源为固定的导出审计和历史修订记录，
+详见本节的材料边界\cite{bwarchive}。
+
+逐题看，Linear attention 与 RoPE 的后轮观察较好，而 GateUp、MoE 和 Vision attention
+没有同步上升。这支持进一步分析不同任务的机制与开销，不支持单调的 Compiler 版本收益曲线。
+按题挑选的 \code{bench-best} 是跨轮次交付集合；它可以保存最终 lowering、让同事无需 Cake
+运行，但不是任何一个 Compiler 版本的一次完整实验成绩。
+\FloatBarrier
+
+\subsection{现在可以主张什么，下一轮必须区分什么}
+
+本轮已经提供了\textbf{发现重复机制、形成受约束 API、在后继上验证候选}的完整局部案例。
+GEMM 的证据比单纯增加一个 IR 语法更强，因为保留了原型、实际生成源码、目标指令、数值反例
+和独立普通调用测量。constexpr 的价值则主要在统一生成规则与减少冗余。两者改善的层次不同，
+不必都包装成大幅提速。
+
+仍缺少的是固定版本对整个任务集合的\textbf{新搜索效果}。
+新 12 题对照以 \code{bec7c9ed} 为控制、\code{bdd52ce1} 为处理。
+模型固定为 \code{glm-5.3}、high effort，每题每条件一个作者 Run，共 24 项分配。
+每 Run 三小时预算包含半小时最终确认；本节不收录未完成轮次的性能。新增题目使它成为新的比较段。启动失败、未完成、数值失败、
+保留 starter 和变慢都须进入完整分母；修复基础设施后另立的运行段不能覆盖原失败。
+
+后续版本对照需要同时报告首次合格候选时间、完整正确性与计时覆盖、相对各自强参考的
+逐题结果，以及模型、编译、排队和 GPU 成本。固定候选 replay 用于检查生成变化，新的独立
+作者搜索用于检查可调用机制是否被发现和使用。显式 pass 可用却未被 Agent 使用，是工具
+采用问题；同一源 Schedule lower 后变快，才属于生成路径的直接变化。一次新搜索仍不足以
+估计搜索方差；重复使用开发暴露的 Bench 只作为滚动工程验证。
+
+本节不据此声称 Cake 优于原生作者环境、NVIDIA 经验已产生跨硬件因果收益，或已经完成
+C550 的同口径验证。C550 可以按相同职责链组织后续案例，但必须独立绑定 MACA 工具链、
+原始任务、baseline 和测量资格。BW1100 的速度比不转移给 C550。
+
 \section{限制、可复查性与结论}
 
 Open-Cake-IR 已经把候选生成、静态检查、目标代码生成和设备反馈接成一条可追踪的路径。
 在主体快照源码上，179 项语料符合预期；在若干固定 Workload 上，也已有设备正确性与局部性能
-结果。这些结果回答了“系统能否表达、检查并运行具体候选”。要回答“这一机制能否稳定带来
+结果。BW1100 增补进一步给出了从重复 kernel 改写到受约束 Compiler API 的具体证据链，
+并记录了后继候选的局部收益与失败。这些结果回答了“系统能否表达、检查并运行具体候选”，
+以及“某个机制能否被可靠地实现为可复用工具”。要回答“这一机制能否稳定带来
 跨任务、跨平台收益”，还需要更完整的目标侧测量和预注册对照实验。
 
 \subsection{解释结果时的四项限制}
@@ -1353,7 +1726,8 @@ AMD 的计时器调查，也分别处于不同的证据阶段\cite{status,archit
 计入分析。$E/P$ 四组的实机对照尚待开展。
 
 \subsection{下一步的可检验目标}
-后续实验按第\ref{sec:shared-theme}节统一问题和证据口径。先确保目标基线、完整输出、
+后续实验按第\ref{sec:shared-theme}节统一问题和证据口径。优先完成第\ref{sec:bw-coevolution}节的固定版本 12 题比较，
+据完整结果选择下一轮 53 题的 Compiler；不能仅凭局部三题增益提前宣告版本胜出。先确保目标基线、完整输出、
 计时和 profiler 可用，再依次检验同动作集合的非 LLM 对照、原生 DSL 加等效工具的表示
 对照，以及来源经验与可执行化的增量。缺少合格低层路线时明确报告覆盖，不借其他目标
 的资格启动实验。反复出现的缺口通过 Finding、审查和后继提交处理；未参与机制开发的
@@ -1427,6 +1801,7 @@ B300 TinyGEMM2 & \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{严格数值与成对�
 B300 MoE 增补 & \weaverepo{docs/WEAVE_CASE_STUDY.md}{持久事件流水、N128 与开源基线案例}；实验代码另固定于未合入主线的 \code{2c638aad} \\
 Apple、Hygon、AMD & 各平台 \repo{docs/RESULTS.md}{发布汇总}与原记录 \\
 MetaX C550 & \repo{docs/metax-c550.md}{平台专题}及 \repo{docs/ARCHITECTURE.md}{当前 Run 案例} \\
+BW1100 协同演进 & 第\ref{sec:bw-coevolution}节及 F-2026-10-10-001/002；历史 Bench 审计与后继机制资格分别引用 \\
 迁移离线试点 & \repo{docs/OPTIMIZATION_TRANSFER.md}{机制与证据边界} \\
 历史案例 & QSA 与 Flash-KMeans：\href{https://github.com/qhy991/open-cake-ir/releases/tag/research-preview-2026-09-06}{2026-W36.1 旧报告及其证据附录}；退役路径按 \code{history} 标签回放 \\
 \bottomrule
@@ -1458,6 +1833,8 @@ oracle、计时区间与质量门。历史实现章节的仓库链接固定到 \
 的主线案例记录固定到 \code{93d05202}，实验代码另固定到未合入主线的 \code{2c638aad}，原始收据身份
 仍由该专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
+BW1100 新增机制引用 \code{bdd52ce1} 中的 Finding，设备执行仍绑定各自被测提交；
+私有实验材料的可访问性限制见参考文献中的归档说明。
 
 \section*{参考文献}
 \begin{multicols}{2}
@@ -1495,6 +1872,16 @@ arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
 \bibitem{weavecase} H. Qin. \weaverepo{docs/WEAVE_CASE_STUDY.md}{B300 MoE 持久事件流水与 N128 验证}. open-cake-ir@93d05202；实验源码 2c638aad 尚未合入主线，2026.
 \bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}. open-cake-ir@677eb444, 2026.
 \bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}. open-cake-ir@677eb444, 2026.
+
+\bibitem{bwtrig} H. Qin. \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/docs/results/dcu/compiler-trig-scan-20261006.md}{BW1100 expression and rewrite qualification}. 2026-10-06.
+\bibitem{bwconstexpr} H. Qin. \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/findings/2026-10-10-001-triton-live-constexpr.json}{F-2026-10-10-001: live constexpr}. 实测源码 \code{949fd804}；合入 PR \#464，2026-10-10.
+\bibitem{bwmma} H. Qin. \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/findings/2026-10-10-002-fp32-contraction-mma-rewrite.json}{F-2026-10-10-002: FP32 contraction MMA}. 实测源码 \code{d7a0fe43}；合入 PR \#465，2026-10-10.
+\bibitem{bwarchive} BW1100 内部实验归档，2026-10-09--10。历史 Bench 逐题 CSV 与精度修订；\code{bw1100-bench@f09c43d4} 的导出 manifest 与验证；53 题终态记录；后继机制原始样本及资格报告；新 Bench 冻结计划。详细定位由维护者的内部归档保留。这些材料不声称匿名公开可复现，原始数据、oracle 和运行日志未复制到报告中。
+
+\bibitem{bwtransformcatalog} H. Qin. \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/src/open_cake_ir/compiler/program_passes.py}{Compiler transformation registry}. open-cake-ir@bdd52ce1, 2026.
+\bibitem{bwagentdelivery} H. Qin. \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/src/open_cake_ir/lab/knowledge.py}{Knowledge and API projection}; \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/src/open_cake_ir/lab/task_package.py}{task package and prompt delivery}. open-cake-ir@bdd52ce1, 2026.
+\bibitem{bwagentactions} H. Qin. \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/src/open_cake_ir/lab/actions.py}{Action resolution and parent choices}; \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/src/open_cake_ir/lab/execution.py}{execution feedback}; \href{https://github.com/qhy991/open-cake-ir/blob/bdd52ce173febe4d47d935bc9b525acd0d241a8e/tests/contracts/test_author_actions.py}{CPU action contracts}. 2026.
+\bibitem{bwexternal} H. Qin. \href{https://github.com/qhy991/bw1100-bench/blob/7ddf990fcaf9ceaedddd267e266dd92c2b8db432/campaign/TASK.md}{External Bench author contract}; \href{https://github.com/qhy991/bw1100-bench/blob/7ddf990fcaf9ceaedddd267e266dd92c2b8db432/campaign/cake_bridge.py}{Compiler bridge}. bw1100-bench@7ddf990, 2026. 开发 53 题的能力提示来自对应冻结任务包，其私有归档范围同文献 [32]。
 \end{reportbibliography}
 \end{multicols}
 
