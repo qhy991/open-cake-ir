@@ -54,6 +54,16 @@ class UndrainedWorker(unittest.TestCase):
         fixture=self.paired_failure(RuntimeError('ordinary failure'))
         self.assertEqual(fixture.closed,fixture.created)
 
+    def test_terminal_close_failure_stops_further_module_cleanup(self):
+        fixture=paired_fixture.PairedExecutionTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        fixture.fail_close_at=0
+        error=UndrainedDeviceWork('drain failed during close')
+        fixture.close_error=error
+        with patch.object(worker,'_fresh_tile_cohort',side_effect=RuntimeError('ordinary')),self.assertRaises(UndrainedDeviceWork) as caught:
+            fixture.execute()
+        self.assertIs(caught.exception,error)
+        self.assertEqual(fixture.closed,[fixture.created[0]])
+
     def child(self,*,occupied=False,bad_artifact=False):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);request=root/'request.json';output=root/'result.json';marker=root/'unwound'
@@ -70,7 +80,9 @@ os.environ.pop('GPUQ_BACKEND',None)
 marker=Path(sys.argv[3]);atexit.register(lambda:marker.write_text('atexit ran'))
 payload=object() if sys.argv[4]=='bad' else b'{"drained":false}'
 error=UndrainedDeviceWork('CPU injected undrained work',artifact_payloads={'native_observation':payload})
-def die(authority,result):raise error
+def die(authority,result):
+ result['receipt']={'would_be_success':True}
+ raise error
 sys.argv=['evaluate','--request',sys.argv[1],'--output',sys.argv[2]]
 try:
  with patch.object(worker,'_load_authority',return_value=NS(request={'purpose':'search'})), \

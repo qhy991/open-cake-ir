@@ -567,6 +567,9 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             for item in loaded.values():
                 try:
                     item.close()
+                except UndrainedDeviceWork as error:
+                    error.retain(loaded, assays, pending_error)
+                    raise
                 except BaseException as error:
                     if cleanup_error is None:
                         cleanup_error = error
