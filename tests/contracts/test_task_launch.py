@@ -44,6 +44,28 @@ class TaskLaunchTests(unittest.TestCase):
             self.assertEqual(captured[0]['authoring']['provider']['event_contract'], selected or CLAUDE_EVENT_CONTRACT)
             self.workspace = self.directory / 'next-contract'
 
+    def test_queued_maca_cli_reaches_real_run_policy_before_execution(self):
+        original = launch_task.task_run_inputs
+        captured = []
+        def inputs(*args, **kwargs):
+            value = original(*args, **kwargs)
+            captured.append(value)
+            return value
+        args = self.args()
+        args[args.index('--backend') + 1] = 'triton-metax'
+        args[args.index('--columns') + 1] = '128'
+        args += ['--metax-timing', 'queued-mean10-events']
+        with patch.object(launch_task, '_provider_executable', return_value=Path('/fixture/provider')), \
+             patch.object(launch_task, 'task_run_inputs', side_effect=inputs), \
+             patch.object(launch_task, '_admit_stack', side_effect=RuntimeError('stop before execution')):
+            with self.assertRaisesRegex(RuntimeError, 'stop before execution'):
+                launch_task.main(args)
+        policy = captured[0]['evaluation_protocol']
+        protocol = paired_protocol(policy)
+        self.assertEqual(protocol.kind, 'fixed_baseline_paired_maca_queued_event_v1')
+        self.assertEqual(len(protocol.pair_order) * protocol.samples_per_cohort, 10)
+        self.assertEqual(protocol.statistic, 'mean')
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

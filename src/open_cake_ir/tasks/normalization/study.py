@@ -179,6 +179,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    native_skill_package: Path | None = None, metal_mean30: bool = False,
                    metax_mean10: bool = False, metax_native_mean10: bool = False,
                    metax_torch_mean10: bool = False, metax_gated_mean10: bool = False,
+                   metax_queued_mean10: bool = False,
                    claude_event_contract: str | None = None) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
@@ -286,7 +287,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
             provider['native_skill_package'] = skill_package_reference
     evaluation = evaluation_policy(workload, searches_per_turn=searches_per_turn,
                                    dispatches_per_sample=dispatches_per_sample,
-                                   maximum_cv=maximum_cv, required_pair_wins=required_pair_wins, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10)
+                                   maximum_cv=maximum_cv, required_pair_wins=required_pair_wins, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10, metax_queued_mean10=metax_queued_mean10)
     return {
         "schema_version": 1, "run_id": "open_cake-1", "sequence": 1, "assignment": None,
         "compiler_revision": dict(CURRENT_RELEASE_BINDING),

@@ -609,7 +609,7 @@ def main(argv=None) -> int:
     parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int,
                         help="contracted K extent; only a contraction task declares one")
-    parser.add_argument("--metax-timing", choices=("mean10-events", "native-mean10-events", "torch-reset-mean10-events", "gated-mean10-events", "legacy"),
+    parser.add_argument("--metax-timing", choices=("mean10-events", "native-mean10-events", "torch-reset-mean10-events", "gated-mean10-events", "queued-mean10-events", "legacy"),
                         help="Explicit MACA event mean10 successor; legacy retains MCPTI timing")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=32)
@@ -740,9 +740,10 @@ def main(argv=None) -> int:
     metax_native_mean10 = args.metax_timing == 'native-mean10-events'
     metax_torch_mean10 = args.metax_timing == 'torch-reset-mean10-events'
     metax_gated_mean10 = args.metax_timing == 'gated-mean10-events'
+    metax_queued_mean10 = args.metax_timing == 'queued-mean10-events'
     if args.metax_timing is not None and _local_kind_of(args.backend) != 'maca':
         raise ValueError('--metax-timing requires a MACA backend')
-    if (metax_mean10 or metax_native_mean10 or metax_torch_mean10 or metax_gated_mean10) and (args.maximum_cv is not None or args.required_pair_wins is not None):
+    if (metax_mean10 or metax_native_mean10 or metax_torch_mean10 or metax_gated_mean10 or metax_queued_mean10) and (args.maximum_cv is not None or args.required_pair_wins is not None):
         raise ValueError('MACA mean10 records dispersion/pair wins as diagnostics; use legacy for hard gates')
     metal_mean30 = route == 'metal' and args.metal_timing != 'legacy'
     if metal_mean30 and (args.maximum_cv is not None or args.required_pair_wins is not None):
@@ -759,6 +760,7 @@ def main(argv=None) -> int:
         native_skill_package=args.author_skill_package, metal_mean30=metal_mean30,
         metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10,
         metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10,
+        metax_queued_mean10=metax_queued_mean10,
         claude_event_contract=args.claude_event_contract)
     if route == 'metal':
         admit_cohort_payload(workload, args.case,
