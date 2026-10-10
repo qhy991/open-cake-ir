@@ -336,17 +336,6 @@ class CommandBrokerSubmitter:
                         "broker_stderr": completed.stderr,
                     },
                 )
-            if completed.returncode != 0:
-                raise RunProtocolFault(
-                    "broker_fault",
-                    f"evaluator/broker command exited {completed.returncode}",
-                    artifact_payloads={
-                        "evaluator_request": canonical_json_bytes(evaluator_arguments),
-                        "broker_stdout": completed.stdout,
-                        "broker_stderr": completed.stderr,
-                        "broker_result": worker_result_bytes,
-                    },
-                )
             # Receipt rejection must retain the bytes before TemporaryDirectory
             # removes the worker's output. Only custody-checked artifacts enter this
             # fault; unsafe paths are never opened to improve a diagnostic.
@@ -366,6 +355,10 @@ class CommandBrokerSubmitter:
                     payload = self._read_output_artifact(root,path,role)
                     diagnostic_payloads[f'failure_{role}'] = payload
                     fault_artifacts[f'failure_{role}'] = payload
+                if completed.returncode != 0:
+                    raise RunProtocolFault(
+                        'broker_fault', f'evaluator/broker command exited {completed.returncode}',
+                        artifact_payloads=fault_artifacts)
                 job_observations = _BROKER_JOB_OBSERVATION.findall(completed.stderr)
                 from open_cake_ir.evaluation.refusals import is_local_allocation_refusal
                 allocation_refused = is_local_allocation_refusal(
@@ -478,6 +471,7 @@ class CommandBrokerSubmitter:
             except (ValueError, TypeError, KeyError, OSError) as error:
                 raise RunProtocolFault(
                     "broker_fault",
-                    f"evaluator evidence rejected ({type(error).__name__}): {error}",
+                    (f'evaluator/broker command exited {completed.returncode}; ' if completed.returncode else '')
+                    + f"evaluator evidence rejected ({type(error).__name__}): {error}",
                     artifact_payloads=fault_artifacts,
                 ) from error

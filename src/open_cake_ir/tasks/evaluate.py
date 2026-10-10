@@ -41,6 +41,7 @@ from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate
 from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, admit_local_job
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.program import ProgramLaunchManifest
+from open_cake_ir.evaluation.loaders import UndrainedDeviceWork
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_evaluation_inputs, reference_evaluation_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
@@ -399,6 +400,9 @@ def capture_tile_cohort(loaded, strict_cupti, *, samples_per_cohort, route_calls
         if used != len(arguments):
             raise RuntimeError('retained CUPTI helper invocation count differs')
         return samples, arguments
+    except UndrainedDeviceWork as error:
+        error.retain(loaded, arguments, strict_cupti)
+        raise
     except BaseException:
         release = getattr(loaded, 'release_argument_sets', None)
         if release is not None:
@@ -428,9 +432,13 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
                 check.setdefault('original_bench_checks', []).append(observation['original_bench_check'])
         return samples, check
     finally:
-        release = getattr(loaded, 'release_argument_sets', None)
-        if release is not None:
-            release(arguments)
+        pending = sys.exc_info()[1]
+        if isinstance(pending, UndrainedDeviceWork):
+            pending.retain(loaded, arguments, strict_cupti)
+        else:
+            release = getattr(loaded, 'release_argument_sets', None)
+            if release is not None:
+                release(arguments)
 
 
 def _evaluate_paired_tile(authority, result, benchmark_for, admission):
@@ -602,21 +610,40 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
     finally:
         counters['kernel_calls'] = sum(item.loaded.launch_calls for item in loaded.values())
         pending_error = sys.exc_info()[1]
-        cleanup_error = None
-        for item in loaded.values():
-            try:
-                item.close()
-            except BaseException as error:
-                if cleanup_error is None:
-                    cleanup_error = error
-        if isinstance(pending_error, MetaxLaunchResourceError) and hasattr(pending_error, 'launch_resource'):
-            observation = json.loads(pending_error.artifact_payloads['launch_resource'])
-            observation['teardown_completed'] = cleanup_error is None
-            pending_error.artifact_payloads['launch_resource'] = _canonical_json_bytes(observation)
-        if cleanup_error is not None:
-            if pending_error is not None:
-                raise pending_error from cleanup_error
-            raise cleanup_error
+        if isinstance(pending_error, UndrainedDeviceWork):
+            pending_error.retain(loaded, assays)
+        else:
+            cleanup_error = None
+            for item in loaded.values():
+                try:
+                    item.close()
+                except UndrainedDeviceWork as error:
+                    error.retain(loaded, assays, pending_error)
+                    raise
+                except BaseException as error:
+                    if cleanup_error is None:
+                        cleanup_error = error
+            if isinstance(pending_error, MetaxLaunchResourceError) and hasattr(pending_error, 'launch_resource'):
+                observation = json.loads(pending_error.artifact_payloads['launch_resource'])
+                observation['teardown_completed'] = cleanup_error is None
+                pending_error.artifact_payloads['launch_resource'] = _canonical_json_bytes(observation)
+            if cleanup_error is not None:
+                if pending_error is not None:
+                    raise pending_error from cleanup_error
+                raise cleanup_error
+
+
+def _close_device_owner(loaded, *owners, **options):
+    """Keep a terminal signal's device owners alive until the worker exits."""
+    pending = sys.exc_info()[1]
+    if isinstance(pending, UndrainedDeviceWork):
+        pending.retain(loaded, *owners)
+        return
+    try:
+        loaded.close(**options)
+    except UndrainedDeviceWork as error:
+        error.retain(loaded, *owners, pending)
+        raise
 
 
 def _evaluate_untimed_validation_cases(authority, result, admission):
@@ -649,7 +676,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
                          "metrics": values, "resources": loaded.loaded.resources})
         finally:
             counters["kernel_calls"] += loaded.loaded.launch_calls
-            loaded.close()
+            _close_device_owner(loaded, inputs)
     passed = all(row["passed"] for row in rows)
     _write_new(authority.request_root / "correctness-output.json", {
         "passed": passed, "metrics": metrics, "validation_cases": rows,
@@ -713,6 +740,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     timed_checks = []
     closed = False
     profile_raw = None
+    instrumented = None
     try:
         preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded,
                 **_correctness_preparation(authority, authority.case_id))
@@ -858,7 +886,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         counters['kernel_calls'] = loaded.loaded.launch_calls
         counters['timing_samples'] = sum(len(s) for s in cohorts)
         if not closed:
-            loaded.close()
+            _close_device_owner(loaded, inputs, instrumented)
 
 
 def _evaluate_metal_candidate(authority, result):
@@ -1317,7 +1345,8 @@ def _evaluate_candidate(
             "artifacts": artifacts,
         }
     finally:
-        loaded.close(synchronize=torch.cuda.synchronize)
+        _close_device_owner(loaded, tokens, centroids, centroids_fp32, centroid_sq, output,
+                            synchronize=torch.cuda.synchronize)
 
 
 def _forward_profile_output(stdout: bytes, stderr: bytes) -> None:
@@ -1644,6 +1673,15 @@ def main() -> int:
                     "profiler, and never on another platform's behalf")
         else:
             _platform(authority).evaluate(authority, result)
+    except UndrainedDeviceWork as error:
+        # Evidence failure must not unwind through owners retained by the signal.
+        try:
+            result.update(error='evaluator_failed', failure_class=type(error).__name__, receipt=None)
+            print(f'{type(error).__name__}: {error}', file=sys.stderr, flush=True)
+            _retain_failure_artifacts(result, error, request_path.parent)
+            _write_new(args.output, result)
+        finally:
+            os._exit(74)
     except LocalBrokerBusy as error:
         result = _base_result(error.job_id)
         result.update(error=str(error), failure_class='admission')
