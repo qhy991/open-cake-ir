@@ -20,7 +20,6 @@ def _cake_online_softmax_b8_smoke_kernel(
     D_OUTPUT_1: tl.constexpr,
     BLOCK_ROW_BLOCK: tl.constexpr,
     BLOCK_SELECTED_LOOP: tl.constexpr,
-    NUM_STAGES: tl.constexpr,
 ):
     row_block = tl.program_id(0)
     row_block_offsets = row_block * BLOCK_ROW_BLOCK + tl.arange(0, BLOCK_ROW_BLOCK)
@@ -106,7 +105,6 @@ def cake_online_softmax_b8_smoke(logits, values, out=None):
         D_OUTPUT_1=16,
         BLOCK_ROW_BLOCK=2,
         BLOCK_SELECTED_LOOP=16,
-        NUM_STAGES=1,
         num_warps=4,
         num_stages=1,
         maxnreg=96,
