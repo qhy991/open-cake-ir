@@ -579,6 +579,19 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
                 raise cleanup_error
 
 
+def _close_device_owner(loaded, *owners, **options):
+    """Keep a terminal signal's device owners alive until the worker exits."""
+    pending = sys.exc_info()[1]
+    if isinstance(pending, UndrainedDeviceWork):
+        pending.retain(loaded, *owners)
+        return
+    try:
+        loaded.close(**options)
+    except UndrainedDeviceWork as error:
+        error.retain(loaded, *owners, pending)
+        raise
+
+
 def _evaluate_untimed_validation_cases(authority, result, admission):
     """Keep the full Workload distribution contract when a platform has no timer."""
     from dataclasses import asdict
@@ -608,7 +621,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
                          "metrics": values, "resources": loaded.loaded.resources})
         finally:
             counters["kernel_calls"] += loaded.loaded.launch_calls
-            loaded.close()
+            _close_device_owner(loaded, inputs)
     passed = all(row["passed"] for row in rows)
     _write_new(authority.request_root / "correctness-output.json", {
         "passed": passed, "metrics": metrics, "validation_cases": rows,
@@ -669,6 +682,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     cohorts = []
     non_target = []
     timed_checks = []
+    instrumented = None
     try:
         preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded,
                 **_correctness_preparation(authority, authority.case_id))
@@ -794,7 +808,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     finally:
         counters['kernel_calls'] = loaded.loaded.launch_calls
         counters['timing_samples'] = sum(len(s) for s in cohorts)
-        loaded.close()
+        _close_device_owner(loaded, inputs, instrumented)
 
 
 def _evaluate_metal_candidate(authority, result):
@@ -1231,7 +1245,8 @@ def _evaluate_candidate(
             "artifacts": artifacts,
         }
     finally:
-        loaded.close(synchronize=torch.cuda.synchronize)
+        _close_device_owner(loaded, tokens, centroids, centroids_fp32, centroid_sq, output,
+                            synchronize=torch.cuda.synchronize)
 
 
 def _forward_profile_output(stdout: bytes, stderr: bytes) -> None:
