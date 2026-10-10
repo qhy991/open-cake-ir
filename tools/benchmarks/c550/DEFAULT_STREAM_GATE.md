@@ -23,8 +23,8 @@ it cannot reuse the component or report samples from the failed capture.
 The CPU tests compile this exact C++ source and substitute runtime callbacks.
 They cover full callback order, stream-zero submissions, partial callback and end
 submission failures, cleanup failure, and bounded timeout. Their sentinel event
-values are not physical timings. Exact-target device semantics, Program mutation
-controls, a device entry and a separately frozen protocol remain future gates.
+values are not physical timings. Exact-target device semantics, a device entry and a separately frozen protocol
+remain future gates. Program mutation controls are covered below.
 
 ## Component tensor adapter
 
