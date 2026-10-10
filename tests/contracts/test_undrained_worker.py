@@ -24,6 +24,7 @@ class UndrainedWorker(unittest.TestCase):
                 with self.subTest(untimed=untimed, error=error_type.__name__):
                     fixture=untimed_fixture.UntimedValidationCases();fixture.setUp();self.addCleanup(fixture.doCleanups)
                     authority=fixture.authority;authority.case_id='primary'
+                    authority.candidate.is_program=False
                     if not untimed:
                         authority.request['evaluation_protocol']={}
                     loaded=NS(module_count=1,loaded=NS(launch_calls=1,resources={}),close=Mock())
