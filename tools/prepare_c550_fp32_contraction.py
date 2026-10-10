@@ -16,10 +16,10 @@ from open_cake_ir.compiler import Compiler, Program, frontend
 from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.tasks.workloads import create_task
 
-# The original task factory requires power-of-two N/K. M and the selected tiles
-# exercise masked rows and N smaller than a tile without changing its contract.
+# The original factory requires power-of-two N/K and M/N divisible by eight.
+# M8 and N8 exercise masks within tile16 without changing that contract.
 CASES = (('original', 24, 32, 64), ('mma', 24, 32, 64),
-         ('mma', 5, 8, 128), ('mma', 1, 16, 32))
+         ('mma', 8, 8, 128), ('mma', 8, 16, 32))
 PARAMETERS = dict(row_tile=16, column_tile=16, k_tile=16, num_warps=4, num_stages=1)
 
 
