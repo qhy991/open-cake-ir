@@ -14,6 +14,10 @@ from .ir import (AccessIndexKind, BufferMode, DType, ElementwiseOp, LoweringBack
 from .passes import SpecializationResult
 
 
+# Operand layouts with retained rewrite evidence, not hardware capability facts.
+_FP32_CONTRACTION_EVIDENCE = {'gfx938': frozenset({0, 1}), 'xcore1002': frozenset({1})}
+
+
 def _refuse(reason, message):
     return SpecializationResult(None, reason, message)
 
@@ -43,8 +47,8 @@ def _match(compiler, schedule):
     if (not assessment.lowering_eligible and not range_only) or assessment.typed_schedule is None:
         return _refuse('input_refused', ', '.join(f.code for f in blockers))
     s = assessment.typed_schedule
-    if s.lowering.backend is not LoweringBackend.TRITON or s.target != 'gfx938':
-        return _refuse('target_route', 'This rewrite has retained source evidence only for gfx938 Triton.')
+    if s.lowering.backend is not LoweringBackend.TRITON or s.target not in _FP32_CONTRACTION_EVIDENCE:
+        return _refuse('target_route', 'This rewrite has no retained evidence for the selected target and route.')
     if (s.tile_loops or s.allocations or s.pipelines or s.barriers or s.residency
             or len(s.roles) != 1 or s.roles[0].registers_per_thread is not None
             or s.roles[0].execution_groups != tuple(range(len(s.roles[0].execution_groups)))
@@ -94,6 +98,8 @@ def _match(compiler, schedule):
         return _refuse('operand_provenance', 'Both contraction operands must be direct global loads without intervening arithmetic or rounding.')
     ag, bg, output = s.buffer(a.reads[0]), s.buffer(b.reads[0]), s.buffer(store.writes[0])
     k_axis = fold.parameters.axis
+    if k_axis not in _FP32_CONTRACTION_EVIDENCE[s.target]:
+        return _refuse('operand_layout', 'The selected target has no rewrite evidence for this right-operand layout.')
     if (len(ag.shape) != 2 or len(bg.shape) != 2 or len(output.shape) != 2
             or ag.shape[1] != bg.shape[k_axis]
             or output.shape != (ag.shape[0], bg.shape[1 - k_axis])
@@ -179,7 +185,7 @@ def _match(compiler, schedule):
 
 def specialize_fp32_contraction(compiler, schedule, *, row_tile, column_tile, k_tile,
                                 num_warps, num_stages, schedule_id, entry_point):
-    """Construct one explicitly selected gfx938 IEEE FP32 MMA candidate.
+    """Construct one explicitly selected, target-qualified IEEE FP32 MMA candidate.
 
     The tile domain is the retained rank-two dot family, with power-of-two tile
     extents of at least 16 and at least two K iterations. Global row/column
