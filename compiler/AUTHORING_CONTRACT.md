@@ -249,3 +249,45 @@ no new route qualification, physical register guarantee or speedup is inferred.
 Lowering diagnostics distinguish a declaration the author can repair from an unemitted
 loop topology and an unqualified route control. Shared/register operand and affine loop
 store-coordinate requirements remain blocking; accurate owner routing does not relax them.
+
+## Explicit FP32 contraction candidates
+
+`Compiler.specialize_fp32_contraction(schedule, row_tile=16, column_tile=64,
+k_tile=64, num_warps=4, num_stages=1, schedule_id="tiled", entry_point="tiled")`
+returns one complete assessed candidate or a refusal. The complete-Program API exposes
+the same `specialize_fp32_contraction` transformation with an additional `stage`
+parameter, so the existing author `cake.transform` tool can call it when its frozen
+Run grants access. No grant, task or implicit lowering behavior changes.
+
+The matched graph has ordinary independent FP32 inputs `A[M,K]` and either `B[K,N]`
+or `B[N,K]`, a row program, direct whole operand loads, broadcast multiplication and
+one CTA sum over K. Its sole output is `C[M,N]`. The result uses the existing
+`triton.dot.fp32_ieee` instruction with an explicit K loop and a register transpose
+only for the `[K,N]` layout. The current rewrite evidence domain is gfx938 Triton.
+This restriction records where the candidate mechanism was observed; it is not a
+claim about another Target's instruction capability.
+
+Pointwise FP32 epilogues may use scalar arithmetic, full column-vector inputs and
+matching row inputs. Their operations, instruction choices and relative arithmetic
+order remain. The contraction's loads and products cannot have other consumers.
+Loops, persistence, allocations, views, state, synchronization, non-data ordering,
+casts and output-coupling operations are refused. Global tensors, bindings and
+workload metadata remain unchanged; runtime storage independence remains part of
+the existing Program/Execution ABI.
+
+Callers supply every tile, execution-group count and pipeline depth. Tile extents
+are powers of two of at least 16, and `k_tile < K` declares at least two iterations.
+Row/column extents may be smaller than a tile, including `M=1`; masked tails are
+retained. A semantically admitted source refused only for its whole-dimension
+Triton arange can enter because this rewrite replaces those extents with tiles.
+The result still requires normal Compiler and backend admission. A larger stage
+count may exceed the compiled device resource limits; source admission does not
+qualify toolchain allocation or performance.
+
+IEEE input precision does not preserve the original multiply/sum accumulation
+order or guarantee bitwise equality. The original external Workload oracle and
+tolerance decide numerical acceptance. Tile selection, compiled-resource checks
+and target measurement remain with the caller; development callable samples are
+not independent Bench performance results. The supporting source evidence and
+pending successor qualification are recorded in
+[F-2026-10-10-002](../findings/2026-10-10-002-fp32-contraction-mma-rewrite.json).
