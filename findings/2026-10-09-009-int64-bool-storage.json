@@ -23,11 +23,7 @@
   "observation": "C1 DType, WorkloadContract.tensor_abi, TensorLaunchManifest and MACA launch dtype maps do not admit these original input types. NativeTritonEnvironment uses the same closed ABI. Casting inputs in a Torch wrapper would change the route and must not stand in for pure Cake support.",
   "proposed_change": "Add explicit discrete storage, bounded indexing, matching comparisons, typed select, exact BOOL-to-INT32/FP32 and INT32-to-INT64 casts, and RNE INT64-to-FP32. Refuse INT64 narrowing and automatic BOOL arithmetic. Keep typing, byte counts, Triton emission, manifest, storage snapshots and MACA argument checks consistent.",
   "promotion_disposition": "Shared software implementation only. Device capacity remains open until independent native compilation and device campaigns qualify generated INT64/BOOL operations; existing Runs retain C1. No performance claim.",
-  "implemented_in": [
-    "f9125062",
-    "ba3ab3bf",
-    "b8b345d9"
-  ],
+  "implemented_in": "f9125062, ba3ab3bf, b8b345d9",
   "verified_by": null,
   "software_verification": {
     "commit": "ba3ab3bf",
@@ -47,5 +43,14 @@
     "gpu_visibility": "CUDA_VISIBLE_DEVICES, MACA_VISIBLE_DEVICES, HIP_VISIBLE_DEVICES and MUSA_VISIBLE_DEVICES are empty",
     "preserved_attempt": "int64-bool-cpu-001 retained docker command-not-found before test execution; successor uses existing nerdctl entry without environment repair",
     "scope": "New independent Linux CPU acceptance. No GPU/provider call, native kernel compilation, device qualification or timing."
+  },
+  "integration_provenance": {
+    "implemented_in_before_integration": [
+      "f9125062",
+      "ba3ab3bf",
+      "b8b345d9"
+    ],
+    "representation_source": "8a6b7624",
+    "representation_change": "Represent the same implementation commit references as the existing scalar narrative field; no evidence or verification change."
   }
 }

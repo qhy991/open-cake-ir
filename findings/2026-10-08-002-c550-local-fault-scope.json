@@ -21,10 +21,18 @@
   "observation": "GEMM+SiLU Turn3 produced coherent thinking progress but no terminal before the1800-second supervisor limit. The Run stays provider_fault. FIB GEMM Turn20 mapped FP16 dot to1x2048 by2048x2 and triggered MACAMmaEncodingAttr::composeSharedLayoutForOperand shape_judge and TritonGPUReduceDataDuplication. Generic RuntimeError exited1 and was promoted to harness_fault. Prior23 compilations returned. Both fault labels stopped new host submissions.",
   "proposed_change": "Only the complete retained layout signature on mcfatbin with captured Triton3.6.0 becomes CandidateCompileRejected, with actionable MACA_MMA_SHARED_LAYOUT feedback and original streams. Unknown, import, filesystem and isolation failures remain global faults. A coherent progress-only timeout without quota or API-error notices gets the explicit ProviderDeliveryTimeout subtype; the failed Run is archived while qualified siblings continue. Prompt guidance exposes the default timeout and asks for bounded hypotheses and early delivery.",
   "promotion_disposition": "Lab/SDK feedback and dispatcher isolation; no Compiler primitive, hardware tile-range claim, automatic retry, retrospective acceptance or new performance promotion. A complete admissible SDK tile domain remains a separate investigation.",
-  "implemented_in": ["102933a8","651a7fe6"],
+  "implemented_in": "102933a8, 651a7fe6",
   "verified_by": {
     "software": "241 relevant contracts passed,1 skipped, at a50523e3 in /tmp/cake-c550-fault-final-tests;201 Corpus cases matched without refreshed expectations",
     "cpu_replay": "Same captured runtime compiled baseline and rejected the exact retained candidate with zero GPU calls; retained streams and localized diagnostic in fault-isolation-final-replay-20261008",
     "scope": "Software and CPU replay; successor provider and per-task device acceptance are separate gates"
+  },
+  "integration_provenance": {
+    "implemented_in_before_integration": [
+      "102933a8",
+      "651a7fe6"
+    ],
+    "representation_source": "8a6b7624",
+    "representation_change": "Represent the same implementation commit references as the existing scalar narrative field; no evidence or verification change."
   }
 }

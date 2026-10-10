@@ -22,11 +22,19 @@
   "observation": "A Python Program candidate can use the existing Program frontend, authoring environment and builder, but the same complete source cannot serve as an ordinary task starter. Task preparation reads a root lowering field that Program does not declare, and baseline admission only examines one kernel source.",
   "proposed_change": "Select the existing Program parser from an explicit static cake.program declaration. Bind every stage to the original Workload; validate complete public ABI and common backend. Lower with Compiler.lower_program and validate all sealed stage sources and launch records through program_components. Preserve the single-Schedule path. Native comparison of Program starters remains a named refusal.",
   "promotion_disposition": "Promoted to existing Task/Lab preparation and baseline admission. The authoring route entry_point remains only a default single-Schedule entry; it is not a Program device function. No added IR field or second Run engine. Runtime Program timing qualification is owned separately.",
-  "implemented_in": ["3dc317fa", "15eaf362"],
+  "implemented_in": "3dc317fa, 15eaf362",
   "verified_by": {
     "commit": "44bf54aa",
     "tests": "66 passed, 0 skipped, 0 failed: program_task_starters, python_task_reference, python_paired_studies, metal_preflight and task_launch",
     "tests_path": "/tmp/cake-program-starter-tests-44bf54aa.log",
     "scope": "Real static Program parsing, Workload binding, TaskLab preflight, task package, source build and sealed multi-stage baseline contracts with explicit CPU Executor/provider/compiler doubles. Later-stage source/grid substitution, missing/reordered stages and mixed backend/target are refused. No provider call, native device compile, GPU correctness or timing qualification."
+  },
+  "integration_provenance": {
+    "implemented_in_before_integration": [
+      "3dc317fa",
+      "15eaf362"
+    ],
+    "representation_source": "8a6b7624",
+    "representation_change": "Represent the same implementation commit references as the existing scalar narrative field; no evidence or verification change."
   }
 }

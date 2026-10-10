@@ -16,7 +16,7 @@
 - [F-2026-10-09-002](2026-10-09-002-metax-launch-resource-rejection.json) — retain status32 resource refusal as typed failed-attempt evidence. Only a complete zero-launch candidate refusal with SDK limit agreement permits sibling tasks to continue; the failing Run remains failed.
 - [F-2026-10-09-007](2026-10-09-007-claude-input-validation-recovery.json) — opt-in v8 distinguishes a native Write input-validation failure from a completed write. Retained-stream replay preserves the later candidate, compaction and usage; C1 remains frozen and fresh provider qualification is still required.
 
-- [F-2026-10-09-001](2026-10-09-001-claude-prompt-transport.json) — v7 sends full prompts through supervised stdin and reserves context room with100k native compaction. Preserve original E2BIG/context-limit failures; live qualification and large UTF8 transport tests retained.
+- [F-2026-10-09-012](2026-10-09-012-claude-prompt-transport.json) — v7 sends full prompts through supervised stdin and reserves context room with100k native compaction. Preserve original E2BIG/context-limit failures; live qualification and large UTF8 transport tests retained.
 
 - [F-2026-10-08-002](2026-10-08-002-c550-local-fault-scope.json) — bounded MACA shared-layout assertion classification and coherent author-delivery timeout isolation. Same-runtime baseline/rejected-input CPU controls pass; original failures stay sealed and no hardware tile range is inferred.
 
@@ -289,3 +289,10 @@ The unmerged Bench Mapping and immutable-Evaluation records are now -004 and
 -005. Their `integration_provenance` names the original id and path at 8a6b7624.
 Frozen commits and their citations remain unchanged. Profile record -003 now
 points to -005 for serialization. This is identity reconciliation, not new evidence.
+
+The combined Findings check also exposed the earlier 2026-10-09 -001 collision.
+Prompt transport is now -012; maintained compile-owner triage keeps -001. Four
+experimental records carried implementation-commit lists where the existing
+contract requires scalar text. Their exact commit lists are preserved in provenance
+and represented as comma-separated text in `implemented_in`. No cited source,
+verification, outcome or evidence is replaced.
