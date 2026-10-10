@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Compiler, frontend
-from tools.benchmarks.c550.width_fixtures import extension_cases
+from tools.benchmarks.c550.width_fixtures import extension_cases, ieee_output_loop_cases
 from tools.qualify_c550_widths import CASES, width_source, WidthCandidateRefused
 from tests.contracts.test_epilogue_fusion import execute
 
@@ -93,6 +93,20 @@ class C550WidthExtension(unittest.TestCase):
         for actual, wanted in zip(observed['out'], expected):
             self.assertAlmostEqual(actual, wanted, places=7)
         self.assertEqual(len(trace.stores), 4*256)
+        self.assertEqual(set(trace.stores.values()), {1})
+
+    def test_ieee_output_loop_keeps_original_workload_and_full_contraction(self):
+        row = ieee_output_loop_cases()[0]
+        original = next(r for r in self.cases if r['name']=='rounded_mma_k_loop')
+        self.assertEqual(row['workload'], original['workload'])
+        document = frontend.parse(row['source']).document
+        self.assertEqual(next(op for op in document['operations'] if op['kind']=='mma')['parameters']['tile_shape'], [16,16,2048])
+        left = [(i % 3)/16 for i in range(5) for k in range(2048)]
+        right = [(j % 5)/8 for j in range(128) for k in range(2048)]
+        observed, trace = execute(document, dict(a=left, b=right))
+        expected = [2048*((i % 3)/16)*((j % 5)/8) for i in range(5) for j in range(128)]
+        self.assertEqual(observed['out'], expected)
+        self.assertEqual(len(trace.stores), 5*128)
         self.assertEqual(set(trace.stores.values()), {1})
 
 

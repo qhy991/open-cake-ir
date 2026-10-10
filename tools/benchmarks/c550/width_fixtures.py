@@ -96,3 +96,16 @@ def output_loop_cases():
     return [dict(name='rounded_mma_output_loop', task='fib_gemm_n128_k2048',
                  rows=5, columns=128, widths=WIDTHS, workload=workload,
                  source=_mma(source, mode='output_loop', rounded=True))]
+
+
+def ieee_output_loop_cases():
+    """Keep the full original FP16 GEMM task; select declared IEEE FP32 intermediates."""
+    row = output_loop_cases()[0]
+    source = row['source'].replace(
+        '            acc = lm.mma(left, right, instruction={"contract": "triton.dot.fp16_fp32"}',
+        '            left_f32 = lm.cast(left, to="fp32", id="widen_left")\n'
+        '            right_f32 = lm.cast(right, to="fp32", id="widen_right")\n'
+        '            acc = lm.mma(left_f32, right_f32, instruction={"contract": "triton.dot.fp32_ieee"}')
+    if source == row['source']:
+        raise ValueError('The pure rounded MMA construction site differs')
+    return [dict(row, name='rounded_ieee_output_loop', source=source)]
