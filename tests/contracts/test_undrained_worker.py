@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, Mock, patch
 from open_cake_ir.evaluation.loaders import UndrainedDeviceWork
 from open_cake_ir.tasks import evaluate as worker
 from tests.contracts import test_paired_execution as paired_fixture
-from tests.contracts.test_untimed_validation_cases import UntimedValidationCases
+from tests.contracts import test_untimed_validation_cases as untimed_fixture
 
 ROOT=Path(__file__).resolve().parents[2]
 
@@ -22,7 +22,7 @@ class UndrainedWorker(unittest.TestCase):
         for untimed in (False, True):
             for error_type in (UndrainedDeviceWork, RuntimeError):
                 with self.subTest(untimed=untimed, error=error_type.__name__):
-                    fixture=UntimedValidationCases();fixture.setUp();self.addCleanup(fixture.doCleanups)
+                    fixture=untimed_fixture.UntimedValidationCases();fixture.setUp();self.addCleanup(fixture.doCleanups)
                     authority=fixture.authority;authority.case_id='primary'
                     if not untimed:
                         authority.request['evaluation_protocol']={}
@@ -41,6 +41,21 @@ class UndrainedWorker(unittest.TestCase):
                         self.assertTrue(any(owner is loaded for owner in error._owners))
                     else:
                         loaded.close.assert_called_once_with()
+
+    def test_close_can_replace_an_ordinary_failure_with_terminal_custody(self):
+        fixture=untimed_fixture.UntimedValidationCases();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        ordinary=RuntimeError('ordinary preflight failure')
+        terminal=UndrainedDeviceWork('close could not drain')
+        loaded=NS(module_count=1,loaded=NS(launch_calls=1,resources={}),close=Mock(side_effect=terminal))
+        with patch.object(worker,'LoadedTorchTensorCandidate',return_value=loaded), \
+             patch.object(worker,'materialize_evaluation_inputs',return_value={}), \
+             patch.object(worker,'evaluate_tile_validation_case',side_effect=ordinary), \
+             self.assertRaises(UndrainedDeviceWork) as caught:
+            worker._evaluate_untimed_validation_cases(fixture.authority,fixture.result,fixture.admission)
+        self.assertIs(caught.exception,terminal)
+        loaded.close.assert_called_once_with()
+        self.assertTrue(any(owner is loaded for owner in terminal._owners))
+        self.assertTrue(any(owner is ordinary for owner in terminal._owners))
 
     def test_flash_candidate_finalizer_preserves_terminal_owner(self):
         for error_type in (UndrainedDeviceWork, RuntimeError):
