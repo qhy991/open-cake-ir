@@ -137,16 +137,26 @@ class FP32ContractionRewrite(unittest.TestCase):
         self.assertEqual(self.apply(original).reason, 'execution_commitments')
 
     def test_rounding_or_alias_storage_is_outside_the_rewrite(self):
-        for field, value in (('dtype', 'bf16'), ('byte_offset', 4)):
-            original = document()
-            for b in original['buffers']:
-                if field == 'dtype':
-                    b[field] = value
-                elif b['name'] == 'a':
-                    b[field] = value
-            result = self.apply(original)
-            self.assertFalse(result.applied)
-            self.assertIn(result.reason, {'storage_domain', 'input_refused'})
+        original = document()
+        next(b for b in original['buffers'] if b['name'] == 'a')['byte_offset'] = 4
+        self.assertTrue(self.compiler.assess(original).lowering_eligible)
+        self.assertEqual(self.apply(original).reason, 'storage_domain')
+
+        # This BF16 load plus explicit widening is legal input. Its dtype and
+        # rounding seam are outside the pass, not an incidental invalid reduce.
+        original = document()
+        next(b for b in original['buffers'] if b['name'] == 'a')['dtype'] = 'bf16'
+        raw = deepcopy(next(b for b in original['buffers'] if b['name'] == 'left'))
+        raw.update(name='left_narrow', dtype='bf16')
+        original['buffers'].append(raw)
+        original['operations'][0]['writes'] = ['left_narrow']
+        original['operations'].insert(1, dict(id='widen_left', kind='cast', role='compute',
+            reads=['left_narrow'], writes=['left'], parameters={'to': 'fp32'}, depends_on=['load_a']))
+        product = next(op for op in original['operations'] if op['id'] == 'products')
+        product['depends_on'] = ['widen_left', 'load_b']
+        self.assertTrue(self.compiler.assess(original).lowering_eligible)
+        self.assertEqual(self.apply(original).reason, 'storage_domain')
+
         original = document()
         original['buffers'][0]['mode'] = 'state'
         self.assertFalse(self.apply(original).applied)
