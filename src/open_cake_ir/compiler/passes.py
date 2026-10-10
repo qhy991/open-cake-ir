@@ -61,10 +61,10 @@ def _whole_dimension(index, dimension: int) -> bool:
             and index.offset == 0 and index.extent is None)
 
 
-# Where the launch-width rewrite has been qualified: B200, B300 and gfx938 under the Triton
+# Where the launch-width rewrite has been qualified: B200, B300, gfx938 and C550 under the Triton
 # route. An applicability set the pass declares, not a capability the Target does;
 # widening it is a qualification act on the added target.
-_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a', 'gfx938'})
+_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a', 'gfx938', 'xcore1002'})
 
 
 def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,

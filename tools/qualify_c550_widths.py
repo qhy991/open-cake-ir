@@ -114,7 +114,7 @@ def prepare(output, suite='initial'):
             rows.append(dict(name=name, task=row['task'], rows=row['rows'],
                              columns=row['columns'], width=width))
     write(output / 'plan.json', dict(source_commit=checkout_commit(ROOT), candidates=rows, suite=suite, refusals=refusals,
-        scope='explicit width candidates; production pass remains unqualified',
+        scope='explicit width candidates; promotion is recorded separately',
         reference='unchanged task-owned Workload oracle', timing='none', provider_calls=0))
     return dict(prepared=len(rows), refused=len(refusals), gpu_calls=0)
 

@@ -30,13 +30,12 @@ class C550WidthPreparation(unittest.TestCase):
                     count += 1
         self.assertEqual(count, 8)
 
-    def test_qualification_does_not_open_the_production_action(self):
+    def test_qualified_action_and_invalid_widths(self):
         _, source = create_task('fib_rmsnorm_h4096', backend='triton-metax', rows=64, columns=4096)
         document = frontend.parse(source).document
         result = self.compiler.specialize_triton_warps(document, num_warps=4,
             schedule_id='qualification_not_promotion', entry_point='candidate')
-        self.assertFalse(result.applied)
-        self.assertEqual(result.reason, 'target_route')
+        self.assertTrue(result.applied, (result.reason, result.message))
         for bad in (True, 0, 3, 32):
             with self.subTest(width=bad), self.assertRaises(ValueError):
                 width_source(self.compiler, source, bad)
