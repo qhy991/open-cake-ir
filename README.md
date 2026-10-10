@@ -34,7 +34,7 @@ Compiler 由各硬件的独立 Bench 检验。共同流程见[开发与评测标
 
 | 分支 / 硬件 | 独立 Bench | 当前进步记录 |
 |---|---|---|
-| metax / C550 | [c550-bench](https://github.com/qhy991/c550-bench) | [单题正确性已有证据；Bench 性能尚未测](docs/results/metax/BENCHMARK_PROGRESS.md) |
+| metax / C550 | [c550-bench](https://github.com/qhy991/c550-bench) | [3/10 题原始正确性；Bench 搜索与性能未完成](docs/results/metax/BENCHMARK_PROGRESS.md) |
 | metal / Apple M4 | [metal-bench](https://github.com/qhy991/metal-bench) | [软件验证通过；GPU 资格与性能待测](docs/results/metal/BENCHMARK_PROGRESS.md) |
 | dcu / gfx938 | [bw1100-bench](https://github.com/qhy991/bw1100-bench) | [正确性入口与开发 replay 已有证据；版本进步对照待测](docs/results/dcu/BENCHMARK_PROGRESS.md) |
 
@@ -234,3 +234,7 @@ CAKE_DEMO_DIR=$(mktemp -d)
 
 作者：秦海岩（Haiyan Qin），联系：<haiyanq@buaa.edu.cn>。
 本项目是独立研究实现，不是 CAKE 论文的官方源码。
+
+### C550 验证交接
+
+[已验证范围、Compiler 改进候选与后续工作](docs/results/metax/VERIFICATION_HANDOFF_20261010.md)。组件验收、原始正确性和正式 Bench 优化分别报告。

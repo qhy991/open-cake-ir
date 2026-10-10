@@ -17,3 +17,9 @@
 [Bench 范围与验证来源](https://github.com/qhy991/c550-bench/blob/ababa4c0656b89bdf0a9c60ef0d2e90e0aebb425/README.md) · [已有开发证据](../../metax-c550.md)。
 本条只建立发布起点，没有新启动 provider 或 GPU 实验。后续每轮追加固定版本、逐任务
 正确性/性能、失败和封存报告来源；不把这个起点表回填为旧实验成绩。
+
+## 2026-10-10：验证状态与后续工作
+
+[完整验证交接](VERIFICATION_HANDOFF_20261010.md)区分了原生接口、原始正确性、计时组件和作者资格。正式 Bench 优化仍为零。旧 RMS A/A 的拒绝保留；完整 Program 排队计时组件已完成有界设备控制，生产接入待公共 worker 安全边界审查和独立后继验收。
+
+同一固定实验集成的 RoPE 和 Gate-Up 随后各完成原始 16×10 正确性，最终版本已有 RMSNorm、RoPE、Gate-Up 三题完整正确性，即 3/10。新增两题共 320 次原始检查和 640 次 native stage 调用；输入、模块与锁回收审计通过。无计时、无 provider、无优化 Run。
