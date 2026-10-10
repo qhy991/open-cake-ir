@@ -28,6 +28,14 @@ def write(path, value):
         stream.write(canonical_json_bytes(value))
 
 
+class WidthCandidateRefused(ValueError):
+    """Retain the existing Compiler's named rejection of an explicit proposal."""
+    def __init__(self, assessment):
+        self.codes = tuple(f.code for f in assessment.findings
+                           if f.blocks_lowering or f.blocks_acceptance)
+        super().__init__('Proposed width refused: ' + ', '.join(self.codes))
+
+
 def width_source(compiler, source, width):
     if type(width) is not int or width not in (1, 2, 4, 8, 16):
         raise ValueError('This qualification fixes execution groups to 1, 2, 4, 8 or 16')
@@ -52,7 +60,7 @@ def width_source(compiler, source, width):
         raise ValueError('The candidate changed more than execution groups')
     assessed = compiler.assess(document)
     if not assessed.lowering_eligible:
-        raise ValueError('The proposed width is refused by exact-target assessment')
+        raise WidthCandidateRefused(assessed)
     def kernel_body(assessment):
         lowered = compiler.lower(assessment)
         node = next(n for n in ast.parse(lowered.source).body if isinstance(n, ast.FunctionDef)
@@ -75,6 +83,7 @@ def width_source(compiler, source, width):
 def prepare(output, suite='initial'):
     compiler = Compiler.load(ROOT)
     rows = []
+    refusals = []
     if suite == 'extension':
         from tools.benchmarks.c550.width_fixtures import extension_cases
         cases = extension_cases()
@@ -89,16 +98,25 @@ def prepare(output, suite='initial'):
             name = row['name'] + '-w' + str(width)
             directory = output / name
             directory.mkdir()
-            candidate = width_source(compiler, row['source'], width)
-            write(directory / 'workload.json', row['workload'])
+            try:
+                candidate = width_source(compiler, row['source'], width)
+            except WidthCandidateRefused as error:
+                if suite != 'extension' or width != 16 or error.codes != ('MACA_WARP_COUNT_UNQUALIFIED',):
+                    raise
+                record = dict(name=name, task=row['task'], width=width, codes=error.codes,
+                              scope='expected exact-route refusal; zero native or device calls')
+                write(directory / 'refused.json', record)
+                refusals.append(record)
+                continue
+            write(directory / 'workload.json' , row['workload'])
             (directory / 'starter.py').write_text(candidate)
             write(directory / 'schedule.json', frontend.parse(candidate).document)
             rows.append(dict(name=name, task=row['task'], rows=row['rows'],
                              columns=row['columns'], width=width))
-    write(output / 'plan.json', dict(source_commit=checkout_commit(ROOT), candidates=rows, suite=suite,
+    write(output / 'plan.json', dict(source_commit=checkout_commit(ROOT), candidates=rows, suite=suite, refusals=refusals,
         scope='explicit width candidates; production pass remains unqualified',
         reference='unchanged task-owned Workload oracle', timing='none', provider_calls=0))
-    return dict(prepared=len(rows), gpu_calls=0)
+    return dict(prepared=len(rows), refused=len(refusals), gpu_calls=0)
 
 
 def build(prepared, output):
