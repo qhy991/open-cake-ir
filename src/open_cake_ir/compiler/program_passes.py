@@ -112,6 +112,9 @@ class Transformation:
 # The callable surface, shared by authoring grants and tools. Hardware legality is
 # deliberately absent: the owning pass and Compiler assess each concrete request.
 TRANSFORMATIONS = (
+    Transformation('specialize_fp32_contraction',
+                   ('stage', 'row_tile', 'column_tile', 'k_tile', 'num_warps', 'num_stages', 'schedule_id', 'entry_point'),
+                   'Rewrite one ordinary gfx938 FP32 broadcast-multiply/K-sum to explicitly tiled IEEE MMA with its pointwise epilogue. Supports direct B[K,N] or B[N,K] loads. Tile extents are powers of two of at least 16, k_tile is below K, and global tails are masked. Accumulation order changes; external oracle and target measurement remain required.'),
     Transformation('tile_pointwise_outputs', ('stage', 'output_tile', 'schedule_id', 'entry_point'),
                    'Partition whole-row pure pointwise outputs into explicit column tiles; preserve arithmetic and public tensors. No reductions, state or synchronization.'),
     Transformation('specialize_squared_difference',
@@ -143,7 +146,7 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
     if not isinstance(parameters, Mapping) or set(parameters) != set(declaration.parameters):
         return _refuse('transform_parameters', f'Required parameters: {declaration.parameters}.')
     if any(not isinstance(parameters[key], str) or not parameters[key]
-           for key in declaration.parameters if key not in {'num_warps', 'k_tile', 'output_tile', 'loop_unroll_factor', 'num_stages'}):
+           for key in declaration.parameters if key not in {'num_warps', 'k_tile', 'output_tile', 'row_tile', 'column_tile', 'loop_unroll_factor', 'num_stages'}):
         return _refuse('transform_parameters', 'Stage names and result identity must be nonempty strings.')
     try:
         program = Program.from_dict(program.document)
@@ -157,7 +160,7 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
             assessment = compiler.assess(json.loads(stage.schedule_bytes))
             if not assessment.lowering_eligible:
                 blocking = [f for f in assessment.findings if f.blocks_lowering or f.blocks_acceptance]
-                if (transformation in {'specialize_squared_difference', 'tile_pointwise_outputs'}
+                if (transformation in {'specialize_squared_difference', 'tile_pointwise_outputs', 'specialize_fp32_contraction'}
                     and stage.name == parameters['stage'] and assessment.accepted
                     and blocking and all(f.code == 'TRITON_ARANGE_RANGE_UNSUPPORTED' for f in blocking)):
                     # These passes can replace non-power-of-two vector extents
@@ -168,10 +171,12 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
         if transformation in {'fuse_pointwise_epilogue', 'fuse_tiled_epilogue'}:
             return _fuse(compiler, program, transformation=transformation, **parameters)
         from .pointwise_tiling import tile_pointwise_outputs
+        from .contraction_mma import specialize_fp32_contraction
         from .passes import specialize_triton_warps, specialize_output_columns, specialize_triton_store_loop
         from .reduction_tiling import (tile_squared_difference, tile_squared_difference_outputs,
                                        specialize_squared_difference)
         transform = {
+            'specialize_fp32_contraction': specialize_fp32_contraction,
             'tile_pointwise_outputs': tile_pointwise_outputs,
             'specialize_squared_difference': specialize_squared_difference,
             'tile_squared_difference_outputs': tile_squared_difference_outputs,
