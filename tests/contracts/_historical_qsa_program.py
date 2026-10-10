@@ -1,4 +1,4 @@
-"""Replay Program v2 with its pinned historical Compiler in a fresh process.
+"""Replay Programs with their pinned historical Compilers in a fresh process.
 
 This is a source snapshot from Git, not a copy of a legacy runner into current
 implementation. The current Compiler must continue to reject the old Program.
@@ -17,18 +17,27 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 PROGRAM_V2_COMMIT = "a302ee396ce4f130692f2fcca0243d357f9659f2"
+PROGRAM_V6_COMMIT = "cdb56a5aaed8dcd278141f0c18f5d2f638176e55"
 
 
-@lru_cache(maxsize=1)
 def replay_program_v2() -> dict:
-    present = subprocess.run(["git", "cat-file", "-e", PROGRAM_V2_COMMIT + "^{commit}"],
+    return _replay_program(PROGRAM_V2_COMMIT, 2)
+
+
+def replay_program_v6() -> dict:
+    return _replay_program(PROGRAM_V6_COMMIT, 6)
+
+
+@lru_cache(maxsize=2)
+def _replay_program(commit: str, version: int) -> dict:
+    present = subprocess.run(["git", "cat-file", "-e", commit + "^{commit}"],
                              cwd=ROOT, capture_output=True)
     if present.returncode:
-        raise unittest.SkipTest("Program v2 replay requires pinned historical Git a302ee3")
-    archive = subprocess.check_output(["git", "archive", PROGRAM_V2_COMMIT,
+        raise unittest.SkipTest(f"Program v{version} replay requires pinned historical Git {commit}")
+    archive = subprocess.check_output(["git", "archive", commit,
         "src", "compiler", "corpus", "contracts", "docs/PYTHON_FRONTEND.md",
         "examples/python", "examples/gpu"], cwd=ROOT)
-    with tempfile.TemporaryDirectory(prefix="cake-program-v2-replay-") as directory:
+    with tempfile.TemporaryDirectory(prefix=f"cake-program-v{version}-replay-") as directory:
         root = Path(directory).resolve()
         with tarfile.open(fileobj=io.BytesIO(archive)) as snapshot:
             # Only this trusted Git tree's ordinary files/directories are needed.
@@ -37,7 +46,7 @@ def replay_program_v2() -> dict:
                    for member in snapshot.getmembers()):
                 raise ValueError("historical Program snapshot contains a non-source member")
             snapshot.extractall(root)
-        completed = subprocess.run([sys.executable, "-I", "-c", _REPLAY], cwd=root,
+        completed = subprocess.run([sys.executable, "-I", "-c", _REPLAY, str(version)], cwd=root,
                                    capture_output=True, text=True, check=True)
         return json.loads(completed.stdout)
 
@@ -52,7 +61,7 @@ import open_cake_ir.tasks.qsa.program as program_module
 for module in (compiler_module,program_module):
     assert Path(module.__file__).resolve().is_relative_to(root/'src')
 compiler=compiler_module.Compiler.load(root,root/'compiler/revision.json')
-path=root/'contracts/programs/qsa-prefill-t32768-v2.json'
+path=root/f'contracts/programs/qsa-prefill-t32768-v{sys.argv[1]}.json'
 original=json.loads(path.read_text())
 program=program_module.ProgramContract.load(root,path,compiler)
 assessment=compiler.assess_file(root/'corpus/schedules/qsa-score-topk-t32768.json')
