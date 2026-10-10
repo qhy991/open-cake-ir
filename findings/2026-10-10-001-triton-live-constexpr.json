@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "id": "F-2026-10-10-001",
+  "kind": "behavior",
+  "decision": "proposed",
+  "title": "Triton callers pass frozen dimensions that their kernel bodies never read",
+  "executor_revision": "external-bw1100-development-adapters; each campaign/development-binding.json owns its gateway revision",
+  "compiler_revision_id": "open-cake-ir@8a637ed0994e4c2b8f2a6e702be54b62a789923e",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "roots": [
+      "bw1100:/home/testuser01/experiments/bw1100-round5-two-host-20261009/runs",
+      "bw1100-1:/data3/testuser01/experiments/bw1100-main-tasks-round5-20261009/runs"
+    ],
+    "locators": [
+      "aka_row_gather/campaign/evaluations/starter-baseline/source.py",
+      "adadelta/campaign/evaluations/starter-baseline-r1/source.py",
+      "adamw/campaign/evaluations/starter-baseline/source.py",
+      "momentum_sgd/campaign/evaluations/starter-canonical/source.py"
+    ],
+    "local_read_only_audit": "/private/tmp/cake-live-constexpr-evidence-20261010",
+    "method": "Parse every retained evaluation source with ast; compare annotated N_/D_ parameters against Name Load nodes in the kernel body. Select the retained starter/baseline per task. No generated source is imported or executed.",
+    "tasks": 53,
+    "starters_with_unused_dimension_parameters": 52,
+    "counterexample": "aka_momentum_sgd reads all eight dimension parameters. Tiled candidates in other tasks also read bounds unused by their starters; parameter removal cannot depend on a name prefix or task label."
+  },
+  "observation": "All 29 starters on bw1100-1 and 23 of 24 on bw1100 contain unused kernel dimension parameters. Adadelta and AdamW each pass 14 dimension parameters with seven unused; aka_row_gather passes five with two unused. constants() emits every global dimension into the signature, per-call keywords and compile_constants. Existing device CSE, module-level launch binding and HCU pointer-range adapters are present in the frozen evidence and are not new findings. Callable latency does not identify how much time belongs to this redundancy.",
+  "proposed_change": "Derive one live constant mapping from the complete emitted kernel body and use it for the kernel signature, host launch keywords and native compile_constants. Retain Schedule values for host grid construction and preserve num_warps, num_stages and register launch options independently. Preserve all dynamic ABI checks, fresh output allocation, caller-owned output validation, current pointer reads and Triton ownership of specialization, stream and launch. This changes lowering only; IR semantics, types, effects, verifier admission and arithmetic stay unchanged.",
+  "promotion_disposition": "Prepared under issue #461 for independent review and software verification. Device correctness and ordinary-call performance remain unmeasured for the successor. No graph replay, output reuse or measurement-contract change is proposed. The original development Runs and diagnostic samples remain at their frozen Compiler.",
+  "implemented_in": null,
+  "verified_by": null
+}
