@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "id": "F-2026-10-10-002",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Repeated FP32 contraction rewrites can produce explicit guarded MMA candidates",
+  "executor_revision": "external-bw1100-development-adapter@503f1b5e8cf8da45e8bb2815561e7f127ac53554",
+  "compiler_revision_id": "open-cake-ir@8a637ed0994e4c2b8f2a6e702be54b62a789923e",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "workspace": "bw1100-1:/data3/testuser01/experiments/bw1100-main-tasks-round5-20261009/runs",
+    "locators": [
+      "gemm/campaign/candidates/starter.py",
+      "gemm/campaign/evaluations/mma-row16-nopipe-r1/candidate.py",
+      "gemm/campaign/evaluations/mma-row16-nopipe-r1/source.py",
+      "gemm/campaign/evaluations/mma-row16-nopipe-r1/outcome.json",
+      "gemm/campaign/evaluations/final-confirmation/outcome.json",
+      "gemm/.local/profile/mma-row16-nopipe-p2/reports/metrics.csv",
+      "gemm/.local/profile/mma-row16-nopipe-p2/reports/metrics-validation.json",
+      "gemm/.local/triton-cache/3WEE46RI2NPBTN3CBKQZV5F6NTG7BVWY7J47K5FLX3Q22G32N3ZA/_cake_contraction_gemm_fp32_kernel.amdgcn",
+      "gemm_silu/campaign/candidates/starter.py",
+      "gemm_silu/campaign/evaluations/mma-m32-n32-k64/candidate.py",
+      "gemm_silu/campaign/evaluations/mma-m32-n32-k64/source.py",
+      "gemm_silu/campaign/evaluations/mma-m32-n32-k64/outcome.json",
+      "gemm_silu/campaign/evaluations/final-confirmation/outcome.json"
+    ],
+    "counterexamples": [
+      "gemm/campaign/evaluations/mma-row16-unroll2-r1",
+      "gemm_silu/campaign/evaluations/mma-m128-n64-k64",
+      "attention_decode/campaign/evaluations/mma_r16k128w8"
+    ]
+  },
+  "observation": "GEMM and GEMM+SiLU manually replace row-wise full-B broadcast multiply and K sum with tiled IEEE FP32 MMA and a pointwise epilogue. Search candidates and final confirmations pass all five original oracle cases. The GEMM raw 51-row counter file records SQ_INSTS_MMOP=8192, arch_vgpr=48 and lds=16384 per CTA. The retained ISA has 32 static v_mmac_16x16x8_f32 instructions, with four K iterations and 64 CTAs. Some author journal text incorrectly says zero LDS; the raw file and profile report take precedence. Diagnostic callable samples are not independent Bench speedups. Existing IR/lowering already expresses the mechanism; the missing reusable artifact is a complete guarded rewrite, not a new MMA primitive.",
+  "proposed_change": "Expose specialize_fp32_contraction through Compiler and the existing Program transformation registry. Match ordinary direct FP32 A[M,K] and B[K,N] or B[N,K] loads, broadcast multiply and one CTA sum. Preserve the compatible pointwise epilogue, global ABI and workload metadata. Callers explicitly select row/column/K tiles, execution groups and stages. Reject unrelated graph, storage and effect commitments; use IEEE FP32 only and retain external-oracle numerical acceptance.",
+  "design_review": "P1: existing Schedule/Program calls. P2: caller-selected tiles, groups and stages remain explicit. P3: one candidate constructor over existing load/transpose/MMA/elementwise forms. P4: input and result assessment plus lowering. P5: existing access maps and K carry expose ownership. P6: focused counterexamples and unchanged Corpus Gate. P7: no new primitive or analysis exception. P8: gfx938 source evidence bounds applicability; compiled resources and performance still require target validation.",
+  "promotion_disposition": "Explicit candidate construction is implemented and independently reviewed. Three pass-generated gfx938 candidates pass all original cases and have same-direction ordinary-call improvements in both paired orders. This validates the bounded mechanism and public API, not a universal tile/stage policy, global numerical guarantee, community Bench result or fresh-author search effect. The gemm_bias numerical counterexample remains failed and unmeasured. The source PR remains under integration review.",
+  "implemented_in": "d7a0fe435262957558d7e2e4225dec2527841224",
+  "verified_by": {
+    "kind": "bounded_successor_generated_callable_comparison",
+    "baseline_compiler": "bec7c9eded7c474a441e998fec60ecc30502aa01",
+    "oracle_compiler": "8a637ed0994e4c2b8f2a6e702be54b62a789923e",
+    "helper_commit": "d76439c558c6c971aaebfe8a6f369988abc8ccfd",
+    "evidence_root": "bw1100-1:/data3/testuser01/experiments/bw1100-compiler-round5-successor-20261010",
+    "plan": "kit-r4/plan-r4.json",
+    "artifact_root": ".local/compiler-validation/artifacts-r4",
+    "receipts": ".local/compiler-validation/receipts",
+    "protocol": "All five original cases in both arms, original oracle after release; then 10 warmups per arm, 60 alternating AB/BA pairs and 30 A/A pairs on primary, ordinary allocation-returning calls with synchronize. No graph, trimming or retry.",
+    "runtime": "gfx938, wave64, DTK Triton 3.6.0; real JIT cache, executed HSACO and launch metadata matched the CPU-staged specialization. HCU1 admission and all corresponding releases passed. Physical exclusivity is not established.",
+    "scope": "Development starter comparison, not an independent community Bench or a fresh-author agent-efficiency study.",
+    "compiler": "d7a0fe435262957558d7e2e4225dec2527841224",
+    "tasks": [
+      "gemm",
+      "gemm_silu",
+      "aka_gemm_nt_bias"
+    ],
+    "correctness": "15/15 original cases pass in each arm; inputs preserved.",
+    "ordinary_call_measurements": {
+      "gemm": {
+        "paired_median_A_over_B": 1.128222881268491,
+        "AB_median": 1.1239526624057614,
+        "BA_median": 1.1360702559305154,
+        "AA_first_over_second": {
+          "median": 1.0036617760542568,
+          "p05": 0.9907692629810398,
+          "p95": 1.0206268155972498
+        }
+      },
+      "gemm_silu": {
+        "paired_median_A_over_B": 1.124345403091958,
+        "AB_median": 1.1242619467801307,
+        "BA_median": 1.1246263392225113,
+        "AA_first_over_second": {
+          "median": 1.0024672024912562,
+          "p05": 0.9863242309006711,
+          "p95": 1.0212682072757553
+        }
+      },
+      "aka_gemm_nt_bias": {
+        "paired_median_A_over_B": 1.968268148229385,
+        "AB_median": 1.9576020552944364,
+        "BA_median": 1.9740996601317673,
+        "AA_first_over_second": {
+          "median": 1.0007108936882605,
+          "p05": 0.9901012396439766,
+          "p95": 1.0265784979716255
+        }
+      }
+    },
+    "software": "At d7a0fe43: focused50 contracts/210subtests; author+Program50 contracts/11subtests; Corpus204/204. PR #465 Python3.10/3.11/3.12 contracts and baseline/successor offline Triton jobs passed. Independent source and device-evidence reviews found no blocker.",
+    "numerical_counterexample": {
+      "task": "gemm_bias",
+      "result": "Both starter and pass-generated candidate fail mixed_magnitude with27 mismatches each; other four cases pass. Timing is forbidden and absent. This is not attributed uniquely to the new pass.",
+      "locators": [
+        ".local/compiler-validation/artifacts-r4/gemm_bias/qualification.json",
+        ".local/compiler-validation/receipts/gemm_bias-correctness-r4-terminal.json"
+      ]
+    }
+  }
+}

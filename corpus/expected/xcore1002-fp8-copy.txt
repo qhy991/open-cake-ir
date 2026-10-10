@@ -11,9 +11,7 @@ import triton.language as tl
 def _xcore1002_fp8_copy_kernel(
     x,
     out,
-    N_ROW: tl.constexpr,
     D_X_1: tl.constexpr,
-    D_OUT_0: tl.constexpr,
     D_OUT_1: tl.constexpr,
 ):
     row = tl.program_id(0)
@@ -57,9 +55,7 @@ def xcore1002_fp8_copy(x, out=None):
     _cake_launch_xcore1002_fp8_copy(
         x,
         out,
-        N_ROW=1,
         D_X_1=256,
-        D_OUT_0=1,
         D_OUT_1=256,
         num_warps=4,
     )

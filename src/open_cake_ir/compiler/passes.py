@@ -61,10 +61,67 @@ def _whole_dimension(index, dimension: int) -> bool:
             and index.offset == 0 and index.extent is None)
 
 
-# Where the launch-width rewrite has been qualified: B200, B300 and gfx938 under the Triton
+# Where the launch-width rewrite has been qualified: B200, B300, gfx938 and C550 under the Triton
 # route. An applicability set the pass declares, not a capability the Target does;
 # widening it is a qualification act on the added target.
-_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a', 'gfx938'})
+# Keys qualify the original domain; values name separately qualified loop forms.
+_WARP_SPECIALIZATION_EVIDENCE = {
+    'sm_100a': frozenset(), 'sm_103a': frozenset(), 'gfx938': frozenset(),
+    'xcore1002': frozenset({'nested_output_mma'}),
+}
+
+
+def _nested_output_mma_width_domain(schedule: Schedule) -> bool:
+    """One fixed output loop around a K-accumulation loop and terminal stores."""
+    if len(schedule.tile_loops) != 2:
+        return False
+    parents = schedule.loop_parent()
+    if len(parents) != 1:
+        return False
+    inner_name, outer_name = next(iter(parents.items()))
+    inner, outer = schedule.tile_loop(inner_name), schedule.tile_loop(outer_name)
+    if (inner is None or outer is None or outer.body.count(inner_name) != 1
+            or any(loop.stop is not None or loop.range_options.warp_specialize
+                   for loop in (inner, outer))):
+        return False
+    inner_ops = schedule.loop_operations(inner)
+    outer_ops = [schedule.operation(name) for name in outer.body if name != inner_name]
+    if (any(op is None for op in outer_ops)
+            or any(op.kind not in {OperationKind.LOAD, OperationKind.CAST, OperationKind.MMA}
+                   for op in inner_ops)
+            or any(op.kind not in {OperationKind.LOAD, OperationKind.CAST, OperationKind.STORE}
+                   for op in outer_ops)):
+        return False
+    mmas = [op for op in schedule.operations if op.kind is OperationKind.MMA]
+    stores = [op for op in outer_ops if op.kind is OperationKind.STORE]
+    if (not mmas or not stores or any(op not in inner_ops for op in mmas)
+            or any(not schedule.mma_accumulates_over(op, inner)
+                   or schedule.mma_accumulates_over(op, outer) for op in mmas)):
+        return False
+    for op in mmas:
+        output_axes = [schedule._staged_axis_filled_by(name, outer) for name in op.reads]
+        if 0 not in output_axes or any(axis not in (None, 0) for axis in output_axes):
+            return False
+    for op in inner_ops + tuple(outer_ops):
+        if op.kind is OperationKind.LOAD and (
+                schedule.buffer(op.reads[0]).mode is not BufferMode.INPUT):
+            return False
+        if op.kind is OperationKind.STORE and (
+                schedule.buffer(op.writes[0]).mode is not BufferMode.OUTPUT):
+            return False
+        if op.kind is not OperationKind.CAST:
+            continue
+        source = schedule.buffer(op.reads[0])
+        widening = (op.parameters.to is DType.FP32
+                    and source.dtype in {DType.FP16, DType.BF16, DType.FP32})
+        consumers = [use for use in schedule.operations if op.writes[0] in use.reads]
+        terminal = (op in outer_ops and source.dtype is DType.FP32
+                    and op.parameters.to in {DType.FP16, DType.BF16}
+                    and consumers and all(use in stores for use in consumers))
+        if not widening and not terminal:
+            return False
+    # Assessment already owns affine store coverage, SSA and effect legality.
+    return True
 
 
 def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
@@ -113,7 +170,11 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
     pointwise = {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
                  OperationKind.COMPARE, OperationKind.SELECT, OperationKind.STORE}
     # Assessment owns compare/select register-storage, shape and dtype checks.
-    if s.tile_loops:
+    if len(s.tile_loops) > 1:
+        if ('nested_output_mma' not in _WARP_SPECIALIZATION_EVIDENCE[s.target]
+                or not _nested_output_mma_width_domain(s)):
+            return refused('loop_domain', 'Require a qualified fixed output loop around a pure K-MMA loop and terminal stores.')
+    elif s.tile_loops:
         by_id = {op.op_id: op for op in s.operations}
         if len(s.tile_loops) != 1:
             return refused('loop_domain', 'Require one fixed pointwise, MMA or CTA-reduction loop.')
