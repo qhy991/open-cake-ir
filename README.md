@@ -53,6 +53,9 @@ Compiler 由各硬件的独立 Bench 检验。共同流程见[开发与评测标
 
 | 实验 | 已得到的结论 | 证据与适用范围 |
 |---|---|---|
+| DCU 机制复用：执行组选择 | 43 个候选、215 项原正确性检查通过；C550 可显式生成 1/2/4/8 组候选，16 组仍拒绝 | [固定源码、资源与守卫](docs/results/metax/WIDTH_QUALIFICATION_20261010.md)；资源分配变化不等于加速，后续候选仍需原 oracle |
+| DCU 机制复用：FP32 NT contraction → IEEE MMA | 一个原实现对照与三个改写候选，20 项原正确性全部通过；公共 FP32 张量和误差标准保留 | [尺寸、基线与资格记录](docs/results/metax/FP32_CONTRACTION_QUALIFICATION_20261010.md)；NT-only，无计时结果，KN 转置仍拒绝 |
+| 删除未用 constexpr 参数 | 52 个任务的参数总数从 349 降到 202；54 个可构造任务的计算主体、ABI、grid 和编译选项不变 | [源码对照](docs/results/metax/DCU_COMPILER_REUSE_20261010.md)；不把 Python 包装器精简当作原生 kernel 提速 |
 | 80 次 E/P 经验／工具试点 | 全部终态；原预算口径 47/80 成功。按用户要求纳入 12 次超预算但确认有效的提升后，为 **59/80** | 单个 FP32 求差平方算子族、4 个固定形状；见下方四组明细。不能当成未见任务泛化或无限预算搜索 |
 | N 输出分块 | 显式 pass 生成的候选通过独立确认，固定案例 **3.33×** | `R128 K256 N32`，相对该任务固定基线；[Finding](findings/2026-10-03-003-squared-distance-output-tiling.json) |
 | 固定循环部分展开 | factor 2 在两形状确认约 **1.111× / 1.060×**；factor 4 反而变慢 | 有效机制需要目标选参，不能默认越展开越快；[Finding](findings/2026-10-04-005-metax-fixed-partial-unroll.json) |
