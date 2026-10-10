@@ -11,9 +11,7 @@ import triton.language as tl
 def _cake_qsa_expand_t32768_kernel(
     block_indices,
     token_indices,
-    N_QUERY: tl.constexpr,
     D_BLOCK_INDICES_1: tl.constexpr,
-    D_TOKEN_INDICES_0: tl.constexpr,
     D_TOKEN_INDICES_1: tl.constexpr,
 ):
     query = tl.program_id(0)
@@ -62,9 +60,7 @@ def cake_qsa_expand_t32768(block_indices, out=None):
     _cake_launch_cake_qsa_expand_t32768(
         block_indices,
         out,
-        N_QUERY=32768,
         D_BLOCK_INDICES_1=512,
-        D_TOKEN_INDICES_0=32768,
         D_TOKEN_INDICES_1=2048,
         num_warps=4,
         maxnreg=224,
