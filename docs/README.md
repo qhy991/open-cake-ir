@@ -1,6 +1,6 @@
 # open-cake-ir 技术报告 / Technical Report
 
-**报告正文 / Report:** [已导出 PDF（proposal 增补前）](open-cake-ir-technical-report.pdf) ·
+**报告正文 / Report:** [BW1100 增补版 PDF](open-cake-ir-technical-report.pdf) ·
 [TeX 源码 / TeX source](open-cake-ir-technical-report.tex)
 
 **推荐中文引文题名：open-cake-ir：跨硬件优化机制复用与编译器协同演进技术报告**
@@ -9,8 +9,7 @@
 
 作者 / Author：秦海岩（Haiyan Qin） · 2026
 
-当前 TeX 已纳入 2026-10-06 proposal 的四项假设、路线分配与成本核算。仓库 PDF 保留
-`2bc0be30` 时的导出版本，尚不包含这次增补；最新正文以 TeX 和编辑器预览为准。
+本次更新日期为 2026-10-10。报告保留 `677eb444` 的历史实现章节，新增 BW1100 多轮协同演进实证：53 题开发、两项 Compiler 机制、独立 Bench 的逐题观察与契约修正。被测源码与合入源码分别列出。新增机制清单与 Agent 发现、授权、调用和反馈的源码分析；原生 Lab 与外部 hmz 的接入状态分别说明。
 
 PDF 是由仓库中的 TeX 编译得到的技术报告，封面注明所读源码快照；引用具体实验仍需追溯
 该实验自己的执行版本和测量记录。本页连接报告正文、引用信息和持续维护的中英文专题文档。
@@ -18,8 +17,7 @@ PDF 是由仓库中的 TeX 编译得到的技术报告，封面注明所读源�
 专题页面提供架构、接口、方法与最新结果的详细入口，不充当另一份报告正文；历史材料保留
 原日期与结论。
 
-The current TeX includes the October 6 proposal refinements. The stored PDF is the export from
-`2bc0be30`, before those refinements; use the source/editor preview for the latest text.
+The October 10 revision adds a BW1100 co-evolution case study while preserving the historical implementation snapshot. It separates development-starter improvements, community-baseline Bench observations, and unresolved fresh-search effects. Precision and output-lifetime exclusions remain visible. The report traces native Lab API delivery and action permissions, and identifies the external hmz adapter's discovery gap. The PDF includes the same additions.
 The TeX-compiled PDF states its source snapshot on the cover.
 This page links the report, citation guidance, and living Chinese and English companion docs.
 Those guides track implementation and evidence by topic; historical records retain their own
@@ -45,6 +43,16 @@ freedom and successor-system effects. Qualified native exploration supplies evid
 promotion; both the re-expressed implementation and its reuse require fresh validation.
 The [shared agenda](en/RESEARCH_AGENDA.md) defines the common question, hardware contributions and
 new-Run budget convention. Historical implementations and results retain their original boundaries.
+
+## BW1100 增补的阅读重点 / BW1100 addendum
+
+- 53/53 开发终点与 265 个用例通过，表示完成该轮原有流程，不表示 53 题全部加速。
+- 显式 FP32 contraction 改写把重复手写机制变成受约束工具；constexpr 清理简化生成接口。数值反例与 A/A 噪声单独说明。
+- 十题历史 Bench 保留逐题社区 baseline；GQA 精度违例与 RMSNorm 返回值生命周期违例从原轮性能解释中排除。
+- 新 12 题比较用于判断固定版本下的新搜索效果；未完成结果不进入报告性能表。
+- 已实现的十个变换入口按七类机制说明。原生 Lab 从注册表向任务包交付 API 并检查调用授权；外部 hmz 目前主要依赖文档与人工提示，尚未完整接入自动能力清单和动作追踪。
+
+The evidence supports reusable mechanism implementation and bounded device gains. It does not yet establish a whole-suite Compiler effect, a Cake-versus-native authoring advantage, or cross-hardware transfer gains.
 
 ## 从哪里开始 / Choose a reading path
 

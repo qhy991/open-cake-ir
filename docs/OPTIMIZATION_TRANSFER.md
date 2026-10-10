@@ -128,6 +128,14 @@ profiler，以及 M17 GEMM 的本机 tile 优化案例。完整 Program attribut
 Run 的完整程序性能验收，C550 的完整 provider/Ralph 优化闭环仍以平台报告的待验收边界为准。
 因此平台接入已有实质工作，目标本机优化也已有局部例子；尚不能说所有阶段全部完成。
 
+### 2026-10-10：BW1100 的开发证据已进入后继 Compiler
+
+上述平台快照保留原日期。最新的 BW1100 工程增补见[技术报告正文](open-cake-ir-technical-report.tex)的“BW1100：从多轮 kernel 搜索到 Compiler 机制”一节。它把 53 题开发、显式 FP32 contraction 改写、live-constexpr 清理和固定版本独立 Bench 接成一条有版本边界的证据链。两项机制已合入 `bdd52ce1`，设备验收仍分别绑定自己的被测提交。
+
+这轮证明了局部机制可以沉淀为 Compiler 工具，并保留原始 oracle 验证。它没有完成 E/P 四组研究；旧 Bench 的 GQA 精度违例和 RMSNorm 输出生命周期违例也不能用后继修复回填。完整逐题表、开发 starter 与社区 baseline 的区别，以及新 12 题比较尚缺的结论由报告正文统一说明。
+
+报告还逐项说明 main 的显式变换与自动 lowering 清理，并追踪 Agent 的发现路径。原生 Lab 将注册表投影为任务中的 API 说明，分别冻结机制材料和调用授权，解析并记录 transform action。当前外部 BW1100 hmz 适配器尚未完整接入这一投影与动作链，不能由“能力已合并”推断“Agent 已知道并使用”。后继 scaffold 的接入应在新轮次冻结，不能改变活跃 Run。
+
 ### 现有证据的四个独立范围
 
 ![机制编码、跨目标正确性、C550 本机调度收益与尚缺的迁移增益对照](figures/transfer-evidence-layers-v1.png)

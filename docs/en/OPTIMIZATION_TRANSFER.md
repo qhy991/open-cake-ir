@@ -105,6 +105,14 @@ short-kernel timing-resolution limits, and C550 fixed-kernel/selected Program co
 single-kernel timing/profiling and a bounded M17 tile case. Those observations establish platform
 paths and local examples, not completed full-program optimization or effective knowledge transfer.
 
+### October 10: BW1100 development evidence informs a successor Compiler
+
+The historical platform snapshot retains its date. The [technical report](../open-cake-ir-technical-report.tex) now adds a BW1100 case study that connects the 53-task development batch, an explicit FP32 contraction rewrite, live-constexpr pruning, and an independent fixed-version Bench comparison. Both mechanisms are integrated in `bdd52ce1`; device results remain bound to their separate tested commits.
+
+This is evidence of reusable mechanism engineering and bounded device gains. It does not complete the E/P study. Historical GQA precision and RMSNorm output-lifetime violations remain excluded from their original rounds. The report owns the task-level table, the distinction between development starters and community references, and the unresolved fresh-search comparison on the expanded 12-task suite.
+
+The report also inventories explicit transformations and automatic lowering cleanup. Native Lab projects the Compiler registry into the task package, freezes explanatory materials separately from execution grants, and resolves and records transform actions. The external BW1100 hmz adapter has not fully adopted that discovery and action path. A merged capability therefore does not establish agent awareness or use. Any scaffold integration belongs to a newly frozen round.
+
 ### Four separate evidence scopes
 
 ![Chinese-labelled evidence diagram: encoded fusion pass, C550 correctness, local M17 tile gain, and missing transfer-effect study](../figures/transfer-evidence-layers-v1.png)
