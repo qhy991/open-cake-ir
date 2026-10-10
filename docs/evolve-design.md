@@ -1,6 +1,13 @@
 # Evolve：Kernel 与 Compiler 协同进化设计
 
-状态：设计提案，2026-10-09。依据源码 `76549b98`。本文中的新类型、接口和命令均为拟议设计，尚未实现。
+状态：工程 skill 已接入；原生自动化研究协议仍为设计提案，2026-10-09。原设计依据源码 `76549b98`。下文的新类型与自动执行接口尚未实现，已完成的工程入口见下面说明。
+
+工程入口现已由 [evolve skill](../skills/evolve/SKILL.md) 接入：读取现有开发实验、
+审阅维护线索、验证后继、冻结 rolling Bench 的双版本 fresh-search 分配，并通过现有
+平台执行入口衔接下一轮。[工具](../tools/evolve.py) 提供只读外部证据检查和不可覆盖的
+Bench 意图冻结，不执行 Run 或新增调度器。下文的 `EvolutionPlan`、`advance`、共同
+`dispatch_once`、原生 `RevisionComparison` Study 与正式 heldout 协议仍是待实现设计；
+不能把工程入口称为这些接口已经完成。未知生成源码编译拒绝现进入 triage。
 
 合入前已对照 `main@2356886a` 更新实施状态。共同问题由[研究主题](RESEARCH_AGENDA.md)负责，开发与硬件独立评测遵循[Bench 标准](BENCHMARK_PROTOCOL.md)。本提案补充外循环编排设计，不替代这些现行合同；新 schema 仍需单独实现和验收。
 

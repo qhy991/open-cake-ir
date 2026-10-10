@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-10",
-  "id": "F-2026-10-10-002",
+  "id": "F-2026-10-10-005",
   "kind": "protocol",
   "decision": "accepted",
   "title": "Immutable Evaluation diagnostics fail at JSON writing and raw-summary comparison boundaries",
@@ -43,5 +43,11 @@
       "evidence": "immutable-evidence-integration-cpu-001/summary.json, tests.stderr, test-command.json and execution.json; mirrored under the software evidence root.",
       "scope": "Protocol source/CPU repair verified. No new GPU or A/A attempt; the prior counted-but-unretained samples remain an invalid measurement."
     }
-  ]
+  ],
+  "integration_provenance": {
+    "original_id": "F-2026-10-10-002",
+    "original_path": "findings/2026-10-10-002-immutable-evaluation-evidence.json",
+    "original_commit": "8a6b7624",
+    "reason": "Renumber the unmerged experimental record when combining with maintained MetaX; shared main records keep their allocated identities. The historical source and its evidence remain unchanged."
+  }
 }

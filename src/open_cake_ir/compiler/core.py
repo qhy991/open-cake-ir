@@ -231,6 +231,16 @@ class Compiler:
         return tile_pointwise_outputs(self, schedule, output_tile=output_tile,
                                       schedule_id=schedule_id, entry_point=entry_point)
 
+    def specialize_fp32_contraction(self, schedule: Mapping[str, object], *,
+                                     row_tile: int, column_tile: int, k_tile: int,
+                                     num_warps: int, num_stages: int,
+                                     schedule_id: str, entry_point: str) -> SpecializationResult:
+        """Explicit multiply/sum to IEEE FP32 MMA candidate; never implicit lowering."""
+        from .contraction_mma import specialize_fp32_contraction
+        return specialize_fp32_contraction(self, schedule, row_tile=row_tile,
+            column_tile=column_tile, k_tile=k_tile, num_warps=num_warps,
+            num_stages=num_stages, schedule_id=schedule_id, entry_point=entry_point)
+
     def specialize_triton_store_loop(self, schedule: Mapping[str, object], *,
                                      loop_name: str, num_stages: int,
                                      schedule_id: str, entry_point: str) -> SpecializationResult:

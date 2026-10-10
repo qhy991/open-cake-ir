@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-10",
-  "id": "F-2026-10-10-001",
+  "id": "F-2026-10-10-004",
   "kind": "bug",
   "decision": "accepted",
   "title": "Original Bench comparator misreads immutable named output mappings as positional outputs",
@@ -34,5 +34,11 @@
     "independent_review": "Read-only review of cdeaec7c found no source blocker. The adapter owns the container conversion; the original comparator still owns verdicts and numeric rules.",
     "preserved_failures": "The original GPU A/A is not retried. CPU001 stopped before tests: its source setup requested a non-exported bundle ref and inherited container-invisible shared-object paths. CPU002 used a fresh complete, detached checkout with no remotes or alternates; it did not repair the failed checkout or change the accepted container.",
     "scope": "Source and CPU only. No GPU, provider, native build, new A/A, or Run was executed for this repair. Compiler and Target code did not change; Corpus expectations were not refreshed."
+  },
+  "integration_provenance": {
+    "original_id": "F-2026-10-10-001",
+    "original_path": "findings/2026-10-10-001-c550-bench-mapping-boundary.json",
+    "original_commit": "8a6b7624",
+    "reason": "Renumber the unmerged experimental record when combining with maintained MetaX; shared main records keep their allocated identities. The historical source and its evidence remain unchanged."
   }
 }

@@ -14,6 +14,7 @@ handling from the operation, and the host-side contract from the global buffers.
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -976,7 +977,7 @@ class _TritonEmitter:
         return axis
 
     def constants(self) -> dict[str, int]:
-        """Every constexpr the kernel takes, and where each one comes from."""
+        """Schedule values, including host launch options and grid-only extents."""
 
         values: dict[str, int] = {}
         for buffer in self.schedule.buffers:
@@ -1300,12 +1301,12 @@ class _TritonEmitter:
         kernel = f"_{entry}_kernel"
         self._emit_header()
         self._emit_pointer_range_argument()
-        self._emit_kernel(kernel)
+        kernel_constants = self._emit_kernel(kernel)
         # grid is a static Schedule fact. Retain the lightweight JIT launch
         # callable once, without retaining any caller tensor or its pointer.
         self.line(f"_cake_launch_{entry} = {kernel}[{self.grid()}]")
         self.line("")
-        self._emit_host(entry, kernel)
+        self._emit_host(entry, kernel_constants)
         source = "\n".join(self.lines) + "\n"
         if self.check_namespace:
             failures = emitted_python_name_findings(self.schedule, source, self.authored_lines, kernel=kernel)
@@ -1315,10 +1316,10 @@ class _TritonEmitter:
             source,
             entry,
             dict(self.constants()),
-            self._toolchain(kernel),
+            self._toolchain(kernel, kernel_constants),
         )
 
-    def _toolchain(self, kernel: str) -> dict[str, object]:
+    def _toolchain(self, kernel: str, kernel_constants: dict[str, int]) -> dict[str, object]:
         """The compile contract, derived rather than restated beside the source."""
 
         constants = self.constants()
@@ -1327,9 +1328,7 @@ class _TritonEmitter:
             "signature": {
                 buffer.name: pointer_type(buffer.dtype) for buffer in self._globals()
             },
-            "compile_constants": {
-                name: value for name, value in constants.items() if name != "NUM_WARPS"
-            },
+            "compile_constants": kernel_constants,
             # A declared register budget is a cap the backend enforces, so it travels
             # with the other compile options rather than staying a claim the verifier
             # checked and then dropped.
@@ -1388,17 +1387,32 @@ class _TritonEmitter:
     def _globals(self) -> list[Buffer]:
         return [b for b in self.schedule.buffers if b.space is MemorySpace.GLOBAL]
 
-    def _emit_kernel(self, kernel: str) -> None:
-        constants = self.constants()
+    def _emit_kernel(self, kernel: str) -> dict[str, int]:
+        # Derive parameters from the complete body, including masks and loop bounds.
+        # Keep Schedule values separately: a grid-only extent still owns host work.
+        prefix, prefix_declarations = self.lines, self.authored_lines
+        self.lines, self.authored_lines = [], {}
+        self._emit_kernel_body()
+        body, body_declarations = self.lines, self.authored_lines
+        parsed = ast.parse("def _kernel():\n" + "\n".join(body))
+        reads = {node.id for node in ast.walk(parsed)
+                 if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
+        kernel_constants = {name: value for name, value in self.constants().items()
+                            if name in reads}
+        self.lines, self.authored_lines = prefix, prefix_declarations
         self.line("@triton.jit")
         self.line(f"def {kernel}(")
         for buffer in self._globals():
             self.line(f"    {buffer.name},")
-        for name in constants:
-            if name != "NUM_WARPS":
-                self.line(f"    {name}: tl.constexpr,")
+        for name in kernel_constants:
+            self.line(f"    {name}: tl.constexpr,")
         self.line("):")
+        offset = sum(line.count("\n") + 1 for line in self.lines)
+        self.lines.extend(body)
+        self.authored_lines.update({offset + line: names for line, names in body_declarations.items()})
+        return kernel_constants
 
+    def _emit_kernel_body(self) -> None:
         assert self.schedule.program_map is not None
         program_map = self.schedule.program_map
         if program_map.persistent:
@@ -2646,12 +2660,12 @@ class _TritonEmitter:
         ):
             self.line(line)
 
-    def _emit_launch_options(self, constants: dict[str, int]) -> None:
+    def _emit_launch_options(self, kernel_constants: dict[str, int]) -> None:
         """Emit every Schedule-owned launch option for either host ABI."""
 
-        for name, value in constants.items():
-            if name != "NUM_WARPS":
-                self.line(f"        {name}={value},")
+        for name, value in kernel_constants.items():
+            self.line(f"        {name}={value},")
+        constants = self.constants()
         self.line(f"        num_warps={constants['NUM_WARPS']},")
         if "NUM_STAGES" in constants:
             # Pipelining depth belongs to the loop's range options. With no loop there is
@@ -2662,17 +2676,16 @@ class _TritonEmitter:
         if residency is not None and residency.registers_per_thread is not None:
             self.line(f"        maxnreg={residency.registers_per_thread},")
 
-    def _emit_host(self, entry: str, kernel: str) -> None:
+    def _emit_host(self, entry: str, kernel_constants: dict[str, int]) -> None:
         globals_in_order = self._globals()
         inputs = [b for b in globals_in_order if b.mode.value == "input"]
         states = [b for b in globals_in_order if b.mode.value == "state"]
         if states:
-            self._emit_host_with_state(entry, kernel, globals_in_order)
+            self._emit_host_with_state(entry, kernel_constants, globals_in_order)
             return
         outputs = self._exported_outputs()
         output = outputs[0]
         names = ", ".join(b.name for b in inputs)
-        constants = self.constants()
 
         self.line(f"def {entry}({names}, out=None):")
         self.line("    for tensor, shape, dtype in (")
@@ -2692,7 +2705,7 @@ class _TritonEmitter:
         self._emit_output_binding(outputs, inputs[0].name)
         self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
-        self._emit_launch_options(constants)
+        self._emit_launch_options(kernel_constants)
         self.line("    )")
         self.line("    return out")
 
@@ -2787,7 +2800,7 @@ class _TritonEmitter:
             self.line(f"        {slot},")
 
     def _emit_host_with_state(
-        self, entry: str, kernel: str, globals_in_order: list[Buffer]
+        self, entry: str, kernel_constants: dict[str, int], globals_in_order: list[Buffer]
     ) -> None:
         """Accept caller-owned mutable state without changing legacy wrappers."""
 
@@ -2798,7 +2811,6 @@ class _TritonEmitter:
         ]
         outputs = self._exported_outputs()
         names = ", ".join(buffer.name for buffer in caller_owned)
-        constants = self.constants()
         anchor = caller_owned[0].name
 
         self.line(f"def {entry}({names}, out=None):")
@@ -2827,7 +2839,7 @@ class _TritonEmitter:
         self._emit_output_binding(outputs, anchor)
         self.line(f"    _cake_launch_{entry}(")
         self._emit_launch_arguments(globals_in_order, outputs)
-        self._emit_launch_options(constants)
+        self._emit_launch_options(kernel_constants)
         self.line("    )")
         self.line("    return out")
 

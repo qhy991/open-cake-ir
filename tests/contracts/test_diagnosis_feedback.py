@@ -95,7 +95,7 @@ class DiagnosisSeamTests(unittest.TestCase):
         for arm in ("direct_cuda", "native_triton", "native_cute_dsl"):
             with self.subTest(arm=arm):
                 self.assertEqual(route_rejection({"stage": "compile", "source_role": "lowered_source"}, arm=arm).destination, "candidate")
-        self.assertEqual(route_rejection({"stage": "compile"}, arm="open_cake").destination, "verifier")
+        self.assertEqual(route_rejection({"stage": "compile"}, arm="open_cake").destination, "backend_triage")
         with self.assertRaises(ValueError):
             route_rejection({"stage": "compile"}, arm="unknown")
 
@@ -130,7 +130,7 @@ class DiagnosisProjectionTests(unittest.TestCase):
         value = _completed()
         value.update(outcome="rejected", validity="invalid")
         value["stages"] = [{"id": "compile", "status": "failed", "summary": "syntax error"}]
-        for arm, destination in (("direct_cuda", "candidate"), ("open_cake", "verifier")):
+        for arm, destination in (("direct_cuda", "candidate"), ("open_cake", "backend_triage")):
             feedback = qsa_evaluation_feedback(value, arm=arm)
             self.assertEqual(feedback["routed_to"], destination)
             self.assertEqual(feedback["routing_reason"], route_rejection({"stage": "compile"}, arm=arm).reason)
@@ -202,7 +202,7 @@ class DiagnosisRunTests(unittest.TestCase):
                     self.assertEqual(len(peers), 2 if mixed else 3)
                     self.assertEqual([row["diagnostic"] for row in peers],
                                      [f"syntax variant {i}" for i in range(1 if mixed else 0, 3)])
-                    self.assertTrue(all(row["routed_to"] == ("verifier" if request.arm == "open_cake" else "candidate") for row in peers))
+                    self.assertTrue(all(row["routed_to"] == ("backend_triage" if request.arm == "open_cake" else "candidate") for row in peers))
                     if mixed:
                         self.assertEqual(request.feedback["kind"], "evaluation")
                 report = lab.audit(campaign)

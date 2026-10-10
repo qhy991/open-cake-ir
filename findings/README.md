@@ -2,9 +2,9 @@
 
 - [F-2026-10-10-003](2026-10-10-003-metax-profile-diagnostic-contract.json) — MetaX attribution aggregates the three shared metrics over a complete preflight diagnostic record, retains both oracle observations and strictly rejects changed aggregate extras; source/CPU scope only.
 
-- [F-2026-10-10-002](2026-10-10-002-immutable-evaluation-evidence.json) — reuse the Evaluation JSON projection at evidence writing and raw/frozen receipt comparison boundaries; preserve full diagnostics and strict refusals. A failed attempt's 20 counted samples are not a qualified measurement.
+- [F-2026-10-10-005](2026-10-10-005-immutable-evaluation-evidence.json) — reuse the Evaluation JSON projection at evidence writing and raw/frozen receipt comparison boundaries; preserve full diagnostics and strict refusals. A failed attempt's 20 counted samples are not a qualified measurement.
 
-- [F-2026-10-10-001](2026-10-10-001-c550-bench-mapping-boundary.json) — shallow named-output mapping adaptation at the original C550 Bench API preserves immutable common preparation and original verdicts; exact CPU failure replay and twenty contracts pass, while successor device measurement remains pending.
+- [F-2026-10-10-004](2026-10-10-004-c550-bench-mapping-boundary.json) — shallow named-output mapping adaptation at the original C550 Bench API preserves immutable common preparation and original verdicts; exact CPU failure replay and twenty contracts pass, while successor device measurement remains pending.
 
 - [F-2026-10-09-013](2026-10-09-013-triton-indexed-mma-provenance.json) — shared Triton multi-region MMA keeps typed indexed-load address dependencies; source/CPU replay passes while native and original Bench qualification remain separate.
 
@@ -71,6 +71,11 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - [F-2026-10-09-006](2026-10-09-006-triton-singleton-splat.json) — MACA scalar reshape fails during native compilation; singleton inputs use a splat before the declared reduction. Device verification remains separate.
 
 - [F-2026-10-09-003](2026-10-09-003-triton-reduction-storage-and-scalar.json) — Triton reduction storage admission and logical singleton rank consistency; successor software verification is recorded in the Finding.
+- [F-2026-10-10-002](2026-10-10-002-fp32-contraction-mma-rewrite.json) — explicit guarded FP32 multiply/sum to IEEE MMA candidates, with retained pointwise epilogues; source evidence is separate from pending successor qualification.
+
+- [F-2026-10-10-001](2026-10-10-001-triton-live-constexpr.json) — unused frozen dimensions repeat in Triton signatures and ordinary calls; derive live kernel constants without changing launch options, host guards or tensor ownership. Software and device qualification remain separate.
+
+- [F-2026-10-09-001](2026-10-09-001-unknown-compile-owner-triage.json) — unknown generated-source compile refusals need owner triage before asserting a verifier defect; no hardware or performance claim.
 
 - [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.
 
@@ -85,6 +90,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - [F-2026-10-07-001](2026-10-07-001-ordinary-output-program-ownership.json) — shared direct ordinary-output ownership, reproduced from DCU partial reductions; singleton, persistent and indirect boundaries remain distinct.
 - [F-2026-10-07-002](2026-10-07-002-pure-pointwise-width-applicability.json) — existing width rewrite coverage for typed selections and fixed independent pointwise loops; no default-width or search-performance claim.
+
+
 
 The 2026-10-06 integration preserves DCU's F-2026-10-06-002 for OCML trig and
 assigns MetaX's zero-width MCPTI record to F-2026-10-06-006 and Metal's A/A record
@@ -274,3 +281,11 @@ The output-prefix pruning record first published as F-2026-10-04-002 on task/cor
 
 - [F-2026-10-09-009](2026-10-09-009-int64-bool-storage.json) — add explicit INT64/BOOL storage and conversion semantics for original Bench input ABIs; software verification is bounded, native-device qualification remains open.
 - [F-2026-10-09-011](2026-10-09-011-program-task-starters.json) — complete Python Program starters reach ordinary TaskLab preparation and full sealed-stage baseline checks; native Program comparison is explicitly refused.
+
+## 2026-10-10 experimental integration identities
+
+The maintained constexpr and MMA records retain F-2026-10-10-001 and -002.
+The unmerged Bench Mapping and immutable-Evaluation records are now -004 and
+-005. Their `integration_provenance` names the original id and path at 8a6b7624.
+Frozen commits and their citations remain unchanged. Profile record -003 now
+points to -005 for serialization. This is identity reconciliation, not new evidence.

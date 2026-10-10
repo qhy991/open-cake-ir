@@ -39,7 +39,7 @@ RoPE 的单例诊断将误差定位到角度计算：CAKE 与逐元素 FP32 角�
 
 公共集成源码为 `51063d2e`；本机后继含独立的主机记录，实际 Compiler/Executor 提交为 `affdd3951`。同一后继通过 40 项 CPU 合同、原 Corpus 204 项、16 个 RMS 原生基线构建及其绑定检查。原 RMS 的 **16×10 正确性再次完整通过**（job `maca-29800abbdf8e`）。最大绝对误差 0.0625、最大相对误差约 0.01389，均由原比较器按原容差判为通过；这不是逐位相同的声明。
 
-前版 `0c8ef54e` 的首次公共 A/A 在第一次候选调用后发生 `KeyError: 0`，没有计时样本或有效收据，后续十五例未提交。原 Bench API 将公共框架的只读命名映射误判为位置序列。后继只在这个 API 边界浅转为普通字典，Tensor 对象、原比较器及容差保持不变；20 项 Linux 合同和原故障的 CPU 复播通过。[修复与完整范围](https://github.com/qhy991/open-cake-ir/pull/449) · [Finding](../../../findings/2026-10-10-001-c550-bench-mapping-boundary.json)。旧失败仍为失败，后继计时资格单独记录。
+前版 `0c8ef54e` 的首次公共 A/A 在第一次候选调用后发生 `KeyError: 0`，没有计时样本或有效收据，后续十五例未提交。原 Bench API 将公共框架的只读命名映射误判为位置序列。后继只在这个 API 边界浅转为普通字典，Tensor 对象、原比较器及容差保持不变；20 项 Linux 合同和原故障的 CPU 复播通过。[修复与完整范围](https://github.com/qhy991/open-cake-ir/pull/449) · [Finding](../../../findings/2026-10-10-004-c550-bench-mapping-boundary.json)。旧失败仍为失败，后继计时资格单独记录。
 
 RoPE 还有一条数值机制线索：三个原始形状保留的 409,984 个角度输出词中，当前 BLAS HIGH 结果逐位符合 RNE10 操作数模型，当前 Triton TF32 结果逐位符合 RTZ10 模型。该数量是输出词数，不是独立实验次数。它解释了本次替换失败，未授权生产 TF32 准入。[有界探针](https://github.com/qhy991/open-cake-ir/pull/443)。
 

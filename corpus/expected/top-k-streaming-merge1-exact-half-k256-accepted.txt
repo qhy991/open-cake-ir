@@ -11,12 +11,9 @@ import triton.language as tl
 def _cake_top_k_streaming_merge1_exact_half_k256_b8_smoke_kernel(
     scores,
     indices,
-    N_BATCH: tl.constexpr,
     N_SCORE_LOOP: tl.constexpr,
-    D_INDICES_0: tl.constexpr,
     D_INDICES_1: tl.constexpr,
     BLOCK_SCORE_LOOP: tl.constexpr,
-    NUM_STAGES: tl.constexpr,
 ):
     batch = tl.program_id(0)
     indices_d1_offsets = tl.arange(0, D_INDICES_1)
@@ -95,12 +92,9 @@ def cake_top_k_streaming_merge1_exact_half_k256_b8_smoke(scores, out=None):
     _cake_launch_cake_top_k_streaming_merge1_exact_half_k256_b8_smoke(
         scores,
         out,
-        N_BATCH=8,
         N_SCORE_LOOP=768,
-        D_INDICES_0=8,
         D_INDICES_1=256,
         BLOCK_SCORE_LOOP=256,
-        NUM_STAGES=1,
         num_warps=4,
         num_stages=1,
         maxnreg=64,

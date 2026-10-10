@@ -176,7 +176,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    reference_access: str = 'known_kernel_reproduction',
                    lowering_route=None, source_file: bool = False,
                    generated_source_feedback: bool = False,
-                   native_skill_package: Path | None = None, metal_mean30: bool = False, metax_mean10: bool = False, metax_native_mean10: bool = False, metax_torch_mean10: bool = False, metax_gated_mean10: bool = False,
+                   native_skill_package: Path | None = None, metal_mean30: bool = False,
+                   metax_mean10: bool = False, metax_native_mean10: bool = False,
+                   metax_torch_mean10: bool = False, metax_gated_mean10: bool = False,
                    claude_event_contract: str | None = None) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 

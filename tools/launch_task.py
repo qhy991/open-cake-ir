@@ -756,7 +756,9 @@ def main(argv=None) -> int:
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md, reference_access=args.reference_access,
         source_file=args.source_file, generated_source_feedback=args.generated_source_feedback,
-        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30, metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10, metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10,
+        native_skill_package=args.author_skill_package, metal_mean30=metal_mean30,
+        metax_mean10=metax_mean10, metax_native_mean10=metax_native_mean10,
+        metax_torch_mean10=metax_torch_mean10, metax_gated_mean10=metax_gated_mean10,
         claude_event_contract=args.claude_event_contract)
     if route == 'metal':
         admit_cohort_payload(workload, args.case,
