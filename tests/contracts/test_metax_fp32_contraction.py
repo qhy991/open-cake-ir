@@ -29,10 +29,11 @@ class MetaXFP32Contraction(unittest.TestCase):
             self.assertEqual(workload['validation']['rtol'], 2e-5)
             self.assertEqual(len(workload['cases']), 5)
             for stage in program.stages:
-                emitted = self.compiler.lower(self.compiler.assess(json.loads(stage.schedule_bytes))).source
+                schedule = json.loads(stage.schedule_bytes)
+                emitted = self.compiler.lower(self.compiler.assess(schedule)).source
                 if name.startswith('mma'):
                     self.assertIn('input_precision="ieee"', emitted)
-                    self.assertNotIn('tl.trans(', emitted)
+                    self.assertFalse(any(op['kind'] == 'transpose' for op in schedule['operations']))
                     self.assertNotIn('input_precision="tf32"', emitted)
 
     def test_layout_gate_refuses_legal_kn_before_unqualified_transpose(self):
