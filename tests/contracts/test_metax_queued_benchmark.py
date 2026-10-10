@@ -26,25 +26,27 @@ class QueuedBenchmark(unittest.TestCase):
 
     def capture(self, timer, loaded, torch):
         with patch.dict(sys.modules,torch=torch):
-            return capture_tile_cohort(loaded,timer,samples_per_cohort=10,route_calls_per_cohort=21)
+            return capture_tile_cohort(loaded,timer,samples_per_cohort=5,route_calls_per_cohort=16)
 
-    def test_ten_samples_keep_all_twenty_one_complete_calls_and_outputs(self):
+    def test_two_cohorts_keep_ten_samples_and_thirty_two_complete_calls(self):
         timer,loaded,_,torch,calls,_=self.fixture()
         samples,args=self.capture(timer,loaded,torch)
-        self.assertEqual(samples,[.125]*10)
-        self.assertEqual(len(args),21)
-        self.assertEqual(calls,['first','second']*21)
-        self.assertTrue(all(values[-1].data==[3,4,5,6] for values in args))
-        self.assertEqual(timer.last_activity['completed_callbacks'],21)
-        self.assertEqual(timer.last_activity['sample_count'],10)
-        self.assertEqual(timer.last_activity['observed_stage_calls'],42)
+        second,more=self.capture(timer,loaded,torch)
+        self.assertEqual(samples+second,[.125]*10)
+        self.assertEqual(len(args)+len(more),32)
+        self.assertEqual(len({id(values) for values in args+more}),32)
+        self.assertEqual(calls,['first','second']*32)
+        self.assertTrue(all(values[-1].data==[3,4,5,6] for values in args+more))
+        self.assertEqual(timer.last_activity['completed_callbacks'],16)
+        self.assertEqual(timer.last_activity['sample_count'],5)
+        self.assertEqual(timer.last_activity['observed_stage_calls'],32)
         self.assertFalse(timer.last_activity['performance_qualified'])
         loaded.release_argument_sets.assert_not_called()
 
-    def test_adapter_refuses_five_samples_before_any_dispatch(self):
+    def test_adapter_refuses_twenty_sample_pair_before_any_dispatch(self):
         timer,loaded,args,torch,calls,_=self.fixture()
-        with self.assertRaisesRegex(ValueError,'exactly ten'):
-            timer.capture_loaded_cohort(loaded,args,dry_run_iters=11,repeat_iters=5)
+        with self.assertRaisesRegex(ValueError,'five samples'):
+            timer.capture_loaded_cohort(loaded,args,dry_run_iters=11,repeat_iters=10)
         self.assertEqual(calls,[])
 
     def test_unsafe_native_drain_reaches_terminal_without_cohort_release(self):

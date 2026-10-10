@@ -92,8 +92,8 @@ class CompleteLaunchCapture:
 
     def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
         import torch
-        if type(dry_run_iters) is not int or dry_run_iters != 11 or type(repeat_iters) is not int or repeat_iters not in (5, 10):
-            raise ValueError('complete-launch capture requires eleven warmups and five or ten samples')
+        if type(dry_run_iters) is not int or dry_run_iters != 11 or type(repeat_iters) is not int or repeat_iters != 5:
+            raise ValueError('complete-launch capture requires eleven warmups and five samples per cohort')
         count = dry_run_iters + repeat_iters
         if (self._failed or _RETAIN_UNTIL_EXIT or loaded.loaded.closed
                 or loaded.manifest.as_dict() != self.manifest.as_dict()
@@ -191,14 +191,14 @@ class CompleteLaunchCapture:
 
 
 class MacaQueuedEventBenchmark(CompleteLaunchCapture):
-    """Ten complete-launch observations with the common terminal worker contract.
+    """Five observations per AB/BA cohort; the paired mean uses ten per arm.
 
     This adapter is not a production policy registration or performance gate.
     The caller prepares the helper before allocation and owns the original oracle.
     """
     def capture_loaded_cohort(self, loaded, arguments, *, dry_run_iters, repeat_iters):
-        if type(repeat_iters) is not int or repeat_iters != 10:
-            raise ValueError('queued measurement requires exactly ten samples')
+        if type(repeat_iters) is not int or repeat_iters != 5:
+            raise ValueError('queued measurement requires five samples per AB/BA cohort')
         try:
             return super().capture_loaded_cohort(loaded, arguments,
                 dry_run_iters=dry_run_iters, repeat_iters=repeat_iters)
