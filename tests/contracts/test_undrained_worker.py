@@ -7,16 +7,70 @@ import sys
 import tempfile
 from types import SimpleNamespace as NS
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from open_cake_ir.evaluation.loaders import UndrainedDeviceWork
 from open_cake_ir.tasks import evaluate as worker
 from tests.contracts import test_paired_execution as paired_fixture
+from tests.contracts.test_untimed_validation_cases import UntimedValidationCases
 
 ROOT=Path(__file__).resolve().parents[2]
 
 
 class UndrainedWorker(unittest.TestCase):
+    def test_single_tensor_and_untimed_callers_preserve_terminal_owner(self):
+        for untimed in (False, True):
+            for error_type in (UndrainedDeviceWork, RuntimeError):
+                with self.subTest(untimed=untimed, error=error_type.__name__):
+                    fixture=UntimedValidationCases();fixture.setUp();self.addCleanup(fixture.doCleanups)
+                    authority=fixture.authority;authority.case_id='primary'
+                    if not untimed:
+                        authority.request['evaluation_protocol']={}
+                    loaded=NS(module_count=1,loaded=NS(launch_calls=1,resources={}),close=Mock())
+                    error=error_type('injected capture failure')
+                    with patch.object(worker,'LoadedTorchTensorCandidate',return_value=loaded), \
+                         patch.object(worker,'materialize_evaluation_inputs',return_value={}), \
+                         patch.object(worker,'evaluate_tile_workload',side_effect=error), \
+                         patch.object(worker,'evaluate_tile_validation_case',side_effect=error), \
+                         self.assertRaises(error_type) as caught:
+                        worker._evaluate_tile_candidate(authority,fixture.result,None,fixture.admission,
+                            False,route_calls_per_cohort=None)
+                    self.assertIs(caught.exception,error)
+                    if error_type is UndrainedDeviceWork:
+                        loaded.close.assert_not_called()
+                        self.assertTrue(any(owner is loaded for owner in error._owners))
+                    else:
+                        loaded.close.assert_called_once_with()
+
+    def test_flash_candidate_finalizer_preserves_terminal_owner(self):
+        for error_type in (UndrainedDeviceWork, RuntimeError):
+            with self.subTest(error=error_type.__name__):
+                error=error_type('injected native launch failure')
+                torch=MagicMock()
+                admission=NS(device_name='fixture',compute_capability=(10,0),gpu_uuid='fixture-uuid',
+                             broker_job_id='gpuq-123456789abc')
+                torch.cuda.device_count.return_value=1
+                torch.cuda.get_device_name.return_value=admission.device_name
+                torch.cuda.get_device_capability.return_value=admission.compute_capability
+                torch.cuda.get_device_properties.return_value=NS(uuid=admission.gpu_uuid)
+                workload=NS(case=lambda case:{'shape':{'B':1,'N':1,'K':1,'D':1}})
+                authority=NS(executor=NS(admit_host=lambda:None),workload=workload,case_id='primary',
+                             baseline=None,manifest=object(),candidate=object(),payloads={'cubin':b'fixture'})
+                loaded=NS(launch=Mock(side_effect=error),close=Mock())
+                inputs=(MagicMock(),MagicMock())
+                with patch.dict(sys.modules,{'torch':torch}), \
+                     patch.object(worker,'_execution_platform',return_value=worker.CodeObject.CUBIN), \
+                     patch.object(worker,'generate_flash_kmeans_case',return_value=inputs), \
+                     patch.object(worker.LoadedCudaCandidate,'load',return_value=loaded), \
+                     self.assertRaises(error_type) as caught:
+                    worker._evaluate_candidate(authority,{'counters':{}},collect_timing=False,admission=admission)
+                self.assertIs(caught.exception,error)
+                if error_type is UndrainedDeviceWork:
+                    loaded.close.assert_not_called()
+                    self.assertTrue(any(owner is loaded for owner in error._owners))
+                else:
+                    loaded.close.assert_called_once_with(synchronize=torch.cuda.synchronize)
+
     def test_capture_retains_prepared_sets_on_terminal_signal(self):
         args=[object()];loaded=NS(fresh_argument_sets=lambda n:args,release_argument_sets=Mock())
         error=UndrainedDeviceWork('stream drain failed')
