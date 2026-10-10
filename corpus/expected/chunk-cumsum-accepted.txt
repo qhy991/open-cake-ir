@@ -11,10 +11,8 @@ import triton.language as tl
 def _cake_chunk_cumsum_b8_smoke_kernel(
     gate,
     cumulative,
-    N_CHUNK: tl.constexpr,
     N_TOKEN_BLOCK: tl.constexpr,
     D_GATE_2: tl.constexpr,
-    D_CUMULATIVE_0: tl.constexpr,
     D_CUMULATIVE_1: tl.constexpr,
     D_CUMULATIVE_2: tl.constexpr,
     BLOCK_TOKEN_BLOCK: tl.constexpr,
@@ -68,10 +66,8 @@ def cake_chunk_cumsum_b8_smoke(gate, out=None):
     _cake_launch_cake_chunk_cumsum_b8_smoke(
         gate,
         out,
-        N_CHUNK=8,
         N_TOKEN_BLOCK=64,
         D_GATE_2=128,
-        D_CUMULATIVE_0=8,
         D_CUMULATIVE_1=64,
         D_CUMULATIVE_2=128,
         BLOCK_TOKEN_BLOCK=64,

@@ -26,6 +26,19 @@ Compiler 开发回答“Cake 需要什么能力”，独立 Bench 回答“固�
 不要求同名任务强行使用同一 dtype、缩小原始形状或退到其他设备。unsupported 是结果。
 数据来源和许可沿用各 Bench 的锁文件；本仓库不复制受限数据或 reference。
 
+## 外部 hmz 与 Compiler 的共享接入
+
+新工程轮次在平台已有合格外部执行入口时使用 hmz；现有原生 Lab 的 Run、Study 和历史
+replay 继续由原入口负责。所有维护分支使用同一份
+[Compiler 作者工具](HMZ_COMPILER_TOOLS.md)，由 main 维护后同步到平台，避免各平台复制
+改写规则。工具从每轮固定 Compiler 生成 API 清单，并在实际作者请求中提供清单与自己的
+调用记录；参数检查、完整候选和拒绝原因复用 Lab 与 Compiler 的现有实现。
+
+工具版本属于外部 launcher 的冻结源码，比较两臂使用同一工具版本，各自加载绑定的
+Compiler。平台独立负责准备、作者循环、预算、正确性、计时、确认和设备释放。代码同步
+不代表平台已接通 hmz 或取得设备资格；接入必须验证实际 prompt、binding 和候选来源。
+历史冻结轮次不补装工具；受控 Study 仍遵循其材料和 transformation 权限分组。
+
 ## 一次演进周期
 
 1. 从 main 的任务选开发集，固定目标和 Compiler commit，为每题建立独立工作目录。

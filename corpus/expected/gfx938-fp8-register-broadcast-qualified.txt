@@ -23,9 +23,7 @@ class _cake_pointer_range_arg:
 def _qualify_broadcast_fp8_e4m3_kernel(
     a,
     out,
-    N_ROW: tl.constexpr,
     D_A_1: tl.constexpr,
-    D_OUT_0: tl.constexpr,
     D_OUT_1: tl.constexpr,
     D_OUT_2: tl.constexpr,
 ):
@@ -73,9 +71,7 @@ def qualify_broadcast_fp8_e4m3(a, out=None):
     _cake_launch_qualify_broadcast_fp8_e4m3(
         _cake_pointer_range_arg(a, torch.float8_e4m3fn, 4),
         _cake_pointer_range_arg(out, torch.float8_e4m3fn, 32),
-        N_ROW=1,
         D_A_1=4,
-        D_OUT_0=1,
         D_OUT_1=4,
         D_OUT_2=8,
         num_warps=4,
