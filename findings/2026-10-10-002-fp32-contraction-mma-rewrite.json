@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "id": "F-2026-10-10-002",
+  "kind": "capacity",
+  "decision": "proposed",
+  "title": "Repeated FP32 contraction rewrites can produce explicit guarded MMA candidates",
+  "executor_revision": "external-bw1100-development-adapter@503f1b5e8cf8da45e8bb2815561e7f127ac53554",
+  "compiler_revision_id": "open-cake-ir@8a637ed0994e4c2b8f2a6e702be54b62a789923e",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "workspace": "bw1100-1:/data3/testuser01/experiments/bw1100-main-tasks-round5-20261009/runs",
+    "locators": [
+      "gemm/campaign/candidates/starter.py",
+      "gemm/campaign/evaluations/mma-row16-nopipe-r1/candidate.py",
+      "gemm/campaign/evaluations/mma-row16-nopipe-r1/source.py",
+      "gemm/campaign/evaluations/mma-row16-nopipe-r1/outcome.json",
+      "gemm/campaign/evaluations/final-confirmation/outcome.json",
+      "gemm/.local/profile/mma-row16-nopipe-p2/reports/metrics.csv",
+      "gemm/.local/profile/mma-row16-nopipe-p2/reports/metrics-validation.json",
+      "gemm/.local/triton-cache/3WEE46RI2NPBTN3CBKQZV5F6NTG7BVWY7J47K5FLX3Q22G32N3ZA/_cake_contraction_gemm_fp32_kernel.amdgcn",
+      "gemm_silu/campaign/candidates/starter.py",
+      "gemm_silu/campaign/evaluations/mma-m32-n32-k64/candidate.py",
+      "gemm_silu/campaign/evaluations/mma-m32-n32-k64/source.py",
+      "gemm_silu/campaign/evaluations/mma-m32-n32-k64/outcome.json",
+      "gemm_silu/campaign/evaluations/final-confirmation/outcome.json"
+    ],
+    "counterexamples": [
+      "gemm/campaign/evaluations/mma-row16-unroll2-r1",
+      "gemm_silu/campaign/evaluations/mma-m128-n64-k64",
+      "attention_decode/campaign/evaluations/mma_r16k128w8"
+    ]
+  },
+  "observation": "GEMM and GEMM+SiLU manually replace row-wise full-B broadcast multiply and K sum with tiled IEEE FP32 MMA and a pointwise epilogue. Search candidates and final confirmations pass all five original oracle cases. The GEMM raw 51-row counter file records SQ_INSTS_MMOP=8192, arch_vgpr=48 and lds=16384 per CTA. The retained ISA has 32 static v_mmac_16x16x8_f32 instructions, with four K iterations and 64 CTAs. Some author journal text incorrectly says zero LDS; the raw file and profile report take precedence. Diagnostic callable samples are not independent Bench speedups. Existing IR/lowering already expresses the mechanism; the missing reusable artifact is a complete guarded rewrite, not a new MMA primitive.",
+  "proposed_change": "Expose specialize_fp32_contraction through Compiler and the existing Program transformation registry. Match ordinary direct FP32 A[M,K] and B[K,N] or B[N,K] loads, broadcast multiply and one CTA sum. Preserve the compatible pointwise epilogue, global ABI and workload metadata. Callers explicitly select row/column/K tiles, execution groups and stages. Reject unrelated graph, storage and effect commitments; use IEEE FP32 only and retain external-oracle numerical acceptance.",
+  "design_review": "P1: existing Schedule/Program calls. P2: caller-selected tiles, groups and stages remain explicit. P3: one candidate constructor over existing load/transpose/MMA/elementwise forms. P4: input and result assessment plus lowering. P5: existing access maps and K carry expose ownership. P6: focused counterexamples and unchanged Corpus Gate. P7: no new primitive or analysis exception. P8: gfx938 source evidence bounds applicability; compiled resources and performance still require target validation.",
+  "promotion_disposition": "Proposed guarded candidate construction under issue #462. Tile/stage selection is not promoted. Independent review and successor device/oracle confirmation remain pending; historical outcomes and baselines remain fixed.",
+  "implemented_in": null,
+  "verified_by": null
+}
