@@ -80,3 +80,37 @@ pathlib.Path(a.output).write_text(json.dumps(o))
             _replay_broker_attempt_ledger(**arguments)
             arguments['references']=[r for r in refs if r['role']!='attempt_1_failure_paired_activity']
             with self.assertRaises(ReplayRefusal):_replay_broker_attempt_ledger(**arguments)
+
+class TerminalWorkerArtifactHandoff(lab_fixture.SemanticLabTestCase):
+    def test_exit_74_retains_only_custody_checked_diagnostics_and_never_a_receipt(self):
+        from open_cake_ir.lab.faults import RunProtocolFault
+        workload_path=ROOT/'contracts/workloads/flash-kmeans-assign-v2.json'
+        workload=json.loads(workload_path.read_bytes())
+        payloads={'cubin':b'CPU fixture','launch_manifest':b'CPU fixture'}
+        candidate=LaunchableCandidate('a'*64,'sm_100a','kernel',
+            {k:sha256(v).hexdigest() for k,v in payloads.items()},sha256(payloads['launch_manifest']).hexdigest(),payloads)
+        for bad_path in (False,True):
+            with self.subTest(bad_path=bad_path),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory).resolve();script=root/'worker.py'
+                script.write_text('''import argparse,json,pathlib,sys
+p=argparse.ArgumentParser();p.add_argument('--request');p.add_argument('--output');a=p.parse_args()
+r=pathlib.Path(a.request).parent
+(r/'failed.bin').write_bytes(b'{"drained":false}')
+o={'schema_version':2,'job_id':'gpuq-000000000000','mode':'exclusive','admitted':True,
+'error':'evaluator_failed','failure_class':'UndrainedDeviceWork','receipt':None,
+'failure_artifacts':{'native_observation':PATH},'counters':{'compiler_invocations':0,
+'module_loads':1,'preflight_calls':1,'kernel_calls':7,'timing_samples':0,'fallback_calls':0}}
+pathlib.Path(a.output).write_text(json.dumps(o))
+sys.exit(74)
+'''.replace('PATH',repr('../outside' if bad_path else 'failed.bin')))
+                submitter=CommandBrokerSubmitter(command=(sys.executable,str(script)),workload_path=workload_path,
+                    workload_sha256=sha256(canonical_json_bytes(workload)).hexdigest(),protocol_sha256='f'*64,
+                    cwd=root,executor=self.executor_fixture.revision(ROOT),compiler_reference=compiler_reference(ROOT),
+                    service_user=pwd.getpwuid(os.geteuid()).pw_name,service_group=grp.getgrgid(os.getegid()).gr_name)
+                with self.assertRaises(RunProtocolFault) as caught:
+                    submitter.submit(candidate,case_id='headline_b32',purpose='search',attempt=1)
+                fault=caught.exception
+                self.assertIn('exited 74',str(fault))
+                self.assertIsNone(json.loads(fault.artifact_payloads['broker_result'])['receipt'])
+                if bad_path:self.assertNotIn('failure_native_observation',fault.artifact_payloads)
+                else:self.assertEqual(fault.artifact_payloads['failure_native_observation'],b'{"drained":false}')
