@@ -1,7 +1,8 @@
 # Default-stream gate component
 
-Related issue: #458. This native component has no production adapter or admission.
-It starts no Run and owns no device lease. Production qualification remains closed.
+Related issue: #458. The experimental successor at `3518b4d6` connects this component
+to the existing paired worker under a distinct protocol. It starts no Run and owns
+no device lease. Independent device and per-task qualification remain outstanding.
 
 The caller supplies the admitted MACA function table, its original single-fill
 reset callback and its complete launch callback. The component primes one event
@@ -23,7 +24,7 @@ it cannot reuse the component or report samples from the failed capture.
 The CPU tests compile this exact C++ source and substitute runtime callbacks.
 They cover full callback order, stream-zero submissions, partial callback and end
 submission failures, cleanup failure, and bounded timeout. Their sentinel event
-values are not physical timings. Broader task domains and a separately frozen production protocol remain future
+values are not physical timings. Broader task domains and device qualification of the paired protocol remain future
 gates. Program mutation controls are covered below.
 
 ## Component tensor adapter
@@ -32,7 +33,7 @@ gates. Program mutation controls are covered below.
 `CompleteLaunchCapture` then binds an exact admitted C550 runtime. It delegates
 the full call to the existing loader, checks actual stage deltas and catches
 callback exceptions before crossing the C ABI. It accesses no private Program
-children or prepared-storage tables. It is not registered in the evaluator.
+children or prepared-storage tables. The component capture remains separate from the paired adapter described below.
 
 Real Program CPU fixtures cover current/bound stream mismatch, storage rebound
 after preparation, omitted stages, partial stage failure, duplicate argument sets,
@@ -96,8 +97,8 @@ build. The dedicated component block then completed once on C550.
 
 This supports the queued-interval mechanism on that fixture and exact runtime.
 It does not qualify a Bench task, explain the historical uninstrumented spike,
-or demonstrate an operator/Compiler speedup. Production registration remains
-closed. The retained run records `No promotion`.
+or demonstrate an operator/Compiler speedup. That component version had no paired
+registration. The retained run records `No promotion`.
 
 A production successor must review measurement semantics and safe worker teardown
 as one change. The ordinary common capture/evaluation finally blocks cannot
@@ -105,3 +106,45 @@ release Program intermediates or modules after an undrained failure. After that
 review and software acceptance, freeze a distinct protocol and establish fresh
 per-task baselines, original correctness, common qualification and attribution.
 The historical A/A refusal and previous diagnostics keep their original results.
+
+## Experimental paired successor
+
+`3518b4d6` moves the sole native source and capture adapter into the evaluation
+package, then connects `MacaQueuedEventBenchmark` to the existing worker. The new
+policy is `fixed_baseline_paired_maca_queued_event_v1`; legacy event records keep
+their original kinds and semantics. This branch does not start a Bench search.
+
+The existing AB/BA worker performs five samples per cohort and two cohorts per
+arm. The reported mean therefore uses ten samples per arm, with eleven warmups
+per cohort. An initial CPU-only implementation incorrectly requested ten per
+cohort; its failed native-contract checks are retained. The successor restores
+five plus five. No device sample was taken under the incorrect count.
+
+The interval is the default-stream device event interval after the complete
+launch has been queued. Reset remains one FP32 fill of four times the declared
+L2 before warmups and before each sample. The helper compiles before allocation;
+compilation inside a device lease is refused. Receipts bind exact target, stage
+counts, samples, reset, stream and successful drain. No old sample is relabeled.
+
+An unsafe drain or an existing terminal callback error retains the tensor,
+module, callback and helper owners and propagates `UndrainedDeviceWork` to the
+shared worker. Diagnostic formatting cannot replace the terminal signal.
+Ordinary drained failures keep the normal release path.
+
+CPU coverage includes the real C++ helper with runtime doubles and a complete
+paired-worker, receipt and broker-validation replay. It verifies ten samples per
+arm and all 136 stage calls for the synthetic two-stage fixture; those event
+values are not hardware observations. Three independent code reviews found no
+remaining concrete defect in this scope. At fixed `3518b4d6`, 100 Linux contracts passed without skips in a no-network,
+no-device CPU environment. The wheel built successfully and contains the exact
+runtime C++ helper. The local macOS packaging attempt lacked `bdist_wheel` and
+remains a failed environment check; it was not repaired and rerun. The unchanged
+115 Corpus source snapshots also passed. Independent device qualification remains
+outstanding; CPU acceptance cannot open the Bench readiness gates.
+
+This experimental ancestry still contains the older Bench Compiler. Integrating
+the newer maintained MetaX capabilities and resolving the documented Finding ID
+collisions are separate work before a new Compiler evaluation. Neither the old
+three-task Bench correctness nor the closed component result automatically
+qualifies the new source. Fresh qualification must preserve the original oracle,
+separate profiling, and the ten-sample contract without redrawing closed A/A.
