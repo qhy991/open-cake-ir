@@ -92,6 +92,24 @@ class QueuedBenchmark(unittest.TestCase):
             worker._evaluate_metax_candidate(authority,{},collect_timing=True,admission=admission)
         factory.assert_called_once_with(loaded.manifest,admission)
 
+    def test_real_paired_worker_replays_the_new_receipt_and_ten_samples_per_arm(self):
+        from open_cake_ir.tasks.normalization.study import evaluation_policy
+        holder=program_fixtures.ProgramEvents()
+        self.addCleanup(holder.doCleanups)
+        original_fixture=holder.fixture
+        def fixture_with_current_stream():
+            value=original_fixture()
+            value[2].cuda.current_stream=lambda:value[2].cuda.default_stream(0)
+            return value
+        runtime=fixtures.Runtime()
+        with patch.object(holder,'fixture',side_effect=fixture_with_current_stream),              patch.object(program_fixtures,'evaluation_policy',side_effect=lambda workload,**kw:evaluation_policy(workload,metax_queued_mean10=True)),              patch.object(adapter.C,'CDLL',return_value=runtime.symbols):
+            receipt,result=holder.execute_worker()
+        self.assertTrue(receipt.correctness_passed)
+        self.assertEqual(receipt.timing['kind'],'fixed_baseline_paired_maca_queued_event_v1')
+        self.assertEqual(receipt.timing['pooled_sample_counts'],{'candidate':10,'baseline':10})
+        self.assertEqual(receipt.timing['pooled_mean_ms'],.125)
+        self.assertEqual(result['counters']['kernel_calls'],136)
+
     def test_adapter_refuses_twenty_sample_pair_before_any_dispatch(self):
         timer,loaded,args,torch,calls,_=self.fixture()
         with self.assertRaisesRegex(ValueError,'five samples'):
