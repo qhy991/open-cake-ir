@@ -8,6 +8,9 @@ from open_cake_ir.compiler import Compiler
 from tests.contracts.test_fp32_contraction_rewrite import document
 from tests.contracts.test_epilogue_fusion import execute
 from tools.prepare_c550_fp32_contraction import candidates, PARAMETERS
+from open_cake_ir.evaluation.program import single_kernel_lowering
+from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.tasks.tiles.evaluation import PreparedTensorCase
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -28,6 +31,12 @@ class MetaXFP32Contraction(unittest.TestCase):
             self.assertEqual(workload['validation']['atol'], 2e-5)
             self.assertEqual(workload['validation']['rtol'], 2e-5)
             self.assertEqual(len(workload['cases']), 5)
+            self.assertIsNotNone(single_kernel_lowering(self.compiler.lower_program(program)))
+            contract = WorkloadContract(workload)
+            for case in contract.case_ids:
+                prepared = PreparedTensorCase(contract, case)
+                self.assertTrue(prepared.inputs)
+                self.assertTrue(prepared.expected)
             for stage in program.stages:
                 schedule = json.loads(stage.schedule_bytes)
                 emitted = self.compiler.lower(self.compiler.assess(schedule)).source

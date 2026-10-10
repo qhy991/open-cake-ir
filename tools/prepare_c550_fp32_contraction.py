@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prepare original-task Programs for C550 NT contraction qualification.
 
-Use qualify_tensor_program.py for isolated build and original-case evaluation.
+Use qualify_tensor_program.py for build and check_c550_fp32_contraction.py for evaluation.
 This command does not allocate a device, run a provider or decide promotion.
 """
 import argparse
@@ -15,6 +15,8 @@ sys.path.insert(0, str(ROOT / 'src'))
 from open_cake_ir.compiler import Compiler, Program, frontend
 from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.tasks.workloads import create_task
+from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.tasks.tiles.evaluation import PreparedTensorCase
 
 # The original factory requires power-of-two N/K and M/N divisible by eight.
 # M8 and N8 exercise masks within tile16 without changing that contract.
@@ -61,6 +63,9 @@ def main():
     rows = []
     try:
         for name, workload, source, program in candidates(Compiler.load(ROOT)):
+            contract = WorkloadContract(workload)
+            for case in contract.case_ids:
+                PreparedTensorCase(contract, case)
             folder = output / name
             folder.mkdir()
             (folder / 'workload.json').write_text(json.dumps(workload, indent=2))
