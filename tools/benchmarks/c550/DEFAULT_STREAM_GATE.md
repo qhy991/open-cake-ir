@@ -48,3 +48,27 @@ is not a drop-in replacement for the production worker's teardown policy.
 
 Exact-target device validation remains outstanding. No production protocol or
 performance qualification is introduced by the adapter.
+
+## Dedicated component entry
+
+`tools/qualify_c550_queued_program.py` accepts a same-source build of the retained
+four-stage attention boundary fixture. It prepares the original five CPU cases
+before allocation and checks all five on the device before capture. The fixed
+block contains one normal cohort and one cohort with 5 ms host sleeps before
+its five timed full launches, then original postflight and separate profiling.
+Every cohort output is checked. There is no A/A or optimization verdict.
+
+The delayed device intervals must all be shorter than the smallest observed
+injected sleep; otherwise the control is inconclusive and stops. This is a large
+causal delay control, not an estimate of kernel speed or a clock-domain sum.
+The block is not repeated to obtain a preferred result.
+
+A dedicated capture helper retains Program prepared sets on undrained failure.
+The ordinary cohort helper is not used because it releases those sets on every
+exception. The fatal entry persists its observation and uses process exit 74
+without Python stack unwinding. If persistence fails, it still must not enter an
+unsafe cleanup path. CPU subprocess controls cover both cases.
+
+This entry has no device result yet. Host, source, build and exact physical lock
+qualification must precede its one bounded device block. Preserve the historical
+A/A refusal, single-arm diagnostic and author qualification unchanged.
