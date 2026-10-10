@@ -37,7 +37,7 @@ class C550WidthPreparation(unittest.TestCase):
             schedule_id='qualification_not_promotion', entry_point='candidate')
         self.assertFalse(result.applied)
         self.assertEqual(result.reason, 'target_route')
-        for bad in (True, 0, 3, 8, 32):
+        for bad in (True, 0, 3, 32):
             with self.subTest(width=bad), self.assertRaises(ValueError):
                 width_source(self.compiler, source, bad)
 

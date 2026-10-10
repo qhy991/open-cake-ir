@@ -29,8 +29,8 @@ def write(path, value):
 
 
 def width_source(compiler, source, width):
-    if type(width) is not int or width not in (1, 2, 4):
-        raise ValueError('This qualification fixes execution groups to 1, 2 or 4')
+    if type(width) is not int or width not in (1, 2, 4, 8, 16):
+        raise ValueError('This qualification fixes execution groups to 1, 2, 4, 8 or 16')
     original = frontend.parse(source).document
     before = compiler.assess(original)
     if not before.lowering_eligible or original['target'] != 'xcore1002':
@@ -72,21 +72,30 @@ def width_source(compiler, source, width):
     return candidate
 
 
-def prepare(output):
+def prepare(output, suite='initial'):
     compiler = Compiler.load(ROOT)
     rows = []
-    for task, batch, hidden, widths in CASES:
-        workload, source = create_task(task, backend='triton-metax', rows=batch, columns=hidden)
-        for width in widths:
-            name = task + '-w' + str(width)
+    if suite == 'extension':
+        from tools.benchmarks.c550.width_fixtures import extension_cases
+        cases = extension_cases()
+    else:
+        cases = []
+        for task, batch, hidden, widths in CASES:
+            workload, source = create_task(task, backend='triton-metax', rows=batch, columns=hidden)
+            cases.append(dict(name=task, task=task, rows=batch, columns=hidden,
+                              widths=widths, workload=workload, source=source))
+    for row in cases:
+        for width in row['widths']:
+            name = row['name'] + '-w' + str(width)
             directory = output / name
             directory.mkdir()
-            candidate = width_source(compiler, source, width)
-            write(directory / 'workload.json', workload)
+            candidate = width_source(compiler, row['source'], width)
+            write(directory / 'workload.json', row['workload'])
             (directory / 'starter.py').write_text(candidate)
             write(directory / 'schedule.json', frontend.parse(candidate).document)
-            rows.append(dict(name=name, task=task, rows=batch, columns=hidden, width=width))
-    write(output / 'plan.json', dict(source_commit=checkout_commit(ROOT), candidates=rows,
+            rows.append(dict(name=name, task=row['task'], rows=row['rows'],
+                             columns=row['columns'], width=width))
+    write(output / 'plan.json', dict(source_commit=checkout_commit(ROOT), candidates=rows, suite=suite,
         scope='explicit width candidates; production pass remains unqualified',
         reference='unchanged task-owned Workload oracle', timing='none', provider_calls=0))
     return dict(prepared=len(rows), gpu_calls=0)
@@ -175,6 +184,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phase', choices=('prepare', 'build', 'check'))
     parser.add_argument('--input', type=Path)
+    parser.add_argument('--suite', choices=('initial', 'extension'), default='initial')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--physical-device', type=int)
     parser.add_argument('--runtime-device', type=int)
@@ -190,7 +200,7 @@ def main():
     output = admit_new_campaign_path(ROOT, args.output, role='bounded C550 width qualification')
     output.mkdir(parents=True, exist_ok=False)
     try:
-        result = (prepare(output) if args.phase == 'prepare' else
+        result = (prepare(output, args.suite) if args.phase == 'prepare' else
                   build(args.input, output) if args.phase == 'build' else
                   check(args.input, output, args.physical_device, args.runtime_device, args.expected_pci))
     except Exception as error:
