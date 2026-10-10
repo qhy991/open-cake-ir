@@ -118,6 +118,18 @@ class C550WidthAdmission(unittest.TestCase):
         self.assertTrue(self.apply(reverse, 4).applied)
         self.assertEqual(self.apply(reverse,16).reason, 'result_refused')
 
+    def test_store_only_outer_iterator_does_not_qualify_as_mma_output_axis(self):
+        source = nested_output_loop_cases()[0]['source']
+        source = source.replace('b[column, k]', 'b[0:16, k]')
+        document = frontend.parse(source).document
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible)
+        typed = assessment.typed_schedule
+        mma = next(op for op in typed.operations if op.kind.value == 'mma')
+        self.assertTrue(typed.mma_accumulates_over(mma, typed.tile_loop('contract_k')))
+        self.assertFalse(typed.mma_accumulates_over(mma, typed.tile_loop('output_columns')))
+        self.assertEqual(self.apply(document, 4).reason, 'loop_domain')
+
 
 if __name__ == '__main__':
     unittest.main()

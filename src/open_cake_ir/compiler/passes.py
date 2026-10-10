@@ -98,6 +98,10 @@ def _nested_output_mma_width_domain(schedule: Schedule) -> bool:
             or any(not schedule.mma_accumulates_over(op, inner)
                    or schedule.mma_accumulates_over(op, outer) for op in mmas)):
         return False
+    for op in mmas:
+        output_axes = [schedule._staged_axis_filled_by(name, outer) for name in op.reads]
+        if 0 not in output_axes or any(axis not in (None, 0) for axis in output_axes):
+            return False
     for op in inner_ops + tuple(outer_ops):
         if op.kind is OperationKind.LOAD and (
                 schedule.buffer(op.reads[0]).mode is not BufferMode.INPUT):
