@@ -13,7 +13,7 @@ from open_cake_ir.compiler import Compiler, Program  # noqa: E402
 from open_cake_ir.compiler.ir import ProgramStage  # noqa: E402
 from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
 from open_cake_ir.tasks.qsa.program import ProgramContract
-from tests.contracts._historical_qsa_program import replay_program_v2
+from tests.contracts._historical_qsa_program import replay_program_v2, replay_program_v6
 
 
 class ProgramContractTest(unittest.TestCase):
@@ -56,7 +56,7 @@ class ProgramContractTest(unittest.TestCase):
             ProgramContract.load(ROOT, self.path, self.compiler)
 
     def test_current_program_successor_preserves_the_frozen_workload_and_composition(self) -> None:
-        path = ROOT / "contracts/programs/qsa-prefill-t32768-v6.json"
+        path = ROOT / "contracts/programs/qsa-prefill-t32768-v7.json"
         program = ProgramContract.load(ROOT, path, self.compiler)
         self.assertEqual(program.implementation.outputs, program.public_outputs)
         self.assertEqual([stage.name for stage in program.implementation.stages],
@@ -67,7 +67,7 @@ class ProgramContractTest(unittest.TestCase):
         successor = json.loads(path.read_text())
         self.assertEqual(program.program_id, successor["program_id"])
         self.assertNotEqual(successor["program_id"], previous["program_id"])
-        for version in (4, 5):
+        for version in (4, 5, 6):
             frozen = ROOT / f"contracts/programs/qsa-prefill-t32768-v{version}.json"
             with self.assertRaisesRegex(ValueError, "lowering differs"):
                 ProgramContract.load(ROOT, frozen, self.compiler)
@@ -76,6 +76,23 @@ class ProgramContractTest(unittest.TestCase):
             for field in ("schedule_sha256", "lowering_source_sha256"):
                 self.assertNotEqual(new_node[field], old_node[field])
                 new_node[field] = old_node[field]
+        self.assertEqual(successor, previous)
+
+    def test_v7_changes_only_source_bindings_and_v6_replays_at_its_original_compiler(self) -> None:
+        observed = replay_program_v6()
+        self.assertEqual(observed["program_id"], "qsa-prefill-t32768-cake-port-v6")
+        self.assertEqual(observed["nodes"], ["pool", "layernorm", "score_topk", "expand", "attention"])
+        self.assertEqual(len(observed["mutation_refusals"]), 3)
+        previous = json.loads((ROOT / "contracts/programs/qsa-prefill-t32768-v6.json").read_text())
+        successor = json.loads((ROOT / "contracts/programs/qsa-prefill-t32768-v7.json").read_text())
+        self.assertNotEqual(successor["program_id"], previous["program_id"])
+        successor["program_id"] = previous["program_id"]
+        changed = []
+        for old, new in zip(previous["nodes"], successor["nodes"]):
+            if old["lowering_source_sha256"] != new["lowering_source_sha256"]:
+                changed.append(new["id"])
+            new["lowering_source_sha256"] = old["lowering_source_sha256"]
+        self.assertEqual(changed, ["pool", "score_topk", "expand", "attention"])
         self.assertEqual(successor, previous)
 
     def test_schedule_identity_and_dataflow_drift_fail_closed(self) -> None:
