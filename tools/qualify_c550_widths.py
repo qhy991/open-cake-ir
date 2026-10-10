@@ -84,10 +84,11 @@ def prepare(output, suite='initial'):
     compiler = Compiler.load(ROOT)
     rows = []
     refusals = []
-    if suite in {'extension', 'output-loop', 'ieee-output-loop'}:
-        from tools.benchmarks.c550.width_fixtures import extension_cases, output_loop_cases, ieee_output_loop_cases
+    if suite in {'extension', 'output-loop', 'ieee-output-loop', 'nested-output-loop'}:
+        from tools.benchmarks.c550.width_fixtures import extension_cases, output_loop_cases, ieee_output_loop_cases, nested_output_loop_cases
         cases = {'extension': extension_cases, 'output-loop': output_loop_cases,
-                 'ieee-output-loop': ieee_output_loop_cases}[suite]()
+                 'ieee-output-loop': ieee_output_loop_cases,
+                 'nested-output-loop': nested_output_loop_cases}[suite]()
     else:
         cases = []
         for task, batch, hidden, widths in CASES:
@@ -102,7 +103,7 @@ def prepare(output, suite='initial'):
             try:
                 candidate = width_source(compiler, row['source'], width)
             except WidthCandidateRefused as error:
-                if suite not in {'extension', 'output-loop', 'ieee-output-loop'} or width != 16 or error.codes != ('MACA_WARP_COUNT_UNQUALIFIED',):
+                if suite not in {'extension', 'output-loop', 'ieee-output-loop', 'nested-output-loop'} or width != 16 or error.codes != ('MACA_WARP_COUNT_UNQUALIFIED',):
                     raise
                 record = dict(name=name, task=row['task'], width=width, codes=error.codes,
                               scope='expected exact-route refusal; zero native or device calls')
@@ -203,7 +204,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phase', choices=('prepare', 'build', 'check'))
     parser.add_argument('--input', type=Path)
-    parser.add_argument('--suite', choices=('initial', 'extension', 'output-loop', 'ieee-output-loop'), default='initial')
+    parser.add_argument('--suite', choices=('initial', 'extension', 'output-loop', 'ieee-output-loop', 'nested-output-loop'), default='initial')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--physical-device', type=int)
     parser.add_argument('--runtime-device', type=int)

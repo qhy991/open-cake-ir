@@ -109,3 +109,23 @@ def ieee_output_loop_cases():
     if source == row['source']:
         raise ValueError('The pure rounded MMA construction site differs')
     return [dict(row, name='rounded_ieee_output_loop', source=source)]
+
+
+def nested_output_loop_cases():
+    """Preserve original K=2048 while each MMA uses a bounded K32 tile."""
+    row = output_loop_cases()[0]
+    workload, source = create_task('fib_gemm_n128_k2048', backend='triton-metax',
+                                  rows=5, columns=128, depth=2048)
+    header = source.split('    compute =', 1)[0]
+    body = """    compute = lm.role(execution_groups=[0])
+    row = lm.program(a, axis=0, dimension=0, tile=16)
+    with compute:
+        for column in lm.range(b, name="output_columns", dimension=0, tile=16, num_stages=1):
+            for k in lm.range(a, name="contract_k", dimension=1, tile=32, num_stages=1):
+                left = lm.load(a[row, k], id="load_left")
+                right = lm.load(b[column, k], id="load_right")
+                acc = lm.mma(left, right, instruction={"contract": "triton.dot.fp16_fp32"}, tile_shape=(16,16,32), id="dot")
+            rounded = lm.cast(acc, to="fp16", id="round_out")
+            lm.store(out[row, column], rounded, id="store_output")
+"""
+    return [dict(row, name='nested_rounded_mma_output', workload=workload, source=header+body)]

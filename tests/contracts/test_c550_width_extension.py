@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Compiler, frontend
-from tools.benchmarks.c550.width_fixtures import extension_cases, ieee_output_loop_cases
+from tools.benchmarks.c550.width_fixtures import extension_cases, ieee_output_loop_cases, nested_output_loop_cases
 from tools.qualify_c550_widths import CASES, width_source, WidthCandidateRefused
 from tests.contracts.test_epilogue_fusion import execute
 
@@ -108,6 +108,16 @@ class C550WidthExtension(unittest.TestCase):
         self.assertEqual(observed['out'], expected)
         self.assertEqual(len(trace.stores), 5*128)
         self.assertEqual(set(trace.stores.values()), {1})
+
+    def test_nested_output_loop_preserves_full_original_gemm(self):
+        row = nested_output_loop_cases()[0]
+        self.assertEqual(row['workload'], ieee_output_loop_cases()[0]['workload'])
+        left = [(i % 3)/16 for i in range(5) for k in range(2048)]
+        right = [(j % 5)/8 for j in range(128) for k in range(2048)]
+        output, trace = execute(frontend.parse(row['source']).document, dict(a=left,b=right))
+        self.assertEqual(output['out'], [2048*((i%3)/16)*((j%5)/8) for i in range(5) for j in range(128)])
+        self.assertEqual(len(trace.stores),640)
+        self.assertEqual(set(trace.stores.values()),{1})
 
 
 if __name__ == '__main__':

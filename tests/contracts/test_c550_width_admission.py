@@ -6,7 +6,7 @@ import unittest
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.toolchain import project_triton_kernel
 from open_cake_ir.tasks.workloads import create_task
-from tools.benchmarks.c550.width_fixtures import extension_cases, ieee_output_loop_cases
+from tools.benchmarks.c550.width_fixtures import extension_cases, nested_output_loop_cases
 from tools.qualify_c550_widths import CASES, width_source
 from tests.contracts.test_dcu_pure_width_specialization import document as pure_document
 
@@ -24,7 +24,7 @@ class C550WidthAdmission(unittest.TestCase):
             entry_point=doc['lowering']['entry_point'])
 
     def test_actual_pass_preserves_all_qualified_kernel_compile_inputs(self):
-        cases = extension_cases() + ieee_output_loop_cases()
+        cases = extension_cases() + nested_output_loop_cases()
         for task, rows, columns, widths in CASES:
             _, source = create_task(task, backend='triton-metax', rows=rows, columns=columns)
             cases.append(dict(name=task, widths=widths, source=source))
@@ -76,6 +76,37 @@ class C550WidthAdmission(unittest.TestCase):
         result = self.apply(doc, 4)
         self.assertEqual(result.reason, 'input_refused')
         self.assertEqual(doc['roles'][0]['execution_groups'], list(range(16)))
+
+    def test_nested_mma_target_scope_and_cast_consumers_are_explicit(self):
+        from tools.benchmarks.c550.width_fixtures import nested_output_loop_cases
+        original = frontend.parse(nested_output_loop_cases()[0]['source']).document
+        for target in ('sm_103a', 'gfx938'):
+            doc = deepcopy(original)
+            doc['target'] = target
+            self.assertTrue(self.compiler.assess(doc).lowering_eligible)
+            self.assertEqual(self.apply(doc, 2).reason, 'loop_domain')
+        doc = deepcopy(original)
+        doc['buffers'].append(dict(name='restored', space='register', dtype='fp32', shape=[16,16], mode='scratch'))
+        doc['operations'].append(dict(id='restore', kind='cast', role=doc['roles'][0]['name'],
+            reads=['rounded'], writes=['restored'], parameters=dict(to='fp32'), depends_on=['round_out']))
+        outer = next(loop for loop in doc['tile_loops'] if loop['name']=='output_columns')
+        outer['body'].append('restore')
+        self.assertTrue(self.compiler.assess(doc).lowering_eligible)
+        self.assertEqual(self.apply(doc, 2).reason, 'loop_domain')
+
+    def test_nested_k_guard_uses_declared_axis_provenance(self):
+        from tools.benchmarks.c550.width_fixtures import nested_output_loop_cases
+        document = frontend.parse(nested_output_loop_cases()[0]['source']).document
+        before = self.compiler.assess(document)
+        self.assertTrue(before.lowering_eligible)
+        typed = before.typed_schedule
+        mma = next(op for op in typed.operations if op.kind.value=='mma')
+        self.assertTrue(typed.mma_accumulates_over(mma, typed.tile_loop('contract_k')))
+        self.assertFalse(typed.mma_accumulates_over(mma, typed.tile_loop('output_columns')))
+        reverse = deepcopy(document)
+        reverse['tile_loops'].reverse()
+        self.assertTrue(self.apply(reverse, 4).applied)
+        self.assertEqual(self.apply(reverse,16).reason, 'result_refused')
 
 
 if __name__ == '__main__':
