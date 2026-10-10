@@ -45,6 +45,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - [F-2026-10-10-002](2026-10-10-002-fp32-contraction-mma-rewrite.json) — explicit guarded FP32 multiply/sum to IEEE MMA candidates, with retained pointwise epilogues; source evidence is separate from pending successor qualification.
 
+- [F-2026-10-10-001](2026-10-10-001-triton-live-constexpr.json) — unused frozen dimensions repeat in Triton signatures and ordinary calls; derive live kernel constants without changing launch options, host guards or tensor ownership. Software and device qualification remain separate.
+
 - [F-2026-10-09-001](2026-10-09-001-unknown-compile-owner-triage.json) — unknown generated-source compile refusals need owner triage before asserting a verifier defect; no hardware or performance claim.
 
 - [F-2026-10-07-008](2026-10-07-008-ocml-fma-capacity.json) — expose the native OCML FP32 FMA through the existing typed ternary primitive; preserve producer rounding and qualify generated source separately from native probes.

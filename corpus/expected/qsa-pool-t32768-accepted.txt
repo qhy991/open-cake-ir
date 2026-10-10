@@ -13,7 +13,6 @@ def _cake_qsa_pool_t32768_kernel(
     pooled,
     N_BLOCK: tl.constexpr,
     D_INDEX_K_1: tl.constexpr,
-    D_POOLED_0: tl.constexpr,
     D_POOLED_1: tl.constexpr,
     BLOCK_BLOCK: tl.constexpr,
 ):
@@ -69,7 +68,6 @@ def cake_qsa_pool_t32768(index_k, out=None):
         out,
         N_BLOCK=32768,
         D_INDEX_K_1=128,
-        D_POOLED_0=8192,
         D_POOLED_1=128,
         BLOCK_BLOCK=4,
         num_warps=4,
