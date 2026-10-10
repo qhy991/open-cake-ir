@@ -876,6 +876,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         # the raw launch artifact retain the separate preflight and timing work.
         result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
             'kernel_calls': authority.manifest.kernels_per_call, 'fallback_calls': 0, 'timing': timing, 'artifacts': artifacts}
+    except UndrainedDeviceWork:
+        raise
     except BaseException as error:
         if authority.candidate.is_program and profile_raw is not None:
             retained = dict(getattr(error, 'artifact_payloads', {}))
