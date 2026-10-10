@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "id": "F-2026-10-10-001",
+  "kind": "behavior",
+  "decision": "proposed",
+  "title": "Triton callers pass frozen dimensions that their kernel bodies never read",
+  "executor_revision": "external-bw1100-development-adapters; each campaign/development-binding.json owns its gateway revision",
+  "compiler_revision_id": "open-cake-ir@8a637ed0994e4c2b8f2a6e702be54b62a789923e",
+  "backend": "triton",
+  "target": "gfx938",
+  "evidence": {
+    "roots": [
+      "bw1100:/home/testuser01/experiments/bw1100-round5-two-host-20261009/runs",
+      "bw1100-1:/data3/testuser01/experiments/bw1100-main-tasks-round5-20261009/runs"
+    ],
+    "locators": [
+      "aka_row_gather/campaign/evaluations/starter-baseline/source.py",
+      "adadelta/campaign/evaluations/starter-baseline-r1/source.py",
+      "adamw/campaign/evaluations/starter-baseline/source.py",
+      "momentum_sgd/campaign/evaluations/starter-canonical/source.py"
+    ],
+    "local_read_only_audit": "/private/tmp/cake-live-constexpr-evidence-20261010",
+    "method": "Parse every retained evaluation source with ast; compare annotated N_/D_ parameters against Name Load nodes in the kernel body. Select the retained starter/baseline per task. No generated source is imported or executed.",
+    "tasks": 53,
+    "starters_with_unused_dimension_parameters": 52,
+    "counterexample": "aka_momentum_sgd reads all eight dimension parameters. Tiled candidates in other tasks also read bounds unused by their starters; parameter removal cannot depend on a name prefix or task label."
+  },
+  "observation": "All 29 starters on bw1100-1 and 23 of 24 on bw1100 contain unused kernel dimension parameters. Adadelta and AdamW each pass 14 dimension parameters with seven unused; aka_row_gather passes five with two unused. constants() emits every global dimension into the signature, per-call keywords and compile_constants. Existing device CSE, module-level launch binding and HCU pointer-range adapters are present in the frozen evidence and are not new findings. Callable latency does not identify how much time belongs to this redundancy.",
+  "proposed_change": "Derive one live constant mapping from the complete emitted kernel body and use it for the kernel signature, host launch keywords and native compile_constants. Retain Schedule values for host grid construction and preserve num_warps, num_stages and register launch options independently. Preserve all dynamic ABI checks, fresh output allocation, caller-owned output validation, current pointer reads and Triton ownership of specialization, stream and launch. This changes lowering only; IR semantics, types, effects, verifier admission and arithmetic stay unchanged.",
+  "promotion_disposition": "Lowering implementation, clean source/Corpus qualification and independent review are complete. The four bounded gfx938 comparisons preserve the same starter/Schedule and pass all original cases. Ordinary-call paired medians improve by about 1-3%, close to portions of observed A/A variation; retain this as source simplification and bounded evidence, not a broad performance claim. QSA v7 carries updated source bindings; no successor NVIDIA QSA device qualification is claimed. The source PR remains under integration review.",
+  "implemented_in": "949fd804f05a1d075e18d9ac485b9c9112b9c8eb",
+  "verified_by": {
+    "kind": "bounded_successor_generated_callable_comparison",
+    "baseline_compiler": "bec7c9eded7c474a441e998fec60ecc30502aa01",
+    "oracle_compiler": "8a637ed0994e4c2b8f2a6e702be54b62a789923e",
+    "helper_commit": "d76439c558c6c971aaebfe8a6f369988abc8ccfd",
+    "evidence_root": "bw1100-1:/data3/testuser01/experiments/bw1100-compiler-round5-successor-20261010",
+    "plan": "kit-r4/plan-r4.json",
+    "artifact_root": ".local/compiler-validation/artifacts-r4",
+    "receipts": ".local/compiler-validation/receipts",
+    "protocol": "All five original cases in both arms, original oracle after release; then 10 warmups per arm, 60 alternating AB/BA pairs and 30 A/A pairs on primary, ordinary allocation-returning calls with synchronize. No graph, trimming or retry.",
+    "runtime": "gfx938, wave64, DTK Triton 3.6.0; real JIT cache, executed HSACO and launch metadata matched the CPU-staged specialization. HCU1 admission and all corresponding releases passed. Physical exclusivity is not established.",
+    "scope": "Development starter comparison, not an independent community Bench or a fresh-author agent-efficiency study.",
+    "compiler": "949fd804f05a1d075e18d9ac485b9c9112b9c8eb",
+    "tasks": [
+      "adadelta",
+      "adamw",
+      "aka_row_gather",
+      "rmsnorm_input_gradient"
+    ],
+    "correctness": "20/20 original cases pass in each arm; inputs preserved.",
+    "ordinary_call_measurements": {
+      "adadelta": {
+        "paired_median_A_over_B": 1.0315565015434789,
+        "AB_median": 1.025800408330725,
+        "BA_median": 1.0389601339424486,
+        "AA_first_over_second": {
+          "median": 0.9961510618388628,
+          "p05": 0.9803811266191378,
+          "p95": 1.0252999500505582
+        }
+      },
+      "adamw": {
+        "paired_median_A_over_B": 1.0298730420935067,
+        "AB_median": 1.0266601448757386,
+        "BA_median": 1.0361402090220573,
+        "AA_first_over_second": {
+          "median": 1.0015792300269135,
+          "p05": 0.9891389239918066,
+          "p95": 1.0252622889595346
+        }
+      },
+      "aka_row_gather": {
+        "paired_median_A_over_B": 1.0111402275293944,
+        "AB_median": 1.008723363308086,
+        "BA_median": 1.0162668423287364,
+        "AA_first_over_second": {
+          "median": 1.0042142601026345,
+          "p05": 0.985087040834052,
+          "p95": 1.0142346524688939
+        }
+      },
+      "rmsnorm_input_gradient": {
+        "paired_median_A_over_B": 1.021473240277492,
+        "AB_median": 1.0172688798354246,
+        "BA_median": 1.028063802992281,
+        "AA_first_over_second": {
+          "median": 1.0001133046292308,
+          "p05": 0.9753026373745891,
+          "p95": 1.0190541783802811
+        }
+      }
+    },
+    "software": "At 949fd804: 2975 contracts passed,26 skipped,10542 subtests; Corpus204/204;115 source snapshots. PR #464 Python3.10/3.11/3.12 contracts and baseline/successor offline Triton jobs passed at this source. Independent source and device-evidence reviews found no blocker."
+  }
+}
