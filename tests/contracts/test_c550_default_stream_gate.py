@@ -49,7 +49,7 @@ class DefaultStreamGate(unittest.TestCase):
             if stream==4:
                 for thread in threads:thread.join(timeout=3)
                 if any(t.is_alive() for t in threads):return 99
-                if fail=='drain':return 88
+                if fail in ('drain','launch_and_drain'):return 88
             return 0
         def sync(event):
             order.append(('sync',event))
@@ -68,7 +68,7 @@ class DefaultStreamGate(unittest.TestCase):
         def reset(user):resets.append(1);order.append(('reset',));return 0
         def launch(user,index):
             callbacks.append(index);order.append(('stage',index,'first'))
-            if fail=='launch' and index==11:return 32
+            if fail in ('launch','launch_and_drain') and index==11:return 32
             if delay and index==11:time.sleep(2.05)
             order.append(('stage',index,'second'));return 0
         api_callbacks=[Create(create),Record(record),One(sync),Elapsed(elapsed),One(destroy),
@@ -114,3 +114,9 @@ class DefaultStreamGate(unittest.TestCase):
         r=self.run_component(delay=True)
         self.assertEqual((r['status'],r['phase'],r['count']),(-41001,19,12))
         self.assertEqual(r['samples'],[0.0]*5);self.assertEqual(sorted(r['closed']),[1,2,3,4])
+
+    def test_original_failure_and_cleanup_failure_remain_separate(self):
+        r=self.run_component(fail='launch_and_drain')
+        self.assertEqual((r['status'],r['phase'],r['cleanup'],r['drained']),(32,16,88,0))
+        self.assertEqual(r['closed'],[])
+        self.assertEqual(r['samples'],[0.0]*5)
