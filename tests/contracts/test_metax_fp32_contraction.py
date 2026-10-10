@@ -1,6 +1,7 @@
 """C550 exact-layout admission and CPU semantics; device qualification is separate."""
 from copy import deepcopy
 import math
+import json
 from pathlib import Path
 import unittest
 from open_cake_ir.compiler import Compiler
@@ -28,7 +29,7 @@ class MetaXFP32Contraction(unittest.TestCase):
             self.assertEqual(workload['validation']['rtol'], 2e-5)
             self.assertEqual(len(workload['cases']), 5)
             for stage in program.stages:
-                emitted = self.compiler.lower(self.compiler.assess(stage.schedule.document)).source
+                emitted = self.compiler.lower(self.compiler.assess(json.loads(stage.schedule_bytes))).source
                 if name.startswith('mma'):
                     self.assertIn('input_precision="ieee"', emitted)
                     self.assertNotIn('tl.trans(', emitted)
