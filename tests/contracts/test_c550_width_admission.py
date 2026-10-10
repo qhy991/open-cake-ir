@@ -83,6 +83,16 @@ class C550WidthAdmission(unittest.TestCase):
         for target in ('sm_103a', 'gfx938'):
             doc = deepcopy(original)
             doc['target'] = target
+            if target == 'sm_103a':
+                # Use the target's declared BF16 contract for this legal counterexample.
+                for buffer in doc['buffers']:
+                    if buffer['dtype'] == 'fp16':
+                        buffer['dtype'] = 'bf16'
+                for op in doc['operations']:
+                    if op['kind'] == 'mma':
+                        op['parameters']['instruction']['contract'] = 'triton.dot.bf16_fp32'
+                    if op['kind'] == 'cast' and op['parameters']['to'] == 'fp16':
+                        op['parameters']['to'] = 'bf16'
             self.assertTrue(self.compiler.assess(doc).lowering_eligible)
             self.assertEqual(self.apply(doc, 2).reason, 'loop_domain')
         doc = deepcopy(original)
