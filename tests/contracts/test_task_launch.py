@@ -62,7 +62,7 @@ class TaskLaunchTests(unittest.TestCase):
                 launch_task.main(args)
         policy = captured[0]['evaluation_protocol']
         protocol = paired_protocol(policy)
-        self.assertEqual(protocol.kind, 'fixed_baseline_paired_maca_queued_event_v1')
+        self.assertEqual(policy['paired_timing']['kind'], 'fixed_baseline_paired_maca_queued_event_v1')
         self.assertEqual(len(protocol.pair_order) * protocol.samples_per_cohort, 10)
         self.assertEqual(protocol.statistic, 'mean')
 
