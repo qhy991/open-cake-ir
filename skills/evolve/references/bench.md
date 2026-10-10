@@ -58,6 +58,14 @@ alias or target string does not establish that equivalence. The two conditions d
 by system source version, which currently binds both Compiler and Executor. A narrower
 Compiler-only claim needs evidence that the other changed components did not cause it.
 
+For an external hmz launcher, use the shared
+[Compiler author adapter](../../../docs/HMZ_COMPILER_TOOLS.md). Freeze its source in
+the common scaffold, generate each condition's API from that condition's Compiler,
+and verify that the actual author loop delivers it. Keep the platform evaluator and
+budget owners. Do not retrofit active Runs or apply this all-public-tools adapter to
+a Study arm that withholds transformations. Syncing the file to a platform branch
+does not establish launcher adoption or device qualification.
+
 The current native `matched_search` schema implements the four-cell E/P transfer
 Study. This two-condition engineering plan is not accepted by that Study API. Do not
 invent E/P flags or a cross-target transfer to make it pass. This skill coordinates
